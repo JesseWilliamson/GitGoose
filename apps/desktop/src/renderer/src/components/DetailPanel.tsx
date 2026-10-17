@@ -12,6 +12,7 @@ import { avatarSrc, useAvatarVariant } from '../lib/avatar'
 import { addTrailer, isUntouched, splitTemplate } from '../lib/commitMessage'
 import { ensureLoaded, getLog, reportError, selectCommit, setting, toast, updateRepo, useSetting, useStore, type FileMode, type RepoView } from '../lib/store'
 import { Avatar } from './Avatar'
+import { ChangeHints } from './ChangeHints'
 import { recomposeWithAi } from './RecomposeDialog'
 import { FileListTools, FileListView, FileRow, statusKind } from './FileList'
 import { modName } from '../lib/keys'
@@ -184,6 +185,7 @@ function WipPanel({ view }: { view: RepoView }) {
           </div>
         </div>
       </div>
+      <ChangeHints view={view} />
       <CommitBox view={view} stagedCount={staged.length} />
     </div>
   )

@@ -170,3 +170,6 @@ Part B:
 - [x] 30 symbol index (packages/codegraph: definitions by language patterns with scope ends,
       cached by blob id; uses by git grep -w) and Code Peek: Ctrl/Cmd+click a name in a diff.
       Exercise 6 in docs/learn
+- [x] 31 hints from history above the commit box: a file that usually changes with yours but is
+      missing (co-change over the last 300 commits per file, mass commits ignored), and whose
+      lines you are changing (blame of each hunk's old side); Settings → Git can turn it off

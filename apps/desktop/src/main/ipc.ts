@@ -142,6 +142,7 @@ export function createHandlers(
     ignorePaths: (id, paths) => r(id).ignorePaths(paths),
     commit: (id, message, opts) => r(id).commit(message, opts),
     codePeek: (id, name, rev) => r(id).codePeek(name, rev),
+    changeInsights: (id) => r(id).changeInsights(),
     lfsInfo: (id) => r(id).lfsInfo(),
     lfsInstall: (id) => r(id).lfsInstall(),
     lfsTrack: (id, pattern, track) => r(id).lfsTrack(pattern, track),

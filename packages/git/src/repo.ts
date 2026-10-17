@@ -1,5 +1,5 @@
 import type {
-  BisectState, BlameLine, CodePeek, ImageSide, LfsInfo, LfsLock, ChangedFile, CommandRecord, GraphFilter, Identity, Person, Signature, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
+  BisectState, BlameLine, ChangeInsights, CodePeek, ImageSide, LfsInfo, LfsLock, ChangedFile, CommandRecord, GraphFilter, Identity, Person, Signature, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
   LogPage, Ref, Remote, RepoOperation, ReflogEntry, RepoSnapshot, ResetMode, Resolution, SearchField, SelectionRequest,
   StashEntry, StatusEntry, Submodule, UndoEntry, Worktree,
 } from '@gitsquid/shared'
@@ -10,6 +10,7 @@ import { homedir, tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { findDefinitions, parseGrep, type Definition } from '@gitsquid/codegraph'
 import { parseBlame } from './blame'
+import { coChanges, oldRanges, parseFilesPerCommit } from './insights'
 import { CatFile } from './catfile'
 import { parseChangedFiles, parseDiff, untrackedDiff } from './diff'
 import { graphRevs, LOG_FORMAT, LogStream, parseLog } from './log'
@@ -932,6 +933,40 @@ export class Repo {
       definitions: defs,
       references: hits.filter((h) => !defLines.has(`${h.path}:${h.line}`)).map((h) => ({ path: h.path, line: h.line, column: h.column, text: h.text.trim().slice(0, 300) })),
       truncated: all.length > MAX_HITS,
+    }
+  }
+
+  /**
+   * What history says about the uncommitted change (staged and unstaged, tracked files): files
+   * that usually change along with these but are missing, and who wrote the lines being
+   * changed. Bounded: 15 files, 300 commits of history each.
+   */
+  async changeInsights(): Promise<ChangeInsights> {
+    const snap = this.last ?? (await this.snapshot())
+    if (!snap.head.hash) return { coChange: [], owners: [] }
+    const changed = snap.status.filter((e) => e.kind !== 'untracked' && e.kind !== 'unmerged').map((e) => e.path)
+    const inChange = new Set(snap.status.map((e) => e.path))
+    const files = changed.slice(0, 15)
+    const coChange: ChangeInsights['coChange'] = []
+    const owners = new Map<string, number>()
+    await Promise.all(files.map(async (file) => {
+      const log = await this.read(['log', '-n', '300', '--format=%x01%H', '-z', '--name-only', '--full-diff', '--', file])
+      for (const c of coChanges(file, parseFilesPerCommit(log))) if (!inChange.has(c.path)) coChange.push(c)
+      // Owners: blame the old side of each hunk against HEAD.
+      const ranges = oldRanges(await this.read(['diff', 'HEAD', '-U0', '--no-color', '--no-ext-diff', '--', file]))
+      if (!ranges.length) return
+      const blame = await this.runner.run(['blame', '--porcelain', ...ranges.flatMap((r) => ['-L', `${r.start},+${r.count}`]), 'HEAD', '--', file], { readOnly: true, okCodes: [128] })
+      for (const b of parseBlame(blame.stdout)) owners.set(b.author, (owners.get(b.author) ?? 0) + 1)
+    }))
+    // One suggestion per missing file: the strongest reason.
+    const best = new Map<string, ChangeInsights['coChange'][number]>()
+    for (const c of coChange) {
+      const prev = best.get(c.path)
+      if (!prev || c.together / c.total > prev.together / prev.total) best.set(c.path, c)
+    }
+    return {
+      coChange: [...best.values()].sort((a, b) => b.together / b.total - a.together / a.total).slice(0, 5),
+      owners: [...owners].map(([name, lines]) => ({ name, lines })).sort((a, b) => b.lines - a.lines),
     }
   }
 
