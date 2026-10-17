@@ -1,9 +1,9 @@
 import type { Ref } from '@gitsquid/shared'
 import clsx from 'clsx'
-import { Archive, Boxes, ChevronDown, ChevronRight, Cloud, FolderTree, GitBranch, History, Plus, Tag } from 'lucide-react'
+import { Archive, Boxes, ChevronDown, ChevronRight, Cloud, Eye, EyeOff, Focus, FolderTree, GitBranch, History, Plus, Tag } from 'lucide-react'
 import { ContextMenu } from 'radix-ui'
 import { useMemo, useState, type ReactNode } from 'react'
-import { addRemote, addWorktree, checkout, isStale, pop, remoteNames, stashApply, stashDrop, stashToBranch } from '../lib/actions'
+import { addRemote, addWorktree, checkout, hideInGraph, showInGraph, isStale, pop, remoteNames, stashApply, stashDrop, stashToBranch } from '../lib/actions'
 import { relativeTime, stashLabel } from '../lib/format'
 import { ensureLoaded, openRepo, updateRepo, useStore, type RepoView } from '../lib/store'
 import { REF_MIME } from './Graph'
@@ -184,6 +184,12 @@ function RefItem({ r, label, view, onJump, head, depth = 0, children }: {
   r: Ref; label: string; view: RepoView; onJump: (hash: string) => void; head?: boolean; depth?: number; children?: ReactNode
 }) {
   const selected = view.selected.kind === 'commit' && view.selected.hash === r.hash
+  const filter = view.snapshot.filter
+  const remote = r.kind === 'remote' ? `refs/remotes/${r.shortName.split('/')[0]}/*` : null
+  const hidden = filter.hidden.includes(r.name) || (!!remote && filter.hidden.includes(remote))
+  const soloed = filter.solo.includes(r.name)
+  /** Out of the graph: hidden, or not among the soloed refs. HEAD's branch always shows. */
+  const out = !head && (hidden || (filter.solo.length > 0 && !soloed))
   return (
     <div
       draggable={r.kind !== 'tag'}
@@ -198,11 +204,20 @@ function RefItem({ r, label, view, onJump, head, depth = 0, children }: {
       data-ref={r.name}
       title={`${r.name}\nDouble-click to check out`}
       style={{ paddingLeft: 32 + depth * 16 }}
-      className={clsx('flex h-6 cursor-default items-center gap-1.5 pr-3 text-[13px]', selected ? 'bg-select' : 'hover:bg-hover', head && 'font-semibold')}
+      className={clsx('group flex h-6 cursor-default items-center gap-1.5 pr-3 text-[13px]', selected ? 'bg-select' : 'hover:bg-hover', head && 'font-semibold')}
     >
       {head && <span className="-ml-4 w-3 text-[10px] text-accent">✓</span>}
-      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <span className={clsx('min-w-0 flex-1 truncate', out && 'text-faint line-through decoration-faint/50')} data-testid="ref-label">{label}</span>
       {children}
+      {soloed && <span title="Soloed: the graph shows only soloed branches"><Focus size={12} className="text-accent" /></span>}
+      {!head && (
+        <button
+          onClick={(e) => { e.stopPropagation(); if (filter.hidden.includes(r.name)) showInGraph(view.id, r.name); else hideInGraph(view.id, r.name) }}
+          title={hidden ? 'Show in the graph' : 'Hide in the graph'} aria-label={hidden ? 'Show in the graph' : 'Hide in the graph'} data-testid="toggle-hidden"
+          className={clsx('rounded p-0.5 text-faint hover:text-fg', hidden ? '' : 'opacity-0 group-hover:opacity-100')}>
+          {hidden ? <EyeOff size={12} /> : <Eye size={12} />}
+        </button>
+      )}
     </div>
   )
 }

@@ -1,6 +1,6 @@
 import { DropdownMenu } from 'radix-ui'
 import {
- addRemote, addSubmodule, addWorktree, removeSubmodule, syncSubmodules, updateSubmodules, lockWorktree, pruneWorktrees, removeWorktree, checkRemoteTags, cleanupBranches, clearPushUrl, deleteRemoteTag, editRemoteUrl, fastForward, fetchAll, fetchRemote, pushBranch, pushTags, pushTo, remoteNames, removeRemote, renameRemote, setUpstream,
+ hideInGraph, showInGraph, soloInGraph, unsoloInGraph, addRemote, addSubmodule, addWorktree, removeSubmodule, syncSubmodules, updateSubmodules, lockWorktree, pruneWorktrees, removeWorktree, checkRemoteTags, cleanupBranches, clearPushUrl, deleteRemoteTag, editRemoteUrl, fastForward, fetchAll, fetchRemote, pushBranch, pushTags, pushTo, remoteNames, removeRemote, renameRemote, setUpstream,
  savePatches, stashToBranch, checkout, cherryPick, cherryPickMany, compare, compareSinceFork, copy, fixupInto, pop, reword, squashCommit, stashApply, stashDrop, copyCommits, dropCommits, moveCommits, currentBranchRef, deleteBranch, deleteRemoteBranch, deleteTag, dropOptions,
   merge, newBranch, newTag, push, rebase, renameBranch, reset, revert, shortRef,
 } from '../lib/actions'
@@ -38,6 +38,8 @@ export function GraphMenu({ repoId }: { repoId: string }) {
     const name = shortRef(r)
     const isHead = head?.name === r.name
     const remotes = remoteNames(view)
+    const hidden = snap.filter.hidden.includes(r.name)
+    const soloed = snap.filter.solo.includes(r.name)
     const worktree = r.kind === 'local' ? view.worktrees.find((w) => !w.current && w.branch === name) : undefined
     const upstream = r.upstream ? snap.refs.find((x) => x.name === r.upstream) : undefined
     // Not checked out, nothing of its own, behind its upstream: moving it forward loses nothing.
@@ -98,6 +100,11 @@ export function GraphMenu({ repoId }: { repoId: string }) {
           </>
         )}
         <CM.Separator />
+        {hidden ? <CM.Item onSelect={() => showInGraph(repoId, r.name)}>Show in the graph</CM.Item>
+          : !isHead && <CM.Item onSelect={() => hideInGraph(repoId, r.name)}>Hide in the graph</CM.Item>}
+        {soloed ? <CM.Item onSelect={() => unsoloInGraph(repoId, r.name)}>Stop soloing {name}</CM.Item>
+          : <CM.Item onSelect={() => soloInGraph(repoId, r.name)}>{snap.filter.solo.length ? `Solo ${name} too` : `Solo ${name} (show only it)`}</CM.Item>}
+        <CM.Separator />
         <CM.Item onSelect={() => copy(name, 'Copied name')}>Copy name</CM.Item>
       </CM.Content>
     )
@@ -110,6 +117,9 @@ export function GraphMenu({ repoId }: { repoId: string }) {
       <CM.Content>
         <CM.Label>Remote {name}{remote ? ` · ${remote.fetchUrl}` : ''}</CM.Label>
         <CM.Item onSelect={() => void fetchRemote(repoId, name)}>Fetch {name}</CM.Item>
+        {snap.filter.hidden.includes(`refs/remotes/${name}/*`)
+          ? <CM.Item onSelect={() => showInGraph(repoId, `refs/remotes/${name}/*`)}>Show {name}'s branches in the graph</CM.Item>
+          : <CM.Item onSelect={() => hideInGraph(repoId, `refs/remotes/${name}/*`)}>Hide {name}'s branches in the graph</CM.Item>}
         <CM.Item onSelect={() => void pushTags(repoId, name, null)}>Push all tags to {name}</CM.Item>
         <CM.Item onSelect={() => void checkRemoteTags(repoId, name)}>Check which tags are on {name}</CM.Item>
         {remote && (

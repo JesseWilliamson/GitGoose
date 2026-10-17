@@ -90,6 +90,8 @@ export interface RepoSnapshot {
   operation: RepoOperation
   /** Bumped whenever refs change, so the renderer knows to reload the log. */
   refsVersion: number
+  /** Hidden and soloed refs for this repository's graph. */
+  filter: GraphFilter
 }
 
 export type ChangeKind = 'added' | 'modified' | 'deleted' | 'renamed' | 'copied' | 'typechange' | 'unmerged'
@@ -147,6 +149,15 @@ export interface Remote {
   fetchUrl: string
   /** Only when it differs from the fetch URL (remote.<name>.pushurl). */
   pushUrl?: string
+}
+
+/**
+ * Which refs the graph walks. `hidden`: full ref names (or a remote's "refs/remotes/<name>/*")
+ * left out; `solo`: when not empty, only these (and HEAD) are shown.
+ */
+export interface GraphFilter {
+  hidden: string[]
+  solo: string[]
 }
 
 export interface Worktree {

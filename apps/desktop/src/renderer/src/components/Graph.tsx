@@ -13,6 +13,7 @@ import { getLog, loadMore, saveSettings, selectCommit, selectedHashes, selection
 import { GraphCell, LANE_W, ROW_H, ROW_H_COMPACT, WipCell } from './GraphCell'
 import { GraphMenu } from './menus'
 import { SearchBar } from './SearchBar'
+import { showAllInGraph } from '../lib/actions'
 import { DM, Spinner } from './ui'
 
 const isMac = window.gitsquid?.platform === 'darwin'
@@ -184,6 +185,7 @@ function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
     // because the side panels decide how wide this pane is).
     <div className="@container relative flex min-h-0 min-w-0 flex-1 flex-col">
       {view.searchOpen && <SearchBar view={view} />}
+      <FilterBar view={view} />
       <div className="flex h-7 shrink-0 items-center border-b border-line bg-panel text-[11px] font-semibold tracking-wide whitespace-nowrap text-faint uppercase"
         data-testid="graph-header">
         {cols.refs && <div style={{ width: REFS_W }} className="shrink-0 truncate px-3">Branch / Tag</div>}
@@ -534,5 +536,20 @@ function RefPill({ pill, color, repoId, hash, onDrop }: {
       {pill.local && <Laptop size={10} className="shrink-0 opacity-70" />}
       {pill.remotes.length > 0 && <Cloud size={10} className="shrink-0 opacity-70" />}
     </span>
+  )
+}
+
+/** Says when the graph leaves branches out (hidden or not soloed), with the way back. */
+function FilterBar({ view }: { view: RepoView }) {
+  const { hidden, solo } = view.snapshot.filter
+  if (!hidden.length && !solo.length) return null
+  const name = (r: string) => r.replace(/^refs\/(heads|remotes|tags)\//, '').replace(/\/\*$/, ' (all)')
+  return (
+    <div className="flex h-7 shrink-0 items-center gap-2 border-b border-line bg-accent/10 px-3 text-[12px]" data-testid="graph-filter">
+      <span className="min-w-0 flex-1 truncate">
+        {solo.length ? `Showing only ${solo.map(name).join(', ')}` : `${hidden.length} hidden: ${hidden.map(name).join(', ')}`}
+      </span>
+      <button onClick={() => showAllInGraph(view.id)} className="rounded px-1.5 font-medium text-accent hover:bg-hover">Show all</button>
+    </div>
   )
 }

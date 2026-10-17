@@ -1,5 +1,5 @@
 import type {
-  BlameLine, ChangedFile, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
+  BlameLine, ChangedFile, GraphFilter, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
   LogPage, Ref, Remote, RepoOperation, ReflogEntry, RepoSnapshot, ResetMode, Resolution, SearchField, SelectionRequest,
   StashEntry, StatusEntry, Submodule, UndoEntry, Worktree,
 } from '@gitsquid/shared'
@@ -159,7 +159,7 @@ export class Repo {
     this.last = {
       id: this.id, path: this.path, name: this.name,
       head: status.head, refs, status: status.entries,
-      operation: this.operation(), refsVersion: this.refsVersion,
+      operation: this.operation(), refsVersion: this.refsVersion, filter: this.filter,
     }
     return this.last
   }
@@ -221,6 +221,22 @@ export class Repo {
 
   // ---------------------------------------------------------------- reading
 
+  private filter: GraphFilter = { hidden: [], solo: [] }
+
+  /** Hide or solo refs in the graph. A new filter means a new walk, like new refs do. */
+  setGraphFilter(filter: GraphFilter): void {
+    const next = { hidden: [...new Set(filter.hidden)].sort(), solo: [...new Set(filter.solo)].sort() }
+    if (JSON.stringify(next) === JSON.stringify(this.filter)) return
+    this.filter = next
+    this.refsKey = ''
+  }
+
+  /** The revisions the graph (and search over it) walks. */
+  private graphRevs(): string[] {
+    const snap = this.last!
+    return graphRevs(snap.head.hash, this.filter, new Set(snap.refs.map((r) => r.name)))
+  }
+
   /** Show stashes as nodes in the graph (the showStashes setting). */
   private showStashes = true
 
@@ -248,7 +264,7 @@ export class Repo {
     if (!this.last) await this.snapshot()
     if (!this.log) {
       const stashes = this.showStashes ? await this.stashHashes() : []
-      this.log = new LogStream(this.runner, graphRevs(this.last!.head.hash), undefined, stashes)
+      this.log = new LogStream(this.runner, this.graphRevs(), undefined, stashes)
     }
     const generation = this.refsVersion
     const log = this.log
@@ -398,12 +414,12 @@ export class Repo {
         else refNames.set(r.hash, [r.shortName])
       }
       try {
-        return await searchLog(this.runner, graphRevs(head.hash), q, { refNames, signal: abort.signal })
+        return await searchLog(this.runner, this.graphRevs(), q, { refNames, signal: abort.signal })
       } finally {
         if (this.searching === abort) this.searching = null
       }
     }
-    const base = ['log', '--format=%H', '-n', '2000', ...graphRevs(head.hash)]
+    const base = ['log', '--format=%H', '-n', '2000', ...this.graphRevs()]
     let args: string[]
     switch (field) {
       case 'message': args = [...base, '-i', '-F', `--grep=${q}`, '--']; break

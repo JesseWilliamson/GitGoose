@@ -1,3 +1,4 @@
+import type { GraphFilter } from './index'
 import { DEFAULT_LAYOUT, normalizeLayout, type PaneLayout } from './layout'
 
 export type GraphColumn = 'refs' | 'graph' | 'author' | 'date' | 'sha'
@@ -168,6 +169,8 @@ export const SETTINGS = {
   graphWidth: internal<number | null>(null),
   /** Which optional graph columns show (the commit message always does). From the gear in the graph header. */
   graphColumns: internal<GraphColumns>({ ...DEFAULT_GRAPH_COLUMNS }),
+  /** Hidden and soloed branches, per repository path (empty filters are not stored). */
+  graphFilters: internal<Record<string, GraphFilter>>({}),
   /** Pane arrangement (packages/shared/src/layout.ts); repaired with normalizeLayout when read. */
   layout: internal<PaneLayout>(DEFAULT_LAYOUT),
 } satisfies Record<string, SettingSpec>

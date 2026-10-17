@@ -1,4 +1,4 @@
-import type { Commit } from '@gitsquid/shared'
+import type { Commit, GraphFilter } from '@gitsquid/shared'
 import type { ChildProcess } from 'node:child_process'
 import type { GitRunner } from './runner'
 
@@ -60,8 +60,18 @@ export const GRAPH_REVS = ['--branches', '--remotes', '--tags', 'HEAD']
  * GRAPH_REVS for a repository whose HEAD may be unborn (a new repo, or `checkout --orphan`).
  * Naming an unborn HEAD makes `git log` fail, which would hide every other branch.
  */
-export function graphRevs(headHash: string | undefined): string[] {
-  return headHash ? GRAPH_REVS : GRAPH_REVS.filter((r) => r !== 'HEAD')
+export function graphRevs(headHash: string | undefined, filter?: GraphFilter, existing?: Set<string>): string[] {
+  const head = headHash ? ['HEAD'] : []
+  if (!filter || (!filter.hidden.length && !filter.solo.length)) return [...GRAPH_REVS.filter((r) => r !== 'HEAD'), ...head]
+  if (filter.solo.length) {
+    // Only refs that still exist: naming a deleted branch would make the whole walk fail.
+    const solo = filter.solo.filter((r) => r.endsWith('/*') || !existing || existing.has(r))
+    return [...solo.map((r) => (r.endsWith('/*') ? `--glob=${r}` : r)), ...head]
+  }
+  // --exclude applies to the next --branches / --remotes / --tags only, and takes names relative
+  // to that namespace, so each group gets its own list.
+  const ex = (prefix: string) => filter.hidden.filter((r) => r.startsWith(prefix)).map((r) => `--exclude=${r.slice(prefix.length)}`)
+  return [...ex('refs/heads/'), '--branches', ...ex('refs/remotes/'), '--remotes', ...ex('refs/tags/'), '--tags', ...head]
 }
 
 /**

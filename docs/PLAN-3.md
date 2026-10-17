@@ -136,3 +136,5 @@ changes.
 - [x] 22 submodules: sidebar section with state (not cloned, moved, changes), clone / update,
       sync URLs, add (undo deletes it unless it changed since), remove (undo checks it out again
       from the clone git keeps), open as a tab
+- [x] 10 hide and solo branches (eye button and menus; a whole remote can be hidden), a bar over
+      the graph saying what is left out with Show all; remembered per repository

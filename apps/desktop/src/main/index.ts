@@ -104,7 +104,7 @@ const prompts = {
 }
 const askpass = new AskpassServer((message, secret) => prompts.ask(message, secret))
 
-const gitOpts = () => ({ gitPath: getSettings().gitPath || 'git', env: gitEnv, showStashes: getSettings().showStashes })
+const gitOpts = () => ({ gitPath: getSettings().gitPath || 'git', env: gitEnv, showStashes: getSettings().showStashes, graphFilters: getSettings().graphFilters })
 
 // ------------------------------------------------------------ AI
 

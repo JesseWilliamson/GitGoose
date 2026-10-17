@@ -1,4 +1,4 @@
-import type { PullMode, Ref, RepoSnapshot, ResetMode } from '@gitsquid/shared'
+import type { GraphFilter, PullMode, Ref, RepoSnapshot, ResetMode } from '@gitsquid/shared'
 import { api, toUiError, type UiError } from './api'
 import { activeRepo, addRepo, openRepo as openRepoTab, alertConflicts, choose, onSnapshot, openRepo, refreshAux, reportError, setting, toast, updateRepo, useStore } from './store'
 
@@ -561,6 +561,25 @@ export function cleanupBranches(id: string): void {
  */
 export const deleteBranches = (id: string, names: string[], force: boolean) =>
   run(id, `Delete ${names.length} branch${names.length === 1 ? '' : 'es'}`, () => api.deleteBranches(id, names, { force }))
+
+// ------------------------------------------------------------------ hide and solo in the graph
+
+function setFilter(id: string, change: (f: GraphFilter) => GraphFilter): void {
+  const view = useStore.getState().repos[id]
+  if (!view) return
+  const next = change(view.snapshot.filter ?? { hidden: [], solo: [] })
+  void api.setGraphFilter(id, next).catch((e) => reportError('Could not change what the graph shows', e))
+}
+
+/** Hide a ref (a full name, or "refs/remotes/<remote>/*" for all of a remote) in the graph. */
+export const hideInGraph = (id: string, ref: string) =>
+  setFilter(id, (f) => ({ hidden: [...f.hidden, ref], solo: f.solo.filter((r) => r !== ref) }))
+export const showInGraph = (id: string, ref: string) => setFilter(id, (f) => ({ ...f, hidden: f.hidden.filter((r) => r !== ref) }))
+/** Add a ref to the solo set: the graph then shows only soloed refs (and HEAD). */
+export const soloInGraph = (id: string, ref: string) =>
+  setFilter(id, (f) => ({ hidden: f.hidden.filter((r) => r !== ref), solo: [...f.solo, ref] }))
+export const unsoloInGraph = (id: string, ref: string) => setFilter(id, (f) => ({ ...f, solo: f.solo.filter((r) => r !== ref) }))
+export const showAllInGraph = (id: string) => setFilter(id, () => ({ hidden: [], solo: [] }))
 
 // ------------------------------------------------------------------ worktrees
 
