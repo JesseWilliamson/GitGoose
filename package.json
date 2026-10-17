@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "e2e": "pnpm --filter @gitsquid/desktop e2e",
     "bench": "pnpm --filter @gitsquid/bench bench",
-    "dist": "pnpm --filter @gitsquid/desktop dist"
+    "dist": "pnpm --filter @gitsquid/desktop dist",
+    "dev:repo": "pnpm --filter @gitsquid/fixtures dev:repo"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
