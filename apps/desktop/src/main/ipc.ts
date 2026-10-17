@@ -4,6 +4,9 @@ import {
   type ApiMethod, type GitSquidApi, type GitSquidEvent, type IpcResult, type SerializedError,
 } from '@gitsquid/shared'
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { chmod, mkdtemp, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { basename, join } from 'node:path'
 import { logError } from './diagnostics'
 import { openInEditor, openTerminal } from './launch'
 import { GITHUB_SCOPES } from '@gitsquid/shared'
@@ -19,7 +22,7 @@ export function broadcast(event: GitSquidEvent): void {
 /** Methods that change the repository. After each one we refresh and push a snapshot right away. */
 const WRITES = new Set<ApiMethod>([
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'checkout', 'createBranch',
-  'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset', 'cherryPick', 'cherryPickMany', 'recomposeApply', 'dropCommits', 'moveCommits', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'redo', 'revert', 'createTag',
+  'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset', 'cherryPick', 'cherryPickMany', 'recomposeApply', 'dropCommits', 'moveCommits', 'restoreFile', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'redo', 'revert', 'createTag',
   'deleteTag', 'fetch', 'pull', 'push', 'deleteRemoteBranch', 'stashPush', 'stashApply', 'stashPop',
   'stashDrop', 'resolveConflict', 'continueOperation', 'abortOperation', 'undo',
 ])
@@ -120,6 +123,26 @@ export function createHandlers(
     commitsText: (id, hashes, format) => r(id).commitsText(hashes, format),
     recomposeApply: (id, hashes, commits) => r(id).recompose(hashes, commits),
     editableCommits: (id) => r(id).editableCommits(),
+    compareFiles: (id, from, to) => r(id).compareFiles(from, to),
+    mergeBase: (id, a, b) => r(id).mergeBase(a, b),
+    restoreFile: (id, path, rev) => r(id).restoreFile(path, rev),
+    openFileAt: async (id, rev, path) => {
+      // A read-only copy under the temp folder, named so the editor knows the language.
+      const dir = await mkdtemp(join(tmpdir(), `gitsquid-${rev.slice(0, 7)}-`))
+      const file = join(dir, basename(path))
+      await writeFile(file, await r(id).fileAt(rev, path))
+      await chmod(file, 0o444)
+      const err = await shell.openPath(file)
+      if (err) throw new Error(err)
+    },
+    saveFileAt: async (id, rev, path) => {
+      const win = BrowserWindow.getFocusedWindow()
+      const opts = { defaultPath: basename(path) }
+      const res = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
+      if (res.canceled || !res.filePath) return false
+      await writeFile(res.filePath, await r(id).fileAt(rev, path))
+      return true
+    },
     dropCommits: (id, hashes) => r(id).dropCommits(hashes),
     moveCommits: (id, hashes, target, where) => r(id).moveCommits(hashes, target, where),
     rewordCommit: (id, hash, message) => r(id).rewordCommit(hash, message),

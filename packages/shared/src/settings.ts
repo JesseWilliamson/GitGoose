@@ -98,6 +98,8 @@ export const SETTINGS = {
   ignoreWhitespace: bool(false, { label: 'Ignore whitespace changes', section: 'Diff', description: 'Line staging is turned off while this is on: the hidden changes would be staged too.' }),
   tabSize: num(4, 1, 8, 1, { label: 'Tab size', section: 'Diff', unit: 'spaces' }),
   wrapLines: bool(false, { label: 'Wrap long lines', section: 'Diff' }),
+  diffLayout: choice('unified', [{ value: 'unified', label: 'Unified' }, { value: 'split', label: 'Side by side' }],
+    { label: 'Diff layout', section: 'Diff', keywords: 'split side-by-side', description: 'Also switchable above each diff. Changed words are highlighted in both.' }),
   syntaxHighlighting: bool(true, { label: 'Syntax highlighting', section: 'Diff' }),
   highlightMaxKb: num(400, 50, 4000, 50, { label: 'Highlight files up to', section: 'Diff', unit: 'KB' }),
   mergeView: choice('three-pane', [

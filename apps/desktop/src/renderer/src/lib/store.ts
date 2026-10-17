@@ -12,6 +12,8 @@ export type Selection =
    * Shift-click range starts, `cursor` the commit the keyboard moves from.
    */
   | { kind: 'commits'; hashes: string[]; anchor: string; cursor: string }
+  /** Comparing two revisions, or a revision and the working tree (`to` null). */
+  | { kind: 'compare'; from: string; to: string | null; fromLabel: string; toLabel: string }
 
 export type FileMode = 'diff' | 'history' | 'blame'
 

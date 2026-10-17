@@ -115,3 +115,6 @@ changes.
 - [x] 17 stashes in the graph
 - [x] 1–4 reword, squash / fixup (menu and drag onto), fixup staged into an older commit,
       squash merge and merge without committing (prepared message in the commit box), redo
+- [x] 11–13 compare (two commits, a commit vs HEAD or the working tree, branch vs HEAD, since
+      the fork point, a chain's combined changes), split view, word-level highlighting,
+      open / save / restore a file as of a revision (restore is undoable)

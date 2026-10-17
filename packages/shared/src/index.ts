@@ -136,6 +136,8 @@ export type DiffTarget =
   | { kind: 'staged'; path: string }
   | { kind: 'untracked'; path: string }
   | { kind: 'commit'; hash: string; path: string }
+  /** Between two revisions, or a revision and the working tree (`to: null`). */
+  | { kind: 'range'; from: string; to: string | null; path: string; oldPath?: string }
 
 export interface StashEntry {
   index: number

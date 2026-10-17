@@ -1,9 +1,9 @@
 import { DropdownMenu } from 'radix-ui'
 import {
- checkout, cherryPick, cherryPickMany, copy, fixupInto, pop, reword, squashCommit, stashApply, stashDrop, copyCommits, dropCommits, moveCommits, currentBranchRef, deleteBranch, deleteRemoteBranch, deleteTag, dropOptions,
+ checkout, cherryPick, cherryPickMany, compare, compareSinceFork, copy, fixupInto, pop, reword, squashCommit, stashApply, stashDrop, copyCommits, dropCommits, moveCommits, currentBranchRef, deleteBranch, deleteRemoteBranch, deleteTag, dropOptions,
   merge, newBranch, newTag, push, rebase, renameBranch, reset, revert, shortRef,
 } from '../lib/actions'
-import { stashLabel } from '../lib/format'
+import { shortHash, stashLabel } from '../lib/format'
 import { getLog, useStore } from '../lib/store'
 import { recomposeWithAi } from './RecomposeDialog'
 import { CM, DM } from './ui'
@@ -36,6 +36,12 @@ export function GraphMenu({ repoId }: { repoId: string }) {
             </CM.Sub>
             <CM.Item onSelect={() => void rebase(repoId, r.name)}>Rebase {headName} onto {name}</CM.Item>
           </>
+        )}
+        {!isHead && snap.head.hash && (
+          <CM.Sub label="Compare">
+            <CM.Item onSelect={() => compare(repoId, snap.head.hash!, r.name, headName, name)}>{name} with {headName}</CM.Item>
+            <CM.Item onSelect={() => void compareSinceFork(repoId, snap.head.hash!, r.name)}>What {name} changed since it forked from {headName}</CM.Item>
+          </CM.Sub>
         )}
         <CM.Separator />
         <CM.Item onSelect={() => newBranch(repoId, r.name)}>Create branch here…</CM.Item>
@@ -108,6 +114,10 @@ export function GraphMenu({ repoId }: { repoId: string }) {
       <CM.Separator />
       <CM.Item onSelect={() => void cherryPick(repoId, hash)} disabled={isHeadCommit}>Cherry-pick onto {headName}</CM.Item>
       <CM.Item onSelect={() => void revert(repoId, hash)}>Revert this commit</CM.Item>
+      <CM.Sub label="Compare">
+        <CM.Item onSelect={() => compare(repoId, hash, null)}>With the working tree</CM.Item>
+        <CM.Item disabled={isHeadCommit || !snap.head.hash} onSelect={() => compare(repoId, hash, snap.head.hash!, shortHash(hash), headName)}>With {headName}</CM.Item>
+      </CM.Sub>
       {editAt >= 0 && (
         <>
           <CM.Separator />

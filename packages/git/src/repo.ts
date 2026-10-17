@@ -1,5 +1,5 @@
 import type {
-  BlameLine, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
+  BlameLine, ChangedFile, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
   LogPage, Ref, RepoOperation, RepoSnapshot, ResetMode, Resolution, SearchField, SelectionRequest,
   StashEntry, StatusEntry, UndoEntry,
 } from '@gitsquid/shared'
@@ -299,6 +299,9 @@ export class Repo {
       const entry = (this.last ?? (await this.snapshot())).status.find((e) => e.path === target.path)
       const paths = entry?.origPath ? [entry.origPath, target.path] : [target.path]
       args = ['diff', '--cached', '-M', ...DIFF_ARGS, '--', ...paths]
+    } else if (target.kind === 'range') {
+      const paths = target.oldPath ? [target.oldPath, target.path] : [target.path]
+      args = ['diff', '-M', ...DIFF_ARGS, target.from, ...(target.to ? [target.to] : []), '--', ...paths]
     } else {
       const parents = (await this.read(['rev-list', '--parents', '-n', '1', target.hash])).trim().split(' ').slice(1)
       let base = parents[0] ?? (await this.emptyTreeHash())
@@ -316,6 +319,43 @@ export class Repo {
     const out = await this.read(args)
     const parsed = parseDiff(out, target.path)
     return parsed[0] ?? null
+  }
+
+  /**
+   * Files that differ between two revisions, or a revision and the working tree (`to` null:
+   * tracked files only, like `git diff <rev>`).
+   */
+  async compareFiles(from: string, to: string | null): Promise<ChangedFile[]> {
+    const revs = [from, ...(to ? [to] : [])]
+    const [ns, nm] = await Promise.all([
+      this.read(['diff', '-M', '-z', '--name-status', ...revs, '--']),
+      this.read(['diff', '-M', '-z', '--numstat', ...revs, '--']),
+    ])
+    return parseChangedFiles(ns, nm)
+  }
+
+  /** The best common ancestor of two revisions (where one forked from the other). */
+  async mergeBase(a: string, b: string): Promise<string> {
+    return (await this.read(['merge-base', a, b])).trim()
+  }
+
+  /** A file's bytes as of a revision (to open or save it). */
+  async fileAt(rev: string, path: string): Promise<Buffer> {
+    return (await this.runner.runBuffer(['show', `${rev}:${path}`], { readOnly: true })).stdout
+  }
+
+  /**
+   * Put a file in the working tree back to its content at `rev` (or delete it, when it did not
+   * exist there). The current content is saved first, so it can be undone.
+   */
+  restoreFile(path: string, rev: string): Promise<number> {
+    return this.exclusive(async () => {
+      const saved = await this.saveFiles([path])
+      const exists = (await this.runner.run(['cat-file', '-e', `${rev}:${path}`], { okCodes: [128, 1], readOnly: true })).code === 0
+      if (exists) await this.git(['restore', `--source=${rev}`, '--worktree', '--', path])
+      else await rm(join(this.path, path), { force: true })
+      return this.record(`Restore ${path} from ${rev.slice(0, 7)}`, [{ kind: 'restore-files', files: saved }], (await this.currentHead()).hash)
+    })
   }
 
   async fileHistory(path: string): Promise<Commit[]> {

@@ -305,6 +305,21 @@ export async function redo(id: string): Promise<void> {
 export const moveCommits = (id: string, hashes: string[], target: string, where: 'above' | 'below') =>
   run(id, hashes.length === 1 ? `Move ${hashes[0]!.slice(0, 7)}` : `Move ${hashes.length} commits`, () => api.moveCommits(id, hashes, target, where))
 
+/** Show what differs between two revisions (or a revision and the working tree) in the details panel. */
+export function compare(id: string, from: string, to: string | null, fromLabel = from.slice(0, 7), toLabel = to ? to.slice(0, 7) : 'working tree'): void {
+  updateRepo(id, { selected: { kind: 'compare', from, to, fromLabel, toLabel }, center: { kind: 'graph' } })
+}
+
+/** What a branch changed since it forked from another (three-dot, like a pull request shows). */
+export async function compareSinceFork(id: string, base: string, branch: string): Promise<void> {
+  try {
+    const fork = await api.mergeBase(id, base, branch)
+    compare(id, fork, branch, `fork point of ${shortRef(base)}`, shortRef(branch))
+  } catch (e) {
+    reportError('Could not find where they forked', e)
+  }
+}
+
 export const revert = (id: string, hash: string) =>
   run(id, `Revert ${hash.slice(0, 7)}`, () => api.revert(id, hash))
 

@@ -1,5 +1,5 @@
 import type {
-  BlameLine, Commit, CommitDetails, ConflictFile, DiffTarget, FileDiff, RepoSnapshot,
+  BlameLine, ChangedFile, Commit, CommitDetails, ConflictFile, DiffTarget, FileDiff, RepoSnapshot,
   SearchField, StashEntry, UndoEntry,
 } from './index'
 import type { AgentInfo, AiPermissionRequest, AiResult, AiStatus, AiTask } from './ai'
@@ -154,6 +154,16 @@ export interface GitSquidApi {
   squashOnto(repoId: string, hashes: string[], target: string): Promise<UndoId>
   /** Commit the staged changes into an older commit on the current branch. */
   fixupInto(repoId: string, target: string): Promise<UndoId>
+  /** Files that differ between two revisions, or a revision and the working tree (`to` null). */
+  compareFiles(repoId: string, from: string, to: string | null): Promise<ChangedFile[]>
+  /** Where two revisions forked from each other. */
+  mergeBase(repoId: string, a: string, b: string): Promise<string>
+  /** Put a working-tree file back to its content at `rev` (undoable). */
+  restoreFile(repoId: string, path: string, rev: string): Promise<UndoId>
+  /** Open a file as it was at `rev` in the default app (a read-only temporary copy). */
+  openFileAt(repoId: string, rev: string, path: string): Promise<void>
+  /** Save a file as it was at `rev` where the user chooses; false when they cancel. */
+  saveFileAt(repoId: string, rev: string, path: string): Promise<boolean>
   /** Commits on the current branch that drop/move can edit (newest first; stops at a merge). */
   editableCommits(repoId: string): Promise<string[]>
   /** Remove commits from the current branch; later commits are replayed (may stop on conflicts). */
@@ -206,7 +216,7 @@ export const API_METHODS = [
   'lastCommitMessage',
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit',
   'checkout', 'createBranch', 'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset',
-  'cherryPick', 'cherryPickMany', 'commitsText', 'recomposeApply', 'editableCommits', 'dropCommits', 'moveCommits', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'preparedMessage', 'redo', 'redoList', 'revert', 'createTag', 'deleteTag',
+  'cherryPick', 'cherryPickMany', 'commitsText', 'recomposeApply', 'compareFiles', 'mergeBase', 'restoreFile', 'openFileAt', 'saveFileAt', 'editableCommits', 'dropCommits', 'moveCommits', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'preparedMessage', 'redo', 'redoList', 'revert', 'createTag', 'deleteTag',
   'fetch', 'pull', 'push', 'deleteRemoteBranch',
   'stashPush', 'stashApply', 'stashPop', 'stashDrop',
   'conflicts', 'conflictVersions', 'resolveConflict', 'continueOperation', 'abortOperation',

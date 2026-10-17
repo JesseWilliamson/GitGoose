@@ -1,7 +1,7 @@
-import type { CommitDetails, DiffTarget, StatusEntry } from '@gitsquid/shared'
+import type { ChangedFile, CommitDetails, DiffTarget, StatusEntry } from '@gitsquid/shared'
 import { Check, Copy, Minus, Plus, Sparkles, Undo2, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { cherryPickMany, copy, copyCommits, discard as discardFiles, openInEditor, pop, run, stashApply, stashDrop } from '../lib/actions'
+import { cherryPickMany, compare, copy, copyCommits, discard as discardFiles, openInEditor, pop, run, stashApply, stashDrop } from '../lib/actions'
 import { cancelAi, startAi, useAiEnabled } from '../lib/ai'
 import { api, toUiError } from '../lib/api'
 import { dateTime, sentence, shortHash, stashLabel } from '../lib/format'
@@ -18,6 +18,7 @@ export function DetailPanel({ view }: { view: RepoView }) {
     <aside className="flex h-full min-h-0 w-full flex-col bg-panel" data-testid="detail-panel">
       {view.selected.kind === 'wip' ? <WipPanel view={view} />
         : view.selected.kind === 'commits' ? <MultiPanel view={view} hashes={view.selected.hashes} />
+        : view.selected.kind === 'compare' ? <ComparePanel view={view} sel={view.selected} />
         : <CommitPanel view={view} hash={view.selected.hash} />}
     </aside>
   )
@@ -34,6 +35,8 @@ function openFile(view: RepoView, target: DiffTarget, mode: FileMode = 'diff') {
 /** Right-click menu for a file in any list. Extra items (stage, discard...) come from the caller. */
 function FileMenu({ view, target, children }: { view: RepoView; target: DiffTarget; children?: React.ReactNode }) {
   const abs = `${view.snapshot.path}/${target.path}`
+  /** The revision the listed file is at, when it is not the working copy. */
+  const rev = target.kind === 'commit' ? target.hash : target.kind === 'range' ? target.to : null
   return (
     <CM.Content>
       <CM.Label>{target.path}</CM.Label>
@@ -42,6 +45,17 @@ function FileMenu({ view, target, children }: { view: RepoView; target: DiffTarg
       <CM.Item onSelect={() => openFile(view, target, 'diff')}>Show changes</CM.Item>
       {target.kind !== 'untracked' && <CM.Item onSelect={() => openFile(view, target, 'history')}>File history</CM.Item>}
       {target.kind !== 'untracked' && <CM.Item onSelect={() => openFile(view, target, 'blame')}>Blame</CM.Item>}
+      {rev && (
+        <>
+          <CM.Separator />
+          <CM.Item onSelect={() => void api.openFileAt(view.id, rev, target.path).catch((e) => reportError('Could not open the file', e))}>Open this version</CM.Item>
+          <CM.Item onSelect={() => void api.saveFileAt(view.id, rev, target.path).catch((e) => reportError('Could not save the file', e))}>Save this version as…</CM.Item>
+          <CM.Item onSelect={() => void run(view.id, `Restore ${target.path}`, () => api.restoreFile(view.id, target.path, rev))}>Restore the working copy to this version</CM.Item>
+          {target.kind === 'commit' && (
+            <CM.Item onSelect={() => void run(view.id, `Restore ${target.path}`, () => api.restoreFile(view.id, target.path, `${target.hash}^`))}>Restore the working copy to before this commit</CM.Item>
+          )}
+        </>
+      )}
       <CM.Separator />
       {target.kind !== 'commit' && <CM.Item onSelect={() => void openInEditor(abs)}>Open in editor</CM.Item>}
       <CM.Item onSelect={() => void api.openPath(abs).catch((e) => reportError('Could not open the file', e))}>Open with default app</CM.Item>
@@ -260,6 +274,58 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
   )
 }
 
+// ------------------------------------------------------------------ comparing
+
+function ComparePanel({ view, sel }: { view: RepoView; sel: Extract<RepoView['selected'], { kind: 'compare' }> }) {
+  const [files, setFiles] = useState<ChangedFile[] | null>(null)
+  // The working tree side changes as files do; two revisions never change.
+  const reloadOn = sel.to ? 0 : view.worktreeTick
+  useEffect(() => {
+    let live = true
+    setFiles(null)
+    api.compareFiles(view.id, sel.from, sel.to).then((f) => live && setFiles(f), (e) => reportError('Could not compare', e))
+    return () => {
+      live = false
+    }
+  }, [view.id, sel.from, sel.to, reloadOn])
+  const adds = files?.reduce((n, f) => n + f.additions, 0) ?? 0
+  const dels = files?.reduce((n, f) => n + f.deletions, 0) ?? 0
+  return (
+    <div className="flex min-h-0 flex-1 flex-col" data-testid="compare-panel">
+      <div className="border-b border-line p-3">
+        <div className="text-[14px] font-semibold">Comparing</div>
+        <div className="mt-1 flex items-center gap-2 font-mono text-xs">
+          <span className="truncate rounded bg-hover px-1.5 py-0.5" title={sel.from}>{sel.fromLabel}</span>
+          <span className="text-faint">→</span>
+          <span className="truncate rounded bg-hover px-1.5 py-0.5" title={sel.to ?? 'working tree'}>{sel.toLabel}</span>
+        </div>
+        <div className="mt-2 flex gap-2">
+          {sel.to && (
+            <Button size="sm" onClick={() => updateRepo(view.id, { selected: { ...sel, from: sel.to!, to: sel.from, fromLabel: sel.toLabel, toLabel: sel.fromLabel } })}
+              data-testid="compare-swap">Swap</Button>
+          )}
+          <Button size="sm" variant="ghost" onClick={() => selectCommit(view.id, view.snapshot.head.hash ?? sel.from)}>Close</Button>
+        </div>
+      </div>
+      <SectionHeader right={<span className="font-mono normal-case"><span className="text-add">+{adds}</span> <span className="text-del">−{dels}</span></span>}>
+        {files ? `${files.length} ${files.length === 1 ? 'file' : 'files'} differ` : 'Comparing…'}
+      </SectionHeader>
+      <div className="min-h-0 flex-1 overflow-y-auto pb-2">
+        {!files ? <div className="p-3"><Spinner /></div> : files.length === 0 ? <div className="p-3 text-sm text-faint">No differences.</div> : files.map((f) => {
+          const t: DiffTarget = { kind: 'range', from: sel.from, to: sel.to, path: f.path, oldPath: f.oldPath }
+          return (
+            <FileRow key={f.path} path={f.path} oldPath={f.oldPath} kind={f.change} selected={isOpen(view, t)} testId="compare-file"
+              onClick={() => openFile(view, t)} menu={<FileMenu view={view} target={t} />}
+              stats={f.binary ? <span className="text-[11px] text-faint">bin</span> : (
+                <span className="shrink-0 font-mono text-[11px]"><span className="text-add">+{f.additions}</span> <span className="text-del">−{f.deletions}</span></span>
+              )} />
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ------------------------------------------------------------------ several commits
 
 /** Shift- or Ctrl-click selected several commits: what can be done with all of them. */
@@ -268,6 +334,9 @@ function MultiPanel({ view, hashes }: { view: RepoView; hashes: string[] }) {
   const commits = hashes.map((h) => log.commits[log.index.get(h) ?? -1]).filter((c): c is NonNullable<typeof c> => !!c)
   const headName = view.snapshot.head.branch ?? 'HEAD'
   const aiOn = useAiEnabled()
+  // A chain (each commit's parent is the next one down): its combined change is one diff.
+  const isChain = commits.length === hashes.length && commits.every((c, i) => i === commits.length - 1 || c.parents[0] === commits[i + 1]!.hash)
+  const chainBase = isChain ? commits[commits.length - 1]!.parents[0] : undefined
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="multi-panel">
       <div className="border-b border-line p-3">
@@ -279,6 +348,13 @@ function MultiPanel({ view, hashes }: { view: RepoView; hashes: string[] }) {
           </Button>
           <Button size="sm" onClick={() => void copyCommits(view.id, hashes, 'diff')} data-testid="multi-copy-diff">Copy as diff</Button>
           <Button size="sm" onClick={() => void copyCommits(view.id, hashes, 'patch')} data-testid="multi-copy-patch">Copy as patch</Button>
+          {hashes.length === 2 && (
+            <Button size="sm" onClick={() => compare(view.id, hashes[1]!, hashes[0]!)} data-testid="multi-compare" title="What differs between the older and the newer commit">Compare the two</Button>
+          )}
+          {chainBase !== undefined && (
+            <Button size="sm" onClick={() => compare(view.id, chainBase, hashes[0]!, `before ${shortHash(hashes[hashes.length - 1]!)}`, shortHash(hashes[0]!))}
+              data-testid="multi-combined" title="Everything these commits changed together">Combined changes</Button>
+          )}
           {aiOn && (
             <Button size="sm" onClick={() => recomposeWithAi(view.id, hashes)} data-testid="multi-recompose" title="Let the AI propose a cleaner set of commits; you review before anything changes">
               <Sparkles size={12} /> Recompose with AI

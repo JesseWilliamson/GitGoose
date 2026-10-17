@@ -1,21 +1,28 @@
 import type { BlameLine, Commit, DiffTarget, FileDiff, HunkSelection } from '@gitsquid/shared'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import clsx from 'clsx'
-import { X } from 'lucide-react'
+import { ChevronDown, X } from 'lucide-react'
+import { DropdownMenu } from 'radix-ui'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { discard, openInEditor, run } from '../lib/actions'
 import { api } from '../lib/api'
 import { formatDate, hashColor, laneColor, relativeTime, shortHash, splitPath } from '../lib/format'
+import { pairs, segments, splitRows, wordDiff, type Ranges } from '../lib/diffLayout'
 import { tokenize, type Tokens } from '../lib/highlight'
-import { codeLineHeight, ensureLoaded, reportError, updateRepo, useSetting, type FileMode, type RepoView } from '../lib/store'
-import { Button, Spinner } from './ui'
+import { codeLineHeight, ensureLoaded, reportError, saveSettings, updateRepo, useSetting, type FileMode, type RepoView } from '../lib/store'
+import { Button, DM, Spinner } from './ui'
 
 
 export function FileView({ view, target, mode }: { view: RepoView; target: DiffTarget; mode: FileMode }) {
   const close = () => updateRepo(view.id, { center: { kind: 'graph' } })
   const setMode = (m: FileMode) => updateRepo(view.id, { center: { kind: 'file', target, mode: m } })
   const { dir, name } = splitPath(target.path)
-  const where = target.kind === 'commit' ? `in ${shortHash(target.hash)}` : target.kind === 'staged' ? 'staged' : target.kind === 'untracked' ? 'untracked' : 'unstaged'
+  const where = target.kind === 'commit' ? `in ${shortHash(target.hash)}`
+    : target.kind === 'range' ? `${shortHash(target.from)} → ${target.to ? shortHash(target.to) : 'working tree'}`
+    : target.kind === 'staged' ? 'staged' : target.kind === 'untracked' ? 'untracked' : 'unstaged'
+  const layout = useSetting('diffLayout')
+  /** The revision this file view is "at", for blame, restore, open and save. */
+  const rev = target.kind === 'commit' ? target.hash : target.kind === 'range' ? (target.to ?? undefined) : undefined
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -32,6 +39,17 @@ export function FileView({ view, target, mode }: { view: RepoView; target: DiffT
           <span className="text-faint">{dir}</span><span className="font-semibold">{name}</span>
           <span className="ml-2 text-xs text-muted">{where}</span>
         </div>
+        {rev && <RevisionMenu view={view} rev={rev} path={target.path} />}
+        {mode === 'diff' && (
+          <div className="flex rounded-md border border-line p-0.5 text-xs" role="group" aria-label="Diff layout">
+            {(['unified', 'split'] as const).map((l) => (
+              <button key={l} onClick={() => void saveSettings({ diffLayout: l })} data-testid={`layout-${l}`} aria-pressed={layout === l}
+                className={clsx('rounded px-2 py-0.5', layout === l ? 'bg-accent text-accent-fg' : 'text-muted hover:text-fg')}>
+                {l === 'unified' ? 'Unified' : 'Split'}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex rounded-md border border-line p-0.5 text-xs">
           {(['diff', 'history', 'blame'] as const).map((m) => (
             <button key={m} onClick={() => setMode(m)}
@@ -44,7 +62,7 @@ export function FileView({ view, target, mode }: { view: RepoView; target: DiffT
       </div>
       {mode === 'diff' && <DiffPane view={view} target={target} />}
       {mode === 'history' && <HistoryPane view={view} path={target.path} />}
-      {mode === 'blame' && <BlamePane view={view} path={target.path} rev={target.kind === 'commit' ? target.hash : undefined} />}
+      {mode === 'blame' && <BlamePane view={view} path={target.path} rev={rev} />}
     </div>
   )
 }
@@ -59,6 +77,8 @@ const CODE_STYLE: React.CSSProperties = {
 type Item =
   | { kind: 'hunk'; hunk: number }
   | { kind: 'line'; hunk: number; line: number }
+  /** Split view: a removed line (left) beside the added line paired with it (right). */
+  | { kind: 'row'; hunk: number; left: number | null; right: number | null }
 
 /** Which change lines are selected, per hunk. */
 type Sel = Map<number, Set<number>>
@@ -66,7 +86,9 @@ type Sel = Map<number, Set<number>>
 function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
   const context = useSetting('contextLines')
   const ignoreWhitespace = useSetting('ignoreWhitespace')
-  const wrap = useSetting('wrapLines')
+  const split = useSetting('diffLayout') === 'split'
+  // Side by side, each half is narrow: wrap rather than scroll two columns sideways.
+  const wrap = useSetting('wrapLines') || split
   const highlight = useSetting('syntaxHighlighting')
   const highlightMaxKb = useSetting('highlightMaxKb')
   const lineH = codeLineHeight(useSetting('codeFontSize'))
@@ -75,8 +97,8 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
   const [sel, setSel] = useState<Sel>(new Map())
   const anchor = useRef<{ hunk: number; line: number } | null>(null)
   const key = JSON.stringify(target)
-  // Working-tree diffs reload when files change; commit diffs never change.
-  const reloadOn = target.kind === 'commit' ? 0 : `${view.worktreeTick}:${JSON.stringify(view.snapshot.status)}`
+  // Working-tree diffs reload when files change; diffs between revisions never change.
+  const reloadOn = target.kind === 'commit' || (target.kind === 'range' && target.to) ? 0 : `${view.worktreeTick}:${JSON.stringify(view.snapshot.status)}`
 
   useEffect(() => {
     let live = true
@@ -111,16 +133,29 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
     return () => { live = false }
   }, [diff, highlight, highlightMaxKb])
 
-  const { items, tokenIndex } = useMemo(() => {
+  const { items, tokenIndex, words } = useMemo(() => {
     const items: Item[] = []
     const tokenIndex: { side: 'old' | 'new'; i: number }[][] = []
+    /** Changed-word ranges per hunk and line, for lines paired with a counterpart. */
+    const words: Map<number, Ranges>[] = []
     let oi = 0
     let ni = 0
     diff?.hunks.forEach((h, hi) => {
       items.push({ kind: 'hunk', hunk: hi })
       tokenIndex[hi] = []
+      const w = new Map<number, Ranges>()
+      for (const [a, b] of pairs(h)) {
+        if (h.lines[a]!.kind !== '-') continue
+        const d = wordDiff(h.lines[a]!.text, h.lines[b]!.text)
+        if (d) {
+          w.set(a, d.old)
+          w.set(b, d.new)
+        }
+      }
+      words[hi] = w
+      if (split) for (const r of splitRows(h)) items.push({ kind: 'row', hunk: hi, left: r.left, right: r.right })
       h.lines.forEach((l, li) => {
-        items.push({ kind: 'line', hunk: hi, line: li })
+        if (!split) items.push({ kind: 'line', hunk: hi, line: li })
         if (l.kind === '-') tokenIndex[hi]![li] = { side: 'old', i: oi++ }
         else if (l.kind === '+') tokenIndex[hi]![li] = { side: 'new', i: ni++ }
         else {
@@ -129,8 +164,8 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
         }
       })
     })
-    return { items, tokenIndex }
-  }, [diff])
+    return { items, tokenIndex, words }
+  }, [diff, split])
 
   const scrollRef = useRef<HTMLDivElement>(null)
   // Wrapped lines have different heights, so the virtualizer measures each row; otherwise rows
@@ -139,18 +174,18 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
     count: items.length, getScrollElement: () => scrollRef.current, estimateSize: () => lineH, overscan: 30,
     ...(wrap ? { measureElement: (el: Element) => el.getBoundingClientRect().height } : {}),
   })
-  useEffect(() => virt.measure(), [lineH, wrap, virt])
+  useEffect(() => virt.measure(), [lineH, wrap, split, virt])
 
   if (diff === undefined) return <div className="flex flex-1 items-center justify-center text-faint"><Spinner /></div>
   if (diff === null) return <div className="flex flex-1 items-center justify-center text-sm text-faint">No changes to show</div>
 
   // Line and hunk staging work on the diff as shown; with whitespace hidden, the patch would
   // carry changes the user never saw, so it is switched off (whole-file staging still works).
-  const editable = target.kind !== 'commit' && !ignoreWhitespace
+  const editable = (target.kind === 'unstaged' || target.kind === 'staged' || target.kind === 'untracked') && !ignoreWhitespace
   const selectedCount = [...sel.values()].reduce((n, s) => n + s.size, 0)
 
   const apply = (action: 'stage' | 'unstage' | 'discard', hunks: HunkSelection[]) => {
-    if (target.kind === 'commit') return
+    if (target.kind === 'commit' || target.kind === 'range') return
     const label = { stage: 'Stage', unstage: 'Unstage', discard: 'Discard' }[action]
     void run(view.id, `${label} ${hunks.some((h) => h.lines) ? 'lines' : 'hunk'}`, () => api.applySelection(view.id, { target, action, hunks, context }), {
       quiet: action !== 'discard',
@@ -176,7 +211,7 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
     anchor.current = { hunk, line }
   }
 
-  const fileActions = target.kind === 'commit' ? null : (
+  const fileActions = target.kind === 'commit' || target.kind === 'range' ? null : (
     <div className="flex items-center gap-2">
       {selectedCount > 0 && (
         <>
@@ -207,7 +242,7 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
         <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-line px-3 text-xs">
           <span className="truncate text-muted" data-testid="diff-hint">
             {diff.oldPath ? `Renamed from ${diff.oldPath}` : editable ? 'Click lines to select them; shift-click for a range.'
-              : target.kind !== 'commit' && ignoreWhitespace ? 'Whitespace changes are hidden, so line and hunk staging are off (Settings → Diff).' : ''}
+              : editable === false && ignoreWhitespace && target.kind !== 'commit' && target.kind !== 'range' ? 'Whitespace changes are hidden, so line and hunk staging are off (Settings → Diff).' : ''}
           </span>
           {fileActions}
         </div>
@@ -240,10 +275,36 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
                   </div>
                 )
               }
+              const textOf = (li: number) => {
+                const ti = tokenIndex[it.hunk]![li]!
+                const l = hunk.lines[li]!
+                return <LineText text={l.text} tokens={tokens?.[ti.side]?.[ti.i] ?? null} ranges={words[it.hunk]!.get(li) ?? []} kind={l.kind} noNewline={l.noNewline} />
+              }
+              if (it.kind === 'row') {
+                const half = (li: number | null, side: 'left' | 'right') => {
+                  if (li === null) return <div className={clsx('flex w-1/2 min-w-0 bg-panel/40', side === 'right' && 'border-l border-line')} />
+                  const l = hunk.lines[li]!
+                  const selected = sel.get(it.hunk)?.has(li) ?? false
+                  return (
+                    <div data-testid="diff-cell" data-kind={l.kind} data-side={side}
+                      onMouseDown={(e) => { if (l.kind !== ' ' && e.button === 0 && e.detail === 1) { e.preventDefault(); toggle(it.hunk, li, e.shiftKey) } }}
+                      className={clsx('flex w-1/2 min-w-0 whitespace-pre-wrap break-all', side === 'right' && 'border-l border-line',
+                        l.kind === '+' && 'bg-add-bg', l.kind === '-' && 'bg-del-bg', l.kind !== ' ' && editable && 'cursor-pointer',
+                        selected && 'ring-1 ring-accent ring-inset brightness-125')}>
+                      <span className={clsx('w-10 shrink-0 pr-1 text-right text-faint', selected && 'bg-select')}>{side === 'left' ? (l.oldNo ?? '') : (l.newNo ?? '')}</span>
+                      <span className="min-w-0 flex-1 pr-2 pl-2">{textOf(li)}</span>
+                    </div>
+                  )
+                }
+                return (
+                  <div key={vi.key} style={style} ref={virt.measureElement} data-index={vi.index} data-testid="diff-row" className="flex">
+                    {half(it.left, 'left')}
+                    {half(it.right, 'right')}
+                  </div>
+                )
+              }
               const line = hunk.lines[it.line]!
               const selected = sel.get(it.hunk)?.has(it.line) ?? false
-              const ti = tokenIndex[it.hunk]![it.line]!
-              const toks = tokens?.[ti.side]?.[ti.i]
               return (
                 <div key={vi.key} style={style} ref={wrap ? virt.measureElement : undefined} data-index={vi.index}
                   data-testid="diff-line" data-kind={line.kind}
@@ -257,10 +318,7 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
                     <span className="w-9 pr-1">{line.newNo ?? ''}</span>
                     <span className={clsx('w-3 text-center', line.kind === '+' && 'text-add', line.kind === '-' && 'text-del')}>{line.kind === ' ' ? '' : line.kind}</span>
                   </span>
-                  <span className="min-w-0 pr-4 pl-2">
-                    {toks ? toks.map((t, k) => <span key={k} style={{ color: t.color }}>{t.content}</span>) : line.text}
-                    {line.noNewline && <span className="ml-2 text-faint" title="No newline at end of file">⏎̸</span>}
-                  </span>
+                  <span className="min-w-0 pr-4 pl-2">{textOf(it.line)}</span>
                 </div>
               )
             })}
@@ -268,6 +326,39 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
         </div>
       )}
     </div>
+  )
+}
+
+/** A line's text: syntax colours, with the words that changed (against its paired line) marked. */
+function LineText({ text, tokens, ranges, kind, noNewline }: {
+  text: string; tokens: { content: string; color?: string }[] | null; ranges: Ranges; kind: ' ' | '+' | '-'; noNewline?: boolean
+}) {
+  const segs = segments(text, tokens, ranges)
+  return (
+    <>
+      {segs.map((s, k) => (
+        <span key={k} style={{ color: s.color }} data-changed={s.changed || undefined}
+          className={s.changed ? (kind === '+' ? 'rounded-sm bg-add/30' : 'rounded-sm bg-del/30') : undefined}>{s.text}</span>
+      ))}
+      {noNewline && <span className="ml-2 text-faint" title="No newline at end of file">⏎̸</span>}
+    </>
+  )
+}
+
+/** Restore, open or save the file as it is at a revision. */
+function RevisionMenu({ view, rev, path }: { view: RepoView; rev: string; path: string }) {
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <Button size="sm" variant="ghost" data-testid="revision-menu">This version <ChevronDown size={12} /></Button>
+      </DropdownMenu.Trigger>
+      <DM.Content align="end">
+        <DM.Item onSelect={() => void api.openFileAt(view.id, rev, path).catch((e) => reportError('Could not open the file', e))}>Open this version</DM.Item>
+        <DM.Item onSelect={() => void api.saveFileAt(view.id, rev, path).catch((e) => reportError('Could not save the file', e))}>Save this version as…</DM.Item>
+        <DM.Separator />
+        <DM.Item onSelect={() => void run(view.id, `Restore ${path}`, () => api.restoreFile(view.id, path, rev))}>Restore the working copy to this version</DM.Item>
+      </DM.Content>
+    </DropdownMenu.Root>
   )
 }
 
