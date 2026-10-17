@@ -4,7 +4,7 @@ import {
   type ApiMethod, type GitSquidApi, type GitSquidEvent, type IpcResult, type SerializedError,
 } from '@gitsquid/shared'
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
-import { chmod, mkdtemp, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { logError } from './diagnostics'
@@ -22,7 +22,7 @@ export function broadcast(event: GitSquidEvent): void {
 /** Methods that change the repository. After each one we refresh and push a snapshot right away. */
 const WRITES = new Set<ApiMethod>([
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'checkout', 'createBranch',
-  'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset', 'cherryPick', 'cherryPickMany', 'recomposeApply', 'dropCommits', 'moveCommits', 'restoreFile', 'addRemote', 'removeRemote', 'renameRemote', 'setRemoteUrl', 'pushTags',
+  'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset', 'cherryPick', 'cherryPickMany', 'recomposeApply', 'dropCommits', 'moveCommits', 'restoreFile', 'applyPatch', 'addRemote', 'removeRemote', 'renameRemote', 'setRemoteUrl', 'pushTags',
   'deleteRemoteTag', 'setUpstream', 'fastForward', 'deleteBranches', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'redo', 'revert', 'createTag',
   'deleteTag', 'fetch', 'pull', 'push', 'deleteRemoteBranch', 'stashPush', 'stashBranch', 'stashApply', 'stashPop',
   'stashDrop', 'resolveConflict', 'continueOperation', 'abortOperation', 'undo',
@@ -149,6 +149,21 @@ export function createHandlers(
       const err = await shell.openPath(file)
       if (err) throw new Error(err)
     },
+    savePatches: async (id, hashes) => {
+      const win = BrowserWindow.getFocusedWindow()
+      const opts = { title: 'Save patches into', properties: ['openDirectory', 'createDirectory'] as ('openDirectory' | 'createDirectory')[] }
+      const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+      if (res.canceled || !res.filePaths[0]) return null
+      return r(id).savePatches(hashes, res.filePaths[0])
+    },
+    pickPatch: async () => {
+      const win = BrowserWindow.getFocusedWindow()
+      const opts = { title: 'Apply patch', properties: ['openFile'] as 'openFile'[], filters: [{ name: 'Patches', extensions: ['patch', 'diff', 'mbox', 'eml'] }, { name: 'All files', extensions: ['*'] }] }
+      const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+      if (res.canceled || !res.filePaths[0]) return null
+      return readFile(res.filePaths[0], 'utf8')
+    },
+    applyPatch: (id, text) => r(id).applyPatch(text),
     saveFileAt: async (id, rev, path) => {
       const win = BrowserWindow.getFocusedWindow()
       const opts = { defaultPath: basename(path) }

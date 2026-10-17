@@ -1,7 +1,7 @@
 import { DropdownMenu } from 'radix-ui'
 import {
  addRemote, checkRemoteTags, cleanupBranches, clearPushUrl, deleteRemoteTag, editRemoteUrl, fastForward, fetchAll, fetchRemote, pushBranch, pushTags, pushTo, remoteNames, removeRemote, renameRemote, setUpstream,
- stashToBranch, checkout, cherryPick, cherryPickMany, compare, compareSinceFork, copy, fixupInto, pop, reword, squashCommit, stashApply, stashDrop, copyCommits, dropCommits, moveCommits, currentBranchRef, deleteBranch, deleteRemoteBranch, deleteTag, dropOptions,
+ savePatches, stashToBranch, checkout, cherryPick, cherryPickMany, compare, compareSinceFork, copy, fixupInto, pop, reword, squashCommit, stashApply, stashDrop, copyCommits, dropCommits, moveCommits, currentBranchRef, deleteBranch, deleteRemoteBranch, deleteTag, dropOptions,
   merge, newBranch, newTag, push, rebase, renameBranch, reset, revert, shortRef,
 } from '../lib/actions'
 import { shortHash, stashLabel } from '../lib/format'
@@ -175,6 +175,7 @@ export function GraphMenu({ repoId }: { repoId: string }) {
         <CM.Separator />
         <CM.Item onSelect={() => void copyCommits(repoId, menu.hashes, 'diff')}>Copy as diff</CM.Item>
         <CM.Item onSelect={() => void copyCommits(repoId, menu.hashes, 'patch')}>Copy as patch</CM.Item>
+        <CM.Item onSelect={() => void savePatches(repoId, menu.hashes)}>Save as {n} patch files…</CM.Item>
         <CM.Item onSelect={() => copy(menu.hashes.join('\n'), 'Copied SHAs')}>Copy SHAs</CM.Item>
         {menu.hashes.every((h) => view.editable.includes(h)) && (
           <>
@@ -230,6 +231,8 @@ export function GraphMenu({ repoId }: { repoId: string }) {
         <CM.Item onSelect={() => void reset(repoId, hash, 'hard')}>Hard: discard changes (undoable)</CM.Item>
       </CM.Sub>
       <CM.Separator />
+      <CM.Item onSelect={() => void copyCommits(repoId, [hash], 'patch')}>Copy as patch</CM.Item>
+      <CM.Item onSelect={() => void savePatches(repoId, [hash])}>Save as patch file…</CM.Item>
       <CM.Item onSelect={() => copy(hash, 'Copied SHA')}>Copy SHA</CM.Item>
       {commit && <CM.Item onSelect={() => copy(commit.subject, 'Copied message')}>Copy message</CM.Item>}
     </CM.Content>

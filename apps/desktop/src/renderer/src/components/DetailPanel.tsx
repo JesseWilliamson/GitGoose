@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { cherryPickMany, compare, copy, copyCommits, discard as discardFiles, openInEditor, pop, restoreFileFrom, run, stashApply, stashDrop, stashToBranch, stashWith, stashWithMessage } from '../lib/actions'
 import { cancelAi, startAi, useAiEnabled } from '../lib/ai'
 import { api, toUiError } from '../lib/api'
-import { dateTime, sentence, shortHash, stashLabel } from '../lib/format'
+import { dateTime, opName, sentence, shortHash, stashLabel } from '../lib/format'
 import { avatarSrc, useAvatarVariant } from '../lib/avatar'
 import { ensureLoaded, getLog, reportError, selectCommit, setting, updateRepo, useSetting, type FileMode, type RepoView } from '../lib/store'
 import { Avatar } from './Avatar'
@@ -105,7 +105,7 @@ function WipPanel({ view }: { view: RepoView }) {
       </div>
       {view.snapshot.operation && (
         <div className="flex items-center justify-between gap-2 border-b border-line bg-warn/10 px-3 py-2 text-[13px]">
-          <span><b>{sentence(view.snapshot.operation)}</b> in progress{conflicted.length ? `, ${conflicted.length} conflicted` : ''}</span>
+          <span><b>{sentence(opName(view.snapshot.operation))}</b> in progress{conflicted.length ? `, ${conflicted.length} conflicted` : ''}</span>
           <Button size="sm" onClick={() => updateRepo(id, { center: { kind: 'conflicts' } })}>Resolve…</Button>
         </div>
       )}

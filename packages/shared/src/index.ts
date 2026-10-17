@@ -65,7 +65,8 @@ export interface Head {
 }
 
 /** What a repository is in the middle of, read from files under .git. */
-export type RepoOperation = 'merge' | 'rebase' | 'cherry-pick' | 'revert' | null
+/** `am`: applying mailed patches (`git am`), stopped on a conflict. */
+export type RepoOperation = 'merge' | 'rebase' | 'cherry-pick' | 'revert' | 'am' | null
 
 /** One file in `git status`. Codes follow porcelain v2: '.', M, T, A, D, R, C, U. */
 export interface StatusEntry {

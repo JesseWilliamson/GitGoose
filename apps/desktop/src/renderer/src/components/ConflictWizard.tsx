@@ -5,7 +5,7 @@ import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { openInEditor, run } from '../lib/actions'
 import { cancelAi, startAi, useAi } from '../lib/ai'
 import { api } from '../lib/api'
-import { sentence } from '../lib/format'
+import { opName, sentence } from '../lib/format'
 import { reportError, updateRepo, useSetting, type RepoView } from '../lib/store'
 import { Button, Spinner } from './ui'
 
@@ -31,14 +31,14 @@ export function ConflictWizard({ view }: { view: RepoView }) {
   }, [view.id, unmergedKey, view.worktreeTick])
 
   const resolved = view.snapshot.status.filter((e) => e.kind !== 'unmerged' && e.index !== '.' && e.kind !== 'untracked')
-  const opName = op ?? 'operation'
+  const opLabel = op ? opName(op) : 'operation'
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col" data-testid="conflicts">
       <div className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-panel px-4">
         <CircleAlert size={18} className="text-warn" />
         <div className="min-w-0 flex-1">
-          <div className="text-[14px] font-semibold">{op ? `${sentence(op)} in progress` : 'No operation in progress'}</div>
+          <div className="text-[14px] font-semibold">{op ? `${sentence(opLabel)} in progress` : 'No operation in progress'}</div>
           <div className="text-xs text-muted">
             {files === null ? 'Checking…' : files.length ? `${files.length} ${files.length === 1 ? 'file has' : 'files have'} conflicts` : 'All conflicts resolved'}
           </div>
@@ -46,10 +46,10 @@ export function ConflictWizard({ view }: { view: RepoView }) {
         <Button onClick={() => updateRepo(view.id, { center: { kind: 'graph' } })} variant="ghost">Back to graph</Button>
         {op && (
           <>
-            <Button onClick={() => void run(view.id, `Abort ${opName}`, () => api.abortOperation(view.id))}>Abort {opName}</Button>
+            <Button onClick={() => void run(view.id, `Abort ${opLabel}`, () => api.abortOperation(view.id))}>Abort {opLabel}</Button>
             <Button variant="primary" data-testid="continue-op" disabled={!files || files.length > 0}
-              onClick={() => void run(view.id, `Continue ${opName}`, () => api.continueOperation(view.id), { success: `${sentence(opName)} complete` })}>
-              Continue {opName}
+              onClick={() => void run(view.id, `Continue ${opLabel}`, () => api.continueOperation(view.id), { success: `${sentence(opLabel)} complete` })}>
+              Continue {opLabel}
             </Button>
           </>
         )}
@@ -77,7 +77,7 @@ export function ConflictWizard({ view }: { view: RepoView }) {
           <ConflictFileView key={current} view={view} file={files.find((f) => f.path === current)!} />
         ) : (
           <div className="flex flex-1 items-center justify-center text-sm text-faint">
-            {files?.length === 0 ? `Everything is resolved. Continue the ${opName} when ready.` : 'Select a file'}
+            {files?.length === 0 ? `Everything is resolved. Continue the ${opLabel} when ready.` : 'Select a file'}
           </div>
         )}
       </div>

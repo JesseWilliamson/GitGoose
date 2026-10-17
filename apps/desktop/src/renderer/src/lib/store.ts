@@ -3,6 +3,7 @@ import { SETTINGS, type Commit, type DiffTarget, type GitHubStatus, type GitSqui
 import { create } from 'zustand'
 import { api, toUiError, type UiError } from './api'
 import { onAiEvent } from './ai'
+import { opName } from './format'
 
 export type Selection =
   | { kind: 'wip' }
@@ -568,7 +569,7 @@ export function dismissAttentionKey(key: string): void {
  */
 export function alertConflicts(id: string, snap: RepoSnapshot): void {
   const files = snap.status.filter((e) => e.kind === 'unmerged').length
-  const op = snap.operation
+  const op = snap.operation && opName(snap.operation)
   const what = op ? `The ${op} stopped` : 'Applying the changes stopped'
   attention({
     key: `conflicts-${id}`,

@@ -169,6 +169,8 @@ export class Repo {
 
   operation(): RepoOperation {
     const has = (f: string) => existsSync(join(this.gitDir, f))
+    // `git am` keeps its state in rebase-apply too; the "applying" marker tells them apart.
+    if (has('rebase-apply/applying')) return 'am'
     if (has('rebase-merge') || has('rebase-apply')) return 'rebase'
     if (has('MERGE_HEAD')) return 'merge'
     if (has('CHERRY_PICK_HEAD')) return 'cherry-pick'
@@ -1170,6 +1172,48 @@ export class Repo {
     return (await Promise.all(list.map((h) => this.read([...fp, '-1', h])))).join('')
   }
 
+  /** Save commits as numbered .patch files in `dir`, oldest first (`format-patch`). Returns their paths. */
+  async savePatches(hashes: string[], dir: string): Promise<string[]> {
+    const out: string[] = []
+    const list = [...hashes].reverse()
+    for (const [i, h] of list.entries()) {
+      const r = await this.read(['format-patch', '--no-color', '--binary', '-o', dir, `--start-number=${i + 1}`, '-1', h])
+      out.push(...r.split('\n').filter(Boolean))
+    }
+    return out
+  }
+
+  /**
+   * Apply a patch. Mailbox patches (format-patch output, "From <sha> …") become commits with
+   * `am --3way`, keeping author and message; undo moves the branch back. A plain diff is applied
+   * to the working tree and index with `apply --3way`; undo puts both back. A 3-way apply can
+   * stop on conflicts: `am` then waits for continue / abort, a plain apply leaves conflicted
+   * files, and the undo entry is recorded either way so nothing is lost.
+   */
+  applyPatch(text: string): Promise<number | null> {
+    if (/^From [0-9a-f]{40} /m.test(text)) {
+      return this.moving(`Apply ${(text.match(/^From [0-9a-f]{40} /gm) ?? []).length} patches`, () => this.git(['am', '--3way'], { input: text }))
+    }
+    return this.exclusive(async () => {
+      if (this.operation()) throw new Error(`Finish the ${this.operation()} in progress first.`)
+      const numstat = await this.runner.run(['apply', '--numstat', '-z'], { input: text, readOnly: true })
+      const paths = parseNumstatPaths(numstat.stdout)
+      if (!paths.length) throw new Error('This is not a patch git can read.')
+      const tree = (await this.git(['write-tree'])).stdout.trim()
+      const saved = await this.saveFiles(paths)
+      const head = (await this.currentHead()).hash
+      const record = () => this.record(`Apply patch to ${describePaths(paths)}`, [{ kind: 'read-tree', tree }, { kind: 'restore-files', files: saved }], head)
+      try {
+        await this.git(['apply', '--3way', '--whitespace=nowarn'], { input: text })
+      } catch (e) {
+        // Conflicts: the files are changed (with markers); keep the way back.
+        if ((await this.read(['ls-files', '-u'])).trim()) await record()
+        throw e
+      }
+      return record()
+    })
+  }
+
   async revert(hash: string): Promise<number | null> {
     const mainline = (await this.isMerge(hash)) ? ['-m', '1'] : []
     return this.moving(`Revert ${hash.slice(0, 7)}`, () => this.git(['revert', '--no-edit', ...mainline, hash]))
@@ -1392,6 +1436,7 @@ export class Repo {
       else if (op === 'rebase') await this.git(['rebase', '--continue'])
       else if (op === 'cherry-pick') await this.git(['cherry-pick', '--continue'])
       else if (op === 'revert') await this.git(['revert', '--continue'])
+      else if (op === 'am') await this.git(['am', '--continue'])
     })
   }
 
@@ -1402,6 +1447,7 @@ export class Repo {
       else if (op === 'rebase') await this.git(['rebase', '--abort'])
       else if (op === 'cherry-pick') await this.git(['cherry-pick', '--abort'])
       else if (op === 'revert') await this.git(['revert', '--abort'])
+      else if (op === 'am') await this.git(['am', '--abort'])
     })
   }
 
@@ -1596,6 +1642,24 @@ function firstLine(s: string): string {
 function lastLine(t: string): string {
   const parts = t.split(/[\r\n]+/).map((s) => s.trim()).filter(Boolean)
   return parts[parts.length - 1] ?? ''
+}
+
+/** Paths from `git apply --numstat -z`: "add\tdel\tpath\0", or "add\tdel\t\0old\0new\0" for a rename. */
+export function parseNumstatPaths(out: string): string[] {
+  const parts = out.split('\0')
+  const paths: string[] = []
+  for (let i = 0; i < parts.length; i++) {
+    const rec = parts[i]!
+    if (!rec) continue
+    const m = /^[\d-]+\t[\d-]+\t(.*)$/s.exec(rec)
+    if (!m) continue
+    if (m[1]) paths.push(m[1])
+    else {
+      paths.push(parts[i + 1]!, parts[i + 2]!)
+      i += 2
+    }
+  }
+  return [...new Set(paths.filter(Boolean))]
 }
 
 function describePaths(paths: string[]): string {

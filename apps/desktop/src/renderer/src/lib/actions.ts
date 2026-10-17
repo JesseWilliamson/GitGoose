@@ -320,6 +320,47 @@ export async function compareSinceFork(id: string, base: string, branch: string)
   }
 }
 
+// ------------------------------------------------------------------ patches
+
+export async function savePatches(id: string, hashes: string[]): Promise<void> {
+  try {
+    const paths = await api.savePatches(id, hashes)
+    if (paths) toast({ kind: 'success', title: `Saved ${paths.length} patch${paths.length === 1 ? '' : 'es'}`, detail: paths.map((p) => p.split(/[\\/]/).pop()).join('\n') })
+  } catch (e) {
+    reportError('Could not save the patches', e)
+  }
+}
+
+/** format-patch output carries authors and messages, so it becomes commits; a bare diff becomes changes. */
+const isMailbox = (text: string) => /^From [0-9a-f]{40} /m.test(text)
+
+function applyPatchText(id: string, text: string): Promise<boolean> {
+  const mail = isMailbox(text)
+  return run(id, mail ? 'Apply patches' : 'Apply patch', () => api.applyPatch(id, text), {
+    success: mail ? 'Applied as commits' : 'Patch applied: the changes are staged',
+  }).then((ok) => {
+    if (ok && !mail) updateRepo(id, { selected: { kind: 'wip' }, center: { kind: 'graph' } })
+    return ok
+  })
+}
+
+export async function applyPatchFile(id: string): Promise<void> {
+  const text = await api.pickPatch().catch((e) => {
+    reportError('Could not read the patch', e)
+    return null
+  })
+  if (text !== null) await applyPatchText(id, text)
+}
+
+export async function applyPatchFromClipboard(id: string): Promise<void> {
+  const text = await navigator.clipboard.readText().catch(() => '')
+  if (!text.trim()) {
+    toast({ kind: 'info', title: 'The clipboard has no text to apply' })
+    return
+  }
+  await applyPatchText(id, text)
+}
+
 export const revert = (id: string, hash: string) =>
   run(id, `Revert ${hash.slice(0, 7)}`, () => api.revert(id, hash))
 

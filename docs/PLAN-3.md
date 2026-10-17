@@ -127,3 +127,6 @@ changes.
 - [x] 18 stash only some files, only the staged changes, or everything keeping the staged part;
       a branch from a stash (undo drops the applied changes only if they are untouched); take one
       file from a stash, untracked files included
+- [x] 16 save commits as numbered .patch files; apply a patch from a file or the clipboard
+      (mailbox patches become commits with am --3way, plain diffs are staged with apply --3way;
+      both undoable; a stopped am is its own operation with continue / abort)

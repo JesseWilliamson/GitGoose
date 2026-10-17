@@ -50,6 +50,11 @@ export function shortHash(hash: string): string {
 }
 
 /** "merge" -> "Merge". (CSS `capitalize` would turn "merge in progress" into "Merge In Progress".) */
+/** How to call an operation in prose: `git am` is "patch" ("The patch stopped", "Abort patch"). */
+export function opName(op: string): string {
+  return op === 'am' ? 'patch' : op
+}
+
 export function sentence(s: string): string {
   return s ? s[0]!.toUpperCase() + s.slice(1) : s
 }
