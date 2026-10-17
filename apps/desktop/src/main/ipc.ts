@@ -7,6 +7,7 @@ import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { logError } from './diagnostics'
 import { openInEditor, openTerminal } from './launch'
 import { GITHUB_SCOPES } from '@gitsquid/shared'
+import type { AiService } from './ai/service'
 import type { GitHubService } from './github/service'
 import type { RepoManager } from './repos'
 import { forgetOpenRepo, getSettings, rememberRepo, setSettings } from './settings'
@@ -32,6 +33,7 @@ export function createHandlers(
   prompts: PromptBroker,
   gitOpts: () => { gitPath: string; env: Record<string, string> },
   github: GitHubService,
+  ai: AiService,
 ): GitSquidApi {
   const r = (id: string) => repos.get(id)
   const opened = async (repo: Repo) => {
@@ -71,6 +73,15 @@ export function createHandlers(
       if (url) await shell.openExternal(url)
     },
     githubSignOut: async () => github.signOut(),
+
+    aiStatus: async () => ai.status(),
+    aiConsent: async () => ai.consent(),
+    aiRun: (requestId, repoId, task) => ai.run(requestId, repoId, task),
+    aiCancel: async (requestId) => ai.cancel(requestId),
+    aiRespondPermission: async (id, optionId) => ai.respondPermission(id, optionId),
+    aiAgentInfo: () => ai.agentInfo(),
+    aiAuthenticate: (methodId) => ai.authenticate(methodId),
+    aiSetApiKey: async (key) => ai.setApiKey(key),
     openPath: async (path) => {
       const err = await shell.openPath(path)
       if (err) throw new Error(err)
@@ -132,7 +143,11 @@ export function createHandlers(
 
 export function serializeError(e: unknown): SerializedError {
   if (e instanceof GitError) return { message: e.message, stderr: e.stderr, command: e.command, code: 'git' }
-  if (e instanceof Error) return { message: e.message }
+  // Errors that carry a string code (AI, GitHub sign-in) keep it, so the renderer can react.
+  if (e instanceof Error) {
+    const code = (e as { code?: unknown }).code
+    return typeof code === 'string' ? { message: e.message, code } : { message: e.message }
+  }
   return { message: String(e) }
 }
 

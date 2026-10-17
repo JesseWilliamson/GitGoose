@@ -8,6 +8,7 @@ import { CommandPalette } from './CommandPalette'
 import { Dialogs, PromptDialog, Toasts } from './Dialogs'
 import { DropMenu } from './menus'
 import { SettingsPage } from './SettingsPage'
+import { AiDialogs } from './AiDialogs'
 import { StatusBar } from './StatusBar'
 import { TabBar } from './TabBar'
 import { Toolbar } from './Toolbar'
@@ -119,6 +120,7 @@ export function App() {
       )}
       <CommandPalette />
       <Dialogs />
+      <AiDialogs />
       <PromptDialog />
       <DropMenu />
       <Toasts />

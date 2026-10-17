@@ -2,6 +2,7 @@ import type {
   BlameLine, Commit, CommitDetails, ConflictFile, DiffTarget, FileDiff, RepoSnapshot,
   SearchField, StashEntry, UndoEntry,
 } from './index'
+import type { AgentInfo, AiPermissionRequest, AiResult, AiStatus, AiTask } from './ai'
 import type { DeviceCodeInfo, GitHubAccount, GitHubStatus } from './github'
 import type { Settings } from './settings'
 
@@ -83,6 +84,20 @@ export interface GitSquidApi {
   /** Open a GitHub page in the browser: where to enter the code, or where to revoke access. */
   githubOpenPage(page: 'verification' | 'applications'): Promise<void>
   githubSignOut(): Promise<void>
+
+  // AI (see apps/desktop/src/main/ai/)
+  aiStatus(): Promise<AiStatus>
+  /** The user agreed to send content to the configured provider (asked once per provider/agent). */
+  aiConsent(): Promise<AiStatus>
+  /** Run a task. Text streams as 'ai-text' events with the same requestId; tool calls ask via 'ai-permission'. */
+  aiRun(requestId: string, repoId: string, task: AiTask): Promise<AiResult>
+  aiCancel(requestId: string): Promise<void>
+  aiRespondPermission(permissionId: number, optionId: string | null): Promise<void>
+  /** Start the agent (if needed) and say who it is and how it logs in. */
+  aiAgentInfo(): Promise<AgentInfo>
+  /** Log in with a method the agent handles itself. */
+  aiAuthenticate(methodId: string): Promise<void>
+  aiSetApiKey(key: string | null): Promise<AiStatus>
   openPath(path: string): Promise<void>
   /** Open a file in the configured external editor (Settings → Integrations), at a line if given. */
   openInEditor(path: string, line?: number): Promise<void>
@@ -158,6 +173,7 @@ export const API_METHODS = [
   'getSettings', 'setSettings', 'pickDirectory', 'openRepo', 'closeRepo', 'initRepo', 'cloneRepo',
   'respondPrompt', 'openPath', 'openInEditor', 'openTerminal', 'revealPath', 'logError',
   'githubStatus', 'githubSignIn', 'githubWaitForSignIn', 'githubCancelSignIn', 'githubOpenPage', 'githubSignOut',
+  'aiStatus', 'aiConsent', 'aiRun', 'aiCancel', 'aiRespondPermission', 'aiAgentInfo', 'aiAuthenticate', 'aiSetApiKey',
   'snapshot', 'logPage', 'commitDetails', 'diff', 'fileHistory', 'blame', 'search', 'stashList',
   'lastCommitMessage',
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit',
@@ -187,6 +203,12 @@ export type GitSquidEvent =
   | { type: 'settings'; settings: Settings }
   /** Signed in or out of GitHub. */
   | { type: 'github'; status: GitHubStatus }
+  /** An AI request's reply so far. */
+  | { type: 'ai-text'; requestId: string; text: string }
+  /** The agent wants to use a tool: ask the user. */
+  | { type: 'ai-permission'; request: AiPermissionRequest }
+  /** A permission question no longer needs an answer (its request ended). */
+  | { type: 'ai-permission-closed'; permissionId: number }
 
 /** Errors cross IPC as data, so the renderer gets git's stderr intact. */
 export interface SerializedError {

@@ -168,3 +168,4 @@ export interface UndoEntry {
 export type SearchField = 'message' | 'author' | 'path' | 'hash' | 'content'
 
 export * from './github'
+export * from './ai'

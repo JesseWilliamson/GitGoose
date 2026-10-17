@@ -15,10 +15,11 @@ explanations. `docs/learn/` holds exercises for the four pieces he plans to own.
 ```
 apps/desktop/          Electron app (electron-vite)
   src/main/            main process: window, IPC router (ipc.ts), RepoManager + file watcher, settings, menu,
-                       avatars, github/ (device-flow sign-in; the only code that holds a token)
+                       avatars, github/ (device-flow sign-in; the only code that holds a token),
+                       ai/ (ACP client for the user's agent, Anthropic API fallback)
   src/preload/         the only bridge: builds window.gitsquid from API_METHODS
   src/renderer/src/    React UI: lib/store.ts (zustand + log data), lib/actions.ts (every user action), components/
-  e2e/                 Playwright tests that launch the real app
+  e2e/                 Playwright tests that launch the real app (+ fake-agent.mjs, a scripted ACP agent)
 packages/shared/       IPC contract (api.ts), data types, pure conflict-marker parser
 packages/git/          everything that runs git: runner, parsers, LogStream, CatFile, patch builder, undo, askpass, Repo
 packages/graph/        lane layout. Pure, zero dependencies.
