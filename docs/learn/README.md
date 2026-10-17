@@ -1,6 +1,6 @@
 # Learning GitSquid by rebuilding its core
 
-The plan reserved four pieces for you to build yourself. They are already implemented, so the app
+The plans reserved these pieces for you to build yourself. They are already implemented, so the app
 works, but each one is small, self-contained and fully specified by tests. That makes them good
 exercises: delete the implementation, rebuild it until the tests pass, then compare.
 
@@ -10,6 +10,7 @@ exercises: delete the implementation, rebuild it until the tests pass, then comp
 | 2 | [IPC contract](02-ipc-contract.md) | a new method, end to end | how Electron's processes talk, and keeping them type-safe |
 | 3 | [Hunk-to-patch builder](03-line-staging.md) | ~60 lines | the unified diff format, and how "stage these lines" works |
 | 4 | [Undo journal](04-undo.md) | a new undoable operation | the reflog, the object database, what git can and cannot undo |
+| 5 | [Three-way merge](05-three-way-merge.md) | ~150 lines | Myers' diff, diff3, and why "conflict" is a precise idea |
 
 ## The routine for each exercise
 

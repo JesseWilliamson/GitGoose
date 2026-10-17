@@ -19,6 +19,13 @@
   Save resolution writes the file and stages it. Take ours / Take theirs resolve the whole file
   (also delete/modify conflicts). Open launches the default editor; Mark resolved stages a file
   edited elsewhere.
+- Text files open in the three-pane view by default (setting *Conflict view*; a Three panes /
+  Blocks toggle per file): yours, the editable result, theirs, each side diffed against the base
+  (`merge3`). Side changes have apply (» «) and ignore (×) buttons; Apply non-conflicting;
+  previous/next conflict; *Start from* non-conflicting applied, the ancestor, or git's merge with
+  markers. A conflict is resolved when either side is applied, both are ignored, or it was
+  edited. Save needs every conflict resolved and no markers left. Undo (Ctrl+Z) reverts statuses
+  with the text. Panes scroll together, aligned on blocks.
 - Continue (enabled when nothing is unmerged) and Abort.
 
 ## Git commands
