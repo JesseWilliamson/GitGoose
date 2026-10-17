@@ -219,8 +219,14 @@ export function forceDeleteBranch(id: string, name: string): void {
   void run(id, `Delete ${name}`, () => api.deleteBranch(id, name, { force: true }))
 }
 
-export const merge = (id: string, ref: string, opts?: { noFf?: boolean; ffOnly?: boolean }) =>
-  run(id, `Merge ${shortRef(ref)}`, () => api.merge(id, ref, opts))
+export const merge = (id: string, ref: string, opts?: { noFf?: boolean; ffOnly?: boolean; squash?: boolean; noCommit?: boolean }) =>
+  run(id, opts?.squash ? `Squash ${shortRef(ref)}` : `Merge ${shortRef(ref)}`, () => api.merge(id, ref, opts), {
+    success: opts?.squash ? `${shortRef(ref)}'s changes are staged: commit them to finish` : opts?.noCommit ? 'Merged without committing: adjust, then commit' : undefined,
+  }).then((ok) => {
+    // The changes wait in the commit box, with git's prepared message.
+    if (ok && (opts?.squash || opts?.noCommit)) updateRepo(id, { selected: { kind: 'wip' }, center: { kind: 'graph' } })
+    return ok
+  })
 
 export const rebase = (id: string, onto: string) =>
   run(id, `Rebase onto ${shortRef(onto)}`, () => api.rebase(id, onto))
@@ -255,6 +261,46 @@ export async function copyCommits(id: string, hashes: string[], format: 'diff' |
 
 export const dropCommits = (id: string, hashes: string[]) =>
   run(id, hashes.length === 1 ? `Drop ${hashes[0]!.slice(0, 7)}` : `Drop ${hashes.length} commits`, () => api.dropCommits(id, hashes))
+
+export const squashOnto = (id: string, hashes: string[], target: string) =>
+  run(id, `Squash into ${target.slice(0, 7)}`, () => api.squashOnto(id, hashes, target))
+
+export const squashCommit = (id: string, hash: string, mode: 'squash' | 'fixup') =>
+  run(id, `${mode === 'squash' ? 'Squash' : 'Fixup'} ${hash.slice(0, 7)}`, () => api.squashCommit(id, hash, mode))
+
+export const fixupInto = (id: string, target: string) =>
+  run(id, `Fixup into ${target.slice(0, 7)}`, () => api.fixupInto(id, target))
+
+/** Edit a commit's whole message (subject and body) in a text dialog. */
+export async function reword(id: string, hash: string): Promise<void> {
+  let current = ''
+  try {
+    const d = await api.commitDetails(id, hash)
+    current = d.body ? `${d.subject}\n\n${d.body}` : d.subject
+  } catch (e) {
+    reportError('Could not read the commit', e)
+    return
+  }
+  useStore.setState({
+    dialog: {
+      kind: 'text', title: `Reword ${hash.slice(0, 7)}`, initial: current, confirm: 'Reword',
+      onSubmit: (message) => void run(id, `Reword ${hash.slice(0, 7)}`, () => api.rewordCommit(id, hash, message)),
+    },
+  })
+}
+
+export async function redo(id: string): Promise<void> {
+  updateRepo(id, { busy: 'Redo' })
+  try {
+    const label = await api.redo(id)
+    toast({ kind: label ? 'success' : 'info', title: label ? `Redid: ${label}` : 'Nothing to redo' })
+  } catch (e) {
+    reportError('Redo failed', e)
+  } finally {
+    updateRepo(id, { busy: null })
+    void refreshAux(id)
+  }
+}
 
 export const moveCommits = (id: string, hashes: string[], target: string, where: 'above' | 'below') =>
   run(id, hashes.length === 1 ? `Move ${hashes[0]!.slice(0, 7)}` : `Move ${hashes.length} commits`, () => api.moveCommits(id, hashes, target, where))
@@ -373,6 +419,7 @@ export function dropOptions(id: string, snap: RepoSnapshot, source: Ref, target:
     // Dropped onto the checked-out branch: bring the source into it.
     opts.push({ label: `Merge ${src} into ${targetName}`, run: () => void merge(id, source.name) })
     opts.push({ label: `Fast-forward ${targetName} to ${src}`, run: () => void merge(id, source.name, { ffOnly: true }) })
+    opts.push({ label: `Squash ${src} into ${targetName}`, run: () => void merge(id, source.name, { squash: true }) })
     opts.push({ label: `Rebase ${targetName} onto ${src}`, run: () => void rebase(id, source.name) })
   } else if (head && source.name === head.name) {
     // Dragged the checked-out branch onto something else.

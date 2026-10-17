@@ -1,6 +1,6 @@
 import { DropdownMenu } from 'radix-ui'
 import {
- checkout, cherryPick, cherryPickMany, copy, pop, stashApply, stashDrop, copyCommits, dropCommits, moveCommits, currentBranchRef, deleteBranch, deleteRemoteBranch, deleteTag, dropOptions,
+ checkout, cherryPick, cherryPickMany, copy, fixupInto, pop, reword, squashCommit, stashApply, stashDrop, copyCommits, dropCommits, moveCommits, currentBranchRef, deleteBranch, deleteRemoteBranch, deleteTag, dropOptions,
   merge, newBranch, newTag, push, rebase, renameBranch, reset, revert, shortRef,
 } from '../lib/actions'
 import { stashLabel } from '../lib/format'
@@ -29,6 +29,11 @@ export function GraphMenu({ repoId }: { repoId: string }) {
         {!isHead && r.kind !== 'tag' && head && (
           <>
             <CM.Item onSelect={() => void merge(repoId, r.name)}>Merge {name} into {headName}</CM.Item>
+            <CM.Sub label="Merge options">
+              <CM.Item onSelect={() => void merge(repoId, r.name, { noFf: true })}>Always create a merge commit</CM.Item>
+              <CM.Item onSelect={() => void merge(repoId, r.name, { squash: true })}>Squash {name} into {headName}</CM.Item>
+              <CM.Item onSelect={() => void merge(repoId, r.name, { noCommit: true })}>Merge without committing</CM.Item>
+            </CM.Sub>
             <CM.Item onSelect={() => void rebase(repoId, r.name)}>Rebase {headName} onto {name}</CM.Item>
           </>
         )}
@@ -92,6 +97,7 @@ export function GraphMenu({ repoId }: { repoId: string }) {
   const commit = getLog(repoId).commits[getLog(repoId).index.get(hash) ?? -1]
   /** Where this commit sits among the ones drop/move can edit (newest first), or -1. */
   const editAt = view.editable.indexOf(hash)
+  const hasStaged = snap.status.some((e) => e.kind !== 'untracked' && e.kind !== 'unmerged' && e.index !== '.')
   const isHeadCommit = hash === snap.head.hash
   return (
     <CM.Content>
@@ -107,6 +113,10 @@ export function GraphMenu({ repoId }: { repoId: string }) {
           <CM.Separator />
           <CM.Item disabled={editAt === 0} onSelect={() => void moveCommits(repoId, [hash], view.editable[editAt - 1]!, 'above')}>Move commit up</CM.Item>
           <CM.Item disabled={editAt === view.editable.length - 1} onSelect={() => void moveCommits(repoId, [hash], view.editable[editAt + 1]!, 'below')}>Move commit down</CM.Item>
+          <CM.Item onSelect={() => void reword(repoId, hash)}>Reword…</CM.Item>
+          <CM.Item disabled={editAt === view.editable.length - 1} onSelect={() => void squashCommit(repoId, hash, 'squash')}>Squash into the commit below</CM.Item>
+          <CM.Item disabled={editAt === view.editable.length - 1} onSelect={() => void squashCommit(repoId, hash, 'fixup')}>Fixup into the commit below (drop this message)</CM.Item>
+          <CM.Item disabled={!hasStaged} onSelect={() => void fixupInto(repoId, hash)}>Fixup staged changes into this commit</CM.Item>
           <CM.Item danger onSelect={() => void dropCommits(repoId, [hash])}>Drop commit</CM.Item>
         </>
       )}

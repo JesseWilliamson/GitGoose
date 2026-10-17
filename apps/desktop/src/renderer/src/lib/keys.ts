@@ -16,6 +16,7 @@ export interface KeyCommand {
 export const COMMANDS: KeyCommand[] = [
   { id: 'palette', label: 'Command palette', defaults: ['mod+p', 'mod+shift+p', 'mod+k'] },
   { id: 'undo', label: 'Undo the last git operation', defaults: ['mod+z'] },
+  { id: 'redo', label: 'Redo what was undone', defaults: ['mod+shift+z', 'mod+y'] },
   { id: 'search', label: 'Find commits', defaults: ['mod+f'] },
   { id: 'open-repo', label: 'Open repository', defaults: ['mod+o'] },
   { id: 'close-tab', label: 'Close tab', defaults: ['mod+w'] },

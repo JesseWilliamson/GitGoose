@@ -6,7 +6,7 @@ import { Archive, Cloud, Laptop, Settings2, Tag } from 'lucide-react'
 import { ContextMenu, DropdownMenu } from 'radix-ui'
 import { memo, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import type { AvatarSource } from '@gitsquid/shared'
-import { checkout, moveCommits } from '../lib/actions'
+import { checkout, moveCommits, squashOnto } from '../lib/actions'
 import { avatarSrc, useAvatarVariant } from '../lib/avatar'
 import { formatDate, laneColor, shortHash, stashLabel } from '../lib/format'
 import { getLog, loadMore, saveSettings, selectCommit, selectedHashes, selectionCursor, updateRepo, useSetting, useStore, type RepoView } from '../lib/store'
@@ -369,8 +369,11 @@ const CommitRow = memo(function CommitRow(props: {
   const src = avatarSrc(commit.authorEmail, look.avatars, look.avatarVariant)
   const author = useMemo(() => ({ name: commit.authorName, email: commit.authorEmail, src }), [commit.authorName, commit.authorEmail, src])
   const [dropping, setDropping] = useState(false)
-  /** Where dragged commits would land: just above (newer than) or below this one. */
-  const [dropAt, setDropAt] = useState<'above' | 'below' | null>(null)
+  /**
+   * Where dragged commits would land: just above (newer than) this one, just below it, or onto
+   * it (squash them into it, as in Tower). The row is split in thirds.
+   */
+  const [dropAt, setDropAt] = useState<'above' | 'onto' | 'below' | null>(null)
   const pills = useMemo(() => (props.refs ? pillsFor(props.refs, props.headBranch, { remotes: look.showRemotes, tags: look.showTags }) : []),
     [props.refs, props.headBranch, look.showRemotes, look.showTags])
 
@@ -388,7 +391,8 @@ const CommitRow = memo(function CommitRow(props: {
       e.preventDefault()
       e.dataTransfer.dropEffect = 'move'
       const box = (e.currentTarget as HTMLElement).getBoundingClientRect()
-      setDropAt(e.clientY < box.top + box.height / 2 ? 'above' : 'below')
+      const y = (e.clientY - box.top) / box.height
+      setDropAt(y < 1 / 3 ? 'above' : y > 2 / 3 ? 'below' : 'onto')
       return
     }
     if (!e.dataTransfer.types.includes(REF_MIME)) return
@@ -404,7 +408,9 @@ const CommitRow = memo(function CommitRow(props: {
       const where = dropAt ?? 'above'
       setDropAt(null)
       const hashes = JSON.parse(commits) as string[]
-      if (!hashes.includes(commit.hash)) void moveCommits(repoId, hashes, commit.hash, where)
+      if (hashes.includes(commit.hash)) return
+      if (where === 'onto') void squashOnto(repoId, hashes, commit.hash)
+      else void moveCommits(repoId, hashes, commit.hash, where)
       return
     }
     const raw = e.dataTransfer.getData(REF_MIME)
@@ -478,7 +484,9 @@ const CommitRow = memo(function CommitRow(props: {
       {look.cols.sha && <div style={{ width: SHA_W }} className={clsx('shrink-0 px-2 font-mono text-xs text-faint', COL_SHA)}>{shortHash(commit.hash)}</div>}
       {/* Lines up with the header's gear. */}
       <div className="w-7 shrink-0" />
-      {dropAt && (
+      {dropAt === 'onto' ? (
+        <div data-testid="drop-onto" className="pointer-events-none absolute inset-0 rounded-sm outline outline-2 -outline-offset-2 outline-accent" title="Squash into this commit" />
+      ) : dropAt && (
         <div data-testid="drop-line" className={clsx('pointer-events-none absolute inset-x-0 h-0.5 bg-accent', dropAt === 'above' ? 'top-0' : 'bottom-0')} />
       )}
     </div>

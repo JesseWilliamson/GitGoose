@@ -133,7 +133,9 @@ export interface GitSquidApi {
   createBranch(repoId: string, name: string, opts?: { at?: string; checkout?: boolean }): Promise<UndoId>
   renameBranch(repoId: string, from: string, to: string): Promise<UndoId>
   deleteBranch(repoId: string, name: string, opts?: { force?: boolean }): Promise<UndoId>
-  merge(repoId: string, ref: string, opts?: { noFf?: boolean; ffOnly?: boolean }): Promise<UndoId>
+  merge(repoId: string, ref: string, opts?: { noFf?: boolean; ffOnly?: boolean; squash?: boolean; noCommit?: boolean }): Promise<UndoId>
+  /** The message git prepared for the next commit (after a squash merge or a stopped merge), or ''. */
+  preparedMessage(repoId: string): Promise<string>
   rebase(repoId: string, onto: string): Promise<UndoId>
   reset(repoId: string, hash: string, mode: ResetMode): Promise<UndoId>
   cherryPick(repoId: string, hash: string): Promise<UndoId>
@@ -144,6 +146,14 @@ export interface GitSquidApi {
    * RecomposeProposal, oldest first). The branch ends at the same tree; one undo entry.
    */
   recomposeApply(repoId: string, hashes: string[], commits: { message: string; units: string[] }[]): Promise<UndoId>
+  /** New message for a commit on the current branch. */
+  rewordCommit(repoId: string, hash: string, message: string): Promise<UndoId>
+  /** Fold a commit into the one below it: 'squash' keeps both messages, 'fixup' the lower one's. */
+  squashCommit(repoId: string, hash: string, mode: 'squash' | 'fixup'): Promise<UndoId>
+  /** Fold commits into `target` (drag onto), keeping all messages. */
+  squashOnto(repoId: string, hashes: string[], target: string): Promise<UndoId>
+  /** Commit the staged changes into an older commit on the current branch. */
+  fixupInto(repoId: string, target: string): Promise<UndoId>
   /** Commits on the current branch that drop/move can edit (newest first; stops at a merge). */
   editableCommits(repoId: string): Promise<string[]>
   /** Remove commits from the current branch; later commits are replayed (may stop on conflicts). */
@@ -179,6 +189,9 @@ export interface GitSquidApi {
   undoList(repoId: string): Promise<UndoEntry[]>
   /** Undo the latest operation; with `entryId`, only if that entry is still the latest. */
   undo(repoId: string, entryId?: number): Promise<string | null>
+  /** Redo the operation undone last, if nothing happened since. Returns its label, or null. */
+  redo(repoId: string): Promise<string | null>
+  redoList(repoId: string): Promise<UndoEntry[]>
 }
 
 export type ApiMethod = keyof GitSquidApi
@@ -193,7 +206,7 @@ export const API_METHODS = [
   'lastCommitMessage',
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit',
   'checkout', 'createBranch', 'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset',
-  'cherryPick', 'cherryPickMany', 'commitsText', 'recomposeApply', 'editableCommits', 'dropCommits', 'moveCommits', 'revert', 'createTag', 'deleteTag',
+  'cherryPick', 'cherryPickMany', 'commitsText', 'recomposeApply', 'editableCommits', 'dropCommits', 'moveCommits', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'preparedMessage', 'redo', 'redoList', 'revert', 'createTag', 'deleteTag',
   'fetch', 'pull', 'push', 'deleteRemoteBranch',
   'stashPush', 'stashApply', 'stashPop', 'stashDrop',
   'conflicts', 'conflictVersions', 'resolveConflict', 'continueOperation', 'abortOperation',

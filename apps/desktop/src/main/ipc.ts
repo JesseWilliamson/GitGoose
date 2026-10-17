@@ -19,7 +19,7 @@ export function broadcast(event: GitSquidEvent): void {
 /** Methods that change the repository. After each one we refresh and push a snapshot right away. */
 const WRITES = new Set<ApiMethod>([
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'checkout', 'createBranch',
-  'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset', 'cherryPick', 'cherryPickMany', 'recomposeApply', 'dropCommits', 'moveCommits', 'revert', 'createTag',
+  'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset', 'cherryPick', 'cherryPickMany', 'recomposeApply', 'dropCommits', 'moveCommits', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'redo', 'revert', 'createTag',
   'deleteTag', 'fetch', 'pull', 'push', 'deleteRemoteBranch', 'stashPush', 'stashApply', 'stashPop',
   'stashDrop', 'resolveConflict', 'continueOperation', 'abortOperation', 'undo',
 ])
@@ -122,6 +122,13 @@ export function createHandlers(
     editableCommits: (id) => r(id).editableCommits(),
     dropCommits: (id, hashes) => r(id).dropCommits(hashes),
     moveCommits: (id, hashes, target, where) => r(id).moveCommits(hashes, target, where),
+    rewordCommit: (id, hash, message) => r(id).rewordCommit(hash, message),
+    squashCommit: (id, hash, mode) => r(id).squashCommit(hash, mode),
+    squashOnto: (id, hashes, target) => r(id).squashOnto(hashes, target),
+    fixupInto: (id, target) => r(id).fixupInto(target),
+    preparedMessage: (id) => r(id).preparedMessage(),
+    redo: (id) => r(id).redo(),
+    redoList: async (id) => r(id).redoList(),
     revert: (id, hash) => r(id).revert(hash),
     createTag: (id, name, hash, message) => r(id).createTag(name, hash, message),
     deleteTag: (id, name) => r(id).deleteTag(name),

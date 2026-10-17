@@ -42,6 +42,8 @@ export interface RepoView {
   searchFocus: number
   /** Commits that drop / move / drag can edit: the current branch back to its last merge, newest first. */
   editable: string[]
+  /** Undone operations that can be redone, newest first. */
+  redo: UndoEntry[]
   stashes: StashEntry[]
   undo: UndoEntry[]
   progress: string | null
@@ -96,6 +98,8 @@ export type Dialog =
   | { kind: 'choice'; title: string; message: string; detail?: string; choices: Choice[] }
   | { kind: 'clone' }
   | { kind: 'shortcuts' }
+  /** Several lines of text (a commit message). */
+  | { kind: 'text'; title: string; initial: string; confirm: string; onSubmit: (text: string) => void }
 
 export interface DropRequest {
   x: number
@@ -321,7 +325,7 @@ function newView(snap: RepoSnapshot): RepoView {
     id: snap.id, snapshot: snap, logVersion: 0,
     selected: snap.status.length ? { kind: 'wip' } : snap.head.hash ? { kind: 'commit', hash: snap.head.hash } : { kind: 'wip' },
     center: snap.operation && snap.status.some((e) => e.kind === 'unmerged') ? { kind: 'conflicts' } : { kind: 'graph' },
-    search: null, searchOpen: false, searchFocus: 0, editable: [], stashes: [], undo: [], progress: null, busy: null, worktreeTick: 0,
+    search: null, searchOpen: false, searchFocus: 0, editable: [], redo: [], stashes: [], undo: [], progress: null, busy: null, worktreeTick: 0,
   }
 }
 
@@ -399,8 +403,8 @@ export function onSnapshot(snap: RepoSnapshot): void {
 
 export async function refreshAux(id: string): Promise<void> {
   try {
-    const [stashes, undo, editable] = await Promise.all([api.stashList(id), api.undoList(id), api.editableCommits(id)])
-    updateRepo(id, { stashes, undo, editable })
+    const [stashes, undo, editable, redo] = await Promise.all([api.stashList(id), api.undoList(id), api.editableCommits(id), api.redoList(id)])
+    updateRepo(id, { stashes, undo, editable, redo })
   } catch {
     // The tab was closed meanwhile.
   }

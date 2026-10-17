@@ -109,3 +109,9 @@ Stashes in the graph (17) first (asked for directly). Then Part A by value: 1–
 Each feature lands with unit tests against real git (fixtures) and an e2e test of its UI path;
 `pnpm typecheck`, `pnpm test`, `pnpm e2e` green before every push, bench when the graph or log
 changes.
+
+## Status
+
+- [x] 17 stashes in the graph
+- [x] 1–4 reword, squash / fixup (menu and drag onto), fixup staged into an older commit,
+      squash merge and merge without committing (prepared message in the commit box), redo

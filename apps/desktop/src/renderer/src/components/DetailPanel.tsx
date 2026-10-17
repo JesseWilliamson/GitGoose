@@ -147,6 +147,22 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
   const id = view.id
   const canCommit = summary.trim().length > 0 && (stagedCount > 0 || amend) && !view.busy
   const aiOn = useAiEnabled()
+  // After a squash merge (or a merge stopped before its commit) git prepares a message: offer it.
+  const prepared = useRef('')
+  const opKey = `${view.snapshot.operation}|${stagedCount}`
+  useEffect(() => {
+    let live = true
+    void api.preparedMessage(id).then((m) => {
+      if (!live || !m || m === prepared.current) return
+      prepared.current = m
+      const [first, ...rest] = m.split('\n')
+      setSummary((s) => s || (first ?? ''))
+      setBody((b) => b || rest.join('\n').trim())
+    }, () => {})
+    return () => {
+      live = false
+    }
+  }, [id, opKey])
   /** The AI request writing the message, while it runs. */
   const [writing, setWriting] = useState<string | null>(null)
 

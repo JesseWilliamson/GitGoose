@@ -1,7 +1,7 @@
 import clsx from 'clsx'
-import { Archive, ArchiveRestore, ArrowDown, ArrowUp, ChevronDown, GitBranch, SquareTerminal, RefreshCw, Search, Settings, Undo2 } from 'lucide-react'
+import { Archive, ArchiveRestore, ArrowDown, ArrowUp, ChevronDown, GitBranch, SquareTerminal, RefreshCw, Redo2, Search, Settings, Undo2 } from 'lucide-react'
 import { DropdownMenu } from 'radix-ui'
-import { fetchAll, newBranch, pop, pull, push, stash, undo } from '../lib/actions'
+import { fetchAll, newBranch, pop, pull, push, redo, stash, undo } from '../lib/actions'
 import { runCommand, useStore, type RepoView } from '../lib/store'
 import { modName, shortcutOf } from '../lib/keys'
 import { DM, Spinner, ToolbarButton } from './ui'
@@ -15,6 +15,8 @@ export function Toolbar({ view }: { view: RepoView }) {
     <div className="drag flex h-14 shrink-0 items-center gap-1 border-b border-line bg-panel px-2" data-testid="toolbar">
       <ToolbarButton icon={<Undo2 size={17} />} label="Undo" disabled={!lastUndo || !!view.busy}
         title={lastUndo ? `Undo: ${lastUndo.label} (${modName()}+Z)` : 'Nothing to undo'} onClick={() => void undo(id)} />
+      <ToolbarButton icon={<Redo2 size={17} />} label="Redo" disabled={!view.redo[0] || !!view.busy}
+        title={view.redo[0] ? `Redo: ${view.redo[0].label} (${shortcutOf('redo')})` : 'Nothing to redo'} onClick={() => void redo(id)} />
       <span className="mx-1 h-8 w-px bg-line" />
       <DropdownMenu.Root>
         <div className="no-drag flex items-stretch">

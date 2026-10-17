@@ -47,15 +47,44 @@ export interface JournalEntry {
 
 export class UndoJournal {
   private entries: JournalEntry[] = []
+  /** Undone entries that can be redone: the redo actions, and the entry to put back afterwards. */
+  private redos: { redo: JournalEntry; original: JournalEntry }[] = []
   private nextId = 1
 
   constructor(private limit = 100) {}
 
+  /** A new operation: like in an editor, it ends any chance to redo what was undone before it. */
   record(label: string, actions: UndoAction[], expectHead: string | undefined): JournalEntry {
     const entry: JournalEntry = { id: this.nextId++, label, time: Date.now(), actions, expectHead }
+    this.redos = []
+    this.restore(entry)
+    return entry
+  }
+
+  /** Put an entry back on the undo stack (after a redo) without clearing the redo stack. */
+  restore(entry: JournalEntry): void {
     this.entries.push(entry)
     if (this.entries.length > this.limit) this.entries.shift()
-    return entry
+  }
+
+  pushRedo(redo: JournalEntry, original: JournalEntry): void {
+    this.redos.push({ redo, original })
+  }
+
+  peekRedo() {
+    return this.redos[this.redos.length - 1]
+  }
+
+  popRedo() {
+    return this.redos.pop()
+  }
+
+  clearRedo(): void {
+    this.redos = []
+  }
+
+  redoList(): UndoEntry[] {
+    return this.redos.map(({ redo }) => ({ id: redo.id, label: redo.label, time: redo.time })).reverse()
   }
 
   peek(): JournalEntry | undefined {

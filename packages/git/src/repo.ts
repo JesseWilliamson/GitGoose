@@ -597,9 +597,26 @@ export class Repo {
     })
   }
 
-  merge(ref: string, opts: { noFf?: boolean; ffOnly?: boolean } = {}): Promise<number | null> {
-    const flags = opts.ffOnly ? ['--ff-only'] : opts.noFf ? ['--no-ff'] : []
+  /**
+   * Merge `ref` into HEAD. squash: stage its changes without a merge commit (commit them
+   * yourself; the message is prepared). noCommit: stop before the merge commit, to adjust it.
+   */
+  merge(ref: string, opts: { noFf?: boolean; ffOnly?: boolean; squash?: boolean; noCommit?: boolean } = {}): Promise<number | null> {
+    const flags = opts.squash ? ['--squash'] : opts.noCommit ? ['--no-commit', '--no-ff'] : opts.ffOnly ? ['--ff-only'] : opts.noFf ? ['--no-ff'] : []
     return this.moving(`Merge ${shortName(ref)}`, () => this.git(['merge', '--no-edit', ...flags, shortName(ref)]))
+  }
+
+  /** The message git prepared for the next commit (a squash or a stopped merge), or ''. */
+  async preparedMessage(): Promise<string> {
+    for (const f of ['SQUASH_MSG', 'MERGE_MSG']) {
+      try {
+        const text = await readFile(join(this.gitDir, f), 'utf8')
+        return text.split('\n').filter((l) => !l.startsWith('#')).join('\n').trim()
+      } catch {
+        // not there
+      }
+    }
+    return ''
   }
 
   rebase(onto: string): Promise<number | null> {
@@ -736,31 +753,102 @@ export class Repo {
    * replayed. --autostash keeps uncommitted work out of the way; a conflict stops the rebase like
    * any other (the conflict wizard takes over, and Abort puts everything back).
    */
-  private reorder(label: string, plan: (chainOldestFirst: string[]) => Promise<string[]>): Promise<number | null> {
+  private reorder(label: string, plan: (chainOldestFirst: string[]) => Promise<(string | TodoItem)[]>, opts: { before?: string; undoMode?: 'keep' | 'soft' } = {}): Promise<number | null> {
     return this.exclusive(async () => {
       if (this.operation()) throw new Error(`Finish the ${this.operation()} in progress first.`)
       const chain = (await this.editableCommits()).reverse()
-      const next = await plan(chain)
+      const next = (await plan(chain)).map((t): TodoItem => (typeof t === 'string' ? { hash: t } : t))
+      // Replay from the first position that changes (a different commit, or an action on it).
       let i = 0
-      while (i < chain.length && chain[i] === next[i]) i++
+      while (i < chain.length && next[i] && chain[i] === next[i]!.hash && !next[i]!.action && next[i]!.message === undefined) i++
       if (i === chain.length && next.length === chain.length) return null
+      // A squash or fixup folds into the commit before it, which must be replayed too.
+      while (i > 0 && (next[i]?.action === 'squash' || next[i]?.action === 'fixup')) i--
       const base = (await this.read(['rev-parse', `${chain[i]}^`])).trim()
-      const todo = next.slice(i).map((h) => `pick ${h}`).join('\n') || 'noop'
+      const files: string[] = []
+      const lines: string[] = []
+      for (const t of next.slice(i)) {
+        lines.push(`${t.action ?? 'pick'} ${t.hash}`)
+        if (t.message !== undefined) {
+          // Reword: amend the commit just picked with the new message, from a file (any text is safe).
+          const msgFile = join(this.gitDir, `gitsquid-msg-${process.pid}-${files.length}`)
+          await writeFile(msgFile, t.message.trim() + '\n')
+          files.push(msgFile)
+          lines.push(`exec git commit --amend --allow-empty --no-verify -F ${shellQuote(msgFile)}`)
+        }
+      }
       const file = join(this.gitDir, `gitsquid-todo-${process.pid}`)
-      await writeFile(file, todo + '\n')
-      const before = (await this.currentHead()).hash!
+      files.push(file)
+      await writeFile(file, (lines.join('\n') || 'noop') + '\n')
+      const before = opts.before ?? (await this.currentHead()).hash!
       try {
-        // git runs the sequence editor through a shell with the todo path appended.
+        // git runs the sequence editor through a shell with the todo path appended. GIT_EDITOR
+        // stays `true`, so a squash keeps git's combined message as it is.
         // rebase.updateRefs=false, not --no-update-refs: the flag needs git 2.38+, config is ignored before.
         await this.git(['-c', 'rebase.updateRefs=false', 'rebase', '-i', '--autostash', base], {
           env: { GIT_SEQUENCE_EDITOR: `cp ${shellQuote(file)}` },
         })
       } finally {
-        await rm(file, { force: true })
+        await Promise.all(files.map((f) => rm(f, { force: true })))
       }
       const after = (await this.currentHead()).hash
-      return after === before ? null : this.record(label, [{ kind: 'reset', to: before, mode: 'keep' }], after)
+      return after === before ? null : this.record(label, [{ kind: 'reset', to: before, mode: opts.undoMode ?? 'keep' }], after)
     })
+  }
+
+  /** Change the message of a commit on the current branch (HEAD included). */
+  rewordCommit(hash: string, message: string): Promise<number | null> {
+    if (!message.trim()) return Promise.reject(new Error('The message is empty.'))
+    return this.reorder(`Reword ${hash.slice(0, 7)}`, async (chain) => {
+      if (!chain.includes(hash)) throw new Error('Only commits on the current branch, after its last merge, can be reworded.')
+      return chain.map((h) => (h === hash ? { hash: h, message } : h))
+    })
+  }
+
+  /**
+   * Fold a commit into the one before it. 'squash' keeps both messages (one after the other),
+   * 'fixup' keeps only the earlier commit's message.
+   */
+  squashCommit(hash: string, mode: 'squash' | 'fixup'): Promise<number | null> {
+    return this.reorder(`${mode === 'squash' ? 'Squash' : 'Fixup'} ${hash.slice(0, 7)}`, async (chain) => {
+      const at = chain.indexOf(hash)
+      if (at < 0) throw new Error('Only commits on the current branch, after its last merge, can be squashed.')
+      if (at === 0) throw new Error('The commit below it is not on this part of the branch (a merge or the first commit).')
+      return chain.map((h) => (h === hash ? { hash: h, action: mode } : h))
+    })
+  }
+
+  /**
+   * Squash `hashes` onto `target` (Tower's drag-onto): move them just above it, then fold each
+   * into it, keeping all messages.
+   */
+  squashOnto(hashes: string[], target: string): Promise<number | null> {
+    return this.reorder(`Squash ${hashes.length === 1 ? hashes[0]!.slice(0, 7) : `${hashes.length} commits`} into ${target.slice(0, 7)}`, async (chain) => {
+      if (![...hashes, target].every((h) => chain.includes(h)) || hashes.includes(target)) {
+        throw new Error('Only commits on the current branch, after its last merge, can be squashed.')
+      }
+      const moving = chain.filter((h) => hashes.includes(h))
+      const rest = chain.filter((h) => !hashes.includes(h))
+      const at = rest.indexOf(target) + 1
+      return [...rest.slice(0, at), ...moving.map((h) => ({ hash: h, action: 'squash' as const })), ...rest.slice(at)]
+    })
+  }
+
+  /**
+   * Put the staged changes into an older commit: commit them as a fixup, then fold that into the
+   * target. Undo puts the branch back and leaves the changes staged again (reset --soft).
+   */
+  async fixupInto(target: string): Promise<number | null> {
+    const before = (await this.currentHead()).hash!
+    const chain = await this.editableCommits()
+    if (!chain.includes(target)) throw new Error('Only commits on the current branch, after its last merge, can take a fixup.')
+    await this.exclusive(() => this.git(['commit', '--no-verify', '-m', `fixup! ${target}`]))
+    const fixup = (await this.currentHead()).hash!
+    return this.reorder(`Fixup into ${target.slice(0, 7)}`, async (c) => {
+      const rest = c.filter((h) => h !== fixup)
+      const at = rest.indexOf(target) + 1
+      return [...rest.slice(0, at), { hash: fixup, action: 'fixup' as const }, ...rest.slice(at)]
+    }, { before, undoMode: 'soft' })
   }
 
   // ---------------------------------------------------------------- recompose
@@ -1097,10 +1185,64 @@ export class Repo {
       if (head.hash !== entry.expectHead) {
         throw new Error(`Cannot undo "${entry.label}": HEAD has moved since (another tool changed the repository)`)
       }
+      const redo = await this.inverse(entry.actions)
       for (const action of entry.actions) await this.perform(action)
       this.journal.pop()
+      const after = (await this.currentHead()).hash
+      if (redo) this.journal.pushRedo({ ...entry, actions: redo, expectHead: after }, entry)
       return entry.label
     })
+  }
+
+  /** Redo the operation undone last (when nothing has happened since). Returns its label. */
+  redo(): Promise<string | null> {
+    return this.exclusive(async () => {
+      const r = this.journal.peekRedo()
+      if (!r) return null
+      const head = await this.currentHead()
+      if (head.hash !== r.redo.expectHead) {
+        this.journal.clearRedo()
+        throw new Error(`Cannot redo "${r.redo.label}": the repository changed since it was undone.`)
+      }
+      for (const action of r.redo.actions) await this.perform(action)
+      this.journal.popRedo()
+      // Back on the undo stack, expecting the HEAD we are at now.
+      this.journal.restore({ ...r.original, expectHead: (await this.currentHead()).hash })
+      return r.redo.label
+    })
+  }
+
+  redoList(): UndoEntry[] {
+    return this.journal.redoList()
+  }
+
+  /**
+   * The actions that would redo `actions` after they are performed, or null when some step
+   * cannot be reversed from data alone (a discard, a stash pop: those stay undo-only).
+   */
+  private async inverse(actions: UndoAction[]): Promise<UndoAction[] | null> {
+    const out: UndoAction[] = []
+    const head = await this.currentHead()
+    for (const a of actions) {
+      switch (a.kind) {
+        case 'reset':
+          if (!head.hash) return null
+          out.push({ kind: 'reset', to: head.hash, mode: a.mode })
+          break
+        case 'update-ref':
+          out.push({ kind: 'update-ref', ref: a.ref, to: a.from, from: a.to })
+          break
+        case 'checkout':
+          out.push({ kind: 'checkout', target: head.branch ?? head.hash!, detach: !head.branch })
+          break
+        case 'rename-branch':
+          out.push({ kind: 'rename-branch', from: a.to, to: a.from })
+          break
+        default:
+          return null
+      }
+    }
+    return out.reverse()
   }
 
   private async perform(a: UndoAction): Promise<void> {
@@ -1199,4 +1341,12 @@ function splitAuthor(a: string): Record<string, string> {
 /** Quote for a POSIX shell (git runs editors through one, also on Windows). */
 function shellQuote(s: string): string {
   return `'${s.replace(/\\/g, '/').replace(/'/g, `'\\''`)}'`
+}
+
+/** One line of an interactive rebase we write ourselves. */
+interface TodoItem {
+  hash: string
+  action?: 'pick' | 'squash' | 'fixup'
+  /** Reword: the commit's new message. */
+  message?: string
 }

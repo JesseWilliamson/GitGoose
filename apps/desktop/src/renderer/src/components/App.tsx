@@ -1,6 +1,6 @@
 import { DEFAULT_LAYOUT, setCollapsed } from '@gitsquid/shared'
 import { useEffect } from 'react'
-import { fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, stash, undo } from '../lib/actions'
+import { fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, redo, stash, undo } from '../lib/actions'
 import { comboOf, keymap } from '../lib/keys'
 import { closeTab, onCommand, runCommand, updateRepo, saveSettings, setting, useActiveRepo, useStore } from '../lib/store'
 import { AttentionBar } from './AttentionBar'
@@ -48,6 +48,10 @@ function useCommands() {
           if (isTyping()) document.execCommand('undo')
           else void undo(id)
           return
+        case 'redo':
+          if (isTyping()) document.execCommand('redo')
+          else void redo(id)
+          return
         case 'close-tab': return void closeTab(id)
         case 'search':
           // Over the graph, so leave a diff or the conflict view for it.
@@ -86,8 +90,8 @@ function useCommands() {
       }
       const name = keymap(setting('keybindings')).get(combo)
       if (!name) return
-      // In a text field, Cmd/Ctrl+Z belongs to the text field.
-      if (name === 'undo' && isTyping()) return
+      // In a text field, undo and redo belong to the text field.
+      if ((name === 'undo' || name === 'redo') && isTyping()) return
       e.preventDefault()
       // Through the same path as the menu, so components listening for a command hear keys too.
       runCommand(name)

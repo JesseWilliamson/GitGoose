@@ -38,7 +38,35 @@ export function Dialogs() {
     )
   }
   if (dialog.kind === 'shortcuts') return <ShortcutsDialog close={close} />
+  if (dialog.kind === 'text') return <TextDialog key={dialog.title} d={dialog} close={close} />
   return <CloneDialog close={close} />
+}
+
+/** Multi-line text (a commit message): Ctrl/Cmd+Enter submits. */
+function TextDialog({ d, close }: { d: Extract<NonNullable<ReturnType<typeof useStore.getState>['dialog']>, { kind: 'text' }>; close: () => void }) {
+  const [value, setValue] = useState(d.initial)
+  const submit = () => {
+    if (!value.trim()) return
+    close()
+    d.onSubmit(value)
+  }
+  return (
+    <Modal open onClose={close} title={d.title} width={560}>
+      <textarea autoFocus value={value} onChange={(e) => setValue(e.target.value)} rows={8} data-testid="dialog-text"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault()
+            submit()
+          }
+        }}
+        style={{ fontFamily: 'var(--gs-code-font)' }}
+        className="w-full resize-y rounded-md border border-line bg-bg px-2 py-1.5 text-[13px] outline-none focus:border-accent" />
+      <div className="mt-3 flex justify-end gap-2">
+        <Button onClick={close}>Cancel</Button>
+        <Button variant="primary" disabled={!value.trim()} onClick={submit} data-testid="dialog-submit">{d.confirm}</Button>
+      </div>
+    </Modal>
+  )
 }
 
 function InputDialog({ d, close }: { d: Extract<NonNullable<ReturnType<typeof useStore.getState>['dialog']>, { kind: 'input' }>; close: () => void }) {
