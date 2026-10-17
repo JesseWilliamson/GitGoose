@@ -13,7 +13,7 @@ import { Button, CM, SectionHeader, Spinner } from './ui'
 
 export function DetailPanel({ view }: { view: RepoView }) {
   return (
-    <aside className="flex w-[340px] shrink-0 flex-col border-l border-line bg-panel" data-testid="detail-panel">
+    <aside className="flex h-full min-h-0 w-full flex-col bg-panel" data-testid="detail-panel">
       {view.selected.kind === 'wip' ? <WipPanel view={view} /> : <CommitPanel view={view} hash={view.selected.hash} />}
     </aside>
   )

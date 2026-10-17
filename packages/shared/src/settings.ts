@@ -1,3 +1,5 @@
+import { DEFAULT_LAYOUT, normalizeLayout, type PaneLayout } from './layout'
+
 /**
  * Every setting in one table. The settings page, defaults, validation and migration all come
  * from this, so adding a setting is one entry here and nothing else drifts out of sync.
@@ -108,6 +110,8 @@ export const SETTINGS = {
   recentRepos: internal<string[]>([]),
   openRepos: internal<string[]>([]),
   graphWidth: internal<number | null>(null),
+  /** Pane arrangement (packages/shared/src/layout.ts); repaired with normalizeLayout when read. */
+  layout: internal<PaneLayout>(DEFAULT_LAYOUT),
 } satisfies Record<string, SettingSpec>
 
 export type SettingKey = keyof typeof SETTINGS
@@ -140,6 +144,7 @@ export function validateSetting<K extends SettingKey>(key: K, value: unknown): S
       if (!value || typeof value !== 'object' || Array.isArray(value)) return fallback
       return Object.fromEntries(Object.entries(value).filter(([, v]) => typeof v === 'string')) as Settings[K]
     case 'internal':
+      if (key === 'layout') return normalizeLayout(value) as Settings[K]
       // App state is trusted as long as its JSON shape matches the default's.
       if (value === undefined) return fallback
       if (Array.isArray(spec.default) !== Array.isArray(value)) return fallback
