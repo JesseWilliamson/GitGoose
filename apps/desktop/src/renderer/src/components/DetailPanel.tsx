@@ -13,6 +13,7 @@ import { addTrailer, isUntouched, splitTemplate } from '../lib/commitMessage'
 import { startReview } from '../lib/review'
 import { openAsk } from '../lib/ask'
 import { startWalkthrough } from '../lib/walkthrough'
+import { showImpact } from '../lib/impact'
 import { ensureLoaded, getLog, reportError, selectCommit, setting, toast, updateRepo, useSetting, useStore, type FileMode, type RepoView } from '../lib/store'
 import { Avatar } from './Avatar'
 import { ChangeHints } from './ChangeHints'
@@ -107,16 +108,21 @@ function WipPanel({ view }: { view: RepoView }) {
           <span className="font-semibold">{st.length} file {st.length === 1 ? 'change' : 'changes'}</span>
           <span className="text-muted"> on {view.snapshot.head.branch ?? (view.snapshot.head.detached ? 'detached HEAD' : 'a new branch')}</span>
         </span>
-        {st.length > 0 && aiOn && (
+        {st.length > 0 && (
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
-              <Button size="sm" variant="ghost" data-testid="review-menu" title="Review these changes with AI"><Sparkles size={12} /> Review</Button>
+              <Button size="sm" variant="ghost" data-testid="review-menu" title="Review, explain or assess these changes"><Sparkles size={12} /> Review</Button>
             </DropdownMenu.Trigger>
             <DM.Content align="end">
-              <DM.Item onSelect={() => startReview(id, { kind: 'working' })}>Review all uncommitted changes</DM.Item>
-              <DM.Item disabled={!staged.length} onSelect={() => startReview(id, { kind: 'staged' })}>Review staged changes</DM.Item>
-              <DM.Separator />
-              <DM.Item onSelect={() => startWalkthrough(id, { kind: 'working' })}>Walk me through these changes</DM.Item>
+              {aiOn && (
+                <>
+                  <DM.Item onSelect={() => startReview(id, { kind: 'working' })}>Review all uncommitted changes</DM.Item>
+                  <DM.Item disabled={!staged.length} onSelect={() => startReview(id, { kind: 'staged' })}>Review staged changes</DM.Item>
+                  <DM.Item onSelect={() => startWalkthrough(id, { kind: 'working' })}>Walk me through these changes</DM.Item>
+                  <DM.Separator />
+                </>
+              )}
+              <DM.Item onSelect={() => showImpact(id, { kind: 'working' })}>What could these changes affect?</DM.Item>
             </DM.Content>
           </DropdownMenu.Root>
         )}

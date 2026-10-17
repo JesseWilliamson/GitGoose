@@ -143,6 +143,7 @@ export function createHandlers(
     commit: (id, message, opts) => r(id).commit(message, opts),
     codePeek: (id, name, rev) => r(id).codePeek(name, rev),
     changeInsights: (id) => r(id).changeInsights(),
+    impact: (id, scope) => r(id).impact(scope),
     askThreads: async (id) => getSettings().askThreads[r(id).path] ?? [],
     saveAskThread: async (id, thread) => {
       const path = r(id).path

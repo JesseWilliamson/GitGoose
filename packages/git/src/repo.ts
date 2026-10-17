@@ -1,5 +1,5 @@
 import type {
-  BisectState, BlameLine, ChangeInsights, CodePeek, ReviewScope, ImageSide, LfsInfo, LfsLock, ChangedFile, CommandRecord, GraphFilter, Identity, Person, Signature, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
+  BisectState, BlameLine, ChangeInsights, CodePeek, ImpactResult, ReviewScope, ImageSide, LfsInfo, LfsLock, ChangedFile, CommandRecord, GraphFilter, Identity, Person, Signature, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
   LogPage, Ref, Remote, RepoOperation, ReflogEntry, RepoSnapshot, ResetMode, Resolution, SearchField, SelectionRequest,
   StashEntry, StatusEntry, Submodule, UndoEntry, Worktree,
 } from '@gitsquid/shared'
@@ -11,6 +11,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { enclosingDefinition, findDefinitions, NOT_NAMES, parseGrep, type Definition } from '@gitsquid/codegraph'
 import { parseBlame } from './blame'
 import { coChanges, oldRanges, parseFilesPerCommit } from './insights'
+import { changedSymbols, isTestPath, testsByName } from './impact'
 import { globToRegExp, parsePathInstructions, relevantGuidelines } from './reviewrules'
 import { CatFile } from './catfile'
 import { parseChangedFiles, parseDiff, untrackedDiff } from './diff'
@@ -1116,6 +1117,65 @@ export class Repo {
       byCommit.set(b.hash, e)
     }
     return { lines, within, used, history, blame: [...byCommit.values()].sort((a, b) => b.lines - a.lines) }
+  }
+
+  /**
+   * What a change could affect beyond itself: the definitions it touches, every use of them
+   * outside the change (git grep at the same revision), tests for them, and files that usually
+   * change along. Bounded: 15 symbols, 15 uses each, 80 in all.
+   */
+  async impact(scope: ReviewScope): Promise<ImpactResult> {
+    const input = await this.reviewInput(scope, 400_000)
+    const rev = input.head === 'worktree' ? null : input.head === 'index' ? '' : input.head
+    const baseRev = input.base ?? 'HEAD'
+    const before = new Map<string, string>()
+    for (const f of input.files) {
+      if (f.change === 'added' || f.binary) continue
+      const t = await this.textAt(baseRev, f.oldPath ?? f.path)
+      if (t !== null) before.set(f.oldPath ?? f.path, t)
+    }
+    const symbols = changedSymbols(input.files, (p) => input.texts.get(p) ?? null, (p) => before.get(p) ?? null).slice(0, 40)
+    // Lines that are part of the change: uses there are not "outside".
+    const inChange = new Map<string, Set<number>>()
+    for (const f of input.files) {
+      const set = new Set<number>()
+      for (const h of f.hunks) for (const l of h.lines) if (l.newNo !== undefined && l.kind === '+') set.add(l.newNo)
+      inChange.set(f.path, set)
+    }
+    const listed = rev === null
+      ? await this.read(['ls-files', '-z', '--cached', '--others', '--exclude-standard'])
+      : rev === '' ? await this.read(['ls-files', '-z']) : await this.read(['ls-tree', '-r', '-z', '--name-only', rev])
+    const allPaths = listed.split('\0').filter(Boolean)
+    const callers: ImpactResult['callers'] = []
+    const names = [...new Set(symbols.map((s) => s.name))].slice(0, 15)
+    for (const name of names) {
+      if (callers.length >= 80) break
+      const defLines = new Set(symbols.filter((s) => s.name === name).map((s) => `${s.path}:${s.line}`))
+      const where = rev === null ? [] : rev === '' ? ['--cached'] : [rev]
+      const out = await this.runner.run(['grep', '-n', '-z', '--column', '-w', '-I', '-F', '--max-count=20', '-e', name, ...where, '--'], { readOnly: true, okCodes: [1] })
+      let n = 0
+      for (const h of parseGrep(out.stdout, rev || undefined)) {
+        if (n >= 15 || callers.length >= 80) break
+        if (inChange.get(h.path)?.has(h.line) || defLines.has(`${h.path}:${h.line}`)) continue
+        const defs = (await this.definitionsIn(rev, h.path))?.defs ?? []
+        // A line that defines the name (an overload, a re-export) is not a use of it.
+        if (defs.some((d) => d.name === name && d.line === h.line)) continue
+        const d = enclosingDefinition(defs, h.line)
+        callers.push({ id: `C${callers.length + 1}`, symbol: name, path: h.path, line: h.line, text: h.text.trim().slice(0, 240), within: d ? `${d.kind} ${d.name}` : undefined, test: isTestPath(h.path) })
+        n++
+      }
+    }
+    const changedPaths = input.files.map((f) => f.path)
+    const tests = [...new Set([
+      ...changedPaths.flatMap((p) => testsByName(p, allPaths)),
+      ...callers.filter((c) => c.test).map((c) => c.path),
+    ])].filter((p) => !changedPaths.includes(p) || isTestPath(p))
+    const coChange: ImpactResult['coChange'] = []
+    for (const file of changedPaths.slice(0, 10)) {
+      const log = await this.read(['log', '-n', '300', '--format=%x01%H', '-z', '--name-only', '--full-diff', ...(input.base && input.head !== 'worktree' && input.head !== 'index' ? [input.head] : []), '--', file]).catch(() => '')
+      for (const c of coChanges(file, parseFilesPerCommit(log))) if (!changedPaths.includes(c.path) && !coChange.some((x) => x.path === c.path)) coChange.push(c)
+    }
+    return { scope, label: input.label, head: input.head, base: input.base, symbols, callers, tests, coChange: coChange.slice(0, 6) }
   }
 
   /** Recent commits up to `base` that touched these files: the history a reader of the change needs. */

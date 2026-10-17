@@ -1,6 +1,6 @@
 import type { Repo } from '@gitsquid/git'
 import { describeHunks, globToRegExp, numberedDiff, reviewableLines, walkthroughHunks, type ReviewableLines } from '@gitsquid/git'
-import type { AiTask, ReviewLearning, ReviewProfile, WalkthroughResult } from '@gitsquid/shared'
+import type { AiTask, ImpactResult, ReviewLearning, ReviewProfile, WalkthroughResult } from '@gitsquid/shared'
 import { join } from 'node:path'
 
 /**
@@ -31,6 +31,8 @@ export interface BuiltPrompt {
   writable?: string
   /** For recompose: the range and its units, to turn the answer into a proposal. */
   recompose?: RecomposeInfo
+  /** For assess-impact: the impact found locally (the model may only cite its call sites). */
+  impact?: ImpactResult
   /** For walkthrough: everything but the model's part. */
   walkthrough?: Omit<WalkthroughResult, 'summary' | 'effort' | 'effortWhy' | 'groups' | 'sequence'>
   /** For fix-finding: the file (relative) the proposal is for, and its text when asked. */
@@ -205,6 +207,32 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: Pro
           ...(history.length ? ['Recent commits that touched these files, newest first:', ...history.map((h) => `- ${h.subject}`), ''] : []),
           'The pieces:',
           text,
+        ].join('\n'),
+      }
+    }
+    case 'assess-impact': {
+      const impact = await repo.impact(task.scope)
+      if (!impact.callers.length) throw new Error('No uses of the changed code were found outside the change: nothing to assess.')
+      const input = await repo.reviewInput(task.scope)
+      const changed = impact.symbols.map((s) => `- ${s.kind} ${s.name} (${s.path}:${s.line}) ${s.change}`).join('\n')
+      return {
+        system: 'You assess the blast radius of code changes.',
+        impact,
+        prompt: [
+          `This change (${input.label}) touches the definitions listed below. Their uses outside the change are numbered C1, C2, ….`,
+          'Say which of those uses could break or behave differently because of the change, and why. Cite only the numbered uses; do not invent others. Leave out uses that are fine.',
+          'Answer with JSON only, no prose and no code fence, in exactly this shape:',
+          '{"summary": "one or two sentences on the overall risk", "risks": [{"id": "C3", "why": "what could go wrong there"}]}',
+          NO_TOOLS,
+          '',
+          'Changed definitions:',
+          changed,
+          '',
+          'Uses outside the change:',
+          ...impact.callers.map((c) => `[${c.id}] ${c.path}:${c.line}${c.within ? ` in ${c.within}` : ''}${c.test ? ' (test)' : ''}: ${c.text}`),
+          '',
+          'The change:',
+          truncate(numberedDiff(input.files, (p) => input.texts.get(p) ?? null), 40_000),
         ].join('\n'),
       }
     }

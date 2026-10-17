@@ -6,6 +6,7 @@ import { onAiEvent } from './ai'
 import { opName } from './format'
 import type { ReviewState } from './review'
 import type { WalkthroughState } from './walkthrough'
+import type { ImpactState } from './impact'
 
 export type Selection =
   | { kind: 'wip' }
@@ -28,6 +29,7 @@ export type CenterView =
   | { kind: 'commands' }
   | { kind: 'review' }
   | { kind: 'walkthrough' }
+  | { kind: 'impact' }
 
 export interface SearchState {
   field: SearchField
@@ -66,6 +68,7 @@ export interface RepoView {
   /** The last AI review in this repository (see lib/review.ts). */
   review: ReviewState | null
   walkthrough: WalkthroughState | null
+  impact: ImpactState | null
   /** The question thread open under the diff, if any. */
   ask: AskThread | null
   /** Saved threads (newest first), loaded with the repository. */
@@ -372,7 +375,7 @@ function newView(snap: RepoSnapshot): RepoView {
     id: snap.id, snapshot: snap, logVersion: 0,
     selected: snap.status.length ? { kind: 'wip' } : snap.head.hash ? { kind: 'commit', hash: snap.head.hash } : { kind: 'wip' },
     center: snap.operation && snap.status.some((e) => e.kind === 'unmerged') ? { kind: 'conflicts' } : { kind: 'graph' },
-    search: null, searchOpen: false, searchFocus: 0, editable: [], redo: [], stashes: [], undo: [], remotes: [], merged: [], worktrees: [], submodules: [], lfs: null, pulls: null, pullsLoading: false, review: null, walkthrough: null, ask: null, askThreads: [], remoteTags: null, progress: null, busy: null, worktreeTick: 0,
+    search: null, searchOpen: false, searchFocus: 0, editable: [], redo: [], stashes: [], undo: [], remotes: [], merged: [], worktrees: [], submodules: [], lfs: null, pulls: null, pullsLoading: false, review: null, walkthrough: null, impact: null, ask: null, askThreads: [], remoteTags: null, progress: null, busy: null, worktreeTick: 0,
   }
 }
 

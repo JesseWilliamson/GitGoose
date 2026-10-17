@@ -46,6 +46,13 @@ async function prompt(params, cx) {
     await say(cx, id, 'Thinking')
     process.exit(3)
   }
+  if (text.includes('Uses outside the change')) {
+    // Flags the first non-test use, and one id that was never sent (must be ignored).
+    const site = /^\[(C\d+)\] [^\n]*?(?<!\(test\)): /m.exec(text)?.[1] ?? 'C1'
+    const json = JSON.stringify({ summary: 'One caller relies on the old rounding.', risks: [{ id: site, why: 'It expects unrounded totals.' }, { id: 'C99', why: 'invented' }] })
+    for (let i = 0; i < json.length; i += 40) await say(cx, id, json.slice(i, i + 40))
+    return { stopReason: 'end_turn' }
+  }
   if (text.includes('Answer the question about the selected lines')) {
     // Echo what it was given, so tests can see the context arrived.
     const within = /They are inside (\w+ \w+)/.exec(text)?.[1] ?? 'no definition'

@@ -195,3 +195,6 @@ Part B:
       them, definitions of names they use (codegraph), the commits that changed them (log -L) and
       who wrote them (blame -L); follow-ups keep the thread; threads are saved per repository,
       pinned to their commit, and listed in its details
+- [x] 32 impact of a change (local, no AI): definitions it touches, adds or removes, every use
+      outside the change with the function it is in, tests (by name and by use), usual
+      companions; Assess impact asks the model which uses are at risk, citing only listed ones

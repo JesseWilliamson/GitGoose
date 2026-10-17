@@ -6,6 +6,7 @@ import {
 } from '../lib/actions'
 import { startReview } from '../lib/review'
 import { startWalkthrough } from '../lib/walkthrough'
+import { showImpact } from '../lib/impact'
 import { saveSettings, useStore } from '../lib/store'
 
 interface Entry {
@@ -48,6 +49,7 @@ export function CommandPalette() {
     add('Repository', 'Add remote…', () => addRemote(id))
     add('Repository', 'Change who you commit as…', () => useStore.setState({ dialog: { kind: 'identity', repoId: id } }))
     add('Repository', 'Add worktree…', () => addWorktree(id))
+    add('Repository', 'What could the uncommitted changes affect?', () => showImpact(id, { kind: 'working' }))
     if ((useStore.getState().settings?.aiProvider ?? 'off') !== 'off') {
       add('AI', 'Review uncommitted changes', () => startReview(id, { kind: 'working' }))
       add('AI', 'Review staged changes', () => startReview(id, { kind: 'staged' }))

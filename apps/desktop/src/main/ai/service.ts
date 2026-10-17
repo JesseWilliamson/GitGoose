@@ -127,6 +127,7 @@ export class AiService {
         : task.kind === 'review' ? { text: '', review: toReview(task, built, text) }
         : task.kind === 'fix-finding' ? toFix(built, text, extra.proposal)
         : task.kind === 'walkthrough' ? { text: '', walkthrough: toWalkthrough(built, text) }
+        : task.kind === 'assess-impact' ? { text: '', impact: toAssessment(built, text) }
         : { text: finish(text), ...extra }
 
     try {
@@ -197,6 +198,20 @@ export class AiService {
   stop(): void {
     this.agent.stop()
   }
+}
+
+/** The model's view of which call sites are at risk; only ids we sent count. */
+function toAssessment(built: BuiltPrompt, text: string): NonNullable<AiResult['impact']> {
+  const impact = built.impact!
+  const raw = extractJson(text) as { summary?: unknown; risks?: unknown } | null
+  if (!raw) throw new AiError('The AI did not answer with an assessment. Try again.', 'ai-bad-answer')
+  const ids = new Set(impact.callers.map((c) => c.id))
+  const all = Array.isArray(raw.risks) ? raw.risks : []
+  const risks = all.flatMap((r) => {
+    const x = (r && typeof r === 'object' ? r : {}) as { id?: unknown; why?: unknown }
+    return typeof x.id === 'string' && ids.has(x.id) && typeof x.why === 'string' && x.why.trim() ? [{ id: x.id, why: x.why.trim().slice(0, 600) }] : []
+  })
+  return { ...impact, assessment: { summary: typeof raw.summary === 'string' ? raw.summary.trim().slice(0, 1000) : '', risks, dropped: all.length - risks.length } }
 }
 
 /** The model's walkthrough, checked against the change (see verifyWalkthrough). */

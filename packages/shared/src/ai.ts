@@ -129,6 +129,24 @@ export interface WalkthroughResult {
   skipped: string[]
 }
 
+/** What a change could affect beyond itself (see Repo.impact). */
+export interface ImpactResult {
+  scope: ReviewScope
+  label: string
+  head: string
+  base?: string
+  /** Definitions the change touches, adds or removes. */
+  symbols: { name: string; kind: string; path: string; line: number; change: 'changed' | 'added' | 'removed' }[]
+  /** Uses of those symbols outside the change, numbered for the model to cite. */
+  callers: { id: string; symbol: string; path: string; line: number; text: string; within?: string; test: boolean }[]
+  /** Test files that cover the changed files or use the changed symbols. */
+  tests: string[]
+  /** Files that usually change with these but are not in the change. */
+  coChange: { path: string; with: string; together: number; total: number }[]
+  /** Set by "Assess impact": which call sites the model thinks are at risk, and why. */
+  assessment?: { summary: string; risks: { id: string; why: string }[]; dropped: number }
+}
+
 /** A question-and-answer thread about some lines, pinned to the commit they were asked at. */
 export interface AskThread {
   id: string
@@ -163,6 +181,8 @@ export type AiTask =
   | { kind: 'review'; scope: ReviewScope; profile: ReviewProfile }
   /** Explain a change: summary, grouped files, effort, reading order, a sequence diagram. */
   | { kind: 'walkthrough'; scope: ReviewScope }
+  /** Which of the call sites found by Repo.impact are at risk (it may cite only those). */
+  | { kind: 'assess-impact'; scope: ReviewScope }
   /** A question about lines of a file, with their function, definitions and history as context. */
   | { kind: 'ask'; rev: string | null; path: string; startLine: number; endLine: number; question: string; earlier: { role: 'user' | 'ai'; text: string }[] }
   /** Fix one review finding: the agent proposes the whole file (nothing is written until accepted). */
@@ -235,6 +255,8 @@ export interface AiResult {
   text: string
   /** recompose: the proposed commits, for review before anything changes. */
   recompose?: RecomposeProposal
+  /** assess-impact: the impact, with the checked assessment. */
+  impact?: ImpactResult
   /** walkthrough: the checked walkthrough. */
   walkthrough?: WalkthroughResult
   /** review: the verified findings. */
