@@ -59,3 +59,27 @@ test('searches commits and steps through matches', async () => {
   await expect(page.getByTestId('search-count')).toHaveText('No matches')
   await app.close()
 })
+
+test('caps the graph column on wide histories and lets the user resize it', async () => {
+  // Twelve branches whose lanes are all open at once.
+  const r = makeFixture('linear')
+  for (let i = 0; i < 12; i++) {
+    r.checkout('-b', `b${i}`, 'main~4')
+    r.commit(`work on b${i}`, { [`b${i}.txt`]: 'x\n' })
+  }
+  r.checkout('main')
+  const { app, page } = await launch(r.dir)
+  const header = page.getByTestId('graph-resizer').locator('..')
+  await expect(header).toBeVisible()
+  const auto = (await header.boundingBox())!.width
+  expect(auto).toBeLessThanOrEqual(8 * 16 + 12 + 1)
+  const handle = (await page.getByTestId('graph-resizer').boundingBox())!
+  await page.mouse.move(handle.x + 2, handle.y + 5)
+  await page.mouse.down()
+  await page.mouse.move(handle.x + 102, handle.y + 5, { steps: 5 })
+  await page.mouse.up()
+  await expect.poll(async () => (await header.boundingBox())!.width).toBeGreaterThan(auto + 90)
+  await page.getByTestId('graph-resizer').dblclick()
+  await expect.poll(async () => (await header.boundingBox())!.width).toBeCloseTo(auto, 0)
+  await app.close()
+})

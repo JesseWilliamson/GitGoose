@@ -168,4 +168,6 @@ export interface Settings {
   fontSize: number
   recentRepos: string[]
   openRepos: string[]
+  /** Graph column width in px, set by dragging its header edge; null sizes it automatically. */
+  graphWidth: number | null
 }

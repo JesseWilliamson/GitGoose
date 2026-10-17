@@ -7,7 +7,7 @@ import { ContextMenu } from 'radix-ui'
 import { memo, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { checkout } from '../lib/actions'
 import { hashColor, initials, laneColor, relativeTime, shortHash } from '../lib/format'
-import { getLog, loadMore, updateRepo, useStore, type RepoView } from '../lib/store'
+import { getLog, loadMore, saveSettings, updateRepo, useStore, type RepoView } from '../lib/store'
 import { GraphCell, LANE_W, ROW_H, WipCell } from './GraphCell'
 import { GraphMenu } from './menus'
 import { Spinner } from './ui'
@@ -16,7 +16,10 @@ const REFS_W = 160
 const AUTHOR_W = 140
 const DATE_W = 100
 const SHA_W = 68
-const MAX_LANES = 24
+/** Automatic width shows at most this many lanes; wider histories are clipped until the user widens the column. */
+const AUTO_LANES = 8
+const MIN_GRAPH_W = 64
+const MAX_GRAPH_W = 800
 export const REF_MIME = 'application/x-gitsquid-ref'
 const COL_AUTHOR = 'hidden @2xl:flex'
 const COL_DATE = 'hidden @xl:block'
@@ -90,7 +93,11 @@ export function Graph({ view }: { view: RepoView }) {
   }, [snap.refs])
 
   const hits = useMemo(() => (view.search ? new Set(view.search.hits) : null), [view.search])
-  const graphW = Math.max(64, Math.min(log.maxWidth, MAX_LANES) * LANE_W + 12)
+  // Real histories can have dozens of lanes open at once (old release branches, tags). Sizing the
+  // column to fit them all would crush the commit messages, so like GitKraken we default to a few
+  // lanes, clip the rest, and let the user drag the column wider.
+  const userW = useStore((s) => s.settings?.graphWidth ?? null)
+  const graphW = userW ?? Math.max(MIN_GRAPH_W, Math.min(log.maxWidth, AUTO_LANES) * LANE_W + 12)
 
   // Keep the selected row in view when it changes (keyboard navigation, search, jumping to a parent).
   let selectedIndex = -1
@@ -137,7 +144,10 @@ export function Graph({ view }: { view: RepoView }) {
     <div className="@container flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex h-7 shrink-0 items-center border-b border-line bg-panel text-[11px] font-semibold tracking-wide whitespace-nowrap text-faint uppercase">
         <div style={{ width: REFS_W }} className="shrink-0 truncate px-3">Branch / Tag</div>
-        <div style={{ width: graphW }} className="shrink-0 truncate px-1">Graph</div>
+        <div style={{ width: graphW }} className="relative shrink-0 truncate px-1">
+          Graph{log.maxWidth * LANE_W + 12 > graphW && <span className="ml-1 font-normal normal-case" title="Some lanes are hidden; drag the edge to widen">›</span>}
+          <ColumnResizer width={graphW} />
+        </div>
         <div className="min-w-0 flex-1 truncate px-2">Commit message</div>
         <div style={{ width: AUTHOR_W }} className={clsx('shrink-0 truncate px-2', COL_AUTHOR)}>Author</div>
         <div style={{ width: DATE_W }} className={clsx('shrink-0 truncate px-2', COL_DATE)}>Date</div>
@@ -192,6 +202,38 @@ export function Graph({ view }: { view: RepoView }) {
         <GraphMenu repoId={view.id} />
       </ContextMenu.Root>
     </div>
+  )
+}
+
+/** Drag the right edge of the Graph header to resize; double-click to go back to automatic. */
+function ColumnResizer({ width }: { width: number }) {
+  const onPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const el = e.currentTarget as HTMLElement
+    el.setPointerCapture(e.pointerId)
+    let w = width
+    const move = (ev: PointerEvent) => {
+      w = Math.min(MAX_GRAPH_W, Math.max(MIN_GRAPH_W, width + ev.clientX - startX))
+      // Update the store directly while dragging (smooth); persist once on release.
+      useStore.setState((s) => (s.settings ? { settings: { ...s.settings, graphWidth: w } } : s))
+    }
+    const up = () => {
+      el.removeEventListener('pointermove', move)
+      el.removeEventListener('pointerup', up)
+      void saveSettings({ graphWidth: w })
+    }
+    el.addEventListener('pointermove', move)
+    el.addEventListener('pointerup', up)
+  }
+  return (
+    <span
+      onPointerDown={onPointerDown}
+      onDoubleClick={() => void saveSettings({ graphWidth: null })}
+      data-testid="graph-resizer"
+      title="Drag to resize; double-click for automatic width"
+      className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-accent/50"
+    />
   )
 }
 

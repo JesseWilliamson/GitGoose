@@ -9,6 +9,7 @@ const DEFAULTS: Settings = {
   fontSize: 13,
   recentRepos: [],
   openRepos: [],
+  graphWidth: null,
 }
 
 let cache: Settings | null = null
