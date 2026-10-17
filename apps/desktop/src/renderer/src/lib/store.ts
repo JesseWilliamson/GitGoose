@@ -1,5 +1,5 @@
 import { GraphLayout, type Row } from '@gitsquid/graph'
-import type { Commit, DiffTarget, GitSquidEvent, Ref, RepoSnapshot, SearchField, Settings, StashEntry, UndoEntry } from '@gitsquid/shared'
+import { SETTINGS, type Commit, type DiffTarget, type GitSquidEvent, type Ref, type RepoSnapshot, type SearchField, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitsquid/shared'
 import { create } from 'zustand'
 import { api, toUiError, type UiError } from './api'
 
@@ -78,7 +78,6 @@ export type Dialog =
   | { kind: 'confirm'; title: string; message: string; confirm: string; danger?: boolean; onConfirm: () => void | Promise<void> }
   /** A question with several answers; the last choice is usually Cancel (a choice with no run). */
   | { kind: 'choice'; title: string; message: string; detail?: string; choices: Choice[] }
-  | { kind: 'settings' }
   | { kind: 'clone' }
   | { kind: 'shortcuts' }
 
@@ -106,6 +105,8 @@ interface State {
   menu: MenuTarget
   /** Progress text for a clone in flight. */
   cloneProgress: string | null
+  /** A full-window page shown instead of the repository (or welcome) view. */
+  page: 'settings' | null
 }
 
 export const useStore = create<State>(() => ({
@@ -121,6 +122,7 @@ export const useStore = create<State>(() => ({
   drop: null,
   menu: null,
   cloneProgress: null,
+  page: null,
 }))
 
 const set = useStore.setState
@@ -138,6 +140,16 @@ export function updateRepo(id: string, patch: Partial<RepoView> | ((v: RepoView)
 export function activeRepo(): RepoView | null {
   const s = get()
   return s.active ? (s.repos[s.active] ?? null) : null
+}
+
+/** One setting, falling back to its default before settings have loaded. */
+export function useSetting<K extends SettingKey>(key: K): Settings[K] {
+  return useStore((s) => (s.settings ? s.settings[key] : (SETTINGS[key].default as Settings[K])))
+}
+
+export function setting<K extends SettingKey>(key: K): Settings[K] {
+  const s = get().settings
+  return s ? s[key] : (SETTINGS[key].default as Settings[K])
 }
 
 export function useActiveRepo(): RepoView | null {
@@ -259,7 +271,25 @@ export function addRepo(snap: RepoSnapshot): void {
   resetLog(snap.id, snap)
   void loadMore(snap.id)
   void refreshAux(snap.id)
+  if (setting('fetchOnOpen')) void import('./actions').then((a) => a.fetchAll(snap.id, { quiet: true }))
 }
+
+/**
+ * Settings → Git → fetch every N minutes. One timer checks every minute; each open repo is fetched
+ * when its last fetch is older than the interval. Quiet on success; failures go to the attention
+ * bar like any other.
+ */
+const lastFetch = new Map<string, number>()
+setInterval(() => {
+  const minutes = setting('autoFetchMinutes')
+  if (!minutes) return
+  for (const id of get().tabs) {
+    const last = lastFetch.get(id) ?? 0
+    if (Date.now() - last < minutes * 60_000 || get().repos[id]?.busy) continue
+    lastFetch.set(id, Date.now())
+    void import('./actions').then((a) => a.fetchAll(id, { quiet: true }))
+  }
+}, 60_000)
 
 export async function openRepo(path: string): Promise<void> {
   try {
@@ -327,6 +357,10 @@ function onEvent(e: GitSquidEvent): void {
     case 'command':
       commandListeners.forEach((l) => l(e.name))
       break
+    case 'settings':
+      set({ settings: e.settings })
+      applyTheme(e.settings)
+      break
   }
 }
 
@@ -340,8 +374,17 @@ export function onCommand(l: (name: string) => void): () => void {
 
 export function applyTheme(settings: Settings): void {
   const dark = settings.theme === 'dark' || (settings.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)
-  document.documentElement.dataset.theme = dark ? 'dark' : 'light'
-  document.documentElement.style.setProperty('--gs-font-size', `${settings.fontSize}px`)
+  const root = document.documentElement
+  root.dataset.theme = dark ? 'dark' : 'light'
+  // UI scale is applied by the main process as the window zoom; only code panes read these.
+  root.style.setProperty('--gs-code-size', `${settings.codeFontSize}px`)
+  root.style.setProperty('--gs-code-font', settings.codeFontFamily.trim() || 'var(--font-mono)')
+  root.style.setProperty('--gs-tab-size', String(settings.tabSize))
+}
+
+/** Row height for code panes (diff, blame), derived from the code font size so rows never overlap. */
+export function codeLineHeight(fontSize: number): number {
+  return Math.round(fontSize * 1.6)
 }
 
 export async function saveSettings(patch: Partial<Settings>): Promise<void> {

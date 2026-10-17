@@ -1,5 +1,5 @@
 import type {
-  BlameLine, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffTarget, FileDiff, Head,
+  BlameLine, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
   LogPage, Ref, RepoOperation, RepoSnapshot, ResetMode, Resolution, SearchField, SelectionRequest,
   StashEntry, StatusEntry, UndoEntry,
 } from '@gitsquid/shared'
@@ -26,7 +26,14 @@ export interface RepoOptions {
   onProgress?: (text: string | null) => void
 }
 
-const DIFF_ARGS = ['--no-color', '--no-ext-diff', '--src-prefix=a/', '--dst-prefix=b/', '-U3']
+const DIFF_ARGS = ['--no-color', '--no-ext-diff', '--src-prefix=a/', '--dst-prefix=b/']
+
+function diffArgs(opts: DiffOptions = {}): string[] {
+  // At least one context line: zero-context hunks need `git apply --unidiff-zero`, which line
+  // staging deliberately does not use (it would also accept hunks that apply in the wrong place).
+  const context = Math.max(1, Math.min(opts.context ?? 3, 100))
+  return [...DIFF_ARGS, `-U${context}`, ...(opts.ignoreWhitespace ? ['-w'] : [])]
+}
 
 let nextRepoId = 1
 
@@ -250,7 +257,8 @@ export class Repo {
     return this.emptyTree
   }
 
-  async diff(target: DiffTarget): Promise<FileDiff | null> {
+  async diff(target: DiffTarget, opts: DiffOptions = {}): Promise<FileDiff | null> {
+    const DIFF_ARGS = diffArgs(opts)
     if (target.kind === 'untracked') {
       const content = await readFile(join(this.path, target.path))
       return untrackedDiff(target.path, content)
@@ -424,7 +432,8 @@ export class Repo {
       }
       if (target.kind === 'staged' && req.action !== 'unstage') throw new Error('Staged changes can only be unstaged')
       if (target.kind === 'unstaged' && req.action === 'unstage') throw new Error('Unstaged changes cannot be unstaged')
-      const diff = await this.diff(target)
+      // The same context as the diff the user selected from, or hunk indexes would not match.
+      const diff = await this.diff(target, { context: req.context })
       if (!diff) return null
       const reverse = req.action !== 'stage'
       const patch = buildPatch(diff, req.hunks, reverse)
@@ -441,10 +450,11 @@ export class Repo {
     })
   }
 
-  commit(message: string, opts: { amend?: boolean } = {}): Promise<number> {
+  commit(message: string, opts: { amend?: boolean; signOff?: boolean; gpgSign?: boolean } = {}): Promise<number> {
     return this.exclusive(async () => {
       const before = await this.currentHead()
-      await this.git(['commit', '-F', '-', ...(opts.amend ? ['--amend'] : [])], { input: message })
+      const flags = [...(opts.amend ? ['--amend'] : []), ...(opts.signOff ? ['--signoff'] : []), ...(opts.gpgSign ? ['-S'] : [])]
+      await this.git(['commit', '-F', '-', ...flags], { input: message })
       const after = await this.currentHead()
       const actions: UndoAction[] = before.hash
         ? [{ kind: 'reset', to: before.hash, mode: 'soft' }]
@@ -644,9 +654,10 @@ export class Repo {
     })
   }
 
-  pull(opts: { rebase?: boolean } = {}): Promise<number | null> {
+  pull(opts: { mode?: PullMode } = {}): Promise<number | null> {
+    const mode = { merge: '--no-rebase', rebase: '--rebase', 'ff-only': '--ff-only' }[opts.mode ?? 'merge']
     return this.moving('Pull', async () => {
-      await this.progress(['pull', '--progress', '--no-edit', opts.rebase ? '--rebase' : '--no-rebase'])
+      await this.progress(['pull', '--progress', '--no-edit', mode])
       void this.maintainCommitGraph({ force: true })
     })
   }

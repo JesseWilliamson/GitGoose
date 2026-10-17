@@ -53,3 +53,14 @@ export function shortHash(hash: string): string {
 export function sentence(s: string): string {
   return s ? s[0]!.toUpperCase() + s.slice(1) : s
 }
+
+/** A date per Settings → Appearance → Dates. */
+export function formatDate(unixSeconds: number, mode: 'relative' | 'absolute' | 'both' | string): string {
+  if (mode === 'absolute') return absoluteDate(unixSeconds)
+  if (mode === 'both') {
+    const rel = relativeTime(unixSeconds)
+    const abs = absoluteDate(unixSeconds)
+    return rel === abs ? abs : `${rel} · ${abs}`
+  }
+  return relativeTime(unixSeconds)
+}

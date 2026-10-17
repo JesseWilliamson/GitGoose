@@ -1,5 +1,6 @@
 import { app } from 'electron'
 import { logError } from './diagnostics'
+import { getSettings } from './settings'
 
 /**
  * Auto-update from GitHub releases (see electron-builder.yml `publish`). Only in packaged builds,
@@ -7,7 +8,7 @@ import { logError } from './diagnostics'
  * for the same reason.
  */
 export function scheduleUpdateCheck(): void {
-  if (!app.isPackaged || process.env.GITSQUID_NO_UPDATE) return
+  if (!app.isPackaged || process.env.GITSQUID_NO_UPDATE || !getSettings().checkForUpdates) return
   setTimeout(async () => {
     try {
       const { autoUpdater } = await import('electron-updater')

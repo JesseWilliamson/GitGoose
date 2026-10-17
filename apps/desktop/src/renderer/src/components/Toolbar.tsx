@@ -26,8 +26,9 @@ export function Toolbar({ view }: { view: RepoView }) {
           <DropdownMenu.Trigger className="rounded-md px-0.5 text-muted hover:bg-hover hover:text-fg"><ChevronDown size={12} /></DropdownMenu.Trigger>
         </div>
         <DM.Content>
-          <DM.Item onSelect={() => void pull(id)}>Pull (merge)</DM.Item>
-          <DM.Item onSelect={() => void pull(id, true)}>Pull (rebase)</DM.Item>
+          <DM.Item onSelect={() => void pull(id, 'merge')}>Pull (merge)</DM.Item>
+          <DM.Item onSelect={() => void pull(id, 'rebase')}>Pull (rebase)</DM.Item>
+          <DM.Item onSelect={() => void pull(id, 'ff-only')}>Pull (fast-forward only)</DM.Item>
           <DM.Item onSelect={() => void fetchAll(id)}>Fetch all</DM.Item>
         </DM.Content>
       </DropdownMenu.Root>
@@ -56,7 +57,7 @@ export function Toolbar({ view }: { view: RepoView }) {
       <SearchBox view={view} />
       {/* Not the ⌘ glyph: that is a macOS key, and this button is the same on every platform. */}
       <ToolbarButton icon={<SquareTerminal size={17} />} label="Palette" onClick={() => useStore.setState({ palette: true })} title={`Command palette (${modName()}+K)`} />
-      <ToolbarButton icon={<Settings size={17} />} label="Settings" onClick={() => useStore.setState({ dialog: { kind: 'settings' } })} />
+      <ToolbarButton icon={<Settings size={17} />} label="Settings" onClick={() => useStore.setState({ page: 'settings' })} />
     </div>
   )
 }

@@ -2,7 +2,7 @@ import { countConflicts, parseConflicts, resolveBlocks, type ConflictChoice, typ
 import clsx from 'clsx'
 import { CheckCircle2, CircleAlert, ExternalLink } from 'lucide-react'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
-import { run } from '../lib/actions'
+import { openInEditor, run } from '../lib/actions'
 import { api } from '../lib/api'
 import { sentence } from '../lib/format'
 import { reportError, updateRepo, type RepoView } from '../lib/store'
@@ -117,7 +117,7 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
           {versions.ours === null ? 'Keep deleted (ours)' : 'Take ours'}
         </Button>
         <Button size="sm" onClick={() => resolveWith('theirs')}>{versions.theirs === null ? 'Keep deleted (theirs)' : 'Take theirs'}</Button>
-        <Button size="sm" variant="ghost" title="Open in your default editor" onClick={() => void api.openPath(`${view.snapshot.path}/${file.path}`)}>
+        <Button size="sm" variant="ghost" title="Open in your editor (Settings → Integrations)" onClick={() => void openInEditor(`${view.snapshot.path}/${file.path}`)}>
           <ExternalLink size={12} /> Open
         </Button>
         {versions.merged !== null && (

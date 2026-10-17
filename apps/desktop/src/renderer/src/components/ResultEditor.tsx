@@ -40,8 +40,8 @@ function build(view: EditorView): DecorationSet {
 }
 
 const theme = EditorView.theme({
-  '&': { height: '100%', fontSize: '12px', backgroundColor: 'var(--gs-bg)', color: 'var(--gs-fg)' },
-  '.cm-scroller': { fontFamily: 'var(--font-mono)' },
+  '&': { height: '100%', fontSize: 'var(--gs-code-size)', backgroundColor: 'var(--gs-bg)', color: 'var(--gs-fg)' },
+  '.cm-scroller': { fontFamily: 'var(--gs-code-font)' },
   '.cm-gutters': { backgroundColor: 'var(--gs-panel)', color: 'var(--gs-faint)', borderRight: '1px solid var(--gs-line)' },
   '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: 'var(--gs-hover)' },
   '.cm-conflict-marker': { backgroundColor: 'var(--gs-del-bg)', color: 'var(--gs-del)' },

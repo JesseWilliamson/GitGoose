@@ -1,6 +1,6 @@
-import type { Ref, RepoSnapshot, ResetMode } from '@gitsquid/shared'
+import type { PullMode, Ref, RepoSnapshot, ResetMode } from '@gitsquid/shared'
 import { api, toUiError, type UiError } from './api'
-import { activeRepo, addRepo, choose, onSnapshot, openRepo, refreshAux, reportError, toast, updateRepo, useStore } from './store'
+import { activeRepo, addRepo, choose, onSnapshot, openRepo, refreshAux, reportError, setting, toast, updateRepo, useStore } from './store'
 
 /** The undo entry ids an action produced: a single id, an array of them (multi-step actions), or none. */
 function undoIdsOf(result: unknown): number[] {
@@ -228,8 +228,18 @@ export const merge = (id: string, ref: string, opts?: { noFf?: boolean; ffOnly?:
 export const rebase = (id: string, onto: string) =>
   run(id, `Rebase onto ${shortRef(onto)}`, () => api.rebase(id, onto))
 
-export const reset = (id: string, hash: string, mode: ResetMode) =>
-  run(id, `Reset (${mode}) to ${hash.slice(0, 7)}`, () => api.reset(id, hash, mode))
+export function reset(id: string, hash: string, mode: ResetMode): Promise<boolean> {
+  const go = () => run(id, `Reset (${mode}) to ${hash.slice(0, 7)}`, () => api.reset(id, hash, mode))
+  if (mode !== 'hard' || !setting('confirmHardReset')) return go()
+  return new Promise((resolve) => confirmAction('Reset hard?', `Moves the branch to ${hash.slice(0, 7)} and discards uncommitted changes. Undo can bring them back.`, 'Reset hard', async () => resolve(await go())))
+}
+
+/** Discard changes in files, asking first only if Settings → Confirmations says so (it is undoable). */
+export function discard(id: string, paths: string[]): Promise<boolean> {
+  const go = () => run(id, `Discard ${paths.length === 1 ? paths[0] : `${paths.length} files`}`, () => api.discardPaths(id, paths))
+  if (!setting('confirmDiscard')) return go()
+  return new Promise((resolve) => confirmAction('Discard changes?', `${paths.length === 1 ? paths[0] : `${paths.length} files`} will go back to their last committed or staged state. Undo can bring the changes back.`, 'Discard', async () => resolve(await go())))
+}
 
 export const cherryPick = (id: string, hash: string) =>
   run(id, `Cherry-pick ${hash.slice(0, 7)}`, () => api.cherryPick(id, hash))
@@ -247,17 +257,41 @@ export const deleteTag = (id: string, name: string) =>
   run(id, `Delete tag ${name}`, () => api.deleteTag(id, name))
 
 export function deleteRemoteBranch(id: string, ref: string): void {
+  if (!setting('confirmDeleteRemoteBranch')) {
+    void run(id, `Delete ${shortRef(ref)}`, () => api.deleteRemoteBranch(id, ref))
+    return
+  }
   confirmAction(`Delete ${shortRef(ref)} on the remote?`, 'This deletes the branch for everyone. Undo cannot reverse changes to a remote.', 'Delete remote branch', () => {
     void run(id, `Delete ${shortRef(ref)}`, () => api.deleteRemoteBranch(id, ref))
   })
 }
 
+export async function openTerminal(id: string): Promise<void> {
+  try {
+    await api.openTerminal(id)
+  } catch (e) {
+    reportError('Could not open a terminal', e)
+  }
+}
+
+export async function openInEditor(path: string, line?: number): Promise<void> {
+  try {
+    await api.openInEditor(path, line)
+  } catch (e) {
+    reportError('Could not open the editor', e)
+  }
+}
+
 // ------------------------------------------------------------------ remotes
 
-export const fetchAll = (id: string) => run(id, 'Fetch', () => api.fetch(id, { prune: true }), { success: 'Fetched' })
+export const fetchAll = (id: string, opts: { quiet?: boolean } = {}) =>
+  run(id, 'Fetch', () => api.fetch(id, { prune: setting('pruneOnFetch') }), { success: 'Fetched', quiet: opts.quiet })
 
-export const pull = (id: string, rebaseMode = false) =>
-  run(id, rebaseMode ? 'Pull (rebase)' : 'Pull', () => api.pull(id, { rebase: rebaseMode }), { success: 'Pulled' })
+const PULL_LABEL: Record<PullMode, string> = { merge: 'Pull', rebase: 'Pull (rebase)', 'ff-only': 'Pull (fast-forward only)' }
+
+/** Pull with the mode from Settings → Git, or an explicit one from the Pull menu. */
+export const pull = (id: string, mode: PullMode = setting('pullMode')) =>
+  run(id, PULL_LABEL[mode], () => api.pull(id, { mode }), { success: 'Pulled' })
 
 export function push(id: string, force = false): void {
   const go = () => void run(id, force ? 'Force push' : 'Push', () => api.push(id, { force }), {
@@ -274,7 +308,7 @@ export function push(id: string, force = false): void {
       return true
     },
   })
-  if (force) confirmAction('Force push?', 'Overwrites the remote branch with yours (with --force-with-lease, so it refuses if someone else pushed meanwhile).', 'Force push', go)
+  if (force && setting('confirmForcePush')) confirmAction('Force push?', 'Overwrites the remote branch with yours (with --force-with-lease, so it refuses if someone else pushed meanwhile).', 'Force push', go)
   else go()
 }
 
