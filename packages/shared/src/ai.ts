@@ -86,6 +86,49 @@ export interface ReviewResult {
   context: { guidelines: string[]; pathInstructions: string[]; learnings: number }
 }
 
+/** Where a hunk sits in a reading order: read contracts first, then what implements them, then tests. */
+export type ReadingLayer = 'contract' | 'implementation' | 'tests' | 'config' | 'docs'
+
+export interface WalkthroughHunk {
+  id: string
+  path: string
+  layer: ReadingLayer
+  /** New-side lines (old side for deletions). */
+  startLine: number
+  endLine: number
+  added: number
+  removed: number
+  /** Whitespace, imports or a one-line tweak: folded in the reading order. */
+  trivial: boolean
+  /** The definition it is in, when known. */
+  within?: string
+  /** The model's one-line summary. */
+  summary?: string
+}
+
+export interface SequenceDiagram {
+  participants: string[]
+  messages: { from: string; to: string; label: string }[]
+}
+
+export interface WalkthroughResult {
+  scope: ReviewScope
+  label: string
+  head: string
+  base?: string
+  summary: string
+  /** 1 (trivial) to 5 (needs a long, careful review), with the reason. */
+  effort: number
+  effortWhy: string
+  groups: { title: string; description: string; files: string[] }[]
+  /** Hunks in reading order. */
+  hunks: WalkthroughHunk[]
+  sequence: SequenceDiagram | null
+  /** Recent commits (before this change) that touched the same files. */
+  history: { hash: string; subject: string; author: string; date: number }[]
+  skipped: string[]
+}
+
 /** A team preference learned from a dismissed finding, sent with later reviews. */
 export interface ReviewLearning {
   text: string
@@ -104,6 +147,8 @@ export type AiTask =
   | { kind: 'recompose'; hashes: string[] }
   /** Review a change: findings tied to lines, checked against the diff before they are shown. */
   | { kind: 'review'; scope: ReviewScope; profile: ReviewProfile }
+  /** Explain a change: summary, grouped files, effort, reading order, a sequence diagram. */
+  | { kind: 'walkthrough'; scope: ReviewScope }
   /** Fix one review finding: the agent proposes the whole file (nothing is written until accepted). */
   | { kind: 'fix-finding'; finding: ReviewFinding }
 
@@ -174,6 +219,8 @@ export interface AiResult {
   text: string
   /** recompose: the proposed commits, for review before anything changes. */
   recompose?: RecomposeProposal
+  /** walkthrough: the checked walkthrough. */
+  walkthrough?: WalkthroughResult
   /** review: the verified findings. */
   review?: ReviewResult
   /** resolve-conflict: the file the agent wrote, captured instead of written, for review. */

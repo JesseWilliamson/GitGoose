@@ -1,6 +1,6 @@
 import type { Repo } from '@gitsquid/git'
-import { globToRegExp, numberedDiff, reviewableLines, type ReviewableLines } from '@gitsquid/git'
-import type { AiTask, ReviewLearning, ReviewProfile } from '@gitsquid/shared'
+import { describeHunks, globToRegExp, numberedDiff, reviewableLines, walkthroughHunks, type ReviewableLines } from '@gitsquid/git'
+import type { AiTask, ReviewLearning, ReviewProfile, WalkthroughResult } from '@gitsquid/shared'
 import { join } from 'node:path'
 
 /**
@@ -31,6 +31,8 @@ export interface BuiltPrompt {
   writable?: string
   /** For recompose: the range and its units, to turn the answer into a proposal. */
   recompose?: RecomposeInfo
+  /** For walkthrough: everything but the model's part. */
+  walkthrough?: Omit<WalkthroughResult, 'summary' | 'effort' | 'effortWhy' | 'groups' | 'sequence'>
   /** For fix-finding: the file (relative) the proposal is for, and its text when asked. */
   fix?: { path: string; before: string }
   /** For review: what the findings are checked against. */
@@ -172,6 +174,37 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: Pro
           ...guidance,
           numberedDiff(input.files, (p) => input.texts.get(p) ?? null),
           ...(input.skipped.length ? [`(Not shown, over the size limit: ${input.skipped.join(', ')})`] : []),
+        ].join('\n'),
+      }
+    }
+    case 'walkthrough': {
+      const input = await repo.reviewInput(task.scope)
+      if (!input.files.length) throw new Error('There is nothing to explain in that change.')
+      const hunks = walkthroughHunks(input.files, (p) => input.texts.get(p) ?? null)
+      const paths = input.files.map((f) => f.path)
+      const history = await repo.relatedHistory(paths, input.base ?? 'HEAD').catch(() => [])
+      // Shrink each hunk until the list fits, as recompose does.
+      let maxLines = 40
+      let text = describeHunks(input.files, hunks, maxLines)
+      while (text.length > MAX_DIFF_CHARS && maxLines > 3) {
+        maxLines = Math.floor(maxLines / 2)
+        text = describeHunks(input.files, hunks, maxLines)
+      }
+      return {
+        system: 'You explain code changes so a reviewer understands them quickly.',
+        walkthrough: { scope: task.scope, label: input.label, head: input.head, base: input.base, hunks, history, skipped: input.skipped },
+        prompt: [
+          `Write a walkthrough of this change (${input.label}) for the person about to review it.`,
+          'The change is cut into pieces [H1], [H2], … already in reading order (contracts, implementation, tests, config, docs).',
+          'Answer with JSON only, no prose and no code fence, in exactly this shape:',
+          '{"summary": "what the change does and why, 3-6 sentences", "effort": 1-5 (1 trivial, 5 needs a long careful review), "effortWhy": "one short reason", "groups": [{"title": "short", "description": "one or two sentences", "files": ["paths from the change"]}], "hunks": {"H1": "one line on what this piece does"}, "sequence": null or {"participants": ["A", "B"], "messages": [{"from": "A", "to": "B", "label": "call or event"}]}}',
+          'Groups gather files by purpose (a feature, a refactor, its tests). Give a one-line summary for every piece that is not just imports or formatting.',
+          'Add a sequence only when the change adds or alters a flow between components (calls, requests, events); keep it under 8 participants and 20 messages. Otherwise "sequence": null.',
+          NO_TOOLS,
+          '',
+          ...(history.length ? ['Recent commits that touched these files, newest first:', ...history.map((h) => `- ${h.subject}`), ''] : []),
+          'The pieces:',
+          text,
         ].join('\n'),
       }
     }

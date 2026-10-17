@@ -5,6 +5,7 @@ import {
   lfsPull, lfsTrack, snapshot, addRemote, addSubmodule, applyPatchFile, updateSubmodules, addWorktree, applyPatchFromClipboard, checkout, cleanupBranches, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, reopen, stash, undo,
 } from '../lib/actions'
 import { startReview } from '../lib/review'
+import { startWalkthrough } from '../lib/walkthrough'
 import { saveSettings, useStore } from '../lib/store'
 
 interface Entry {
@@ -50,6 +51,8 @@ export function CommandPalette() {
     if ((useStore.getState().settings?.aiProvider ?? 'off') !== 'off') {
       add('AI', 'Review uncommitted changes', () => startReview(id, { kind: 'working' }))
       add('AI', 'Review staged changes', () => startReview(id, { kind: 'staged' }))
+      add('AI', 'Walk me through the uncommitted changes', () => startWalkthrough(id, { kind: 'working' }))
+      if (active.snapshot.head.branch) add('AI', `Walk me through ${active.snapshot.head.branch}`, () => startWalkthrough(id, { kind: 'branch', branch: active.snapshot.head.branch! }))
       if (active.snapshot.head.branch) add('AI', `Review ${active.snapshot.head.branch} since it branched`, () => startReview(id, { kind: 'branch', branch: active.snapshot.head.branch! }))
       if (active.review) add('AI', 'Show the last review', () => useStore.setState((s) => ({ repos: { ...s.repos, [id]: { ...s.repos[id]!, center: { kind: 'review' } } } })))
     }

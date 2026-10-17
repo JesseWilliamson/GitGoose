@@ -1077,6 +1077,16 @@ export class Repo {
     return { guidelines, pathInstructions }
   }
 
+  /** Recent commits up to `base` that touched these files: the history a reader of the change needs. */
+  async relatedHistory(paths: string[], base = 'HEAD', n = 8): Promise<{ hash: string; subject: string; author: string; date: number }[]> {
+    if (!paths.length) return []
+    const r = await this.runner.run(['log', `-n${n}`, '--format=%H%x00%s%x00%an%x00%at', base, '--', ...paths.slice(0, 50)], { readOnly: true, okCodes: [128] })
+    return r.stdout.split('\n').filter(Boolean).map((l) => {
+      const [hash = '', subject = '', author = '', date = '0'] = l.split('\0')
+      return { hash, subject, author, date: Number(date) }
+    })
+  }
+
   /** What a branch is measured against: its upstream's remote default branch, else main or master. */
   private async defaultBase(branch: string): Promise<string | null> {
     const refs = await this.refs()

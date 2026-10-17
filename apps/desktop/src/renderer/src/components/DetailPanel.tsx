@@ -11,6 +11,7 @@ import { dateTime, opName, sentence, shortHash, stashLabel } from '../lib/format
 import { avatarSrc, useAvatarVariant } from '../lib/avatar'
 import { addTrailer, isUntouched, splitTemplate } from '../lib/commitMessage'
 import { startReview } from '../lib/review'
+import { startWalkthrough } from '../lib/walkthrough'
 import { ensureLoaded, getLog, reportError, selectCommit, setting, toast, updateRepo, useSetting, useStore, type FileMode, type RepoView } from '../lib/store'
 import { Avatar } from './Avatar'
 import { ChangeHints } from './ChangeHints'
@@ -113,6 +114,8 @@ function WipPanel({ view }: { view: RepoView }) {
             <DM.Content align="end">
               <DM.Item onSelect={() => startReview(id, { kind: 'working' })}>Review all uncommitted changes</DM.Item>
               <DM.Item disabled={!staged.length} onSelect={() => startReview(id, { kind: 'staged' })}>Review staged changes</DM.Item>
+              <DM.Separator />
+              <DM.Item onSelect={() => startWalkthrough(id, { kind: 'working' })}>Walk me through these changes</DM.Item>
             </DM.Content>
           </DropdownMenu.Root>
         )}

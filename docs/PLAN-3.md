@@ -185,3 +185,9 @@ Part B:
       .cursorrules, .windsurfrules, copilot-instructions; scoped by directory), path instructions
       from .coderabbit.yaml, and learnings saved with "Don't flag again" (per repository,
       optional glob, manageable); the Review view says what the model was told
+- [x] 39 walkthrough of uncommitted changes, a commit, a run of commits or a branch: summary,
+      review effort 1-5, files grouped by purpose (checked: only files in the change, the rest
+      under "Other changes"), a sequence diagram drawn as our own SVG from checked JSON, recent
+      history of the same files (local)
+- [x] 40 reading order: every hunk placed in a layer (contracts, implementation, tests, config,
+      docs) by path and codegraph, imports / comments / whitespace folded, a one-line summary each

@@ -49,6 +49,7 @@ const WHAT: Record<AiTask['kind'], string> = {
   'resolve-conflict': 'the conflicted file (the agent reads it), and it may propose an edit to that one file',
   recompose: "the selected commits' messages and their combined diff",
   review: 'the diff being reviewed, with line numbers and the names of the functions it touches',
+  walkthrough: 'the change, cut into pieces, and the subjects of recent commits to the same files',
   'fix-finding': 'the file the finding is in, and the finding; the agent may propose a new version of that one file',
 }
 

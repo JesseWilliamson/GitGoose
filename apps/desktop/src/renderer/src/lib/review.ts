@@ -58,8 +58,8 @@ export function findingsFor(view: RepoView, target: DiffTarget): ReviewFinding[]
   return r.result.findings.filter((f) => f.path === target.path && !r.dismissed.includes(f.id))
 }
 
-/** The diff that shows a finding's lines: exactly what was reviewed, for that file. */
-export function targetFor(result: ReviewResult, path: string): DiffTarget {
+/** The diff that shows a reviewed (or walked-through) change for one file: exactly what was read. */
+export function targetFor(result: { head: string; base?: string }, path: string): DiffTarget {
   if (result.head === 'index') return { kind: 'staged', path }
   return { kind: 'range', from: result.base ?? 'HEAD', to: result.head === 'worktree' ? null : result.head, path }
 }

@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { AcpAgent } from './acp'
 import { anthropicComplete } from './anthropic'
 import type { SecretFile } from './keyStore'
-import { extractJson, repairPlan, verifyFindings } from '@gitsquid/git'
+import { extractJson, repairPlan, verifyFindings, verifyWalkthrough } from '@gitsquid/git'
 import { buildPrompt, cleanCommitMessage, type BuiltPrompt } from './prompts'
 
 /**
@@ -126,6 +126,7 @@ export class AiService {
       task.kind === 'recompose' ? { text: '', recompose: toProposal(task.hashes, built, text) }
         : task.kind === 'review' ? { text: '', review: toReview(task, built, text) }
         : task.kind === 'fix-finding' ? toFix(built, text, extra.proposal)
+        : task.kind === 'walkthrough' ? { text: '', walkthrough: toWalkthrough(built, text) }
         : { text: finish(text), ...extra }
 
     try {
@@ -196,6 +197,16 @@ export class AiService {
   stop(): void {
     this.agent.stop()
   }
+}
+
+/** The model's walkthrough, checked against the change (see verifyWalkthrough). */
+function toWalkthrough(built: BuiltPrompt, text: string): NonNullable<AiResult['walkthrough']> {
+  const w = built.walkthrough!
+  const raw = extractJson(text)
+  if (!raw) throw new AiError('The AI did not answer with a walkthrough. Try again.', 'ai-bad-answer')
+  const paths = [...new Set(w.hunks.map((h) => h.path))]
+  const v = verifyWalkthrough(raw, paths, w.hunks)
+  return { ...w, ...v }
 }
 
 /**

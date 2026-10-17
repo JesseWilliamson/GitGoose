@@ -46,6 +46,20 @@ async function prompt(params, cx) {
     await say(cx, id, 'Thinking')
     process.exit(3)
   }
+  if (text.includes('Write a walkthrough')) {
+    const pieces = [...text.matchAll(/^\[(H\d+)\] ([^:\s]+):/gm)].map((m) => ({ id: m[1], path: m[2] }))
+    const files = [...new Set(pieces.map((p) => p.path))]
+    const answer = {
+      summary: `Changes ${files.length} files to make totals right.`,
+      effort: 2, effortWhy: 'small and well tested',
+      groups: [{ title: 'The fix', description: 'Corrects the arithmetic.', files: [files[0], 'invented.ts'] }],
+      hunks: Object.fromEntries(pieces.map((p) => [p.id, `Piece ${p.id} of ${p.path}`])),
+      sequence: { participants: ['Caller', 'total'], messages: [{ from: 'Caller', to: 'total', label: 'total(a, b)' }, { from: 'total', to: 'Caller', label: 'a + b' }] },
+    }
+    const json = JSON.stringify(answer)
+    for (let i = 0; i < json.length; i += 50) await say(cx, id, json.slice(i, i + 50))
+    return { stopReason: 'end_turn' }
+  }
   if (text.includes('Fix this code review finding')) {
     // Writes the file with the finding's lines replaced (by the suggestion, if there is one).
     const path = /^File: (.+)$/m.exec(text)?.[1]

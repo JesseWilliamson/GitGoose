@@ -11,6 +11,7 @@ import { api } from '../lib/api'
 import type { ReactNode } from 'react'
 import { recomposeWithAi } from './RecomposeDialog'
 import { startReview } from '../lib/review'
+import { startWalkthrough } from '../lib/walkthrough'
 import { CM, DM } from './ui'
 
 /** One item per remote: a plain item when there is only one remote, a submenu when there are several. */
@@ -85,6 +86,7 @@ export function GraphMenu({ repoId }: { repoId: string }) {
             {r.upstream && <CM.Item onSelect={() => void setUpstream(repoId, name, null)}>Stop tracking {shortRef(r.upstream)}</CM.Item>}
             {hasGitHubRemote(view) && <CM.Item onSelect={() => createPull(repoId, name)}>Create pull request…</CM.Item>}
             {aiOn && <CM.Item onSelect={() => startReview(repoId, { kind: 'branch', branch: name })}>Review {name} with AI</CM.Item>}
+            {aiOn && <CM.Item onSelect={() => startWalkthrough(repoId, { kind: 'branch', branch: name })}>Walk me through {name}</CM.Item>}
             {worktree ? <CM.Item onSelect={() => void openRepo(worktree.path)}>Open the worktree with {name}</CM.Item>
               : !isHead && <CM.Item onSelect={() => addWorktree(repoId, name)}>Check out in a new worktree…</CM.Item>}
             <CM.Item onSelect={() => renameBranch(repoId, name)}>Rename {name}…</CM.Item>
@@ -294,6 +296,7 @@ export function GraphMenu({ repoId }: { repoId: string }) {
             <CM.Separator />
             <CM.Item onSelect={() => recomposeWithAi(repoId, menu.hashes)}>Recompose with AI…</CM.Item>
             <CM.Item onSelect={() => startReview(repoId, { kind: 'commits', hashes: menu.hashes })}>Review {n} commits with AI</CM.Item>
+            <CM.Item onSelect={() => startWalkthrough(repoId, { kind: 'commits', hashes: menu.hashes })}>Walk me through {n} commits</CM.Item>
           </>
         )}
       </CM.Content>
@@ -333,6 +336,7 @@ export function GraphMenu({ repoId }: { repoId: string }) {
       )}
       {aiOn && <CM.Item onSelect={() => recomposeWithAi(repoId, [hash])}>Split with AI…</CM.Item>}
       {aiOn && <CM.Item onSelect={() => startReview(repoId, { kind: 'commits', hashes: [hash] })}>Review this commit with AI</CM.Item>}
+      {aiOn && <CM.Item onSelect={() => startWalkthrough(repoId, { kind: 'commits', hashes: [hash] })}>Walk me through this commit</CM.Item>}
       <CM.Sub label={snap.bisect ? 'Bisect' : 'Bisect: find the commit that broke something'}>
         <CM.Item onSelect={() => void bisectMark(repoId, hash, 'bad')}>{snap.bisect ? 'Mark bad (has the bug)' : 'Start: this commit is bad (has the bug)'}</CM.Item>
         <CM.Item onSelect={() => void bisectMark(repoId, hash, 'good')}>{snap.bisect ? 'Mark good (no bug)' : 'Start: this commit is good (no bug)'}</CM.Item>
