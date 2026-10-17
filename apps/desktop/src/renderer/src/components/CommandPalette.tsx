@@ -2,7 +2,7 @@ import { DEFAULT_LAYOUT, setCollapsed } from '@gitsquid/shared'
 import { Command } from 'cmdk'
 import { RDialogCompat } from './RDialogCompat'
 import {
-  addRemote, addSubmodule, applyPatchFile, updateSubmodules, addWorktree, applyPatchFromClipboard, checkout, cleanupBranches, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, reopen, stash, undo,
+  snapshot, addRemote, addSubmodule, applyPatchFile, updateSubmodules, addWorktree, applyPatchFromClipboard, checkout, cleanupBranches, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, reopen, stash, undo,
 } from '../lib/actions'
 import { saveSettings, useStore } from '../lib/store'
 
@@ -51,6 +51,7 @@ export function CommandPalette() {
     add('Repository', 'Apply patch from a file…', () => void applyPatchFile(id))
     add('Repository', 'Apply patch from the clipboard', () => void applyPatchFromClipboard(id))
     add('Repository', 'Stash all changes', () => stash(id))
+    add('Repository', 'Save a snapshot of the working tree (changes stay)', () => void snapshot(id))
     add('Repository', 'Pop latest stash', () => pop(id))
     add('Repository', 'Show uncommitted changes', () => useStore.setState((s) => ({ repos: { ...s.repos, [id]: { ...s.repos[id]!, selected: { kind: 'wip' }, center: { kind: 'graph' } } } })))
     if (active.snapshot.operation) add('Repository', `Resolve conflicts (${active.snapshot.operation})`, () => useStore.setState((s) => ({ repos: { ...s.repos, [id]: { ...s.repos[id]!, center: { kind: 'conflicts' } } } })))

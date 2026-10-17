@@ -35,6 +35,8 @@ export type UndoAction =
   /** Pop the stash entry whose commit is `hash`, wherever it now sits in the list. */
   | { kind: 'stash-pop'; hash: string }
   | { kind: 'stash-store'; hash: string; message: string }
+  /** Drop the stash entry whose commit is `hash` (undo of a snapshot: the working tree was never touched). */
+  | { kind: 'stash-drop'; hash: string }
   /** Apply a stash commit made with `git stash create` (no ref, just the object). */
   | { kind: 'stash-apply'; hash: string }
   /** Write every file of a saved tree into the working tree (backup taken during conflicts). */

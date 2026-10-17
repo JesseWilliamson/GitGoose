@@ -4,7 +4,7 @@ import { Archive, Check, ChevronDown, Copy, Minus, MoreHorizontal, Plus, ShieldA
 import clsx from 'clsx'
 import { DropdownMenu } from 'radix-ui'
 import { useEffect, useRef, useState } from 'react'
-import { cherryPickMany, compare, copy, copyCommits, discard as discardFiles, openDiffTool, openInEditor, pop, restoreFileFrom, run, stashApply, stashDrop, stashToBranch, stashWith, stashWithMessage } from '../lib/actions'
+import { cherryPickMany, compare, copy, copyCommits, discard as discardFiles, openDiffTool, openInEditor, pop, restoreFileFrom, run, snapshot, stashApply, stashDrop, stashToBranch, stashWith, stashWithMessage } from '../lib/actions'
 import { cancelAi, startAi, useAiEnabled } from '../lib/ai'
 import { api, toUiError } from '../lib/api'
 import { dateTime, opName, sentence, shortHash, stashLabel } from '../lib/format'
@@ -101,6 +101,7 @@ function WipPanel({ view }: { view: RepoView }) {
             <DM.Content align="end">
               <DM.Item onSelect={() => void stashWith(id, {})}>Stash all changes</DM.Item>
               <DM.Item onSelect={() => stashWithMessage(id)}>Stash with a message…</DM.Item>
+              <DM.Item onSelect={() => void snapshot(id)}>Save a snapshot (changes stay as they are)</DM.Item>
               <DM.Separator />
               <DM.Item disabled={!staged.length} onSelect={() => void stashWith(id, { staged: true })}>Stash only the staged changes</DM.Item>
               <DM.Item disabled={!staged.length} onSelect={() => void stashWith(id, { keepIndex: true })}>Stash all, keep the staged changes in place</DM.Item>

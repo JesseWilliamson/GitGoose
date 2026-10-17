@@ -723,6 +723,10 @@ export function stashWith(id: string, opts: { paths?: string[]; staged?: boolean
   })
 }
 
+/** Tower's snapshot: a stash entry of the working tree, which stays exactly as it is. */
+export const snapshot = (id: string) =>
+  run(id, 'Snapshot', () => api.snapshotWorkTree(id), { success: 'Snapshot saved in the stash list; your changes are untouched' })
+
 export function stashWithMessage(id: string): void {
   ask('Stash changes', 'Message', 'Stash', (message) => void stashWith(id, { message: message.trim() }), { placeholder: 'What these changes are' })
 }

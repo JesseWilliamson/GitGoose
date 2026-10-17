@@ -1684,6 +1684,46 @@ export class Repo {
   }
 
   /**
+   * Tower's snapshot: save the working tree as a stash entry and leave it exactly as it is (no
+   * file is rewritten, so editors and watchers see nothing). `stash create` makes the commit for
+   * tracked changes; untracked files get the third parent `stash -u` would give them, built in a
+   * temporary index, so Apply brings them back too.
+   */
+  snapshotWorkTree(message?: string): Promise<number | null> {
+    return this.exclusive(async () => {
+      const head = await this.currentHead()
+      if (!head.hash) throw new Error('Make a first commit before taking a snapshot.')
+      const untracked = (await this.read(['ls-files', '--others', '--exclude-standard', '-z'])).split('\0').filter(Boolean)
+      let w = (await this.git(['stash', 'create'])).stdout.trim()
+      if (!w && !untracked.length) return null
+      const label = message?.trim() || `Snapshot ${new Date().toLocaleString()}`
+      const msg = `On ${head.branch ?? '(no branch)'}: ${label}`
+      if (!w) {
+        // Only untracked files: stash create made nothing, so build the index commit too.
+        const index = (await this.git(['commit-tree', `${head.hash}^{tree}`, '-p', head.hash, '-m', `index on ${head.branch ?? 'HEAD'}`])).stdout.trim()
+        w = (await this.git(['commit-tree', `${head.hash}^{tree}`, '-p', head.hash, '-p', index, '-m', msg])).stdout.trim()
+      }
+      const parents = (await this.read(['rev-list', '--parents', '-n', '1', w])).trim().split(' ').slice(1)
+      let u: string | null = null
+      if (untracked.length) {
+        const tmp = join(tmpdir(), `gitsquid-snap-${process.pid}-${Date.now()}`)
+        const env = { GIT_INDEX_FILE: tmp }
+        try {
+          await this.git(['read-tree', '--empty'], { env })
+          await this.git(['update-index', '--add', '-z', '--stdin'], { env, input: untracked.join('\0') + '\0' })
+          const tree = (await this.git(['write-tree'], { env })).stdout.trim()
+          u = (await this.git(['commit-tree', tree, '-m', `untracked files on ${head.branch ?? 'HEAD'}`])).stdout.trim()
+        } finally {
+          await rm(tmp, { force: true })
+        }
+      }
+      const final = (await this.git(['commit-tree', `${w}^{tree}`, ...parents.flatMap((p) => ['-p', p]), ...(u ? ['-p', u] : []), '-m', msg])).stdout.trim()
+      await this.git(['stash', 'store', '-m', msg, final])
+      return this.record(`Snapshot "${label}"`, [{ kind: 'stash-drop', hash: final }], head.hash)
+    })
+  }
+
+  /**
    * `git stash branch`: a new branch where the stash was made, checked out, with the stash
    * applied and dropped. The way out when a stash no longer applies to where you are now. Undo
    * puts the stash entry back and returns to where you were; the applied changes are dropped
@@ -1933,6 +1973,11 @@ export class Repo {
         const entry = (await this.stashList()).find((s) => s.hash === a.hash)
         if (!entry) throw new Error('The stash this would restore no longer exists')
         await this.git(['stash', 'pop', '--index', entry.ref])
+        break
+      }
+      case 'stash-drop': {
+        const entry = (await this.stashList()).find((s) => s.hash === a.hash)
+        if (entry) await this.git(['stash', 'drop', entry.ref])
         break
       }
       case 'stash-store':

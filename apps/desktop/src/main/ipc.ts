@@ -24,7 +24,7 @@ const WRITES = new Set<ApiMethod>([
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'checkout', 'createBranch',
   'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset', 'cherryPick', 'cherryPickMany', 'recomposeApply', 'dropCommits', 'moveCommits', 'restoreFile', 'mergeTool', 'applyPatch', 'setIdentity', 'bisectMark', 'bisectReset', 'setGraphFilter', 'updateSubmodules', 'syncSubmodules', 'addSubmodule', 'removeSubmodule', 'addWorktree', 'removeWorktree', 'lockWorktree', 'pruneWorktrees', 'addRemote', 'removeRemote', 'renameRemote', 'setRemoteUrl', 'pushTags',
   'deleteRemoteTag', 'setUpstream', 'fastForward', 'deleteBranches', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'redo', 'revert', 'createTag',
-  'deleteTag', 'fetch', 'pull', 'push', 'deleteRemoteBranch', 'stashPush', 'stashBranch', 'stashApply', 'stashPop',
+  'deleteTag', 'fetch', 'pull', 'push', 'deleteRemoteBranch', 'stashPush', 'snapshotWorkTree', 'stashBranch', 'stashApply', 'stashPop',
   'stashDrop', 'resolveConflict', 'continueOperation', 'abortOperation', 'undo',
 ])
 
@@ -220,6 +220,7 @@ export function createHandlers(
 
     stashPush: (id, opts) => r(id).stashPush(opts),
     stashBranch: (id, i, name) => r(id).stashBranch(i, name),
+    snapshotWorkTree: (id, message) => r(id).snapshotWorkTree(message),
     stashApply: (id, i) => r(id).stashApply(i),
     stashPop: (id, i) => r(id).stashPop(i),
     stashDrop: (id, i) => r(id).stashDrop(i),

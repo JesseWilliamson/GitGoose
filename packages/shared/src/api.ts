@@ -241,6 +241,8 @@ export interface GitSquidApi {
 
   // Stash
   stashPush(repoId: string, opts?: { message?: string; includeUntracked?: boolean; paths?: string[]; staged?: boolean; keepIndex?: boolean }): Promise<UndoId>
+  /** Save the working tree (untracked files too) as a stash entry, leaving it untouched. */
+  snapshotWorkTree(repoId: string, message?: string): Promise<UndoId>
   /** A new branch at the stash's base with the stash applied (and dropped). */
   stashBranch(repoId: string, index: number, name: string): Promise<UndoId>
   stashApply(repoId: string, index: number): Promise<void>
@@ -278,7 +280,7 @@ export const API_METHODS = [
   'cherryPick', 'cherryPickMany', 'commitsText', 'recomposeApply', 'compareFiles', 'mergeBase', 'restoreFile', 'diffTool', 'mergeTool', 'imagePair', 'savePatches', 'pickPatch', 'applyPatch', 'openFileAt', 'saveFileAt', 'editableCommits', 'dropCommits', 'moveCommits', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'preparedMessage', 'redo', 'redoList', 'revert', 'createTag', 'deleteTag',
   'fetch', 'pull', 'push', 'deleteRemoteBranch', 'remotes', 'addRemote', 'removeRemote', 'renameRemote', 'setRemoteUrl',
   'pushTags', 'deleteRemoteTag', 'remoteTags', 'setUpstream', 'fastForward', 'deleteBranches', 'mergedBranches',
-  'stashPush', 'stashBranch', 'stashApply', 'stashPop', 'stashDrop',
+  'stashPush', 'snapshotWorkTree', 'stashBranch', 'stashApply', 'stashPop', 'stashDrop',
   'conflicts', 'conflictVersions', 'resolveConflict', 'continueOperation', 'abortOperation',
   'undoList', 'undo',
 ] as const satisfies readonly ApiMethod[]

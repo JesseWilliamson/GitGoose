@@ -153,3 +153,5 @@ changes.
       capped at 25 MB per side
 - [x] 15 external diff tool (diff header, file menus) and merge tool (conflict view) through git
       difftool / mergetool, so git's own tool configuration applies; Settings → Diff can name one
+- [x] 19 snapshots: the working tree (untracked files included) saved as a stash entry without
+      touching a file; undo drops the entry

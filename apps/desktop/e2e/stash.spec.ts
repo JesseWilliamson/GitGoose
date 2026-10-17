@@ -51,3 +51,18 @@ test('take one file out of a stash; turn a stash into a branch', async () => {
   await expect(page.getByTestId('unstaged-file')).toHaveCount(2)
   await app.close()
 })
+
+test('a snapshot saves the changes in the stash list and leaves them in place; undo removes it', async () => {
+  const r = setup()
+  r.write('new.txt', 'n\n')
+  const { app, page } = await launch(r.dir)
+  await page.getByTestId('stash-menu').click()
+  await item(page, 'Save a snapshot (changes stay as they are)').click()
+  await expect(page.getByTestId('stash-item')).toHaveCount(1)
+  await expect(page.getByTestId('unstaged-file')).toHaveCount(3)
+  expect(r.git('status', '--porcelain').trim().split('\n')).toHaveLength(3)
+  await page.getByTestId('toast-action').filter({ hasText: 'Undo' }).last().click()
+  await expect(page.getByTestId('stash-item')).toHaveCount(0)
+  await expect(page.getByTestId('unstaged-file')).toHaveCount(3)
+  await app.close()
+})
