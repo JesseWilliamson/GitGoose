@@ -66,6 +66,22 @@ test('stashes and pops from the toolbar', async () => {
   await app.close()
 })
 
+test('shows what a stash contains', async () => {
+  const r = makeFixture('linear')
+  r.write('file.txt', 'edited\n')
+  r.write('brand-new.txt', 'new\n')
+  const { app, page } = await launch(r.dir)
+  await page.getByTestId('toolbar').getByRole('button', { name: 'Stash' }).click()
+  await page.getByTestId('stash-item').first().click()
+  await expect(page.getByTestId('stash-header')).toContainText('stash@{0}')
+  await expect(page.getByTestId('commit-file')).toHaveCount(2)
+  await page.getByTestId('commit-file').filter({ hasText: 'brand-new.txt' }).click()
+  await expect(page.getByTestId('diff-line')).toHaveText(['1+new']) // new-side line number, sign, text
+  await page.getByTestId('stash-header').getByRole('button', { name: 'Pop' }).click()
+  await expect(page.getByTestId('wip-row')).toBeVisible()
+  await app.close()
+})
+
 test('asks for credentials when a remote needs them', async () => {
   // A server that demands HTTP Basic auth and never accepts: git will prompt through askpass.
   const server = createServer((_req, res) => {

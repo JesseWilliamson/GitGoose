@@ -62,7 +62,7 @@ export function createHandlers(repos: RepoManager, prompts: PromptBroker, gitOpt
 
     snapshot: (id) => r(id).snapshot(),
     logPage: (id, offset, count) => r(id).logPage(offset, count),
-    commitDetails: (id, hash) => r(id).commitDetails(hash),
+    commitDetails: (id, hash, opts) => r(id).commitDetails(hash, opts),
     diff: (id, target) => r(id).diff(target),
     fileHistory: (id, path) => r(id).fileHistory(path),
     blame: (id, path, rev) => r(id).blame(path, rev),

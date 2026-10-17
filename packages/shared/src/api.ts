@@ -61,7 +61,8 @@ export interface GitSquidApi {
   // Reading
   snapshot(repoId: string): Promise<RepoSnapshot>
   logPage(repoId: string, offset: number, count: number): Promise<LogPage>
-  commitDetails(repoId: string, hash: string): Promise<CommitDetails>
+  /** `stash: true` also lists untracked files saved in a stash (they live in its third parent). */
+  commitDetails(repoId: string, hash: string, opts?: { stash?: boolean }): Promise<CommitDetails>
   diff(repoId: string, target: DiffTarget): Promise<FileDiff | null>
   fileHistory(repoId: string, path: string): Promise<Commit[]>
   blame(repoId: string, path: string, rev?: string): Promise<BlameLine[]>

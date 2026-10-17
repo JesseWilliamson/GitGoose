@@ -192,7 +192,7 @@ export class Repo {
     return { commits, done, generation }
   }
 
-  async commitDetails(hash: string): Promise<CommitDetails> {
+  async commitDetails(hash: string, opts: { stash?: boolean } = {}): Promise<CommitDetails> {
     const fmt = '%H%x00%P%x00%an%x00%ae%x00%at%x00%ct%x00%s%x00%cn%x00%ce%x00%b'
     const out = await this.read(['show', '-s', `--format=${fmt}`, hash, '--'])
     const f = out.split('\x00')
@@ -202,11 +202,21 @@ export class Repo {
       this.read(['diff-tree', '-r', '-M', '-z', '--name-status', base, hash]),
       this.read(['diff-tree', '-r', '-M', '-z', '--numstat', base, hash]),
     ])
+    const files = parseChangedFiles(ns, nm)
+    // `git stash -u` stores untracked files in a third parent: a root commit holding only them.
+    if (opts.stash && parents[2]) {
+      const empty = await this.emptyTreeHash()
+      const [uns, unm] = await Promise.all([
+        this.read(['diff-tree', '-r', '-z', '--name-status', empty, parents[2]]),
+        this.read(['diff-tree', '-r', '-z', '--numstat', empty, parents[2]]),
+      ])
+      files.push(...parseChangedFiles(uns, unm))
+    }
     return {
       hash: f[0]!, parents, authorName: f[2]!, authorEmail: f[3]!,
       authorDate: Number(f[4]), commitDate: Number(f[5]), subject: f[6]!,
       committerName: f[7]!, committerEmail: f[8]!, body: (f[9] ?? '').trim(),
-      files: parseChangedFiles(ns, nm),
+      files,
     }
   }
 
@@ -230,11 +240,17 @@ export class Repo {
       args = ['diff', '--cached', '-M', ...DIFF_ARGS, '--', ...paths]
     } else {
       const parents = (await this.read(['rev-list', '--parents', '-n', '1', target.hash])).trim().split(' ').slice(1)
-      const base = parents[0] ?? (await this.emptyTreeHash())
+      let base = parents[0] ?? (await this.emptyTreeHash())
+      let rev = target.hash
       const files = parseChangedFiles(await this.read(['diff-tree', '-r', '-M', '-z', '--name-status', base, target.hash]), '')
       const f = files.find((x) => x.path === target.path)
+      if (!f && parents[2]) {
+        // An untracked file saved by `git stash -u` (see commitDetails).
+        base = await this.emptyTreeHash()
+        rev = parents[2]
+      }
       const paths = f?.oldPath ? [f.oldPath, target.path] : [target.path]
-      args = ['diff', '-M', ...DIFF_ARGS, base, target.hash, '--', ...paths]
+      args = ['diff', '-M', ...DIFF_ARGS, base, rev, '--', ...paths]
     }
     const out = await this.read(args)
     const parsed = parseDiff(out, target.path)

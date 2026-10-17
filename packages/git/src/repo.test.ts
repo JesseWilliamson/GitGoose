@@ -379,6 +379,21 @@ describe('stash', () => {
     expect(read(r, 'untracked.txt')).toBe('u\n')
   })
 
+  it('shows a stash as a commit, including untracked files saved with -u', async () => {
+    const r = makeFixture('linear')
+    r.write('file.txt', 'tracked change\n')
+    r.write('new.txt', 'untracked\n')
+    const repo = await open(r)
+    await repo.stashPush({ includeUntracked: true })
+    const [s] = await repo.stashList()
+    const d = await repo.commitDetails(s!.hash, { stash: true })
+    expect(d.files.map((f) => [f.path, f.change]).sort()).toEqual([['file.txt', 'modified'], ['new.txt', 'added']])
+    const diff = await repo.diff({ kind: 'commit', hash: s!.hash, path: 'new.txt' })
+    expect(diff!.hunks[0]!.lines).toEqual([{ kind: '+', text: 'untracked', newNo: 1 }])
+    // Without the stash flag, a 3-parent commit lists only its first-parent changes.
+    expect((await repo.commitDetails(s!.hash)).files.map((f) => f.path)).toEqual(['file.txt'])
+  })
+
   it('does not record an undo entry when there was nothing to stash', async () => {
     const repo = await open(makeFixture('linear'))
     await repo.stashPush()
