@@ -30,18 +30,22 @@ test('recompose: the AI proposes, you reorder and edit, Create commits rewrites,
 
   // The fake agent's plan: the last piece (notes.md… whichever came last) alone first, then the rest.
   const commits = page.getByTestId('recompose-commit')
+  const titles = page.getByTestId('recompose-title')
   await expect(commits).toHaveCount(2)
-  await expect(page.getByTestId('recompose-message').nth(1)).toHaveValue('feat: everything else')
+  await expect(titles.nth(1)).toHaveText('feat: everything else')
+  await expect(page.getByTestId('recompose-summary')).toContainText('wip stuff · more wip')
   // Nothing has changed yet.
   expect(r.head()).toBe(C3)
 
-  // Reorder, edit a message, reset, reorder again.
+  // Reorder, reset, reorder again, then edit the (now first) commit's message.
   await page.getByTestId('recompose-down').first().click()
-  await expect(page.getByTestId('recompose-message').first()).toHaveValue('feat: everything else')
+  await expect(titles.first()).toHaveText('feat: everything else')
   await page.getByTestId('recompose-reset').click()
-  await expect(page.getByTestId('recompose-message').first()).not.toHaveValue('feat: everything else')
+  await expect(titles.first()).not.toHaveText('feat: everything else')
   await page.getByTestId('recompose-down').first().click()
-  await page.getByTestId('recompose-message').first().fill('feat: a and b')
+  await commits.first().click()
+  await page.getByTestId('recompose-message').fill('feat: a and b')
+  await expect(titles.first()).toHaveText('feat: a and b')
 
   await page.getByTestId('recompose-apply').click()
   await expect(page.getByTestId('recompose-dialog')).toHaveCount(0)
@@ -82,5 +86,39 @@ test('squashing in the review, and refusing a selection that is not a range', as
   await expect(page.getByTestId('recompose-dialog')).toHaveCount(0)
   // C2 and C3 sit above the rebuilt C1, with their own messages and new parents.
   expect(r.git('log', '--format=%s', '-3').trim().split('\n')).toEqual(['docs: later', 'more wip', 'feat: everything else'])
+  await app.close()
+})
+
+test('move a change to another commit or a new one; empty commits block until removed', async () => {
+  const { r, C1, C2 } = setup()
+  const { app, page } = await launch(r.dir)
+  await page.evaluate((p) => window.gitsquid.setSettings(p as never), AGENT)
+  await row(page, C2).click()
+  await row(page, C1).click({ modifiers: ['Shift'] })
+  await page.getByTestId('multi-recompose').click()
+  const commits = page.getByTestId('recompose-commit')
+  await expect(commits).toHaveCount(2)
+  // The first proposed commit has one change; move it into the second: the first is now empty.
+  await expect(page.getByTestId('recompose-unit')).toHaveCount(1)
+  await page.getByTestId('recompose-move').click()
+  await page.getByRole('menuitem', { name: '2. feat: everything else' }).click()
+  await expect(commits.first()).toContainText('No changes')
+  await expect(page.getByTestId('recompose-problems')).toContainText('Commit 1 has no changes')
+  await expect(page.getByTestId('recompose-apply')).toBeDisabled()
+  await page.getByTestId('recompose-remove-empty').click()
+  await expect(commits).toHaveCount(1)
+
+  // Back out of it into a new commit, which needs a message before it can be created.
+  await commits.first().click()
+  await expect(page.getByTestId('recompose-unit')).toHaveCount(3)
+  await page.getByTestId('recompose-move').first().click()
+  await page.getByRole('menuitem', { name: 'A new commit' }).click()
+  await expect(commits).toHaveCount(2)
+  await expect(page.getByTestId('recompose-problems')).toContainText('Commit 2 needs a message')
+  await commits.nth(1).click()
+  await page.getByTestId('recompose-message').fill('chore: split out')
+  await page.getByTestId('recompose-apply').click()
+  await expect(page.getByTestId('recompose-dialog')).toHaveCount(0)
+  expect(r.git('log', '--format=%s', '-3').trim().split('\n')).toEqual(['docs: later', 'chore: split out', 'feat: everything else'])
   await app.close()
 })

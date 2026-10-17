@@ -301,6 +301,17 @@ function toReview(task: Extract<AiTask, { kind: 'review' }>, built: BuiltPrompt,
   }
 }
 
+const PREVIEW_LINES = 200
+const PREVIEW_CHARS = 20_000
+
+export function previewOf(body: string): string {
+  const lines = body.split('\n')
+  let out = lines.slice(0, PREVIEW_LINES).join('\n')
+  if (out.length > PREVIEW_CHARS) out = out.slice(0, out.lastIndexOf('\n', PREVIEW_CHARS))
+  const shown = out.split('\n').length
+  return shown < lines.length ? `${out}\n… ${lines.length - shown} more lines` : out
+}
+
 function toProposal(hashes: string[], built: BuiltPrompt, text: string): NonNullable<AiResult['recompose']> {
   const info = built.recompose!
   const raw = extractJson(text)
@@ -311,7 +322,8 @@ function toProposal(hashes: string[], built: BuiltPrompt, text: string): NonNull
     branch: info.branch,
     units: info.units.map((u) => ({
       id: u.id, path: u.path, added: u.added, removed: u.removed, binary: u.binary,
-      preview: u.body.split('\n').slice(0, 14).join('\n'),
+      // Enough to read the change in the review dialog; a huge hunk is cut, and says so.
+      preview: previewOf(u.body),
     })),
     commits,
     unplaced,
