@@ -116,8 +116,10 @@ export const DM = {
   ),
 }
 
-export function Modal({ open, onClose, title, children, width = 440 }: {
+export function Modal({ open, onClose, title, children, width = 440, tall = false }: {
   open: boolean; onClose: () => void; title: string; children: ReactNode; width?: number
+  /** A big dialog (a whole editor): placed near the top so it has the height. */
+  tall?: boolean
 }) {
   return (
     <RDialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
@@ -125,7 +127,7 @@ export function Modal({ open, onClose, title, children, width = 440 }: {
         <RDialog.Overlay className="fixed inset-0 z-40 bg-black/40" />
         <RDialog.Content
           style={{ width }}
-          className="fixed top-[18%] left-1/2 z-50 max-w-[92vw] -translate-x-1/2 rounded-lg border border-line bg-raised p-4 shadow-2xl shadow-black/40"
+          className={clsx('fixed left-1/2 z-50 max-w-[94vw] -translate-x-1/2 rounded-lg border border-line bg-raised p-4 shadow-2xl shadow-black/40', tall ? 'top-[5vh]' : 'top-[18%]')}
         >
           <RDialog.Title className="mb-3 text-[15px] font-semibold">{title}</RDialog.Title>
           <RDialog.Description className="sr-only">{title}</RDialog.Description>

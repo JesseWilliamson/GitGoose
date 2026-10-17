@@ -316,7 +316,7 @@ export interface RecomposeUnitInfo {
   added: number
   removed: number
   binary: boolean
-  /** The first lines of the hunk, for the review dialog. */
+  /** The hunk (cut after 200 lines), for the review dialog. */
   preview: string
 }
 
