@@ -14,7 +14,7 @@ export function broadcast(event: GitSquidEvent): void {
 
 /** Methods that change the repository. After each one we refresh and push a snapshot right away. */
 const WRITES = new Set<ApiMethod>([
-  'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'commit', 'checkout', 'createBranch',
+  'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'checkout', 'createBranch',
   'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset', 'cherryPick', 'revert', 'createTag',
   'deleteTag', 'fetch', 'pull', 'push', 'deleteRemoteBranch', 'stashPush', 'stashApply', 'stashPop',
   'stashDrop', 'resolveConflict', 'continueOperation', 'abortOperation', 'undo',
@@ -74,6 +74,7 @@ export function createHandlers(repos: RepoManager, prompts: PromptBroker, gitOpt
     unstagePaths: (id, paths) => r(id).unstagePaths(paths),
     discardPaths: (id, paths) => r(id).discardPaths(paths),
     applySelection: (id, req) => r(id).applySelection(req),
+    ignorePaths: (id, paths) => r(id).ignorePaths(paths),
     commit: (id, message, opts) => r(id).commit(message, opts),
 
     checkout: (id, ref) => r(id).checkout(ref),

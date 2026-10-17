@@ -333,6 +333,26 @@ export class Repo {
     })
   }
 
+  ignorePaths(paths: string[]): Promise<void> {
+    return this.exclusive(async () => {
+      const file = join(this.path, '.gitignore')
+      const saved = await this.saveFiles(['.gitignore'])
+      let current = ''
+      try {
+        current = await readFile(file, 'utf8')
+      } catch {
+        // No .gitignore yet.
+      }
+      // A leading slash anchors the pattern to the repository root, so ignoring `build` here
+      // does not also ignore every other folder called build. Escape characters that are
+      // special in gitignore patterns so the exact path is matched.
+      const lines = paths.map((p) => '/' + p.replace(/([\\*?[\]!# ])/g, '\\$1'))
+      const sep = current && !current.endsWith('\n') ? '\n' : ''
+      await writeFile(file, current + sep + lines.join('\n') + '\n')
+      this.journal.record(`Ignore ${describePaths(paths)}`, [{ kind: 'restore-files', files: saved }], (await this.currentHead()).hash)
+    })
+  }
+
   /** Copy working-tree files into the object database so a discard can be undone. */
   private async saveFiles(paths: string[]): Promise<{ path: string; blob: string | null; mode?: number }[]> {
     const out: { path: string; blob: string | null; mode?: number }[] = []

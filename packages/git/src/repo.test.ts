@@ -194,6 +194,20 @@ describe('whole-file operations', () => {
     expect(read(r, 'extra.txt')).toBe('brand new\n')
   })
 
+  it('ignores untracked files, anchored and escaped, and undo restores .gitignore', async () => {
+    const r = makeFixture('linear')
+    r.write('.gitignore', 'node_modules')
+    r.write('build/out.js', 'x')
+    r.write('weird [1].txt', 'x')
+    const repo = await open(r)
+    await repo.ignorePaths(['build/out.js', 'weird [1].txt'])
+    expect(read(r, '.gitignore')).toBe('node_modules\n/build/out.js\n/weird\\ \\[1\\].txt\n')
+    const s = await repo.snapshot()
+    expect(s.status.map((e) => e.path)).toEqual(['.gitignore'])
+    await repo.undo()
+    expect(read(r, '.gitignore')).toBe('node_modules')
+  })
+
   it('unstages in a repository with no commits yet', async () => {
     const r = makeFixture('empty')
     r.write('a.txt', 'a\n')
