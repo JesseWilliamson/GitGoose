@@ -1,11 +1,12 @@
 import type { SearchField } from '@gitsquid/shared'
 import clsx from 'clsx'
-import { Archive, ArchiveRestore, ArrowDown, ArrowUp, ChevronDown, ChevronUp, Command, GitBranch, RefreshCw, Search, Settings, Undo2, X } from 'lucide-react'
+import { Archive, ArchiveRestore, ArrowDown, ArrowUp, ChevronDown, ChevronUp, GitBranch, SquareTerminal, RefreshCw, Search, Settings, Undo2, X } from 'lucide-react'
 import { DropdownMenu } from 'radix-ui'
 import { useEffect, useRef, useState } from 'react'
 import { fetchAll, newBranch, pop, pull, push, stash, undo } from '../lib/actions'
 import { api } from '../lib/api'
-import { ensureLoaded, onCommand, toastError, updateRepo, useStore, type RepoView } from '../lib/store'
+import { ensureLoaded, onCommand, reportError, updateRepo, useStore, type RepoView } from '../lib/store'
+import { modName } from '../lib/keys'
 import { DM, Spinner, ToolbarButton } from './ui'
 
 export function Toolbar({ view }: { view: RepoView }) {
@@ -16,7 +17,7 @@ export function Toolbar({ view }: { view: RepoView }) {
   return (
     <div className="drag flex h-14 shrink-0 items-center gap-1 border-b border-line bg-panel px-2" data-testid="toolbar">
       <ToolbarButton icon={<Undo2 size={17} />} label="Undo" disabled={!lastUndo || !!view.busy}
-        title={lastUndo ? `Undo: ${lastUndo.label} (Ctrl/Cmd+Z)` : 'Nothing to undo'} onClick={() => void undo(id)} />
+        title={lastUndo ? `Undo: ${lastUndo.label} (${modName()}+Z)` : 'Nothing to undo'} onClick={() => void undo(id)} />
       <span className="mx-1 h-8 w-px bg-line" />
       <DropdownMenu.Root>
         <div className="no-drag flex items-stretch">
@@ -25,8 +26,9 @@ export function Toolbar({ view }: { view: RepoView }) {
           <DropdownMenu.Trigger className="rounded-md px-0.5 text-muted hover:bg-hover hover:text-fg"><ChevronDown size={12} /></DropdownMenu.Trigger>
         </div>
         <DM.Content>
-          <DM.Item onSelect={() => void pull(id)}>Pull (merge)</DM.Item>
-          <DM.Item onSelect={() => void pull(id, true)}>Pull (rebase)</DM.Item>
+          <DM.Item onSelect={() => void pull(id, 'merge')}>Pull (merge)</DM.Item>
+          <DM.Item onSelect={() => void pull(id, 'rebase')}>Pull (rebase)</DM.Item>
+          <DM.Item onSelect={() => void pull(id, 'ff-only')}>Pull (fast-forward only)</DM.Item>
           <DM.Item onSelect={() => void fetchAll(id)}>Fetch all</DM.Item>
         </DM.Content>
       </DropdownMenu.Root>
@@ -53,8 +55,9 @@ export function Toolbar({ view }: { view: RepoView }) {
         </div>
       )}
       <SearchBox view={view} />
-      <ToolbarButton icon={<Command size={17} />} label="Commands" onClick={() => useStore.setState({ palette: true })} title="Command palette (Ctrl/Cmd+Shift+P)" />
-      <ToolbarButton icon={<Settings size={17} />} label="Settings" onClick={() => useStore.setState({ dialog: { kind: 'settings' } })} />
+      {/* Not the ⌘ glyph: that is a macOS key, and this button is the same on every platform. */}
+      <ToolbarButton icon={<SquareTerminal size={17} />} label="Palette" onClick={() => useStore.setState({ palette: true })} title={`Command palette (${modName()}+K)`} />
+      <ToolbarButton icon={<Settings size={17} />} label="Settings" onClick={() => useStore.setState({ page: 'settings' })} />
     </div>
   )
 }
@@ -98,7 +101,7 @@ function SearchBox({ view }: { view: RepoView }) {
       updateRepo(view.id, { search: { field, query, hits, index: 0 } })
       if (hits[0]) await go(hits[0])
     } catch (e) {
-      toastError('Search failed', e)
+      reportError('Search failed', e)
     } finally {
       setBusy(false)
     }

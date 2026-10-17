@@ -259,3 +259,7 @@ export function makeLargeRepo(commits: number, dir: string = tempDir('gitsquid-l
 export function removeFixture(dir: string): void {
   rmSync(dir, { recursive: true, force: true })
 }
+
+export { makeDevRepo, CONFLICT_BRANCH, type DevRepoInfo, type DevRepoOptions } from './devrepo'
+export { fakeGitHub, FAKE_AVATAR_PNG, type FakeGitHub, type FakeGitHubOptions } from './fakeGitHub'
+export { fakeAnthropic, type FakeAnthropic } from './fakeAnthropic'

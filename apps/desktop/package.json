@@ -15,10 +15,13 @@
     "dist": "electron-vite build && electron-builder"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "^1.9.0",
+    "@anthropic-ai/sdk": "^0.135.0",
     "@parcel/watcher": "^2.6.0",
     "electron-updater": "^6.8.9"
   },
   "devDependencies": {
+    "@codemirror/commands": "^6.11.1",
     "@codemirror/state": "^6.7.6",
     "@codemirror/view": "^6.43.14",
     "@gitsquid/fixtures": "workspace:*",
@@ -41,6 +44,7 @@
     "radix-ui": "^1.8.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
+    "react-resizable-panels": "^4.14.5",
     "shiki": "^4.5.0",
     "tailwindcss": "^4.3.3",
     "vite": "^8.3.4",

@@ -5,6 +5,11 @@
 
 export * from './api'
 export * from './conflict-markers'
+export * from './settings'
+export * from './command'
+export * from './avatars'
+export * from './layout'
+export * from './merge3'
 
 /** A commit as the graph needs it. Bodies and file lists are fetched lazily (see CommitDetails). */
 export interface Commit {
@@ -162,12 +167,5 @@ export interface UndoEntry {
 
 export type SearchField = 'message' | 'author' | 'path' | 'hash' | 'content'
 
-export interface Settings {
-  gitPath: string
-  theme: 'system' | 'dark' | 'light'
-  fontSize: number
-  recentRepos: string[]
-  openRepos: string[]
-  /** Graph column width in px, set by dragging its header edge; null sizes it automatically. */
-  graphWidth: number | null
-}
+export * from './github'
+export * from './ai'

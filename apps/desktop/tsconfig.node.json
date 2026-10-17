@@ -1,5 +1,9 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "types": ["node"] },
+  "compilerOptions": {
+    "types": ["node"],
+    // e2e tests run code in the page through page.evaluate(), which needs DOM and bridge types.
+    "lib": ["ES2023", "DOM"]
+  },
   "include": ["electron.vite.config.ts", "src/main", "src/preload", "e2e", "playwright.config.ts"]
 }

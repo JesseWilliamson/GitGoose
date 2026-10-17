@@ -1,7 +1,8 @@
+import { movePane, presetLayout } from '@gitsquid/shared'
 import { Command } from 'cmdk'
 import { RDialogCompat } from './RDialogCompat'
 import {
-  checkout, fetchAll, initRepo, newBranch, openRepoDialog, pop, pull, push, reopen, stash, undo,
+  checkout, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, reopen, stash, undo,
 } from '../lib/actions'
 import { saveSettings, useStore } from '../lib/store'
 
@@ -33,7 +34,9 @@ export function CommandPalette() {
     add('Repository', 'Undo last operation', () => void undo(id), active.undo[0]?.label)
     add('Repository', 'Fetch all remotes', () => void fetchAll(id))
     add('Repository', 'Pull', () => void pull(id))
-    add('Repository', 'Pull with rebase', () => void pull(id, true))
+    add('Repository', 'Pull with rebase', () => void pull(id, 'rebase'))
+    add('Repository', 'Pull, fast-forward only', () => void pull(id, 'ff-only'))
+    add('Repository', 'Open terminal here', () => void openTerminal(id))
     add('Repository', 'Push', () => push(id))
     add('Repository', 'Force push (with lease)', () => push(id, true))
     add('Repository', 'New branch', () => newBranch(id))
@@ -54,7 +57,11 @@ export function CommandPalette() {
   add('App', 'Open repository…', () => void openRepoDialog())
   add('App', 'Clone repository…', () => useStore.setState({ dialog: { kind: 'clone' } }))
   add('App', 'New repository…', () => void initRepo())
-  add('App', 'Settings…', () => useStore.setState({ dialog: { kind: 'settings' } }))
+  add('App', 'Settings', () => useStore.setState({ page: 'settings' }))
+  add('Layout', 'Default layout', () => void saveSettings({ layout: presetLayout('default', settings!.layout) }))
+  add('Layout', 'Wide graph (hide side panels)', () => void saveSettings({ layout: presetLayout('wide-graph', settings!.layout) }))
+  add('Layout', 'Diff below the graph', () => void saveSettings({ layout: presetLayout('diff-below', settings!.layout) }))
+  add('Layout', 'Diff over the graph', () => void saveSettings({ layout: movePane(settings!.layout, 'diff', 'center') }))
   add('App', 'Keyboard shortcuts', () => useStore.setState({ dialog: { kind: 'shortcuts' } }), '?')
   if (settings) {
     add('App', `Theme: ${settings.theme === 'light' ? 'dark' : 'light'}`, () => void saveSettings({ theme: settings.theme === 'light' ? 'dark' : 'light' }))

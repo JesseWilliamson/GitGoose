@@ -37,6 +37,10 @@ export class RepoManager {
     return o.repo
   }
 
+  all(): Repo[] {
+    return [...this.open.values()].map((o) => o.repo)
+  }
+
   findByPath(path: string): Repo | undefined {
     for (const o of this.open.values()) if (o.repo.path === path) return o.repo
     return undefined

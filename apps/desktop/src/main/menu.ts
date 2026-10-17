@@ -23,6 +23,7 @@ export function installMenu(): void {
         { type: 'separator' },
         { label: 'Close Tab', accelerator: 'CmdOrCtrl+W', click: cmd('close-tab'), registerAccelerator: false },
         { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: cmd('settings'), registerAccelerator: false },
+        { label: 'Open Terminal Here', click: cmd('terminal') },
         ...(isMac ? [] : [{ type: 'separator' as const }, { role: 'quit' as const }]),
       ],
     },
@@ -47,7 +48,7 @@ export function installMenu(): void {
         { label: 'Pull', accelerator: 'CmdOrCtrl+Shift+Down', click: cmd('pull'), registerAccelerator: false },
         { label: 'Push', accelerator: 'CmdOrCtrl+Shift+Up', click: cmd('push'), registerAccelerator: false },
         { type: 'separator' },
-        { label: 'New Branch…', accelerator: 'CmdOrCtrl+B', click: cmd('new-branch'), registerAccelerator: false },
+        { label: 'New Branch…', accelerator: 'CmdOrCtrl+Shift+B', click: cmd('new-branch'), registerAccelerator: false },
         { label: 'Stash Changes', accelerator: 'CmdOrCtrl+Shift+S', click: cmd('stash'), registerAccelerator: false },
         { label: 'Pop Stash', click: cmd('pop') },
         { type: 'separator' },
@@ -57,8 +58,24 @@ export function installMenu(): void {
     {
       label: 'View',
       submenu: [
+        { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+B', click: cmd('toggle-sidebar'), registerAccelerator: false },
+        { label: 'Toggle Details', accelerator: 'CmdOrCtrl+Alt+B', click: cmd('toggle-details'), registerAccelerator: false },
+        { label: 'Toggle Bottom Panel', accelerator: 'CmdOrCtrl+J', click: cmd('toggle-bottom'), registerAccelerator: false },
+        {
+          label: 'Layout',
+          submenu: [
+            { label: 'Default', click: cmd('layout-default') },
+            { label: 'Wide Graph', click: cmd('layout-wide-graph') },
+            { label: 'Diff Below Graph', click: cmd('layout-diff-below') },
+          ],
+        },
+        { type: 'separator' },
         { role: 'reload' }, { role: 'toggleDevTools' }, { type: 'separator' },
-        { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' },
+        // Zoom is the UI scale setting, so it persists; the renderer handles the keys.
+        { label: 'Actual Size', accelerator: 'CmdOrCtrl+0', click: cmd('zoom-reset'), registerAccelerator: false },
+        { label: 'Zoom In', accelerator: 'CmdOrCtrl+=', click: cmd('zoom-in'), registerAccelerator: false },
+        { label: 'Zoom Out', accelerator: 'CmdOrCtrl+-', click: cmd('zoom-out'), registerAccelerator: false },
+        { type: 'separator' },
         { role: 'togglefullscreen' },
       ],
     },

@@ -24,8 +24,8 @@ test('keeps the checked-out branch in the leftmost lane', async () => {
   const { app, page } = await launch(r.dir)
   const row = page.locator(`[data-testid="commit-row"][data-hash="${head}"]`)
   await expect(row).toBeVisible()
-  // laneX(0) = 6 + 16/2 = 14: the node sits in lane 0 even though newer commits come first.
-  await expect(row.locator('svg circle').last()).toHaveAttribute('cx', '14')
+  // laneX(0) = PAD + LANE_W/2 = 6 + 20/2 = 16: the node sits in lane 0 even though newer commits come first.
+  await expect(row.locator('[data-testid="avatar-node"] circle').first()).toHaveAttribute('cx', '16')
   await app.close()
 })
 
@@ -72,7 +72,7 @@ test('caps the graph column on wide histories and lets the user resize it', asyn
   const header = page.getByTestId('graph-resizer').locator('..')
   await expect(header).toBeVisible()
   const auto = (await header.boundingBox())!.width
-  expect(auto).toBeLessThanOrEqual(8 * 16 + 12 + 1)
+  expect(auto).toBeLessThanOrEqual(8 * 20 + 12 + 1) // AUTO_LANES * LANE_W + padding
   const handle = (await page.getByTestId('graph-resizer').boundingBox())!
   await page.mouse.move(handle.x + 2, handle.y + 5)
   await page.mouse.down()

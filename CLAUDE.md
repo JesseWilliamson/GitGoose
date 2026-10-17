@@ -14,10 +14,12 @@ explanations. `docs/learn/` holds exercises for the four pieces he plans to own.
 
 ```
 apps/desktop/          Electron app (electron-vite)
-  src/main/            main process: window, IPC router (ipc.ts), RepoManager + file watcher, settings, menu
+  src/main/            main process: window, IPC router (ipc.ts), RepoManager + file watcher, settings, menu,
+                       avatars, github/ (device-flow sign-in; the only code that holds a token),
+                       ai/ (ACP client for the user's agent, Anthropic API fallback)
   src/preload/         the only bridge: builds window.gitsquid from API_METHODS
   src/renderer/src/    React UI: lib/store.ts (zustand + log data), lib/actions.ts (every user action), components/
-  e2e/                 Playwright tests that launch the real app
+  e2e/                 Playwright tests that launch the real app (+ fake-agent.mjs, a scripted ACP agent)
 packages/shared/       IPC contract (api.ts), data types, pure conflict-marker parser
 packages/git/          everything that runs git: runner, parsers, LogStream, CatFile, patch builder, undo, askpass, Repo
 packages/graph/        lane layout. Pure, zero dependencies.
@@ -68,7 +70,8 @@ also pass `pnpm bench --check`.
 
 ```
 pnpm install          # also downloads the Electron binary (postinstall)
-pnpm dev              # run the app with hot reload
+pnpm dev:repo         # build .fixtures/dev-repo: ~3,000 realistic commits, branches, remotes, a conflict
+pnpm dev              # run the app with hot reload (opens the dev repo when it exists)
 pnpm test             # vitest: parsers, git operations, layout
 pnpm typecheck
 pnpm e2e              # builds, then Playwright drives the real app

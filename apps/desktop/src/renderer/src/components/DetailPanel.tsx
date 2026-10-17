@@ -1,16 +1,20 @@
 import type { CommitDetails, DiffTarget, StatusEntry } from '@gitsquid/shared'
-import { Check, Copy, Minus, Plus, Undo2 } from 'lucide-react'
+import { Check, Copy, Minus, Plus, Sparkles, Undo2, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { copy, pop, run, stashApply, stashDrop } from '../lib/actions'
-import { api } from '../lib/api'
-import { dateTime, hashColor, initials, laneColor, sentence, shortHash } from '../lib/format'
-import { ensureLoaded, toastError, updateRepo, type FileMode, type RepoView } from '../lib/store'
+import { copy, discard as discardFiles, openInEditor, pop, run, stashApply, stashDrop } from '../lib/actions'
+import { cancelAi, startAi, useAiEnabled } from '../lib/ai'
+import { api, toUiError } from '../lib/api'
+import { dateTime, sentence, shortHash } from '../lib/format'
+import { avatarSrc, useAvatarVariant } from '../lib/avatar'
+import { ensureLoaded, reportError, setting, updateRepo, useSetting, type FileMode, type RepoView } from '../lib/store'
+import { Avatar } from './Avatar'
 import { FileRow, statusKind } from './FileList'
+import { modName } from '../lib/keys'
 import { Button, CM, SectionHeader, Spinner } from './ui'
 
 export function DetailPanel({ view }: { view: RepoView }) {
   return (
-    <aside className="flex w-[340px] shrink-0 flex-col border-l border-line bg-panel" data-testid="detail-panel">
+    <aside className="flex h-full min-h-0 w-full flex-col bg-panel" data-testid="detail-panel">
       {view.selected.kind === 'wip' ? <WipPanel view={view} /> : <CommitPanel view={view} hash={view.selected.hash} />}
     </aside>
   )
@@ -36,7 +40,8 @@ function FileMenu({ view, target, children }: { view: RepoView; target: DiffTarg
       {target.kind !== 'untracked' && <CM.Item onSelect={() => openFile(view, target, 'history')}>File history</CM.Item>}
       {target.kind !== 'untracked' && <CM.Item onSelect={() => openFile(view, target, 'blame')}>Blame</CM.Item>}
       <CM.Separator />
-      <CM.Item onSelect={() => void api.openPath(abs).catch((e) => toastError('Could not open the file', e))}>Open in default app</CM.Item>
+      {target.kind !== 'commit' && <CM.Item onSelect={() => void openInEditor(abs)}>Open in editor</CM.Item>}
+      <CM.Item onSelect={() => void api.openPath(abs).catch((e) => reportError('Could not open the file', e))}>Open with default app</CM.Item>
       <CM.Item onSelect={() => void api.revealPath(abs)}>Reveal in file manager</CM.Item>
       <CM.Item onSelect={() => copy(target.path, 'Copied path')}>Copy path</CM.Item>
     </CM.Content>
@@ -54,7 +59,7 @@ function WipPanel({ view }: { view: RepoView }) {
 
   const stage = (paths: string[]) => run(id, 'Stage', () => api.stagePaths(id, paths), { quiet: true })
   const unstage = (paths: string[]) => run(id, 'Unstage', () => api.unstagePaths(id, paths), { quiet: true })
-  const discard = (paths: string[]) => run(id, `Discard ${paths.length === 1 ? paths[0] : `${paths.length} files`}`, () => api.discardPaths(id, paths))
+  const discard = (paths: string[]) => discardFiles(id, paths)
 
   const unstagedTarget = (e: StatusEntry): DiffTarget => (e.kind === 'untracked' ? { kind: 'untracked', path: e.path } : { kind: 'unstaged', path: e.path })
 
@@ -138,6 +143,29 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
   const [amend, setAmend] = useState(false)
   const id = view.id
   const canCommit = summary.trim().length > 0 && (stagedCount > 0 || amend) && !view.busy
+  const aiOn = useAiEnabled()
+  /** The AI request writing the message, while it runs. */
+  const [writing, setWriting] = useState<string | null>(null)
+
+  const writeMessage = async () => {
+    if (writing) return cancelAi(writing)
+    // Stream into the fields: first line is the summary, the rest the description.
+    const fill = (text: string) => {
+      const [first, ...rest] = text.replace(/^\s+/, '').split('\n')
+      setSummary(first ?? '')
+      setBody(rest.join('\n').replace(/^\n+/, ''))
+    }
+    const r = startAi(id, { kind: 'commit-message' }, fill)
+    setWriting(r.requestId)
+    try {
+      const res = await r.done
+      if (res) fill(res.text)
+    } catch (e) {
+      reportError('Could not write a commit message', e)
+    } finally {
+      setWriting(null)
+    }
+  }
 
   const toggleAmend = async (on: boolean) => {
     setAmend(on)
@@ -152,7 +180,8 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
   const commit = async () => {
     if (!canCommit) return
     const message = body.trim() ? `${summary.trim()}\n\n${body.trim()}\n` : `${summary.trim()}\n`
-    const ok = await run(id, amend ? 'Amend commit' : 'Commit', () => api.commit(id, message, { amend }), { success: amend ? 'Commit amended' : 'Committed' })
+    const opts = { amend, signOff: setting('signOff'), gpgSign: setting('gpgSign') }
+    const ok = await run(id, amend ? 'Amend commit' : 'Commit', () => api.commit(id, message, opts), { success: amend ? 'Commit amended' : 'Committed' })
     if (ok) {
       setSummary('')
       setBody('')
@@ -175,6 +204,7 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
           onChange={(e) => setSummary(e.target.value)}
           onKeyDown={onKey}
           placeholder="Summary"
+          style={{ fontFamily: 'var(--gs-code-font)' }}
           data-testid="commit-summary"
           className="h-8 w-full rounded-md border border-line bg-bg px-2 pr-9 text-[13px] outline-none focus:border-accent"
         />
@@ -185,15 +215,24 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
         onChange={(e) => setBody(e.target.value)}
         onKeyDown={onKey}
         placeholder="Description"
+        style={{ fontFamily: 'var(--gs-code-font)', fontSize: 'var(--gs-code-size)' }}
         rows={3}
         className="mt-2 w-full resize-none rounded-md border border-line bg-bg px-2 py-1.5 text-[13px] outline-none focus:border-accent"
       />
       <div className="mt-2 flex items-center justify-between gap-2">
-        <label className="flex items-center gap-1.5 text-xs text-muted">
-          <input type="checkbox" checked={amend} onChange={(e) => void toggleAmend(e.target.checked)} disabled={!view.snapshot.head.hash} />
-          Amend previous commit
-        </label>
-        <Button variant="primary" disabled={!canCommit} onClick={() => void commit()} data-testid="commit-button" title="Commit (Ctrl/Cmd+Enter)">
+        <div className="flex min-w-0 items-center gap-2">
+          <label className="flex items-center gap-1.5 text-xs text-muted">
+            <input type="checkbox" checked={amend} onChange={(e) => void toggleAmend(e.target.checked)} disabled={!view.snapshot.head.hash} />
+            Amend previous commit
+          </label>
+          {aiOn && (
+            <Button size="sm" variant="ghost" onClick={() => void writeMessage()} disabled={!writing && stagedCount === 0} data-testid="ai-commit-message"
+              title={writing ? 'Stop' : 'Write the message with AI, from the staged changes'}>
+              {writing ? <><Spinner /> Stop</> : <><Sparkles size={13} /> Write</>}
+            </Button>
+          )}
+        </div>
+        <Button variant="primary" disabled={!canCommit} onClick={() => void commit()} data-testid="commit-button" title={`Commit (${modName()}+Enter)`}>
           {view.busy === 'Commit' ? <Spinner /> : <Check size={14} />}
           {amend ? 'Amend' : stagedCount ? `Commit ${stagedCount} ${stagedCount === 1 ? 'file' : 'files'}` : 'Commit'}
         </Button>
@@ -208,8 +247,12 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
 const detailsCache = new Map<string, CommitDetails>()
 
 function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
+  const avatarSource = useSetting('avatars')
+  const avatarVariant = useAvatarVariant()
   const [details, setDetails] = useState<CommitDetails | null>(() => detailsCache.get(hash) ?? null)
   const latest = useRef(hash)
+  const aiOn = useAiEnabled()
+  const [explained, setExplained] = useState<{ hash: string; text: string; requestId: string | null; error: string | null } | null>(null)
   useEffect(() => {
     latest.current = hash
     const cached = detailsCache.get(hash)
@@ -223,11 +266,24 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
       if (detailsCache.size > 500) detailsCache.clear()
       detailsCache.set(hash, d)
       if (latest.current === hash) setDetails(d)
-    }, (e) => toastError('Could not load commit', e))
+    }, (e) => reportError('Could not load commit', e))
   }, [hash, view.id])
 
   if (!details) return <div className="flex flex-1 items-center justify-center text-faint"><Spinner /></div>
   const d = details
+  const explanation = explained?.hash === d.hash ? explained : null
+  const explain = () => {
+    if (explanation?.requestId) return cancelAi(explanation.requestId)
+    const target = d.hash
+    const update = (patch: Partial<NonNullable<typeof explained>>) =>
+      setExplained((e) => (e && e.hash === target ? { ...e, ...patch } : e))
+    const r = startAi(view.id, { kind: 'explain-commit', hash: target }, (text) => update({ text }))
+    setExplained({ hash: target, text: '', requestId: r.requestId, error: null })
+    r.done.then(
+      (res) => (res ? update({ text: res.text, requestId: null }) : setExplained((e) => (e?.hash === target && !e.text ? null : e && { ...e, requestId: null }))),
+      (e) => update({ requestId: null, error: toUiError(e).message }),
+    )
+  }
   // A stash is a commit too: its first parent is where it was made, so the file list is its changes.
   const stash = view.stashes.find((s) => s.hash === d.hash)
   const adds = d.files.reduce((n, f) => n + f.additions, 0)
@@ -252,10 +308,30 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
       <div className="selectable border-b border-line p-3">
         <div className="text-[14px] leading-snug font-semibold">{stash ? stash.message : d.subject}</div>
         {d.body && <pre className="mt-2 max-h-40 overflow-y-auto font-sans text-[13px] whitespace-pre-wrap text-muted">{d.body}</pre>}
+        {aiOn && !stash && (
+          <div className="mt-2">
+            {!explanation ? (
+              <Button size="sm" variant="ghost" onClick={explain} data-testid="ai-explain-commit"><Sparkles size={12} /> Explain</Button>
+            ) : (
+              <div className="rounded-md border border-line bg-bg/60 p-2 text-[13px]" data-testid="ai-explanation">
+                <div className="mb-1 flex items-center gap-1 text-[11px] text-faint">
+                  <Sparkles size={11} /> <span className="flex-1">AI explanation</span>
+                  {explanation.requestId && <Button size="sm" variant="ghost" onClick={explain}>Stop</Button>}
+                  <button title="Close" className="rounded p-0.5 hover:bg-hover" onClick={() => {
+                    if (explanation.requestId) cancelAi(explanation.requestId)
+                    setExplained(null)
+                  }}><X size={12} /></button>
+                </div>
+                <div className="whitespace-pre-wrap" data-testid="ai-explanation-text">
+                  {explanation.text || (explanation.requestId ? <span className="flex items-center gap-2 text-muted"><Spinner /> Thinking…</span> : null)}
+                </div>
+                {explanation.error && <div className="mt-1 text-xs text-del">{explanation.error}</div>}
+              </div>
+            )}
+          </div>
+        )}
         <div className="mt-3 flex items-center gap-2">
-          <span className="flex size-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: laneColor(hashColor(d.authorEmail)) }}>
-            {initials(d.authorName)}
-          </span>
+          <Avatar name={d.authorName} email={d.authorEmail} src={avatarSrc(d.authorEmail, avatarSource, avatarVariant)} size={28} />
           <div className="min-w-0 text-xs">
             <div className="truncate"><b>{d.authorName}</b> <span className="text-faint">&lt;{d.authorEmail}&gt;</span></div>
             <div className="text-muted">authored {dateTime(d.authorDate)}</div>

@@ -5,6 +5,10 @@ import {
 } from '@gitsquid/shared'
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { logError } from './diagnostics'
+import { openInEditor, openTerminal } from './launch'
+import { GITHUB_SCOPES } from '@gitsquid/shared'
+import type { AiService } from './ai/service'
+import type { GitHubService } from './github/service'
 import type { RepoManager } from './repos'
 import { forgetOpenRepo, getSettings, rememberRepo, setSettings } from './settings'
 
@@ -24,7 +28,13 @@ export interface PromptBroker {
   respond(id: number, answer: string | null): void
 }
 
-export function createHandlers(repos: RepoManager, prompts: PromptBroker, gitOpts: () => { gitPath: string; env: Record<string, string> }): GitSquidApi {
+export function createHandlers(
+  repos: RepoManager,
+  prompts: PromptBroker,
+  gitOpts: () => { gitPath: string; env: Record<string, string> },
+  github: GitHubService,
+  ai: AiService,
+): GitSquidApi {
   const r = (id: string) => repos.get(id)
   const opened = async (repo: Repo) => {
     rememberRepo(repo.path)
@@ -53,17 +63,38 @@ export function createHandlers(repos: RepoManager, prompts: PromptBroker, gitOpt
       ...gitOpts(), onProgress: (text) => broadcast({ type: 'progress', repoId: 'clone', text }),
     })),
     respondPrompt: async (id, answer) => prompts.respond(id, answer),
+
+    githubStatus: async () => github.status(),
+    githubSignIn: (access) => github.startSignIn(GITHUB_SCOPES[access]),
+    githubWaitForSignIn: () => github.waitForSignIn(),
+    githubCancelSignIn: async () => github.cancelSignIn(),
+    githubOpenPage: async (page) => {
+      const url = github.pageUrl(page)
+      if (url) await shell.openExternal(url)
+    },
+    githubSignOut: async () => github.signOut(),
+
+    aiStatus: async () => ai.status(),
+    aiConsent: async () => ai.consent(),
+    aiRun: (requestId, repoId, task) => ai.run(requestId, repoId, task),
+    aiCancel: async (requestId) => ai.cancel(requestId),
+    aiRespondPermission: async (id, optionId) => ai.respondPermission(id, optionId),
+    aiAgentInfo: () => ai.agentInfo(),
+    aiAuthenticate: (methodId) => ai.authenticate(methodId),
+    aiSetApiKey: async (key) => ai.setApiKey(key),
     openPath: async (path) => {
       const err = await shell.openPath(path)
       if (err) throw new Error(err)
     },
+    openInEditor: (path, line) => openInEditor(path, line),
+    openTerminal: (id) => openTerminal(r(id).path),
     revealPath: async (path) => shell.showItemInFolder(path),
     logError: async (message) => logError('renderer', message),
 
     snapshot: (id) => r(id).snapshot(),
     logPage: (id, offset, count) => r(id).logPage(offset, count),
     commitDetails: (id, hash, opts) => r(id).commitDetails(hash, opts),
-    diff: (id, target) => r(id).diff(target),
+    diff: (id, target, opts) => r(id).diff(target, opts),
     fileHistory: (id, path) => r(id).fileHistory(path),
     blame: (id, path, rev) => r(id).blame(path, rev),
     search: (id, field, q) => r(id).search(field, q),
@@ -112,7 +143,11 @@ export function createHandlers(repos: RepoManager, prompts: PromptBroker, gitOpt
 
 export function serializeError(e: unknown): SerializedError {
   if (e instanceof GitError) return { message: e.message, stderr: e.stderr, command: e.command, code: 'git' }
-  if (e instanceof Error) return { message: e.message }
+  // Errors that carry a string code (AI, GitHub sign-in) keep it, so the renderer can react.
+  if (e instanceof Error) {
+    const code = (e as { code?: unknown }).code
+    return typeof code === 'string' ? { message: e.message, code } : { message: e.message }
+  }
   return { message: String(e) }
 }
 

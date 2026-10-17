@@ -3,14 +3,13 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import clsx from 'clsx'
 import { X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { run } from '../lib/actions'
+import { discard, openInEditor, run } from '../lib/actions'
 import { api } from '../lib/api'
-import { hashColor, laneColor, relativeTime, shortHash, splitPath } from '../lib/format'
+import { formatDate, hashColor, laneColor, relativeTime, shortHash, splitPath } from '../lib/format'
 import { tokenize, type Tokens } from '../lib/highlight'
-import { ensureLoaded, toastError, updateRepo, type FileMode, type RepoView } from '../lib/store'
+import { codeLineHeight, ensureLoaded, reportError, updateRepo, useSetting, type FileMode, type RepoView } from '../lib/store'
 import { Button, Spinner } from './ui'
 
-const LINE_H = 20
 
 export function FileView({ view, target, mode }: { view: RepoView; target: DiffTarget; mode: FileMode }) {
   const close = () => updateRepo(view.id, { center: { kind: 'graph' } })
@@ -52,6 +51,11 @@ export function FileView({ view, target, mode }: { view: RepoView; target: DiffT
 
 // ------------------------------------------------------------------ diff
 
+/** Code panes use the code font settings (Settings → Appearance), set as CSS variables in applyTheme. */
+const CODE_STYLE: React.CSSProperties = {
+  fontFamily: 'var(--gs-code-font)', fontSize: 'var(--gs-code-size)', tabSize: 'var(--gs-tab-size)' as unknown as number,
+}
+
 type Item =
   | { kind: 'hunk'; hunk: number }
   | { kind: 'line'; hunk: number; line: number }
@@ -60,6 +64,12 @@ type Item =
 type Sel = Map<number, Set<number>>
 
 function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
+  const context = useSetting('contextLines')
+  const ignoreWhitespace = useSetting('ignoreWhitespace')
+  const wrap = useSetting('wrapLines')
+  const highlight = useSetting('syntaxHighlighting')
+  const highlightMaxKb = useSetting('highlightMaxKb')
+  const lineH = codeLineHeight(useSetting('codeFontSize'))
   const [diff, setDiff] = useState<FileDiff | null | undefined>(undefined)
   const [tokens, setTokens] = useState<{ old: Tokens | null; new: Tokens | null } | null>(null)
   const [sel, setSel] = useState<Sel>(new Map())
@@ -70,21 +80,22 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
 
   useEffect(() => {
     let live = true
-    api.diff(view.id, target).then((d) => {
+    api.diff(view.id, target, { context, ignoreWhitespace }).then((d) => {
       if (!live) return
       setDiff(d)
       setSel(new Map())
     }, (e) => {
       if (!live) return
       setDiff(null)
-      toastError('Could not load diff', e)
+      reportError('Could not load diff', e)
     })
     return () => { live = false }
-  }, [view.id, key, reloadOn])
+  }, [view.id, key, reloadOn, context, ignoreWhitespace])
 
   // Highlight the old and new sides separately, so each is real source the grammar understands.
   useEffect(() => {
-    if (!diff || diff.binary) return
+    setTokens(null)
+    if (!diff || diff.binary || !highlight) return
     const oldLines: string[] = []
     const newLines: string[] = []
     for (const h of diff.hunks) for (const l of h.lines) {
@@ -94,10 +105,11 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
     if (oldLines.length + newLines.length > 20_000) return
     const dark = document.documentElement.dataset.theme !== 'light'
     let live = true
-    Promise.all([tokenize(oldLines.join('\n'), diff.path, dark), tokenize(newLines.join('\n'), diff.path, dark)])
+    const max = highlightMaxKb * 1024
+    Promise.all([tokenize(oldLines.join('\n'), diff.path, dark, max), tokenize(newLines.join('\n'), diff.path, dark, max)])
       .then(([o, n]) => live && setTokens({ old: o, new: n }), () => {})
     return () => { live = false }
-  }, [diff])
+  }, [diff, highlight, highlightMaxKb])
 
   const { items, tokenIndex } = useMemo(() => {
     const items: Item[] = []
@@ -121,18 +133,26 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
   }, [diff])
 
   const scrollRef = useRef<HTMLDivElement>(null)
-  const virt = useVirtualizer({ count: items.length, getScrollElement: () => scrollRef.current, estimateSize: () => LINE_H, overscan: 30 })
+  // Wrapped lines have different heights, so the virtualizer measures each row; otherwise rows
+  // are a fixed height derived from the code font size (no measuring, cheaper scrolling).
+  const virt = useVirtualizer({
+    count: items.length, getScrollElement: () => scrollRef.current, estimateSize: () => lineH, overscan: 30,
+    ...(wrap ? { measureElement: (el: Element) => el.getBoundingClientRect().height } : {}),
+  })
+  useEffect(() => virt.measure(), [lineH, wrap, virt])
 
   if (diff === undefined) return <div className="flex flex-1 items-center justify-center text-faint"><Spinner /></div>
   if (diff === null) return <div className="flex flex-1 items-center justify-center text-sm text-faint">No changes to show</div>
 
-  const editable = target.kind !== 'commit'
+  // Line and hunk staging work on the diff as shown; with whitespace hidden, the patch would
+  // carry changes the user never saw, so it is switched off (whole-file staging still works).
+  const editable = target.kind !== 'commit' && !ignoreWhitespace
   const selectedCount = [...sel.values()].reduce((n, s) => n + s.size, 0)
 
   const apply = (action: 'stage' | 'unstage' | 'discard', hunks: HunkSelection[]) => {
     if (target.kind === 'commit') return
     const label = { stage: 'Stage', unstage: 'Unstage', discard: 'Discard' }[action]
-    void run(view.id, `${label} ${hunks.some((h) => h.lines) ? 'lines' : 'hunk'}`, () => api.applySelection(view.id, { target, action, hunks }), {
+    void run(view.id, `${label} ${hunks.some((h) => h.lines) ? 'lines' : 'hunk'}`, () => api.applySelection(view.id, { target, action, hunks, context }), {
       quiet: action !== 'discard',
     })
   }
@@ -171,7 +191,7 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
       {target.kind !== 'staged' ? (
         <>
           <Button size="sm" onClick={() => void run(view.id, 'Stage', () => api.stagePaths(view.id, [target.path]), { quiet: true })}>Stage file</Button>
-          <Button size="sm" variant="ghost" onClick={() => void run(view.id, `Discard ${target.path}`, () => api.discardPaths(view.id, [target.path]))}>
+          <Button size="sm" variant="ghost" onClick={() => void discard(view.id, [target.path])}>
             {target.kind === 'untracked' ? 'Delete file' : 'Discard file'}
           </Button>
         </>
@@ -185,7 +205,10 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
     <div className="flex min-h-0 flex-1 flex-col">
       {(fileActions || diff.oldPath) && (
         <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-line px-3 text-xs">
-          <span className="truncate text-muted">{diff.oldPath ? `Renamed from ${diff.oldPath}` : editable ? 'Click lines to select them; shift-click for a range.' : ''}</span>
+          <span className="truncate text-muted" data-testid="diff-hint">
+            {diff.oldPath ? `Renamed from ${diff.oldPath}` : editable ? 'Click lines to select them; shift-click for a range.'
+              : target.kind !== 'commit' && ignoreWhitespace ? 'Whitespace changes are hidden, so line and hunk staging are off (Settings → Diff).' : ''}
+          </span>
           {fileActions}
         </div>
       )}
@@ -194,15 +217,18 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
       ) : diff.hunks.length === 0 ? (
         <div className="flex flex-1 items-center justify-center text-sm text-faint">{diff.change === 'added' ? 'Empty file' : 'Only the file mode changed'}</div>
       ) : (
-        <div ref={scrollRef} className="selectable min-h-0 flex-1 overflow-auto font-mono text-[12px]" data-testid="diff-lines">
-          <div style={{ height: virt.getTotalSize(), position: 'relative', minWidth: '100%' }} className="w-max">
+        <div ref={scrollRef} className="selectable min-h-0 flex-1 overflow-auto" style={CODE_STYLE} data-testid="diff-lines">
+          <div style={{ height: virt.getTotalSize(), position: 'relative', minWidth: '100%' }} className={wrap ? 'w-full' : 'w-max'}>
             {virt.getVirtualItems().map((vi) => {
               const it = items[vi.index]!
-              const style = { position: 'absolute' as const, top: 0, left: 0, minWidth: '100%', height: LINE_H, transform: `translateY(${vi.start}px)` }
+              const style = {
+                position: 'absolute' as const, top: 0, left: 0, minWidth: '100%', transform: `translateY(${vi.start}px)`,
+                ...(wrap ? { minHeight: lineH, right: 0 } : { height: lineH, lineHeight: `${lineH}px` }),
+              }
               const hunk = diff.hunks[it.hunk]!
               if (it.kind === 'hunk') {
                 return (
-                  <div key={vi.key} style={style} className="flex items-center gap-2 border-y border-line/50 bg-panel pr-3 pl-2 text-faint">
+                  <div key={vi.key} ref={wrap ? virt.measureElement : undefined} data-index={vi.index} style={style} className="flex items-center gap-2 border-y border-line/50 bg-panel pr-3 pl-2 text-faint">
                     <span className="sticky left-2 truncate">@@ -{hunk.oldStart},{hunk.oldLines} +{hunk.newStart},{hunk.newLines} @@ {hunk.section}</span>
                     {editable && (
                       <span className="sticky right-3 ml-auto flex gap-1 font-sans">
@@ -219,17 +245,19 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
               const ti = tokenIndex[it.hunk]![it.line]!
               const toks = tokens?.[ti.side]?.[ti.i]
               return (
-                <div key={vi.key} style={style}
+                <div key={vi.key} style={style} ref={wrap ? virt.measureElement : undefined} data-index={vi.index}
                   data-testid="diff-line" data-kind={line.kind}
-                  onMouseDown={(e) => { if (line.kind !== ' ' && e.button === 0) { e.preventDefault(); toggle(it.hunk, it.line, e.shiftKey) } }}
-                  className={clsx('flex whitespace-pre', line.kind === '+' && 'bg-add-bg', line.kind === '-' && 'bg-del-bg',
+                  onMouseDown={(e) => { if (line.kind !== ' ' && e.button === 0 && e.detail === 1) { e.preventDefault(); toggle(it.hunk, it.line, e.shiftKey) } }}
+                  onDoubleClick={() => { if (target.kind !== 'commit') void openInEditor(`${view.snapshot.path}/${target.path}`, line.newNo ?? line.oldNo ?? 1) }}
+                  title={target.kind !== 'commit' ? 'Double-click to open in your editor at this line' : undefined}
+                  className={clsx('flex', wrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre', line.kind === '+' && 'bg-add-bg', line.kind === '-' && 'bg-del-bg',
                     line.kind !== ' ' && editable && 'cursor-pointer', selected && 'ring-1 ring-accent ring-inset brightness-125')}>
-                  <span className={clsx('sticky left-0 flex w-[84px] shrink-0 bg-bg text-right text-faint', selected && 'bg-select')}>
+                  <span className={clsx('sticky left-0 flex w-[84px] shrink-0 self-stretch bg-bg text-right text-faint', selected && 'bg-select')}>
                     <span className="w-9 pr-1">{line.oldNo ?? ''}</span>
                     <span className="w-9 pr-1">{line.newNo ?? ''}</span>
                     <span className={clsx('w-3 text-center', line.kind === '+' && 'text-add', line.kind === '-' && 'text-del')}>{line.kind === ' ' ? '' : line.kind}</span>
                   </span>
-                  <span className="pr-4 pl-2">
+                  <span className="min-w-0 pr-4 pl-2">
                     {toks ? toks.map((t, k) => <span key={k} style={{ color: t.color }}>{t.content}</span>) : line.text}
                     {line.noNewline && <span className="ml-2 text-faint" title="No newline at end of file">⏎̸</span>}
                   </span>
@@ -246,10 +274,11 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
 // ------------------------------------------------------------------ history
 
 function HistoryPane({ view, path }: { view: RepoView; path: string }) {
+  const dateFormat = useSetting('dateFormat')
   const [commits, setCommits] = useState<Commit[] | null>(null)
   useEffect(() => {
     setCommits(null)
-    api.fileHistory(view.id, path).then(setCommits, (e) => toastError('Could not load history', e))
+    api.fileHistory(view.id, path).then(setCommits, (e) => reportError('Could not load history', e))
   }, [view.id, path])
   if (!commits) return <div className="flex flex-1 items-center justify-center text-faint"><Spinner /></div>
   return (
@@ -265,7 +294,7 @@ function HistoryPane({ view, path }: { view: RepoView; path: string }) {
           <span className="font-mono text-xs text-faint">{shortHash(c.hash)}</span>
           <span className="min-w-0 flex-1 truncate">{c.subject}</span>
           <span className="text-xs text-muted">{c.authorName}</span>
-          <span className="w-24 text-right text-xs text-faint">{relativeTime(c.authorDate)}</span>
+          <span className="w-24 text-right text-xs text-faint">{formatDate(c.authorDate, dateFormat)}</span>
         </button>
       ))}
     </div>
@@ -280,16 +309,18 @@ function BlamePane({ view, path, rev }: { view: RepoView; path: string; rev?: st
     setLines(null)
     api.blame(view.id, path, rev).then(setLines, (e) => {
       setLines([])
-      toastError('Could not blame this file', e)
+      reportError('Could not blame this file', e)
     })
   }, [view.id, path, rev])
   const scrollRef = useRef<HTMLDivElement>(null)
-  const virt = useVirtualizer({ count: lines?.length ?? 0, getScrollElement: () => scrollRef.current, estimateSize: () => LINE_H, overscan: 30 })
+  const lineH = codeLineHeight(useSetting('codeFontSize'))
+  const virt = useVirtualizer({ count: lines?.length ?? 0, getScrollElement: () => scrollRef.current, estimateSize: () => lineH, overscan: 30 })
+  useEffect(() => virt.measure(), [lineH, virt])
   if (!lines) return <div className="flex flex-1 items-center justify-center text-faint"><Spinner /></div>
   const newest = Math.max(...lines.map((l) => l.date), 1)
   const oldest = Math.min(...lines.map((l) => l.date), newest)
   return (
-    <div ref={scrollRef} className="selectable min-h-0 flex-1 overflow-auto font-mono text-[12px]" data-testid="blame">
+    <div ref={scrollRef} className="selectable min-h-0 flex-1 overflow-auto" style={CODE_STYLE} data-testid="blame">
       <div style={{ height: virt.getTotalSize(), position: 'relative' }} className="w-max min-w-full">
         {virt.getVirtualItems().map((vi) => {
           const l = lines[vi.index]!
@@ -297,7 +328,7 @@ function BlamePane({ view, path, rev }: { view: RepoView; path: string; rev?: st
           // Newer lines get a stronger stripe, so recent changes stand out.
           const age = newest === oldest ? 1 : (l.date - oldest) / (newest - oldest)
           return (
-            <div key={vi.key} style={{ position: 'absolute', top: 0, left: 0, minWidth: '100%', height: LINE_H, transform: `translateY(${vi.start}px)` }}
+            <div key={vi.key} style={{ position: 'absolute', top: 0, left: 0, minWidth: '100%', height: lineH, lineHeight: `${lineH}px`, transform: `translateY(${vi.start}px)` }}
               className={clsx('flex whitespace-pre', first && vi.index > 0 && 'border-t border-line/50')}>
               <span className="sticky left-0 flex w-[300px] shrink-0 items-center gap-2 bg-panel pr-2 font-sans text-[11px]">
                 <span className="h-full w-1 shrink-0" style={{ background: laneColor(hashColor(l.hash)), opacity: 0.25 + age * 0.75 }} />

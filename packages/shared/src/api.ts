@@ -1,7 +1,10 @@
 import type {
   BlameLine, Commit, CommitDetails, ConflictFile, DiffTarget, FileDiff, RepoSnapshot,
-  SearchField, Settings, StashEntry, UndoEntry,
+  SearchField, StashEntry, UndoEntry,
 } from './index'
+import type { AgentInfo, AiPermissionRequest, AiResult, AiStatus, AiTask } from './ai'
+import type { DeviceCodeInfo, GitHubAccount, GitHubStatus } from './github'
+import type { Settings } from './settings'
 
 export interface LogPage {
   commits: Commit[]
@@ -22,7 +25,18 @@ export interface SelectionRequest {
   target: Extract<DiffTarget, { kind: 'unstaged' | 'staged' | 'untracked' }>
   action: 'stage' | 'unstage' | 'discard'
   hunks: HunkSelection[]
+  /** Context lines of the diff the selection was made on; hunk indexes depend on it. */
+  context?: number
 }
+
+export interface DiffOptions {
+  /** Unchanged lines around each change (git's -U). */
+  context?: number
+  /** Hide whitespace-only changes (-w). Display only: line staging refuses such diffs. */
+  ignoreWhitespace?: boolean
+}
+
+export type PullMode = 'merge' | 'rebase' | 'ff-only'
 
 /**
  * What an undoable write returns: the id of the undo entry it recorded, or null when nothing
@@ -59,7 +73,36 @@ export interface GitSquidApi {
   initRepo(path: string): Promise<RepoSnapshot>
   cloneRepo(url: string, parentDir: string): Promise<RepoSnapshot>
   respondPrompt(promptId: number, answer: string | null): Promise<void>
+
+  // GitHub sign-in (device flow; see apps/desktop/src/main/github/)
+  githubStatus(): Promise<GitHubStatus>
+  /** Start signing in; 'repo' also asks for access to repositories (HTTPS push and fetch). */
+  githubSignIn(access: 'basic' | 'repo'): Promise<DeviceCodeInfo>
+  /** Resolves when the user has approved on github.com; rejects on denial, expiry or cancel. */
+  githubWaitForSignIn(): Promise<GitHubAccount>
+  githubCancelSignIn(): Promise<void>
+  /** Open a GitHub page in the browser: where to enter the code, or where to revoke access. */
+  githubOpenPage(page: 'verification' | 'applications'): Promise<void>
+  githubSignOut(): Promise<void>
+
+  // AI (see apps/desktop/src/main/ai/)
+  aiStatus(): Promise<AiStatus>
+  /** The user agreed to send content to the configured provider (asked once per provider/agent). */
+  aiConsent(): Promise<AiStatus>
+  /** Run a task. Text streams as 'ai-text' events with the same requestId; tool calls ask via 'ai-permission'. */
+  aiRun(requestId: string, repoId: string, task: AiTask): Promise<AiResult>
+  aiCancel(requestId: string): Promise<void>
+  aiRespondPermission(permissionId: number, optionId: string | null): Promise<void>
+  /** Start the agent (if needed) and say who it is and how it logs in. */
+  aiAgentInfo(): Promise<AgentInfo>
+  /** Log in with a method the agent handles itself. */
+  aiAuthenticate(methodId: string): Promise<void>
+  aiSetApiKey(key: string | null): Promise<AiStatus>
   openPath(path: string): Promise<void>
+  /** Open a file in the configured external editor (Settings → Integrations), at a line if given. */
+  openInEditor(path: string, line?: number): Promise<void>
+  /** Open the configured terminal in the repository folder. */
+  openTerminal(repoId: string): Promise<void>
   revealPath(path: string): Promise<void>
   /** Write a line to the local diagnostics log (renderer errors). */
   logError(message: string): Promise<void>
@@ -69,7 +112,7 @@ export interface GitSquidApi {
   logPage(repoId: string, offset: number, count: number): Promise<LogPage>
   /** `stash: true` also lists untracked files saved in a stash (they live in its third parent). */
   commitDetails(repoId: string, hash: string, opts?: { stash?: boolean }): Promise<CommitDetails>
-  diff(repoId: string, target: DiffTarget): Promise<FileDiff | null>
+  diff(repoId: string, target: DiffTarget, opts?: DiffOptions): Promise<FileDiff | null>
   fileHistory(repoId: string, path: string): Promise<Commit[]>
   blame(repoId: string, path: string, rev?: string): Promise<BlameLine[]>
   search(repoId: string, field: SearchField, query: string): Promise<string[]>
@@ -83,7 +126,7 @@ export interface GitSquidApi {
   applySelection(repoId: string, req: SelectionRequest): Promise<UndoId>
   /** Append the paths to the repository's top-level .gitignore. */
   ignorePaths(repoId: string, paths: string[]): Promise<UndoId>
-  commit(repoId: string, message: string, opts?: { amend?: boolean }): Promise<UndoId>
+  commit(repoId: string, message: string, opts?: { amend?: boolean; signOff?: boolean; gpgSign?: boolean }): Promise<UndoId>
 
   // Branches and history
   checkout(repoId: string, ref: string): Promise<UndoId>
@@ -100,7 +143,7 @@ export interface GitSquidApi {
 
   // Remotes
   fetch(repoId: string, opts?: { remote?: string; prune?: boolean }): Promise<void>
-  pull(repoId: string, opts?: { rebase?: boolean }): Promise<UndoId>
+  pull(repoId: string, opts?: { mode?: PullMode }): Promise<UndoId>
   push(repoId: string, opts?: { force?: boolean; branch?: string; remote?: string }): Promise<void>
   deleteRemoteBranch(repoId: string, remoteRef: string): Promise<void>
 
@@ -128,7 +171,9 @@ export type ApiMethod = keyof GitSquidApi
 /** The runtime list of method names. The type below fails to compile if it misses one. */
 export const API_METHODS = [
   'getSettings', 'setSettings', 'pickDirectory', 'openRepo', 'closeRepo', 'initRepo', 'cloneRepo',
-  'respondPrompt', 'openPath', 'revealPath', 'logError',
+  'respondPrompt', 'openPath', 'openInEditor', 'openTerminal', 'revealPath', 'logError',
+  'githubStatus', 'githubSignIn', 'githubWaitForSignIn', 'githubCancelSignIn', 'githubOpenPage', 'githubSignOut',
+  'aiStatus', 'aiConsent', 'aiRun', 'aiCancel', 'aiRespondPermission', 'aiAgentInfo', 'aiAuthenticate', 'aiSetApiKey',
   'snapshot', 'logPage', 'commitDetails', 'diff', 'fileHistory', 'blame', 'search', 'stashList',
   'lastCommitMessage',
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit',
@@ -154,6 +199,16 @@ export type GitSquidEvent =
   | { type: 'prompt'; promptId: number; repoId: string | null; message: string; secret: boolean }
   | { type: 'progress'; repoId: string; text: string | null }
   | { type: 'command'; name: string }
+  /** Settings changed (from any window, or main): every window re-applies theme, fonts, scale. */
+  | { type: 'settings'; settings: Settings }
+  /** Signed in or out of GitHub. */
+  | { type: 'github'; status: GitHubStatus }
+  /** An AI request's reply so far. */
+  | { type: 'ai-text'; requestId: string; text: string }
+  /** The agent wants to use a tool: ask the user. */
+  | { type: 'ai-permission'; request: AiPermissionRequest }
+  /** A permission question no longer needs an answer (its request ended). */
+  | { type: 'ai-permission-closed'; permissionId: number }
 
 /** Errors cross IPC as data, so the renderer gets git's stderr intact. */
 export interface SerializedError {

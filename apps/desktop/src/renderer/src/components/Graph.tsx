@@ -5,16 +5,19 @@ import clsx from 'clsx'
 import { Cloud, Laptop, Tag } from 'lucide-react'
 import { ContextMenu } from 'radix-ui'
 import { memo, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import type { AvatarSource } from '@gitsquid/shared'
 import { checkout } from '../lib/actions'
-import { hashColor, initials, laneColor, relativeTime, shortHash } from '../lib/format'
-import { getLog, loadMore, saveSettings, updateRepo, useStore, type RepoView } from '../lib/store'
-import { GraphCell, LANE_W, ROW_H, WipCell } from './GraphCell'
+import { avatarSrc, useAvatarVariant } from '../lib/avatar'
+import { Avatar } from './Avatar'
+import { formatDate, laneColor, shortHash } from '../lib/format'
+import { getLog, loadMore, saveSettings, updateRepo, useSetting, useStore, type RepoView } from '../lib/store'
+import { GraphCell, LANE_W, ROW_H, ROW_H_COMPACT, WipCell } from './GraphCell'
 import { GraphMenu } from './menus'
 import { Spinner } from './ui'
 
 const REFS_W = 160
 const AUTHOR_W = 140
-const DATE_W = 100
+const DATE_W: Record<string, number> = { relative: 100, absolute: 110, both: 200 }
 const SHA_W = 68
 /** Automatic width shows at most this many lanes; wider histories are clipped until the user widens the column. */
 const AUTO_LANES = 8
@@ -35,11 +38,13 @@ interface Pill {
   isHead: boolean
 }
 
-function pillsFor(refs: Ref[], headBranch: string | undefined): Pill[] {
+function pillsFor(refs: Ref[], headBranch: string | undefined, show: { remotes: boolean; tags: boolean }): Pill[] {
   const byName = new Map<string, Pill>()
   const out: Pill[] = []
   for (const r of refs) {
     if (r.kind === 'stash') continue
+    if (r.kind === 'remote' && !show.remotes) continue
+    if (r.kind === 'tag' && !show.tags) continue
     if (r.kind === 'tag') {
       out.push({ key: r.name, label: r.shortName, tag: r, remotes: [], isHead: false })
       continue
@@ -61,7 +66,31 @@ function pillsFor(refs: Ref[], headBranch: string | undefined): Pill[] {
   return out.sort((a, b) => Number(b.isHead) - Number(a.isHead) || Number(!!a.tag) - Number(!!b.tag))
 }
 
+/** Remounted when row height changes (compact rows), so the virtualizer re-measures from scratch. */
 export function Graph({ view }: { view: RepoView }) {
+  const compact = useSetting('compactRows')
+  return <GraphList key={compact ? 'compact' : 'normal'} view={view} rowH={compact ? ROW_H_COMPACT : ROW_H} />
+}
+
+/** Settings that change how rows render, read once per list and passed down (rows are memoized). */
+export interface RowLook {
+  rowH: number
+  dateFormat: string
+  dateW: number
+  avatars: AvatarSource
+  avatarVariant: string
+  showRemotes: boolean
+  showTags: boolean
+}
+
+function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
+  const dateFormat = useSetting('dateFormat')
+  const showRemotes = useSetting('showRemoteBranches')
+  const showTags = useSetting('showTags')
+  const avatars = useSetting('avatars')
+  const avatarVariant = useAvatarVariant()
+  const look = useMemo<RowLook>(() => ({ rowH, dateFormat, dateW: DATE_W[dateFormat] ?? 100, showRemotes, showTags, avatars, avatarVariant }),
+    [rowH, dateFormat, showRemotes, showTags, avatars, avatarVariant])
   const log = getLog(view.id)
   const snap = view.snapshot
   const showWip = snap.status.length > 0 || !snap.head.hash
@@ -71,7 +100,7 @@ export function Graph({ view }: { view: RepoView }) {
   const virt = useVirtualizer({
     count,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => ROW_H,
+    estimateSize: () => rowH,
     overscan: 15,
   })
 
@@ -150,7 +179,7 @@ export function Graph({ view }: { view: RepoView }) {
         </div>
         <div className="min-w-0 flex-1 truncate px-2">Commit message</div>
         <div style={{ width: AUTHOR_W }} className={clsx('shrink-0 truncate px-2', COL_AUTHOR)}>Author</div>
-        <div style={{ width: DATE_W }} className={clsx('shrink-0 truncate px-2', COL_DATE)}>Date</div>
+        <div style={{ width: look.dateW }} className={clsx('shrink-0 truncate px-2', COL_DATE)}>Date</div>
         <div style={{ width: SHA_W }} className={clsx('shrink-0 truncate px-2', COL_SHA)}>SHA</div>
       </div>
       <ContextMenu.Root>
@@ -165,9 +194,9 @@ export function Graph({ view }: { view: RepoView }) {
             <div style={{ height: virt.getTotalSize(), position: 'relative' }}>
               {items.map((item) => {
                 const i = item.index
-                const style = { position: 'absolute' as const, top: 0, left: 0, right: 0, height: ROW_H, transform: `translateY(${item.start}px)` }
+                const style = { position: 'absolute' as const, top: 0, left: 0, right: 0, height: rowH, transform: `translateY(${item.start}px)` }
                 if (showWip && i === 0) {
-                  return <WipRow key="wip" style={style} view={view} graphW={graphW} selected={view.selected.kind === 'wip'} />
+                  return <WipRow key="wip" style={style} view={view} graphW={graphW} rowH={rowH} selected={view.selected.kind === 'wip'} />
                 }
                 const ci = i - offset
                 const commit = log.commits[ci]
@@ -193,6 +222,7 @@ export function Graph({ view }: { view: RepoView }) {
                     hit={hits ? hits.has(commit.hash) : null}
                     showPending={showWip}
                     graphW={graphW}
+                    look={look}
                   />
                 )
               })}
@@ -237,7 +267,7 @@ function ColumnResizer({ width }: { width: number }) {
   )
 }
 
-function WipRow({ style, view, graphW, selected }: { style: React.CSSProperties; view: RepoView; graphW: number; selected: boolean }) {
+function WipRow({ style, view, graphW, rowH, selected }: { style: React.CSSProperties; view: RepoView; graphW: number; rowH: number; selected: boolean }) {
   const st = view.snapshot.status
   const staged = st.filter((e) => e.kind !== 'untracked' && e.kind !== 'unmerged' && e.index !== '.').length
   const conflicts = st.filter((e) => e.kind === 'unmerged').length
@@ -249,7 +279,7 @@ function WipRow({ style, view, graphW, selected }: { style: React.CSSProperties;
       className={clsx('flex items-center border-b border-line/40 text-[13px]', selected ? 'bg-select' : 'hover:bg-hover')}
     >
       <div style={{ width: REFS_W }} className="shrink-0 px-3" />
-      <WipCell width={graphW} hasHead={!!view.snapshot.head.hash} />
+      <WipCell width={graphW} hasHead={!!view.snapshot.head.hash} h={rowH} />
       <div className="flex min-w-0 flex-1 items-center gap-2 px-2 whitespace-nowrap text-muted italic">
         <span className="min-w-0 truncate">{view.snapshot.head.hash ? '// WIP: uncommitted changes' : '// No commits yet'}</span>
         {st.length > 0 && <span className="shrink-0 rounded bg-raised px-1.5 text-[11px] not-italic">{st.length} changed</span>}
@@ -276,10 +306,14 @@ const CommitRow = memo(function CommitRow(props: {
   hit: boolean | null
   showPending: boolean
   graphW: number
+  look: RowLook
 }) {
-  const { commit, row, repoId } = props
+  const { commit, row, repoId, look } = props
+  const src = avatarSrc(commit.authorEmail, look.avatars, look.avatarVariant)
+  const author = useMemo(() => ({ name: commit.authorName, email: commit.authorEmail, src }), [commit.authorName, commit.authorEmail, src])
   const [dropping, setDropping] = useState(false)
-  const pills = useMemo(() => (props.refs ? pillsFor(props.refs, props.headBranch) : []), [props.refs, props.headBranch])
+  const pills = useMemo(() => (props.refs ? pillsFor(props.refs, props.headBranch, { remotes: look.showRemotes, tags: look.showTags }) : []),
+    [props.refs, props.headBranch, look.showRemotes, look.showTags])
 
   const onDragOver = (e: DragEvent) => {
     if (!e.dataTransfer.types.includes(REF_MIME)) return
@@ -298,7 +332,7 @@ const CommitRow = memo(function CommitRow(props: {
 
   return (
     <div
-      style={{ position: 'absolute', top: 0, left: 0, right: 0, height: ROW_H, transform: `translateY(${props.top}px)` }}
+      style={{ position: 'absolute', top: 0, left: 0, right: 0, height: look.rowH, transform: `translateY(${props.top}px)` }}
       data-testid="commit-row"
       data-hash={commit.hash}
       onClick={() => updateRepo(repoId, { selected: { kind: 'commit', hash: commit.hash } })}
@@ -328,14 +362,13 @@ const CommitRow = memo(function CommitRow(props: {
           </span>
         )}
       </div>
-      <GraphCell row={row} width={props.graphW} showPending={props.showPending} isHead={props.isHead} />
+      <GraphCell row={row} width={props.graphW} showPending={props.showPending} isHead={props.isHead} h={look.rowH} author={author} />
       <div className={clsx('min-w-0 flex-1 truncate px-2', props.hit && 'font-semibold text-fg')}>{commit.subject}</div>
       <div style={{ width: AUTHOR_W }} className={clsx('min-w-0 shrink-0 items-center gap-1.5 px-2 text-muted', COL_AUTHOR)}>
-        <span className="flex size-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white"
-          style={{ background: laneColor(hashColor(commit.authorEmail)) }}>{initials(commit.authorName)}</span>
+        <Avatar name={commit.authorName} email={commit.authorEmail} src={src} size={20} />
         <span className="truncate">{commit.authorName}</span>
       </div>
-      <div style={{ width: DATE_W }} className={clsx('shrink-0 truncate px-2 text-muted', COL_DATE)}>{relativeTime(commit.authorDate)}</div>
+      <div style={{ width: look.dateW }} className={clsx('shrink-0 truncate px-2 text-muted', COL_DATE)}>{formatDate(commit.authorDate, look.dateFormat)}</div>
       <div style={{ width: SHA_W }} className={clsx('shrink-0 px-2 font-mono text-xs text-faint', COL_SHA)}>{shortHash(commit.hash)}</div>
     </div>
   )
