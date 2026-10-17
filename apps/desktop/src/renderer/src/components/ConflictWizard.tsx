@@ -1,12 +1,14 @@
-import { parseConflicts, resolveBlocks, type ConflictChoice, type ConflictFile, type ConflictVersions } from '@gitsquid/shared'
+import { countConflicts, parseConflicts, resolveBlocks, type ConflictChoice, type ConflictFile, type ConflictVersions } from '@gitsquid/shared'
 import clsx from 'clsx'
 import { CheckCircle2, CircleAlert, ExternalLink } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { run } from '../lib/actions'
 import { api } from '../lib/api'
 import { sentence } from '../lib/format'
 import { toastError, updateRepo, type RepoView } from '../lib/store'
 import { Button, Spinner } from './ui'
+
+const ResultEditor = lazy(() => import('./ResultEditor'))
 
 /**
  * Tower-style conflict resolution: one file at a time, one conflict block at a time.
@@ -84,6 +86,8 @@ export function ConflictWizard({ view }: { view: RepoView }) {
 function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }) {
   const [versions, setVersions] = useState<ConflictVersions | null>(null)
   const [choices, setChoices] = useState<(ConflictChoice | undefined)[]>([])
+  /** Text being edited by hand, or null when picking sides block by block. */
+  const [edited, setEdited] = useState<string | null>(null)
   useEffect(() => {
     api.conflictVersions(view.id, file.path).then(setVersions, (e) => toastError('Could not read conflict', e))
   }, [view.id, file.path])
@@ -98,6 +102,9 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
     void run(view.id, `Take ${resolution} for ${file.path}`, () => api.resolveConflict(view.id, file.path, resolution), { quiet: true })
   const save = () =>
     void run(view.id, `Resolve ${file.path}`, () => api.resolveConflict(view.id, file.path, { content: resolveBlocks(versions.merged!, choices) }), { quiet: true })
+  const saveEdited = () =>
+    void run(view.id, `Resolve ${file.path}`, () => api.resolveConflict(view.id, file.path, { content: edited ?? '' }), { quiet: true })
+  const markersLeft = edited === null ? 0 : countConflicts(edited)
   const markResolved = () =>
     void run(view.id, `Mark ${file.path} resolved`, () => api.resolveConflict(view.id, file.path, { content: versions.merged ?? '' }), { quiet: true })
 
@@ -113,13 +120,33 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
         <Button size="sm" variant="ghost" title="Open in your default editor" onClick={() => void api.openPath(`${view.snapshot.path}/${file.path}`)}>
           <ExternalLink size={12} /> Open
         </Button>
-        {blocks.length === 0 && versions.merged !== null && <Button size="sm" onClick={markResolved}>Mark resolved</Button>}
-        {blocks.length > 0 && (
+        {versions.merged !== null && (
+          <Button size="sm" variant={edited !== null ? 'primary' : 'default'} data-testid="edit-result"
+            onClick={() => setEdited(edited === null ? resolveBlocks(versions.merged!, choices) : null)}
+            title="Edit the merged file by hand, starting from the sides picked so far">
+            {edited === null ? 'Edit result' : 'Back to blocks'}
+          </Button>
+        )}
+        {edited !== null && (
+          <Button size="sm" variant="primary" disabled={markersLeft > 0} onClick={saveEdited} data-testid="save-edited"
+            title={markersLeft ? 'Remove the remaining conflict markers first' : 'Write this file and mark it resolved'}>
+            {markersLeft ? `${markersLeft} ${markersLeft === 1 ? 'conflict' : 'conflicts'} left` : 'Save resolution'}
+          </Button>
+        )}
+        {edited === null && blocks.length === 0 && versions.merged !== null && <Button size="sm" onClick={markResolved}>Mark resolved</Button>}
+        {edited === null && blocks.length > 0 && (
           <Button size="sm" variant="primary" disabled={!allChosen} onClick={save} data-testid="save-resolution">
             Save resolution ({choices.filter(Boolean).length}/{blocks.length})
           </Button>
         )}
       </div>
+      {edited !== null ? (
+        <div className="min-h-0 flex-1">
+          <Suspense fallback={<div className="flex h-full items-center justify-center text-faint"><Spinner /></div>}>
+            <ResultEditor initial={edited} onChange={setEdited} />
+          </Suspense>
+        </div>
+      ) : (
       <div className="selectable min-h-0 flex-1 overflow-auto p-3 font-mono text-[12px]">
         {versions.merged === null && (
           <div className="font-sans text-sm text-muted">
@@ -156,6 +183,7 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
           )
         })}
       </div>
+      )}
     </div>
   )
 }

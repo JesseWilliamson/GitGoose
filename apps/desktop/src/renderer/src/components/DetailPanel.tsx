@@ -1,7 +1,7 @@
 import type { CommitDetails, DiffTarget, StatusEntry } from '@gitsquid/shared'
 import { Check, Copy, Minus, Plus, Undo2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { copy, run } from '../lib/actions'
+import { copy, pop, run, stashApply, stashDrop } from '../lib/actions'
 import { api } from '../lib/api'
 import { dateTime, hashColor, initials, laneColor, sentence, shortHash } from '../lib/format'
 import { ensureLoaded, toastError, updateRepo, type RepoView } from '../lib/store'
@@ -177,6 +177,7 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
 
 // ------------------------------------------------------------------ a commit
 
+// Keyed by hash: a commit's details never change. (Stashes are commits with unique hashes too.)
 const detailsCache = new Map<string, CommitDetails>()
 
 function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
@@ -190,7 +191,8 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
       return
     }
     setDetails(null)
-    api.commitDetails(view.id, hash).then((d) => {
+    const isStash = view.stashes.some((s) => s.hash === hash)
+    api.commitDetails(view.id, hash, { stash: isStash }).then((d) => {
       if (detailsCache.size > 500) detailsCache.clear()
       detailsCache.set(hash, d)
       if (latest.current === hash) setDetails(d)
@@ -199,12 +201,29 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
 
   if (!details) return <div className="flex flex-1 items-center justify-center text-faint"><Spinner /></div>
   const d = details
+  // A stash is a commit too: its first parent is where it was made, so the file list is its changes.
+  const stash = view.stashes.find((s) => s.hash === d.hash)
   const adds = d.files.reduce((n, f) => n + f.additions, 0)
   const dels = d.files.reduce((n, f) => n + f.deletions, 0)
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {stash && (
+        <div className="flex items-center gap-2 border-b border-line bg-accent/10 px-3 py-2 text-[13px]" data-testid="stash-header">
+          <span className="min-w-0 flex-1 truncate"><b>Stash</b> {stash.ref}</span>
+          <Button size="sm" onClick={() => void stashApply(view.id, stash.index)}>Apply</Button>
+          <Button size="sm" variant="primary" onClick={() => {
+            // The stash is about to disappear: show the changes it brings back instead.
+            updateRepo(view.id, { selected: { kind: 'wip' }, center: { kind: 'graph' } })
+            pop(view.id, stash.index)
+          }}>Pop</Button>
+          <Button size="sm" variant="ghost" onClick={() => {
+            updateRepo(view.id, { selected: { kind: 'wip' }, center: { kind: 'graph' } })
+            void stashDrop(view.id, stash.index)
+          }}>Drop</Button>
+        </div>
+      )}
       <div className="selectable border-b border-line p-3">
-        <div className="text-[14px] leading-snug font-semibold">{d.subject}</div>
+        <div className="text-[14px] leading-snug font-semibold">{stash ? stash.message : d.subject}</div>
         {d.body && <pre className="mt-2 max-h-40 overflow-y-auto font-sans text-[13px] whitespace-pre-wrap text-muted">{d.body}</pre>}
         <div className="mt-3 flex items-center gap-2">
           <span className="flex size-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: laneColor(hashColor(d.authorEmail)) }}>
@@ -231,7 +250,7 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
         </div>
       </div>
       <SectionHeader right={<span className="font-mono normal-case"><span className="text-add">+{adds}</span> <span className="text-del">−{dels}</span></span>}>
-        {d.files.length} {d.files.length === 1 ? 'file' : 'files'} changed{d.parents.length > 1 ? ' (vs first parent)' : ''}
+        {d.files.length} {d.files.length === 1 ? 'file' : 'files'} changed{d.parents.length > 1 && !stash ? ' (vs first parent)' : ''}
       </SectionHeader>
       <div className="min-h-0 flex-1 overflow-y-auto pb-2" data-testid="commit-files">
         {d.files.map((f) => {

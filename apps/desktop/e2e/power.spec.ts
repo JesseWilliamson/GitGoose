@@ -20,6 +20,27 @@ test('resolves a merge conflict in the wizard and continues', async () => {
   await app.close()
 })
 
+test('edits a conflict resolution by hand', async () => {
+  const r = makeFixture('conflict')
+  r.tryGit('merge', 'other')
+  const { app, page } = await launch(r.dir)
+  await expect(page.getByTestId('conflicts')).toBeVisible()
+  await page.getByTestId('edit-result').click()
+  const editor = page.getByTestId('result-editor').locator('.cm-content')
+  await expect(editor).toContainText('<<<<<<<')
+  // Markers are still there, so saving is blocked.
+  await expect(page.getByTestId('save-edited')).toBeDisabled()
+  await expect(page.getByTestId('save-edited')).toHaveText('1 conflict left')
+  await editor.click()
+  await page.keyboard.press('Control+a')
+  await page.keyboard.type('one\nTwo, merged by hand\nthree\n')
+  await expect(page.getByTestId('save-edited')).toBeEnabled()
+  await page.getByTestId('save-edited').click()
+  await expect(page.getByTestId('conflict-file')).toHaveCount(0)
+  expect(r.git('show', ':story.txt')).toBe('one\nTwo, merged by hand\nthree\n')
+  await app.close()
+})
+
 test('aborts a conflicted merge', async () => {
   const r = makeFixture('conflict')
   const before = r.head()
