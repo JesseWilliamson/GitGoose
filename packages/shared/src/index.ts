@@ -105,6 +105,8 @@ export interface RepoSnapshot {
   refsVersion: number
   /** Hidden and soloed refs for this repository's graph. */
   filter: GraphFilter
+  /** Set while a bisect is running. */
+  bisect?: BisectState
 }
 
 export type ChangeKind = 'added' | 'modified' | 'deleted' | 'renamed' | 'copied' | 'typechange' | 'unmerged'
@@ -162,6 +164,18 @@ export interface Remote {
   fetchUrl: string
   /** Only when it differs from the fetch URL (remote.<name>.pushurl). */
   pushUrl?: string
+}
+
+/** A `git bisect` in progress: what has been marked, and how far the search has narrowed. */
+export interface BisectState {
+  bad?: string
+  good: string[]
+  skipped: string[]
+  /** Commits still to test after the checked-out one, and about how many more steps (once there is a good and a bad). */
+  remaining?: number
+  steps?: number
+  /** The first bad commit, once the search is over. */
+  found?: string
 }
 
 /**

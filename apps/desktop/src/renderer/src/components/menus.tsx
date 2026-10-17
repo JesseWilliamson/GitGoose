@@ -1,6 +1,6 @@
 import { DropdownMenu } from 'radix-ui'
 import {
- hideInGraph, showInGraph, soloInGraph, unsoloInGraph, addRemote, addSubmodule, addWorktree, removeSubmodule, syncSubmodules, updateSubmodules, lockWorktree, pruneWorktrees, removeWorktree, checkRemoteTags, cleanupBranches, clearPushUrl, deleteRemoteTag, editRemoteUrl, fastForward, fetchAll, fetchRemote, pushBranch, pushTags, pushTo, remoteNames, removeRemote, renameRemote, setUpstream,
+ bisectMark, hideInGraph, showInGraph, soloInGraph, unsoloInGraph, addRemote, addSubmodule, addWorktree, removeSubmodule, syncSubmodules, updateSubmodules, lockWorktree, pruneWorktrees, removeWorktree, checkRemoteTags, cleanupBranches, clearPushUrl, deleteRemoteTag, editRemoteUrl, fastForward, fetchAll, fetchRemote, pushBranch, pushTags, pushTo, remoteNames, removeRemote, renameRemote, setUpstream,
  savePatches, stashToBranch, checkout, cherryPick, cherryPickMany, compare, compareSinceFork, copy, fixupInto, pop, reword, squashCommit, stashApply, stashDrop, copyCommits, dropCommits, moveCommits, currentBranchRef, deleteBranch, deleteRemoteBranch, deleteTag, dropOptions,
   merge, newBranch, newTag, push, rebase, renameBranch, reset, revert, shortRef,
 } from '../lib/actions'
@@ -296,6 +296,11 @@ export function GraphMenu({ repoId }: { repoId: string }) {
         </>
       )}
       {aiOn && <CM.Item onSelect={() => recomposeWithAi(repoId, [hash])}>Split with AI…</CM.Item>}
+      <CM.Sub label={snap.bisect ? 'Bisect' : 'Bisect: find the commit that broke something'}>
+        <CM.Item onSelect={() => void bisectMark(repoId, hash, 'bad')}>{snap.bisect ? 'Mark bad (has the bug)' : 'Start: this commit is bad (has the bug)'}</CM.Item>
+        <CM.Item onSelect={() => void bisectMark(repoId, hash, 'good')}>{snap.bisect ? 'Mark good (no bug)' : 'Start: this commit is good (no bug)'}</CM.Item>
+        {snap.bisect && <CM.Item onSelect={() => void bisectMark(repoId, hash, 'skip')}>Skip (cannot test it)</CM.Item>}
+      </CM.Sub>
       <CM.Sub label={`Reset ${headName} to here`}>
         <CM.Item onSelect={() => void reset(repoId, hash, 'soft')}>Soft: keep changes staged</CM.Item>
         <CM.Item onSelect={() => void reset(repoId, hash, 'mixed')}>Mixed: keep changes unstaged</CM.Item>

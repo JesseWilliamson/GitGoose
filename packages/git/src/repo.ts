@@ -1,5 +1,5 @@
 import type {
-  BlameLine, ChangedFile, GraphFilter, Identity, Person, Signature, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
+  BisectState, BlameLine, ChangedFile, GraphFilter, Identity, Person, Signature, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
   LogPage, Ref, Remote, RepoOperation, ReflogEntry, RepoSnapshot, ResetMode, Resolution, SearchField, SelectionRequest,
   StashEntry, StatusEntry, Submodule, UndoEntry, Worktree,
 } from '@gitsquid/shared'
@@ -160,6 +160,7 @@ export class Repo {
       id: this.id, path: this.path, name: this.name,
       head: status.head, refs, status: status.entries,
       operation: this.operation(), refsVersion: this.refsVersion, filter: this.filter,
+      bisect: existsSync(join(this.gitDir, 'BISECT_START')) ? await this.bisectState() : undefined,
     }
     return this.last
   }
@@ -793,6 +794,53 @@ export class Repo {
   pruneWorktrees(): Promise<void> {
     return this.exclusive(async () => {
       await this.git(['worktree', 'prune'])
+    })
+  }
+
+  // ---------------------------------------------------------------- bisect
+
+  /**
+   * Read a bisect's state from its refs (refs/bisect/bad, good-*, skip-*) and, once there is a
+   * good and a bad commit, ask `rev-list --bisect-vars` (the plumbing behind `git bisect`) how
+   * many candidates are left. bisect_all=1 means one is left: that is the first bad commit.
+   */
+  private async bisectState(): Promise<BisectState> {
+    const st: BisectState = { good: [], skipped: [] }
+    const refs = await this.read(['for-each-ref', '--format=%(refname)%00%(objectname)', 'refs/bisect'])
+    for (const line of refs.split('\n').filter(Boolean)) {
+      const [name, hash] = line.split('\0') as [string, string]
+      if (name === 'refs/bisect/bad') st.bad = hash
+      else if (name.startsWith('refs/bisect/good-')) st.good.push(hash)
+      else if (name.startsWith('refs/bisect/skip-')) st.skipped.push(hash)
+    }
+    if (st.bad && st.good.length) {
+      const vars = new Map<string, string>()
+      const out = await this.read(['rev-list', '--bisect-vars', st.bad, '--not', ...st.good])
+      for (const m of out.matchAll(/^(\w+)='?([^'\n]*)'?$/gm)) vars.set(m[1]!, m[2]!)
+      if (vars.get('bisect_all') === '1') st.found = vars.get('bisect_rev')
+      else {
+        st.remaining = Number(vars.get('bisect_nr') ?? 0)
+        st.steps = Number(vars.get('bisect_steps') ?? 0)
+      }
+    }
+    return st
+  }
+
+  /**
+   * Mark a commit good, bad or skipped (starting a bisect if none is running). git then checks
+   * out the next commit to test. Not recorded for undo: Stop (bisect reset) is the way back.
+   */
+  bisectMark(rev: string, term: 'good' | 'bad' | 'skip'): Promise<void> {
+    return this.exclusive(async () => {
+      if (!existsSync(join(this.gitDir, 'BISECT_START'))) await this.git(['bisect', 'start'])
+      await this.git(['bisect', term, rev])
+    })
+  }
+
+  /** End the bisect and go back to the branch (or commit) it started from. */
+  bisectReset(): Promise<void> {
+    return this.exclusive(async () => {
+      await this.git(['bisect', 'reset'])
     })
   }
 

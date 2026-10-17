@@ -143,3 +143,5 @@ changes.
 - [x] 28 (part) skip hooks for one commit; a failing hook's output is in the attention bar
 - [x] 25 signature verification in commit details (only signed commits are verified; failures
       read "cannot be checked"), signed tags (Settings → Git)
+- [x] 26 bisect from the graph: start from a commit's menu, a bar that says what to do next with
+      Good / Bad / Skip / Stop, good / bad / first-bad marks on rows

@@ -1,6 +1,6 @@
 import type { GraphFilter, PullMode, Ref, RepoSnapshot, ResetMode } from '@gitsquid/shared'
 import { api, toUiError, type UiError } from './api'
-import { activeRepo, addRepo, openRepo as openRepoTab, alertConflicts, choose, onSnapshot, openRepo, refreshAux, reportError, setting, toast, updateRepo, useStore } from './store'
+import { activeRepo, addRepo, alertConflicts, ensureLoaded, choose, onSnapshot, openRepo, refreshAux, reportError, setting, toast, updateRepo, useStore } from './store'
 
 /** The undo entry ids an action produced: a single id, an array of them (multi-step actions), or none. */
 function undoIdsOf(result: unknown): number[] {
@@ -563,6 +563,27 @@ export function cleanupBranches(id: string): void {
 export const deleteBranches = (id: string, names: string[], force: boolean) =>
   run(id, `Delete ${names.length} branch${names.length === 1 ? '' : 'es'}`, () => api.deleteBranches(id, names, { force }))
 
+// ------------------------------------------------------------------ bisect
+
+const BISECT_LABEL = { good: 'Mark good', bad: 'Mark bad', skip: 'Skip' } as const
+
+/** Mark a commit for bisect; git checks out the next one to test (the graph follows HEAD there). */
+export const bisectMark = (id: string, rev: string, term: 'good' | 'bad' | 'skip') =>
+  run(id, BISECT_LABEL[term], () => api.bisectMark(id, rev, term), { quiet: true }).then(async (ok) => {
+    if (!ok) return ok
+    // Select the commit git just checked out for testing (or the culprit, once found).
+    const snap = await api.snapshot(id)
+    onSnapshot(snap)
+    const show = snap.bisect?.found ?? snap.head.hash
+    if (show) {
+      updateRepo(id, { selected: { kind: 'commit', hash: show }, center: { kind: 'graph' } })
+      void ensureLoaded(id, show)
+    }
+    return ok
+  })
+
+export const bisectReset = (id: string) => run(id, 'Stop bisecting', () => api.bisectReset(id), { success: 'Bisect finished: back where you started' })
+
 // ------------------------------------------------------------------ hide and solo in the graph
 
 function setFilter(id: string, change: (f: GraphFilter) => GraphFilter): void {
@@ -597,7 +618,7 @@ export function addWorktree(id: string, branch?: string): void {
   const repoPath = useStore.getState().repos[id]?.snapshot.path ?? ''
   const go = (path: string, opts: { branch?: string; newBranch?: string }) =>
     void run(id, 'Add worktree', () => api.addWorktree(id, path, opts), { success: `Worktree ready at ${path}` }).then((ok) => {
-      if (ok) void openRepoTab(path)
+      if (ok) void openRepo(path)
     })
   if (branch) {
     ask(`Check out ${branch} in a new worktree`, 'Folder', 'Create worktree', (path) => go(path.trim(), { branch }), { initial: defaultWorktreePath(repoPath, branch) })

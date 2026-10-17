@@ -9,11 +9,11 @@ import type { AvatarSource } from '@gitsquid/shared'
 import { checkout, moveCommits, squashOnto } from '../lib/actions'
 import { avatarSrc, useAvatarVariant } from '../lib/avatar'
 import { formatDate, laneColor, shortHash, stashLabel } from '../lib/format'
-import { getLog, loadMore, saveSettings, selectCommit, selectedHashes, selectionCursor, updateRepo, useSetting, useStore, type RepoView } from '../lib/store'
+import { ensureLoaded, getLog, loadMore, saveSettings, selectCommit, selectedHashes, selectionCursor, updateRepo, useSetting, useStore, type RepoView } from '../lib/store'
 import { GraphCell, LANE_W, ROW_H, ROW_H_COMPACT, WipCell } from './GraphCell'
 import { GraphMenu } from './menus'
 import { SearchBar } from './SearchBar'
-import { showAllInGraph } from '../lib/actions'
+import { bisectMark, bisectReset, showAllInGraph } from '../lib/actions'
 import { DM, Spinner } from './ui'
 
 const isMac = window.gitsquid?.platform === 'darwin'
@@ -118,6 +118,17 @@ function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
     if (!log.done && lastVisible > log.commits.length - 400) void loadMore(view.id)
   }, [lastVisible, view.logVersion, view.id, log])
 
+  /** Bisect marks on rows: what was marked good / bad / skipped, and the culprit once found. */
+  const bisectMarks = useMemo(() => {
+    const b = snap.bisect
+    if (!b) return null
+    const m = new Map<string, BisectMark>()
+    for (const h of b.good) m.set(h, 'good')
+    for (const h of b.skipped) m.set(h, 'skip')
+    if (b.bad) m.set(b.bad, 'bad')
+    if (b.found) m.set(b.found, 'first bad')
+    return m
+  }, [snap.bisect])
   const refsByHash = useMemo(() => {
     const m = new Map<string, Ref[]>()
     for (const r of snap.refs) {
@@ -185,6 +196,7 @@ function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
     // because the side panels decide how wide this pane is).
     <div className="@container relative flex min-h-0 min-w-0 flex-1 flex-col">
       {view.searchOpen && <SearchBar view={view} />}
+      <BisectBar view={view} />
       <FilterBar view={view} />
       <div className="flex h-7 shrink-0 items-center border-b border-line bg-panel text-[11px] font-semibold tracking-wide whitespace-nowrap text-faint uppercase"
         data-testid="graph-header">
@@ -241,6 +253,7 @@ function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
                     editable={editableSet.has(commit.hash)}
                     stash={commit.stash ? stashByHash.get(commit.hash) : undefined}
                     hit={hits ? hits.has(commit.hash) : null}
+                    bisect={bisectMarks?.get(commit.hash)}
                     showPending={showWip}
                     graphW={graphW}
                     look={look}
@@ -349,7 +362,13 @@ function WipRow({ style, view, graphW, rowH, cols, selected }: {
  * Memoized: while scrolling, the list re-renders every frame, but each row's props stay equal
  * (its offset `top` is a number, not a fresh style object), so React skips the rows themselves.
  */
+type BisectMark = 'good' | 'bad' | 'skip' | 'first bad'
+const BISECT_PILL: Record<BisectMark, string> = {
+  good: 'border-add/50 text-add', bad: 'border-del/50 text-del', skip: 'border-line text-muted', 'first bad': 'border-del bg-del text-white',
+}
+
 const CommitRow = memo(function CommitRow(props: {
+  bisect?: BisectMark
   top: number
   repoId: string
   commit: Commit
@@ -457,6 +476,9 @@ const CommitRow = memo(function CommitRow(props: {
     >
       {look.cols.refs && (
         <div style={{ width: REFS_W }} className="flex min-w-0 shrink-0 items-center gap-1 overflow-hidden px-2">
+          {props.bisect && (
+            <span className={clsx('flex h-5 shrink-0 items-center rounded border px-1.5 text-[11px] font-medium', BISECT_PILL[props.bisect])} data-testid="bisect-pill">{props.bisect}</span>
+          )}
           {props.stash && (
             <span className="flex h-5 shrink-0 items-center gap-1 rounded border border-dashed border-line px-1.5 text-[11px] text-muted" data-testid="stash-pill">
               <Archive size={10} /> {props.stash.ref}
@@ -550,6 +572,37 @@ function FilterBar({ view }: { view: RepoView }) {
         {solo.length ? `Showing only ${solo.map(name).join(', ')}` : `${hidden.length} hidden: ${hidden.map(name).join(', ')}`}
       </span>
       <button onClick={() => showAllInGraph(view.id)} className="rounded px-1.5 font-medium text-accent hover:bg-hover">Show all</button>
+    </div>
+  )
+}
+
+/**
+ * While bisecting: what to do next, in words. git has checked out a commit to test; you try it
+ * (run the app, the tests) and say good or bad, and the range halves each time.
+ */
+function BisectBar({ view }: { view: RepoView }) {
+  const b = view.snapshot.bisect
+  if (!b) return null
+  const id = view.id
+  const head = view.snapshot.head.hash
+  const found = b.found ? getLog(id).commits[getLog(id).index.get(b.found) ?? -1] : undefined
+  const message = b.found ? `First bad commit: ${b.found.slice(0, 7)}${found ? ` ${found.subject}` : ''}`
+    : !b.bad ? 'Bisecting: mark a commit that has the bug as bad.'
+    : !b.good.length ? 'Bisecting: now mark a commit without the bug as good.'
+    : `Bisecting: test the checked-out commit. ${b.remaining} left to test after it (about ${b.steps} more step${b.steps === 1 ? '' : 's'}).`
+  return (
+    <div className={clsx('flex h-8 shrink-0 items-center gap-2 border-b border-line px-3 text-[12px]', b.found ? 'bg-del/10' : 'bg-warn/10')} data-testid="bisect-bar">
+      <span className="min-w-0 flex-1 truncate">{message}</span>
+      {b.found ? (
+        <button onClick={() => { updateRepo(id, { selected: { kind: 'commit', hash: b.found! } }); void ensureLoaded(id, b.found!) }} className="rounded px-1.5 font-medium text-accent hover:bg-hover">Show it</button>
+      ) : b.bad && b.good.length > 0 && head && (
+        <>
+          <button onClick={() => void bisectMark(id, head, 'good')} className="rounded px-1.5 font-medium text-add hover:bg-hover">Good</button>
+          <button onClick={() => void bisectMark(id, head, 'bad')} className="rounded px-1.5 font-medium text-del hover:bg-hover">Bad</button>
+          <button onClick={() => void bisectMark(id, head, 'skip')} className="rounded px-1.5 font-medium text-muted hover:bg-hover" title="Cannot test this one (it does not build, say)">Skip</button>
+        </>
+      )}
+      <button onClick={() => void bisectReset(id)} className="rounded px-1.5 font-medium text-muted hover:bg-hover">Stop bisecting</button>
     </div>
   )
 }
