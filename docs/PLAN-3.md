@@ -130,3 +130,6 @@ changes.
 - [x] 16 save commits as numbered .patch files; apply a patch from a file or the clipboard
       (mailbox patches become commits with am --3way, plain diffs are staged with apply --3way;
       both undoable; a stopped am is its own operation with continue / abort)
+- [x] 21 worktrees: sidebar section, add on a new or existing branch (opens as a tab; undo
+      removes it), remove (undoable when clean; changes need an explicit "delete"), lock,
+      forget missing ones; branches checked out elsewhere are marked

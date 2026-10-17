@@ -1,11 +1,11 @@
 import type { Ref } from '@gitsquid/shared'
 import clsx from 'clsx'
-import { Archive, ChevronDown, ChevronRight, Cloud, GitBranch, History, Plus, Tag } from 'lucide-react'
+import { Archive, ChevronDown, ChevronRight, Cloud, FolderTree, GitBranch, History, Plus, Tag } from 'lucide-react'
 import { ContextMenu } from 'radix-ui'
 import { useMemo, useState, type ReactNode } from 'react'
-import { addRemote, checkout, isStale, pop, remoteNames, stashApply, stashDrop, stashToBranch } from '../lib/actions'
+import { addRemote, addWorktree, checkout, isStale, pop, remoteNames, stashApply, stashDrop, stashToBranch } from '../lib/actions'
 import { relativeTime, stashLabel } from '../lib/format'
-import { ensureLoaded, updateRepo, useStore, type RepoView } from '../lib/store'
+import { ensureLoaded, openRepo, updateRepo, useStore, type RepoView } from '../lib/store'
 import { REF_MIME } from './Graph'
 import { GraphMenu } from './menus'
 import { CM } from './ui'
@@ -28,9 +28,11 @@ export function Sidebar({ view }: { view: RepoView }) {
     return m
   }, [snap.refs, view.remotes, f])
   const merged = new Set(view.merged)
+  /** Branches checked out in another worktree (git will not check them out here). */
+  const elsewhere = new Map(view.worktrees.filter((w) => !w.current && w.branch).map((w) => [w.branch!, w.path]))
   /** After "Check which tags are on <remote>": the tags it does not have. */
   const onRemote = view.remoteTags ? new Set(view.remoteTags.names) : null
-  const menuFor = (section: 'local' | 'remotes' | 'tags') => () => useStore.setState({ menu: { kind: 'section', section } })
+  const menuFor = (section: 'local' | 'remotes' | 'tags' | 'worktrees') => () => useStore.setState({ menu: { kind: 'section', section } })
 
   const jump = async (hash: string) => {
     updateRepo(view.id, { selected: { kind: 'commit', hash }, center: { kind: 'graph' } })
@@ -60,6 +62,7 @@ export function Sidebar({ view }: { view: RepoView }) {
                     {r.upstreamGone && <span className="text-[10px] text-faint" title="Upstream deleted">gone</span>}
                     {!head && merged.has(r.shortName) && <Badge title={`Already in ${snap.head.branch ?? 'HEAD'}: safe to delete`}>merged</Badge>}
                     {!head && isStale(r) && <Badge title="No commits for 90 days">stale</Badge>}
+                    {elsewhere.has(r.shortName) && <Badge title={`Checked out in ${elsewhere.get(r.shortName)}`}>worktree</Badge>}
                   </RefItem>
                 )
               })}
@@ -83,6 +86,28 @@ export function Sidebar({ view }: { view: RepoView }) {
                   {onRemote && !onRemote.has(r.shortName) && <Badge title={`Not on ${view.remoteTags!.remote}`}>local only</Badge>}
                 </RefItem>
               ))}
+            </Section>
+            {/* Collapsed while there is only this one; re-keyed so it opens when a second appears. */}
+            <Section key={view.worktrees.length > 1 ? 'many' : 'one'} title="Worktrees" count={view.worktrees.length} icon={<FolderTree size={13} />} defaultOpen={view.worktrees.length > 1}
+              onContextMenu={menuFor('worktrees')}
+              action={<button title="Add worktree" aria-label="Add worktree" onClick={() => addWorktree(view.id)} className="rounded p-0.5 text-faint hover:bg-hover hover:text-fg"><Plus size={13} /></button>}>
+              {view.worktrees.map((w) => {
+                const folder = w.path.split(/[\\/]/).filter(Boolean).pop()
+                return (
+                  <div key={w.path} data-testid="worktree-item" data-path={w.path}
+                    onClick={() => { const r = snap.refs.find((x) => x.kind === 'local' && x.shortName === w.branch); if (r) void jump(r.hash) }}
+                    onDoubleClick={() => !w.current && void openRepo(w.path)}
+                    onContextMenu={() => useStore.setState({ menu: { kind: 'worktree', path: w.path } })}
+                    title={`${w.path}${w.current ? '\nThis tab' : '\nDouble-click to open it in a tab'}`}
+                    className={clsx('flex h-6 cursor-default items-center gap-1.5 pr-3 pl-8 text-[13px] hover:bg-hover', w.current && 'font-semibold')}>
+                    {w.current && <span className="-ml-4 w-3 text-[10px] text-accent">✓</span>}
+                    <span className="min-w-0 flex-1 truncate">{w.branch ?? `detached at ${w.head?.slice(0, 7) ?? '?'}`}</span>
+                    <span className="max-w-24 truncate text-[10px] text-faint">{folder}</span>
+                    {w.locked !== undefined && <Badge title={w.locked || 'Locked'}>locked</Badge>}
+                    {w.prunable && <Badge title={w.prunable}>missing</Badge>}
+                  </div>
+                )
+              })}
             </Section>
             <Section title="Stashes" count={view.stashes.length} icon={<Archive size={13} />}>
               {view.stashes.map((s) => (

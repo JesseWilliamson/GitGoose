@@ -1,11 +1,11 @@
 import type {
   BlameLine, ChangedFile, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
   LogPage, Ref, Remote, RepoOperation, ReflogEntry, RepoSnapshot, ResetMode, Resolution, SearchField, SelectionRequest,
-  StashEntry, StatusEntry, UndoEntry,
+  StashEntry, StatusEntry, UndoEntry, Worktree,
 } from '@gitsquid/shared'
 import { countConflicts } from '@gitsquid/shared'
 import { existsSync } from 'node:fs'
-import { lstat, readFile, rm, writeFile, chmod, mkdir } from 'node:fs/promises'
+import { lstat, readFile, realpath, rm, writeFile, chmod, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { parseBlame } from './blame'
@@ -19,6 +19,7 @@ import { parseRefs, REFS_FORMAT } from './refs'
 import { GitRunner } from './runner'
 import { parseReflog, REFLOG_FORMAT } from './reflog'
 import { parseStashList, STASH_FORMAT } from './stash'
+import { parseWorktrees } from './worktree'
 import { parseStatus } from './status'
 import { UndoJournal, type UndoAction } from './undo'
 
@@ -703,6 +704,60 @@ export class Repo {
       else await this.git(['branch', '--unset-upstream', branch], { okCodes: [128] })
       return this.record(upstream ? `Track ${shortName(upstream)}` : `Stop tracking for ${branch}`,
         [{ kind: 'set-upstream', branch, upstream: ref.upstream ?? null }], (await this.currentHead()).hash)
+    })
+  }
+
+  // ---------------------------------------------------------------- worktrees
+
+  async worktrees(): Promise<Worktree[]> {
+    // git prints real paths (no symlinks: /private/tmp on macOS), so compare with ours resolved.
+    return parseWorktrees(await this.read(['worktree', 'list', '--porcelain', '-z']), await realpath(this.path).catch(() => this.path))
+  }
+
+  /**
+   * A second working tree: check out an existing branch there, a new branch (`newBranch`, at
+   * `at` or HEAD), or a detached commit. Undo removes it again, which git refuses once it has
+   * changes, so undo never deletes work.
+   */
+  addWorktree(path: string, opts: { branch?: string; newBranch?: string; at?: string }): Promise<number> {
+    return this.exclusive(async () => {
+      const args = opts.newBranch ? ['-b', opts.newBranch, path, ...(opts.at ? [opts.at] : [])]
+        : opts.branch ? [path, opts.branch]
+        : ['--detach', path, opts.at ?? 'HEAD']
+      await this.git(['worktree', 'add', ...args])
+      const actions: UndoAction[] = [{ kind: 'worktree-remove', path }]
+      if (opts.newBranch) actions.push({ kind: 'update-ref', ref: `refs/heads/${opts.newBranch}`, to: null, from: await this.revParse(`refs/heads/${opts.newBranch}`) })
+      return this.record(`Add worktree ${basename(path)}`, actions, (await this.currentHead()).hash)
+    })
+  }
+
+  /**
+   * Remove a worktree. Without `force` git refuses if it has changes or untracked files, so what
+   * goes is only a checkout of committed work: undo checks it out again. With `force` the
+   * changes are deleted and there is no undo (the UI asks first).
+   */
+  removeWorktree(path: string, opts: { force?: boolean } = {}): Promise<number | null> {
+    return this.exclusive(async () => {
+      const w = (await this.worktrees()).find((x) => x.path === path)
+      if (!w) throw new Error(`No worktree at ${path}`)
+      if (w.main) throw new Error('The main working tree cannot be removed.')
+      if (w.current) throw new Error('This tab shows that worktree: open another one to remove it.')
+      await this.git(['worktree', 'remove', ...(opts.force ? ['--force', '--force'] : []), path])
+      if (opts.force || !w.head) return null
+      return this.record(`Remove worktree ${basename(path)}`, [{ kind: 'worktree-add', path, branch: w.branch, commit: w.head }], (await this.currentHead()).hash)
+    })
+  }
+
+  lockWorktree(path: string, lock: boolean, reason?: string): Promise<void> {
+    return this.exclusive(async () => {
+      await this.git(['worktree', lock ? 'lock' : 'unlock', ...(lock && reason ? ['--reason', reason] : []), path])
+    })
+  }
+
+  /** Forget worktrees whose folders are gone (their branches stay). */
+  pruneWorktrees(): Promise<void> {
+    return this.exclusive(async () => {
+      await this.git(['worktree', 'prune'])
     })
   }
 
@@ -1595,6 +1650,12 @@ export class Repo {
         }
         break
       }
+      case 'worktree-remove':
+        await this.git(['worktree', 'remove', a.path])
+        break
+      case 'worktree-add':
+        await this.git(['worktree', 'add', ...(a.branch ? [a.path, a.branch] : ['--detach', a.path, a.commit])])
+        break
       case 'drop-applied': {
         // `stash create` snapshots the tracked working tree without touching anything.
         const w = (await this.git(['stash', 'create'])).stdout.trim()

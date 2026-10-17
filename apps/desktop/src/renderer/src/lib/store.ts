@@ -1,5 +1,5 @@
 import { GraphLayout, type Row } from '@gitsquid/graph'
-import { SETTINGS, type Commit, type DiffTarget, type GitHubStatus, type GitSquidEvent, type Ref, type Remote, type RepoSnapshot, type SearchField, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitsquid/shared'
+import { SETTINGS, type Commit, type DiffTarget, type GitHubStatus, type GitSquidEvent, type Ref, type Remote, type RepoSnapshot, type Worktree, type SearchField, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitsquid/shared'
 import { create } from 'zustand'
 import { api, toUiError, type UiError } from './api'
 import { onAiEvent } from './ai'
@@ -52,6 +52,7 @@ export interface RepoView {
   undo: UndoEntry[]
   /** Configured remotes (a remote with no branches fetched yet still shows). */
   remotes: Remote[]
+  worktrees: Worktree[]
   /** Local branches already in HEAD: safe to delete. */
   merged: string[]
   /** Tag names on a remote, after the user asked to check (the only way it is read: network). */
@@ -127,8 +128,9 @@ export type MenuTarget =
   | { kind: 'stash'; stash: StashEntry }
   | { kind: 'ref'; ref: Ref; hash: string }
   | { kind: 'remote'; remote: string }
+  | { kind: 'worktree'; path: string }
   /** A sidebar section header with its own actions. */
-  | { kind: 'section'; section: 'local' | 'remotes' | 'tags' }
+  | { kind: 'section'; section: 'local' | 'remotes' | 'tags' | 'worktrees' }
   | null
 
 interface State {
@@ -340,7 +342,7 @@ function newView(snap: RepoSnapshot): RepoView {
     id: snap.id, snapshot: snap, logVersion: 0,
     selected: snap.status.length ? { kind: 'wip' } : snap.head.hash ? { kind: 'commit', hash: snap.head.hash } : { kind: 'wip' },
     center: snap.operation && snap.status.some((e) => e.kind === 'unmerged') ? { kind: 'conflicts' } : { kind: 'graph' },
-    search: null, searchOpen: false, searchFocus: 0, editable: [], redo: [], stashes: [], undo: [], remotes: [], merged: [], remoteTags: null, progress: null, busy: null, worktreeTick: 0,
+    search: null, searchOpen: false, searchFocus: 0, editable: [], redo: [], stashes: [], undo: [], remotes: [], merged: [], worktrees: [], remoteTags: null, progress: null, busy: null, worktreeTick: 0,
   }
 }
 
@@ -418,10 +420,10 @@ export function onSnapshot(snap: RepoSnapshot): void {
 
 export async function refreshAux(id: string): Promise<void> {
   try {
-    const [stashes, undo, editable, redo, remotes, merged] = await Promise.all([
-      api.stashList(id), api.undoList(id), api.editableCommits(id), api.redoList(id), api.remotes(id), api.mergedBranches(id),
+    const [stashes, undo, editable, redo, remotes, merged, worktrees] = await Promise.all([
+      api.stashList(id), api.undoList(id), api.editableCommits(id), api.redoList(id), api.remotes(id), api.mergedBranches(id), api.worktrees(id),
     ])
-    updateRepo(id, { stashes, undo, editable, redo, remotes, merged })
+    updateRepo(id, { stashes, undo, editable, redo, remotes, merged, worktrees })
   } catch {
     // The tab was closed meanwhile.
   }

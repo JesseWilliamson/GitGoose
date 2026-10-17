@@ -22,7 +22,7 @@ export function broadcast(event: GitSquidEvent): void {
 /** Methods that change the repository. After each one we refresh and push a snapshot right away. */
 const WRITES = new Set<ApiMethod>([
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'checkout', 'createBranch',
-  'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset', 'cherryPick', 'cherryPickMany', 'recomposeApply', 'dropCommits', 'moveCommits', 'restoreFile', 'applyPatch', 'addRemote', 'removeRemote', 'renameRemote', 'setRemoteUrl', 'pushTags',
+  'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset', 'cherryPick', 'cherryPickMany', 'recomposeApply', 'dropCommits', 'moveCommits', 'restoreFile', 'applyPatch', 'addWorktree', 'removeWorktree', 'lockWorktree', 'pruneWorktrees', 'addRemote', 'removeRemote', 'renameRemote', 'setRemoteUrl', 'pushTags',
   'deleteRemoteTag', 'setUpstream', 'fastForward', 'deleteBranches', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'redo', 'revert', 'createTag',
   'deleteTag', 'fetch', 'pull', 'push', 'deleteRemoteBranch', 'stashPush', 'stashBranch', 'stashApply', 'stashPop',
   'stashDrop', 'resolveConflict', 'continueOperation', 'abortOperation', 'undo',
@@ -104,6 +104,11 @@ export function createHandlers(
     search: (id, field, q) => r(id).search(field, q),
     stashList: (id) => r(id).stashList(),
     reflog: (id, ref) => r(id).reflog(ref),
+    worktrees: (id) => r(id).worktrees(),
+    addWorktree: (id, path, opts) => r(id).addWorktree(path, opts),
+    removeWorktree: (id, path, opts) => r(id).removeWorktree(path, opts),
+    lockWorktree: (id, path, lock, reason) => r(id).lockWorktree(path, lock, reason),
+    pruneWorktrees: (id) => r(id).pruneWorktrees(),
     lastCommitMessage: (id) => r(id).lastCommitMessage(),
 
     stagePaths: (id, paths) => r(id).stagePaths(paths),

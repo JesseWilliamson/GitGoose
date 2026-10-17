@@ -149,6 +149,23 @@ export interface Remote {
   pushUrl?: string
 }
 
+export interface Worktree {
+  path: string
+  /** The commit checked out there (absent for a bare main repository). */
+  head?: string
+  /** Short branch name, when a branch is checked out there. */
+  branch?: string
+  detached: boolean
+  /** The repository's main working tree (it cannot be removed). */
+  main: boolean
+  /** The one this tab is showing. */
+  current: boolean
+  /** Locked against pruning (a removable drive, say); the reason, or '' when none was given. */
+  locked?: string
+  /** Its folder is gone: `worktree prune` will forget it. */
+  prunable?: string
+}
+
 /** One move of a ref, newest first (`git log -g`). */
 export interface ReflogEntry {
   /** The n in HEAD@{n}. */

@@ -1,12 +1,13 @@
 import { DropdownMenu } from 'radix-ui'
 import {
- addRemote, checkRemoteTags, cleanupBranches, clearPushUrl, deleteRemoteTag, editRemoteUrl, fastForward, fetchAll, fetchRemote, pushBranch, pushTags, pushTo, remoteNames, removeRemote, renameRemote, setUpstream,
+ addRemote, addWorktree, lockWorktree, pruneWorktrees, removeWorktree, checkRemoteTags, cleanupBranches, clearPushUrl, deleteRemoteTag, editRemoteUrl, fastForward, fetchAll, fetchRemote, pushBranch, pushTags, pushTo, remoteNames, removeRemote, renameRemote, setUpstream,
  savePatches, stashToBranch, checkout, cherryPick, cherryPickMany, compare, compareSinceFork, copy, fixupInto, pop, reword, squashCommit, stashApply, stashDrop, copyCommits, dropCommits, moveCommits, currentBranchRef, deleteBranch, deleteRemoteBranch, deleteTag, dropOptions,
   merge, newBranch, newTag, push, rebase, renameBranch, reset, revert, shortRef,
 } from '../lib/actions'
 import { shortHash, stashLabel } from '../lib/format'
 import { ask } from '../lib/actions'
-import { getLog, updateRepo, useStore } from '../lib/store'
+import { getLog, openRepo, updateRepo, useStore } from '../lib/store'
+import { api } from '../lib/api'
 import type { ReactNode } from 'react'
 import { recomposeWithAi } from './RecomposeDialog'
 import { CM, DM } from './ui'
@@ -37,6 +38,7 @@ export function GraphMenu({ repoId }: { repoId: string }) {
     const name = shortRef(r)
     const isHead = head?.name === r.name
     const remotes = remoteNames(view)
+    const worktree = r.kind === 'local' ? view.worktrees.find((w) => !w.current && w.branch === name) : undefined
     const upstream = r.upstream ? snap.refs.find((x) => x.name === r.upstream) : undefined
     // Not checked out, nothing of its own, behind its upstream: moving it forward loses nothing.
     const canFastForward = r.kind === 'local' && !isHead && !!upstream && (r.behind ?? 0) > 0 && (r.ahead ?? 0) === 0
@@ -78,6 +80,8 @@ export function GraphMenu({ repoId }: { repoId: string }) {
               </CM.Sub>
             )}
             {r.upstream && <CM.Item onSelect={() => void setUpstream(repoId, name, null)}>Stop tracking {shortRef(r.upstream)}</CM.Item>}
+            {worktree ? <CM.Item onSelect={() => void openRepo(worktree.path)}>Open the worktree with {name}</CM.Item>
+              : !isHead && <CM.Item onSelect={() => addWorktree(repoId, name)}>Check out in a new worktree…</CM.Item>}
             <CM.Item onSelect={() => renameBranch(repoId, name)}>Rename {name}…</CM.Item>
             {!isHead && <CM.Item danger onSelect={() => void deleteBranch(repoId, name)}>Delete {name}</CM.Item>}
           </>
@@ -124,8 +128,39 @@ export function GraphMenu({ repoId }: { repoId: string }) {
     )
   }
 
+  if (menu.kind === 'worktree') {
+    const w = view.worktrees.find((x) => x.path === menu.path)
+    if (!w) return <CM.Content><CM.Label>That worktree is gone</CM.Label></CM.Content>
+    return (
+      <CM.Content>
+        <CM.Label>{w.path}</CM.Label>
+        {!w.current && <CM.Item disabled={!!w.prunable} onSelect={() => void openRepo(w.path)}>Open in a new tab</CM.Item>}
+        <CM.Item disabled={!!w.prunable} onSelect={() => void api.revealPath(w.path)}>Reveal in file manager</CM.Item>
+        <CM.Item onSelect={() => copy(w.path, 'Copied path')}>Copy path</CM.Item>
+        {!w.main && (
+          <>
+            <CM.Separator />
+            {w.locked === undefined
+              ? <CM.Item onSelect={() => void lockWorktree(repoId, w.path, true)}>Lock (keep it when its folder is missing)</CM.Item>
+              : <CM.Item onSelect={() => void lockWorktree(repoId, w.path, false)}>Unlock</CM.Item>}
+            {w.prunable ? <CM.Item onSelect={() => void pruneWorktrees(repoId)}>Forget missing worktrees</CM.Item>
+              : !w.current && <CM.Item danger onSelect={() => removeWorktree(repoId, w.path)}>Remove worktree</CM.Item>}
+          </>
+        )}
+      </CM.Content>
+    )
+  }
+
   if (menu.kind === 'section') {
     const remotes = remoteNames(view)
+    if (menu.section === 'worktrees') {
+      return (
+        <CM.Content>
+          <CM.Item onSelect={() => addWorktree(repoId)}>Add worktree…</CM.Item>
+          <CM.Item onSelect={() => void pruneWorktrees(repoId)}>Forget missing worktrees</CM.Item>
+        </CM.Content>
+      )
+    }
     if (menu.section === 'local') {
       return (
         <CM.Content>

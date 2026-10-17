@@ -1,6 +1,6 @@
 import type { PullMode, Ref, RepoSnapshot, ResetMode } from '@gitsquid/shared'
 import { api, toUiError, type UiError } from './api'
-import { activeRepo, addRepo, alertConflicts, choose, onSnapshot, openRepo, refreshAux, reportError, setting, toast, updateRepo, useStore } from './store'
+import { activeRepo, addRepo, openRepo as openRepoTab, alertConflicts, choose, onSnapshot, openRepo, refreshAux, reportError, setting, toast, updateRepo, useStore } from './store'
 
 /** The undo entry ids an action produced: a single id, an array of them (multi-step actions), or none. */
 function undoIdsOf(result: unknown): number[] {
@@ -561,6 +561,49 @@ export function cleanupBranches(id: string): void {
  */
 export const deleteBranches = (id: string, names: string[], force: boolean) =>
   run(id, `Delete ${names.length} branch${names.length === 1 ? '' : 'es'}`, () => api.deleteBranches(id, names, { force }))
+
+// ------------------------------------------------------------------ worktrees
+
+/** Where a new worktree goes by default: beside the repository, named after it and the branch. */
+export function defaultWorktreePath(repoPath: string, branch: string): string {
+  const sep = repoPath.includes('\\') && !repoPath.includes('/') ? '\\' : '/'
+  const trimmed = repoPath.replace(/[\\/]+$/, '')
+  const cut = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'))
+  return `${trimmed.slice(0, cut)}${sep}${trimmed.slice(cut + 1)}-${branch.replace(/[^\w.-]+/g, '-')}`
+}
+
+/** Check out a branch in a new worktree, or (no branch) make a new branch in one. Opens it as a tab. */
+export function addWorktree(id: string, branch?: string): void {
+  const repoPath = useStore.getState().repos[id]?.snapshot.path ?? ''
+  const go = (path: string, opts: { branch?: string; newBranch?: string }) =>
+    void run(id, 'Add worktree', () => api.addWorktree(id, path, opts), { success: `Worktree ready at ${path}` }).then((ok) => {
+      if (ok) void openRepoTab(path)
+    })
+  if (branch) {
+    ask(`Check out ${branch} in a new worktree`, 'Folder', 'Create worktree', (path) => go(path.trim(), { branch }), { initial: defaultWorktreePath(repoPath, branch) })
+  } else {
+    ask('New worktree', 'New branch', 'Create worktree', (name, folder) => go(folder.trim() || defaultWorktreePath(repoPath, name.trim()), { newBranch: name.trim() }),
+      { placeholder: 'feature/next', extra: { label: 'Folder (empty: next to this repository)' } })
+  }
+}
+
+export function removeWorktree(id: string, path: string): void {
+  void run(id, 'Remove worktree', () => api.removeWorktree(id, path), {
+    onError: (err) => {
+      if (!/modified or untracked|is dirty|contains/.test(err.message + (err.stderr ?? ''))) return false
+      choose('The worktree has changes', 'Removing it deletes uncommitted changes and untracked files in it. Undo cannot bring those back.', [
+        { label: 'Delete the worktree and its changes', variant: 'danger', run: () => void run(id, 'Remove worktree', () => api.removeWorktree(id, path, { force: true })) },
+        { label: 'Keep it' },
+      ], err.stderr)
+      return true
+    },
+  })
+}
+
+export const lockWorktree = (id: string, path: string, lock: boolean) =>
+  run(id, lock ? 'Lock worktree' : 'Unlock worktree', () => api.lockWorktree(id, path, lock))
+
+export const pruneWorktrees = (id: string) => run(id, 'Prune worktrees', () => api.pruneWorktrees(id), { success: 'Forgot worktrees whose folders are gone' })
 
 // ------------------------------------------------------------------ stash
 

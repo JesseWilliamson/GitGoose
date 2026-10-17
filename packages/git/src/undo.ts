@@ -45,6 +45,9 @@ export type UndoAction =
    * changed since makes it refuse, before it touches a thing.
    */
   | { kind: 'drop-applied'; tree: string; untracked: { path: string; blob: string }[] }
+  /** Worktrees: remove one (git refuses if it has changes), or add one back with a branch or a detached commit. */
+  | { kind: 'worktree-remove'; path: string }
+  | { kind: 'worktree-add'; path: string; branch?: string; commit: string }
   /** Write saved blobs back to the working tree. `blob: null` means the file did not exist. */
   | { kind: 'restore-files'; files: { path: string; blob: string | null; mode?: number }[] }
 
