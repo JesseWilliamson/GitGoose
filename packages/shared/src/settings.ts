@@ -17,9 +17,9 @@ interface Meta {
   keywords?: string
 }
 
-export type Section = 'Appearance' | 'Graph' | 'Git' | 'Diff' | 'Confirmations' | 'Integrations' | 'Accounts' | 'Startup' | 'Keyboard'
+export type Section = 'Appearance' | 'Graph' | 'Git' | 'Diff' | 'Confirmations' | 'Integrations' | 'AI' | 'Accounts' | 'Startup' | 'Keyboard'
 
-export const SECTIONS: Section[] = ['Appearance', 'Graph', 'Git', 'Diff', 'Confirmations', 'Integrations', 'Accounts', 'Startup', 'Keyboard']
+export const SECTIONS: Section[] = ['Appearance', 'Graph', 'Git', 'Diff', 'Confirmations', 'Integrations', 'AI', 'Accounts', 'Startup', 'Keyboard']
 
 export type SettingSpec =
   | (Meta & { kind: 'boolean'; default: boolean })
@@ -104,6 +104,29 @@ export const SETTINGS = {
     description: '{file} and {line} are filled in. Empty opens files with the system default app.',
   }),
   terminalCommand: text('', { label: 'Terminal', section: 'Integrations', placeholder: 'System default', description: 'Runs in the repository folder.' }),
+
+  // ---------------------------------------------------------------- AI
+  aiProvider: choice('off', [
+    { value: 'off', label: 'Off' },
+    { value: 'agent', label: 'An agent on this computer (ACP)' },
+    { value: 'anthropic', label: 'Anthropic API key' },
+  ], {
+    label: 'AI features', section: 'AI', keywords: 'claude gemini codex llm acp agent',
+    description: 'Commit messages, explanations and conflict help. Nothing is sent anywhere until you use one, and GitSquid asks first.',
+  }),
+  aiAgent: choice('claude', [
+    { value: 'claude', label: 'Claude' },
+    { value: 'codex', label: 'Codex' },
+    { value: 'gemini', label: 'Gemini CLI' },
+    { value: 'custom', label: 'Custom command' },
+  ], { label: 'Agent', section: 'AI', description: 'Started on first use and kept running until GitSquid quits. It uses its own login.' }),
+  aiAgentCommand: text('', {
+    label: 'Custom agent command', section: 'AI', placeholder: 'my-agent --acp',
+    description: 'Used when Agent is "Custom command". It must speak the Agent Client Protocol on stdin/stdout.',
+  }),
+  anthropicModel: text('claude-opus-5-5', { label: 'Model (API key only)', section: 'AI', placeholder: 'claude-opus-5-5' }),
+  /** Providers the user agreed to send content to, e.g. "agent:npx -y …" or "anthropic". */
+  aiConsent: internal([] as string[]),
 
   // ---------------------------------------------------------------- Accounts
   githubHttps: bool(false, {

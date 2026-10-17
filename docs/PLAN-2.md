@@ -442,6 +442,11 @@ TypeScript library) on the client side:
   text-only features. The earlier "local Claude Code subprocess" provider is dropped: ACP
   subsumes it.
 
+*As built (spec 006):* a fresh session per request rather than one per repository (requests stay
+independent and can run side by side); terminal logins show the command to run rather than
+launching a terminal (no portable "run this in a new terminal" exists); and an agent's file
+write is captured as a proposal the user accepts, so a denied or bad edit never touches disk.
+
 **No network unless asked** holds as before: the agent is not spawned until an AI action is
 used, and a one-time notice says what will be sent and to which agent.
 

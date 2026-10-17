@@ -5,13 +5,14 @@ import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 import { COMMANDS, comboOf, conflicts, formatCombo } from '../lib/keys'
 import { saveSettings, useStore } from '../lib/store'
 import { AccountsPanel } from './AccountsPanel'
+import { AiPanel } from './AiPanel'
 
 /**
  * The settings page, generated from the SETTINGS table in packages/shared/src/settings.ts.
  * Each entry renders by its kind; sections can also add their own panels (accounts, AI agents)
  * through SECTION_PANELS.
  */
-export const SECTION_PANELS: Partial<Record<Section, ComponentType>> = { Accounts: AccountsPanel }
+export const SECTION_PANELS: Partial<Record<Section, ComponentType>> = { AI: AiPanel, Accounts: AccountsPanel }
 
 type Visible = { key: SettingKey; spec: Exclude<SettingSpec, { kind: 'internal' }> }
 

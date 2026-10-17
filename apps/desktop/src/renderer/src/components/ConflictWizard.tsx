@@ -1,8 +1,9 @@
 import { countConflicts, parseConflicts, resolveBlocks, type ConflictChoice, type ConflictFile, type ConflictVersions } from '@gitsquid/shared'
 import clsx from 'clsx'
-import { CheckCircle2, CircleAlert, ExternalLink } from 'lucide-react'
+import { CheckCircle2, CircleAlert, ExternalLink, Sparkles } from 'lucide-react'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { openInEditor, run } from '../lib/actions'
+import { cancelAi, startAi, useAi } from '../lib/ai'
 import { api } from '../lib/api'
 import { sentence } from '../lib/format'
 import { reportError, updateRepo, useSetting, type RepoView } from '../lib/store'
@@ -97,6 +98,9 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
   const blocks = segments.filter((s) => s.kind === 'conflict')
   const allChosen = blocks.length > 0 && blocks.every((_, i) => choices[i])
   const preferred = useSetting('mergeView')
+  const agentOn = useSetting('aiProvider') === 'agent'
+  /** The AI request working on this file, while it runs. */
+  const [asking, setAsking] = useState<string | null>(null)
   /** Per-file override of the setting, from the header toggle. */
   const [picked, setPicked] = useState<'three-pane' | 'blocks' | null>(null)
   const labels = useMemo(() => {
@@ -110,6 +114,18 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
   const text = (s: string | null) => s !== null && !s.includes('\0')
   const canThree = versions.merged !== null && text(versions.ours) && text(versions.theirs) && (versions.base === null || text(versions.base))
   const mode = !canThree ? 'blocks' : (picked ?? (preferred === 'auto' ? (blocks.length < 3 ? 'blocks' : 'three-pane') : preferred))
+
+  // The agent proposes; nothing is written until the user accepts (see AiDialogs ProposalDialog).
+  const askAi = () => {
+    if (asking) return cancelAi(asking)
+    const r = startAi(view.id, { kind: 'resolve-conflict', path: file.path })
+    setAsking(r.requestId)
+    r.done.then((res) => {
+      if (!res) return
+      if (res.proposal) useAi.setState({ proposal: { repoId: view.id, path: file.path, content: res.proposal.content, note: res.text } })
+      else useAi.setState({ output: { title: `The agent on ${file.path}`, text: res.text || 'The agent did not propose a change.', requestId: null, error: null } })
+    }, (e) => reportError(`The agent could not resolve ${file.path}`, e)).finally(() => setAsking(null))
+  }
 
   const resolveWith = (resolution: 'ours' | 'theirs') =>
     void run(view.id, `Take ${resolution} for ${file.path}`, () => api.resolveConflict(view.id, file.path, resolution), { quiet: true })
@@ -130,6 +146,11 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
           {versions.ours === null ? 'Keep deleted (ours)' : 'Take ours'}
         </Button>
         <Button size="sm" onClick={() => resolveWith('theirs')}>{versions.theirs === null ? 'Keep deleted (theirs)' : 'Take theirs'}</Button>
+        {agentOn && versions.merged !== null && (
+          <Button size="sm" onClick={askAi} data-testid="ai-resolve" title={asking ? 'Stop' : 'Ask your AI agent to propose a resolution (you review it before anything is written)'}>
+            {asking ? <><Spinner /> Stop</> : <><Sparkles size={12} /> Ask AI</>}
+          </Button>
+        )}
         <Button size="sm" variant="ghost" title="Open in your editor (Settings → Integrations)" onClick={() => void openInEditor(`${view.snapshot.path}/${file.path}`)}>
           <ExternalLink size={12} /> Open
         </Button>

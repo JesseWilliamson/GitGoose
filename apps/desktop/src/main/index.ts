@@ -3,6 +3,8 @@ import { DEFAULT_AVATAR_BASES } from '@gitsquid/shared'
 import { app, BrowserWindow, nativeTheme, net, protocol, safeStorage } from 'electron'
 import { existsSync } from 'node:fs'
 import { delimiter, join, resolve } from 'node:path'
+import { AiService } from './ai/service'
+import { SecretFile } from './ai/keyStore'
 import { AvatarCache } from './avatars'
 import { githubEndpoints } from './github/config'
 import { GitHubService } from './github/service'
@@ -43,15 +45,17 @@ function refreshCredentialEnv(): void {
   Object.assign(gitEnv, extra)
 }
 
+// Linux without a secret service falls back to a hard-coded key ("basic_text"): no better than
+// plain text, so secrets then stay in memory only.
+const keychain = {
+  secure: () => safeStorage.isEncryptionAvailable() && !(process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text'),
+  encrypt: (s: string) => safeStorage.encryptString(s),
+  decrypt: (b: Buffer) => safeStorage.decryptString(b),
+}
+
 const github = new GitHubService({
   endpoints: githubEndpoints(),
-  store: new TokenStore(join(app.getPath('userData'), 'github.json'), {
-    // Linux without a secret service falls back to a hard-coded key ("basic_text"): no better
-    // than plain text, so the token then stays in memory only.
-    secure: () => safeStorage.isEncryptionAvailable() && !(process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text'),
-    encrypt: (s) => safeStorage.encryptString(s),
-    decrypt: (b) => safeStorage.decryptString(b),
-  }),
+  store: new TokenStore(join(app.getPath('userData'), 'github.json'), keychain),
   // Electron's net uses Chromium's network stack: the system proxy settings apply.
   fetch: (input, init) => net.fetch(input instanceof Request ? input : String(input), init),
   repos: () => repos.all(),
@@ -101,6 +105,18 @@ const prompts = {
 const askpass = new AskpassServer((message, secret) => prompts.ask(message, secret))
 
 const gitOpts = () => ({ gitPath: getSettings().gitPath || 'git', env: gitEnv })
+
+// ------------------------------------------------------------ AI
+
+const ai = new AiService({
+  settings: getSettings,
+  setSettings: (patch) => void setSettings(patch),
+  repo: (id) => repos.get(id),
+  apiKey: new SecretFile(join(app.getPath('userData'), 'anthropic-key.bin'), keychain),
+  emit: (event) => broadcast(event),
+  // Tests point this at a local fake; nothing else should.
+  anthropicBaseURL: process.env.GITSQUID_ANTHROPIC_BASE_URL,
+})
 
 const repos = new RepoManager(
   gitOpts,
@@ -157,6 +173,7 @@ function createWindow(): BrowserWindow {
 
 onSettingsChanged((settings) => {
   refreshCredentialEnv()
+  ai.onSettings()
   broadcast({ type: 'settings', settings })
 })
 
@@ -185,7 +202,7 @@ app.whenReady().then(async () => {
     return new Response(new Uint8Array(img.body), { headers: { 'content-type': img.type, 'cache-control': 'max-age=3600' } })
   })
   refreshCredentialEnv()
-  registerIpc(createHandlers(repos, prompts, gitOpts, github), repos)
+  registerIpc(createHandlers(repos, prompts, gitOpts, github, ai), repos)
   installMenu()
   createWindow()
   scheduleUpdateCheck()
@@ -200,5 +217,6 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   askpass.stop()
+  ai.stop()
   void repos.closeAll()
 })
