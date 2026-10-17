@@ -13,7 +13,7 @@ import { addTrailer, isUntouched, splitTemplate } from '../lib/commitMessage'
 import { ensureLoaded, getLog, reportError, selectCommit, setting, toast, updateRepo, useSetting, useStore, type FileMode, type RepoView } from '../lib/store'
 import { Avatar } from './Avatar'
 import { recomposeWithAi } from './RecomposeDialog'
-import { FileRow, statusKind } from './FileList'
+import { FileListTools, FileListView, FileRow, statusKind } from './FileList'
 import { modName } from '../lib/keys'
 import { Button, CM, DM, SectionHeader, Spinner } from './ui'
 
@@ -82,6 +82,7 @@ function WipPanel({ view }: { view: RepoView }) {
   const unstage = (paths: string[]) => run(id, 'Unstage', () => api.unstagePaths(id, paths), { quiet: true })
   const discard = (paths: string[]) => discardFiles(id, paths)
 
+  const [filter, setFilter] = useState('')
   const unstagedTarget = (e: StatusEntry): DiffTarget => (e.kind === 'untracked' ? { kind: 'untracked', path: e.path } : { kind: 'unstaged', path: e.path })
 
   return (
@@ -106,6 +107,7 @@ function WipPanel({ view }: { view: RepoView }) {
           </DropdownMenu.Root>
         )}
       </div>
+      {st.length > 0 && <FileListTools filter={filter} onFilter={setFilter} />}
       {view.snapshot.operation && (
         <div className="flex items-center justify-between gap-2 border-b border-line bg-warn/10 px-3 py-2 text-[13px]">
           <span><b>{sentence(opName(view.snapshot.operation))}</b> in progress{conflicted.length ? `, ${conflicted.length} conflicted` : ''}</span>
@@ -121,10 +123,15 @@ function WipPanel({ view }: { view: RepoView }) {
             </span>
           )}>Unstaged ({unstaged.length})</SectionHeader>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {unstaged.map((e) => {
+            <FileListView items={unstaged} pathOf={(e) => e.path} filter={filter} testId="unstaged"
+              folderActions={(paths) => <>
+                <IconAction title="Discard changes in this folder (undoable)" onClick={() => void discard(paths)}><Undo2 size={12} /></IconAction>
+                <IconAction title="Stage folder" onClick={() => void stage(paths)}><Plus size={12} /></IconAction>
+              </>}
+              renderFile={(e, layout) => {
               const t = unstagedTarget(e)
               return (
-                <FileRow key={e.path} path={e.path} kind={statusKind(e.worktree === '.' ? e.index : e.worktree)} testId="unstaged-file"
+                <FileRow key={e.path} {...layout} path={e.path} kind={statusKind(e.worktree === '.' ? e.index : e.worktree)} testId="unstaged-file"
                   selected={isOpen(view, t)} onClick={() => openFile(view, t)}
                   menu={<FileMenu view={view} target={t}>
                     <CM.Item onSelect={() => void stage([e.path])}>Stage</CM.Item>
@@ -139,7 +146,7 @@ function WipPanel({ view }: { view: RepoView }) {
                     <IconAction title="Stage file" onClick={() => void stage([e.path])}><Plus size={12} /></IconAction>
                   </>} />
               )
-            })}
+            }} />
             {unstaged.length === 0 && <div className="px-3 py-2 text-xs text-faint">No unstaged changes</div>}
           </div>
         </div>
@@ -148,10 +155,12 @@ function WipPanel({ view }: { view: RepoView }) {
             Staged ({staged.length})
           </SectionHeader>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {staged.map((e) => {
+            <FileListView items={staged} pathOf={(e) => e.path} filter={filter} testId="staged"
+              folderActions={(paths) => <IconAction title="Unstage folder" onClick={() => void unstage(paths)}><Minus size={12} /></IconAction>}
+              renderFile={(e, layout) => {
               const t: DiffTarget = { kind: 'staged', path: e.path }
               return (
-                <FileRow key={e.path} path={e.path} oldPath={e.origPath} kind={statusKind(e.index)} testId="staged-file"
+                <FileRow key={e.path} {...layout} path={e.path} oldPath={e.origPath} kind={statusKind(e.index)} testId="staged-file"
                   selected={isOpen(view, t)} onClick={() => openFile(view, t)}
                   menu={<FileMenu view={view} target={t}>
                     <CM.Item onSelect={() => void unstage([e.path])}>Unstage</CM.Item>
@@ -159,7 +168,7 @@ function WipPanel({ view }: { view: RepoView }) {
                   </FileMenu>}
                   actions={<IconAction title="Unstage file" onClick={() => void unstage([e.path])}><Minus size={12} /></IconAction>} />
               )
-            })}
+            }} />
             {staged.length === 0 && <div className="px-3 py-2 text-xs text-faint">Stage files or lines to commit them</div>}
           </div>
         </div>
@@ -388,6 +397,7 @@ function SignatureBadge({ sig }: { sig: Signature }) {
 
 function ComparePanel({ view, sel }: { view: RepoView; sel: Extract<RepoView['selected'], { kind: 'compare' }> }) {
   const [files, setFiles] = useState<ChangedFile[] | null>(null)
+  const [fileFilter, setFileFilter] = useState('')
   // The working tree side changes as files do; two revisions never change.
   const reloadOn = sel.to ? 0 : view.worktreeTick
   useEffect(() => {
@@ -420,17 +430,18 @@ function ComparePanel({ view, sel }: { view: RepoView; sel: Extract<RepoView['se
       <SectionHeader right={<span className="font-mono normal-case"><span className="text-add">+{adds}</span> <span className="text-del">−{dels}</span></span>}>
         {files ? `${files.length} ${files.length === 1 ? 'file' : 'files'} differ` : 'Comparing…'}
       </SectionHeader>
+      {files && files.length > 1 && <FileListTools filter={fileFilter} onFilter={setFileFilter} />}
       <div className="min-h-0 flex-1 overflow-y-auto pb-2">
-        {!files ? <div className="p-3"><Spinner /></div> : files.length === 0 ? <div className="p-3 text-sm text-faint">No differences.</div> : files.map((f) => {
+        {!files ? <div className="p-3"><Spinner /></div> : files.length === 0 ? <div className="p-3 text-sm text-faint">No differences.</div> : <FileListView items={files} pathOf={(f) => f.path} filter={fileFilter} testId="compare" renderFile={(f, layout) => {
           const t: DiffTarget = { kind: 'range', from: sel.from, to: sel.to, path: f.path, oldPath: f.oldPath }
           return (
-            <FileRow key={f.path} path={f.path} oldPath={f.oldPath} kind={f.change} selected={isOpen(view, t)} testId="compare-file"
+            <FileRow key={f.path} {...layout} path={f.path} oldPath={f.oldPath} kind={f.change} selected={isOpen(view, t)} testId="compare-file"
               onClick={() => openFile(view, t)} menu={<FileMenu view={view} target={t} />}
               stats={f.binary ? <span className="text-[11px] text-faint">bin</span> : (
                 <span className="shrink-0 font-mono text-[11px]"><span className="text-add">+{f.additions}</span> <span className="text-del">−{f.deletions}</span></span>
               )} />
           )
-        })}
+        }} />}
       </div>
     </div>
   )
@@ -495,6 +506,7 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
   const avatarSource = useSetting('avatars')
   const avatarVariant = useAvatarVariant()
   const [details, setDetails] = useState<CommitDetails | null>(() => detailsCache.get(hash) ?? null)
+  const [fileFilter, setFileFilter] = useState('')
   const latest = useRef(hash)
   const aiOn = useAiEnabled()
   const [explained, setExplained] = useState<{ hash: string; text: string; requestId: string | null; error: string | null } | null>(null)
@@ -602,18 +614,19 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
       <SectionHeader right={<span className="font-mono normal-case"><span className="text-add">+{adds}</span> <span className="text-del">−{dels}</span></span>}>
         {d.files.length} {d.files.length === 1 ? 'file' : 'files'} changed{d.parents.length > 1 && !stash ? ' (vs first parent)' : ''}
       </SectionHeader>
+      {d.files.length > 1 && <FileListTools filter={fileFilter} onFilter={setFileFilter} />}
       <div className="min-h-0 flex-1 overflow-y-auto pb-2" data-testid="commit-files">
-        {d.files.map((f) => {
+        <FileListView items={d.files} pathOf={(f) => f.path} filter={fileFilter} testId="commit" renderFile={(f, layout) => {
           const t: DiffTarget = { kind: 'commit', hash: d.hash, path: f.path }
           return (
-            <FileRow key={f.path} path={f.path} oldPath={f.oldPath} kind={f.change} selected={isOpen(view, t)} testId="commit-file"
+            <FileRow key={f.path} {...layout} path={f.path} oldPath={f.oldPath} kind={f.change} selected={isOpen(view, t)} testId="commit-file"
               onClick={() => openFile(view, t)}
               menu={<FileMenu view={view} target={t} />}
               stats={f.binary ? <span className="text-[11px] text-faint">bin</span> : (
                 <span className="shrink-0 font-mono text-[11px]"><span className="text-add">+{f.additions}</span> <span className="text-del">−{f.deletions}</span></span>
               )} />
           )
-        })}
+        }} />
       </div>
     </div>
   )

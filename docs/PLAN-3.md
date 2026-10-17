@@ -140,7 +140,9 @@ changes.
       the graph saying what is left out with Show all; remembered per repository
 - [x] 24 identity (this repository or global, undoable; shown over the commit box), commit
       templates (comment lines become the placeholder), co-author trailers from recent authors
-- [x] 28 (part) skip hooks for one commit; a failing hook's output is in the attention bar
+- [x] 28 skip hooks for one commit (a failing hook's output is in the attention bar); changed
+      files as a tree (folders merge single-folder chains, stage / unstage / discard a folder) and
+      a filter over every file list
 - [x] 25 signature verification in commit details (only signed commits are verified; failures
       read "cannot be checked"), signed tags (Settings → Git)
 - [x] 26 bisect from the graph: start from a commit's menu, a bar that says what to do next with
