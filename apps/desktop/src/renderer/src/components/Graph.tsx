@@ -5,8 +5,11 @@ import clsx from 'clsx'
 import { Cloud, Laptop, Tag } from 'lucide-react'
 import { ContextMenu } from 'radix-ui'
 import { memo, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import type { AvatarSource } from '@gitsquid/shared'
 import { checkout } from '../lib/actions'
-import { formatDate, hashColor, initials, laneColor, shortHash } from '../lib/format'
+import { avatarSrc } from '../lib/avatar'
+import { Avatar } from './Avatar'
+import { formatDate, laneColor, shortHash } from '../lib/format'
 import { getLog, loadMore, saveSettings, updateRepo, useSetting, useStore, type RepoView } from '../lib/store'
 import { GraphCell, LANE_W, ROW_H, ROW_H_COMPACT, WipCell } from './GraphCell'
 import { GraphMenu } from './menus'
@@ -74,6 +77,7 @@ export interface RowLook {
   rowH: number
   dateFormat: string
   dateW: number
+  avatars: AvatarSource
   showRemotes: boolean
   showTags: boolean
 }
@@ -82,7 +86,9 @@ function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
   const dateFormat = useSetting('dateFormat')
   const showRemotes = useSetting('showRemoteBranches')
   const showTags = useSetting('showTags')
-  const look = useMemo<RowLook>(() => ({ rowH, dateFormat, dateW: DATE_W[dateFormat] ?? 100, showRemotes, showTags }), [rowH, dateFormat, showRemotes, showTags])
+  const avatars = useSetting('avatars')
+  const look = useMemo<RowLook>(() => ({ rowH, dateFormat, dateW: DATE_W[dateFormat] ?? 100, showRemotes, showTags, avatars }),
+    [rowH, dateFormat, showRemotes, showTags, avatars])
   const log = getLog(view.id)
   const snap = view.snapshot
   const showWip = snap.status.length > 0 || !snap.head.hash
@@ -301,6 +307,8 @@ const CommitRow = memo(function CommitRow(props: {
   look: RowLook
 }) {
   const { commit, row, repoId, look } = props
+  const src = avatarSrc(commit.authorEmail, look.avatars)
+  const author = useMemo(() => ({ name: commit.authorName, email: commit.authorEmail, src }), [commit.authorName, commit.authorEmail, src])
   const [dropping, setDropping] = useState(false)
   const pills = useMemo(() => (props.refs ? pillsFor(props.refs, props.headBranch, { remotes: look.showRemotes, tags: look.showTags }) : []),
     [props.refs, props.headBranch, look.showRemotes, look.showTags])
@@ -352,11 +360,10 @@ const CommitRow = memo(function CommitRow(props: {
           </span>
         )}
       </div>
-      <GraphCell row={row} width={props.graphW} showPending={props.showPending} isHead={props.isHead} h={look.rowH} />
+      <GraphCell row={row} width={props.graphW} showPending={props.showPending} isHead={props.isHead} h={look.rowH} author={author} />
       <div className={clsx('min-w-0 flex-1 truncate px-2', props.hit && 'font-semibold text-fg')}>{commit.subject}</div>
       <div style={{ width: AUTHOR_W }} className={clsx('min-w-0 shrink-0 items-center gap-1.5 px-2 text-muted', COL_AUTHOR)}>
-        <span className="flex size-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white"
-          style={{ background: laneColor(hashColor(commit.authorEmail)) }}>{initials(commit.authorName)}</span>
+        <Avatar name={commit.authorName} email={commit.authorEmail} src={src} size={20} />
         <span className="truncate">{commit.authorName}</span>
       </div>
       <div style={{ width: look.dateW }} className={clsx('shrink-0 truncate px-2 text-muted', COL_DATE)}>{formatDate(commit.authorDate, look.dateFormat)}</div>
