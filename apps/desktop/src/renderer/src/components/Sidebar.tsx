@@ -68,7 +68,9 @@ export function Sidebar({ view }: { view: RepoView }) {
             </Section>
             <Section title="Stashes" count={view.stashes.length} icon={<Archive size={13} />}>
               {view.stashes.map((s) => (
-                <StashItem key={s.ref} repoId={view.id} index={s.index} message={s.message} date={s.date} />
+                <StashItem key={s.ref} repoId={view.id} index={s.index} message={s.message} date={s.date}
+                  selected={view.selected.kind === 'commit' && view.selected.hash === s.hash}
+                  onSelect={() => updateRepo(view.id, { selected: { kind: 'commit', hash: s.hash }, center: { kind: 'graph' } })} />
               ))}
               {view.stashes.length === 0 && <Empty>No stashes</Empty>}
             </Section>
@@ -127,15 +129,19 @@ function RefItem({ r, label, view, onJump, head, children }: {
   )
 }
 
-function StashItem({ repoId, index, message, date }: { repoId: string; index: number; message: string; date: number }) {
+function StashItem({ repoId, index, message, date, selected, onSelect }: {
+  repoId: string; index: number; message: string; date: number; selected: boolean; onSelect: () => void
+}) {
   return (
     <ContextMenu.Root>
       <ContextMenu.Trigger asChild>
         <div
           onContextMenu={(e) => e.stopPropagation()}
+          onClick={onSelect}
           onDoubleClick={() => pop(repoId, index)}
-          title={`${message}\n${relativeTime(date)}\nDouble-click to pop`}
-          className="flex h-6 items-center gap-1.5 pr-3 pl-8 text-[13px] hover:bg-hover"
+          data-testid="stash-item"
+          title={`${message}\n${relativeTime(date)}\nClick to see its changes, double-click to pop`}
+          className={clsx('flex h-6 items-center gap-1.5 pr-3 pl-8 text-[13px]', selected ? 'bg-select' : 'hover:bg-hover')}
         >
           <span className="min-w-0 flex-1 truncate">{message.replace(/^On [^:]+: /, '')}</span>
           <span className="text-[10px] text-faint">{relativeTime(date)}</span>
