@@ -39,6 +39,21 @@ test('creates a tag from the commit context menu', async () => {
   await app.close()
 })
 
+test('opens the branch menu when right-clicking a branch pill', async () => {
+  const r = makeFixture('branches')
+  const { app, page } = await launch(r.dir)
+  await page.locator('[data-testid="ref-pill"][data-ref="refs/heads/feature"]').click({ button: 'right' })
+  await expect(page.getByRole('menu')).toContainText('Branch feature')
+  await page.getByRole('menuitem', { name: 'Rename feature…' }).click()
+  await page.getByTestId('dialog-input').fill('feature-2')
+  await page.getByTestId('dialog-submit').click()
+  await expect(page.locator('[data-testid="ref-pill"][data-ref="refs/heads/feature-2"]')).toBeVisible()
+  // Right-clicking the row itself still gives the commit menu.
+  await page.getByTestId('commit-row').last().click({ button: 'right', position: { x: 600, y: 10 } })
+  await expect(page.getByRole('menu')).toContainText('Cherry-pick')
+  await app.close()
+})
+
 test('stashes and pops from the toolbar', async () => {
   const r = makeFixture('linear')
   r.write('file.txt', 'work in progress\n')

@@ -3,7 +3,7 @@ import { Check, Copy, Minus, Plus, Undo2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { copy, run } from '../lib/actions'
 import { api } from '../lib/api'
-import { dateTime, hashColor, initials, laneColor, shortHash } from '../lib/format'
+import { dateTime, hashColor, initials, laneColor, sentence, shortHash } from '../lib/format'
 import { ensureLoaded, toastError, updateRepo, type RepoView } from '../lib/store'
 import { FileRow, statusKind } from './FileList'
 import { Button, SectionHeader, Spinner } from './ui'
@@ -47,7 +47,7 @@ function WipPanel({ view }: { view: RepoView }) {
       </div>
       {view.snapshot.operation && (
         <div className="flex items-center justify-between gap-2 border-b border-line bg-warn/10 px-3 py-2 text-[13px]">
-          <span><b className="capitalize">{view.snapshot.operation}</b> in progress{conflicted.length ? `, ${conflicted.length} conflicted` : ''}</span>
+          <span><b>{sentence(view.snapshot.operation)}</b> in progress{conflicted.length ? `, ${conflicted.length} conflicted` : ''}</span>
           <Button size="sm" onClick={() => updateRepo(id, { center: { kind: 'conflicts' } })}>Resolve…</Button>
         </div>
       )}

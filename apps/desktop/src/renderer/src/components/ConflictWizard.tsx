@@ -4,6 +4,7 @@ import { CheckCircle2, CircleAlert, ExternalLink } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { run } from '../lib/actions'
 import { api } from '../lib/api'
+import { sentence } from '../lib/format'
 import { toastError, updateRepo, type RepoView } from '../lib/store'
 import { Button, Spinner } from './ui'
 
@@ -33,7 +34,7 @@ export function ConflictWizard({ view }: { view: RepoView }) {
       <div className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-panel px-4">
         <CircleAlert size={18} className="text-warn" />
         <div className="min-w-0 flex-1">
-          <div className="text-[14px] font-semibold capitalize">{op ? `${op} in progress` : 'No operation in progress'}</div>
+          <div className="text-[14px] font-semibold">{op ? `${sentence(op)} in progress` : 'No operation in progress'}</div>
           <div className="text-xs text-muted">
             {files === null ? 'Checking…' : files.length ? `${files.length} ${files.length === 1 ? 'file has' : 'files have'} conflicts` : 'All conflicts resolved'}
           </div>
@@ -43,7 +44,7 @@ export function ConflictWizard({ view }: { view: RepoView }) {
           <>
             <Button onClick={() => void run(view.id, `Abort ${opName}`, () => api.abortOperation(view.id))}>Abort {opName}</Button>
             <Button variant="primary" data-testid="continue-op" disabled={!files || files.length > 0}
-              onClick={() => void run(view.id, `Continue ${opName}`, () => api.continueOperation(view.id), { success: `${opName[0]!.toUpperCase()}${opName.slice(1)} complete` })}>
+              onClick={() => void run(view.id, `Continue ${opName}`, () => api.continueOperation(view.id), { success: `${sentence(opName)} complete` })}>
               Continue {opName}
             </Button>
           </>
@@ -103,8 +104,8 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
   let blockNo = -1
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-line px-3">
-        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">{file.path}</span>
+      <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-2 border-b border-line px-3 py-1.5">
+        <span className="min-w-32 flex-1 truncate text-[13px] font-semibold" title={file.path}>{file.path}</span>
         <Button size="sm" onClick={() => resolveWith('ours')} disabled={versions.ours === null && versions.theirs === null}>
           {versions.ours === null ? 'Keep deleted (ours)' : 'Take ours'}
         </Button>

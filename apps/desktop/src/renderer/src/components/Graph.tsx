@@ -90,7 +90,7 @@ export function Graph({ view }: { view: RepoView }) {
   }, [snap.refs])
 
   const hits = useMemo(() => (view.search ? new Set(view.search.hits) : null), [view.search])
-  const graphW = Math.min(log.maxWidth, MAX_LANES) * LANE_W + 12
+  const graphW = Math.max(64, Math.min(log.maxWidth, MAX_LANES) * LANE_W + 12)
 
   // Keep the selected row in view when it changes (keyboard navigation, search, jumping to a parent).
   let selectedIndex = -1
@@ -260,7 +260,12 @@ const CommitRow = memo(function CommitRow(props: {
       data-testid="commit-row"
       data-hash={commit.hash}
       onClick={() => updateRepo(repoId, { selected: { kind: 'commit', hash: commit.hash } })}
-      onContextMenu={() => useStore.setState({ menu: { kind: 'commit', hash: commit.hash } })}
+      onContextMenu={(e) => {
+        // A right-click on a branch pill bubbles up to here; the pill already set the menu target.
+        // (The pill must not stopPropagation: the menu's trigger is the list container above us.)
+        if ((e.target as HTMLElement).closest('[data-testid="ref-pill"]')) return
+        useStore.setState({ menu: { kind: 'commit', hash: commit.hash } })
+      }}
       onDragOver={onDragOver}
       onDragLeave={() => setDropping(false)}
       onDrop={(e) => onDrop(e)}
@@ -319,10 +324,7 @@ function RefPill({ pill, color, repoId, hash, onDrop }: {
         setOver(false)
         onDrop(e, ref)
       }}
-      onContextMenu={(e) => {
-        e.stopPropagation()
-        useStore.setState({ menu: { kind: 'ref', ref, hash } })
-      }}
+      onContextMenu={() => useStore.setState({ menu: { kind: 'ref', ref, hash } })}
       onDoubleClick={() => void checkout(repoId, ref.name)}
       title={[pill.local?.name, ...pill.remotes.map((r) => r.name), pill.tag?.name].filter(Boolean).join('\n')}
       className={clsx(

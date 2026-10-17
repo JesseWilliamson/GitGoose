@@ -48,3 +48,8 @@ export function splitPath(path: string): { dir: string; name: string } {
 export function shortHash(hash: string): string {
   return hash.slice(0, 7)
 }
+
+/** "merge" -> "Merge". (CSS `capitalize` would turn "merge in progress" into "Merge In Progress".) */
+export function sentence(s: string): string {
+  return s ? s[0]!.toUpperCase() + s.slice(1) : s
+}
