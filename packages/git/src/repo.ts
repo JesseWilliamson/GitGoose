@@ -1,5 +1,5 @@
 import type {
-  BisectState, BlameLine, ImageSide, LfsInfo, LfsLock, ChangedFile, CommandRecord, GraphFilter, Identity, Person, Signature, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
+  BisectState, BlameLine, CodePeek, ImageSide, LfsInfo, LfsLock, ChangedFile, CommandRecord, GraphFilter, Identity, Person, Signature, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
   LogPage, Ref, Remote, RepoOperation, ReflogEntry, RepoSnapshot, ResetMode, Resolution, SearchField, SelectionRequest,
   StashEntry, StatusEntry, Submodule, UndoEntry, Worktree,
 } from '@gitsquid/shared'
@@ -8,6 +8,7 @@ import { existsSync } from 'node:fs'
 import { lstat, readFile, realpath, rm, writeFile, chmod, mkdir } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
+import { findDefinitions, parseGrep, type Definition } from '@gitsquid/codegraph'
 import { parseBlame } from './blame'
 import { CatFile } from './catfile'
 import { parseChangedFiles, parseDiff, untrackedDiff } from './diff'
@@ -873,6 +874,65 @@ export class Repo {
     return this.exclusive(async () => {
       await this.git(['worktree', 'prune'])
     })
+  }
+
+  // ---------------------------------------------------------------- code graph
+
+  /** Definitions per blob id: a file's definitions only change when its content does. */
+  private defsCache = new Map<string, Definition[]>()
+
+  /** A file's text at a revision, or in the working tree (rev null). */
+  private async textAt(rev: string | null, path: string): Promise<string | null> {
+    if (rev === null) return readFile(join(this.path, path), 'utf8').catch(() => null)
+    const r = await this.runner.run(['cat-file', 'blob', `${rev}:${path}`], { readOnly: true, okCodes: [128] })
+    return r.code === 0 ? r.stdout : null
+  }
+
+  /** Definitions in a file, cached by its blob id (hash-object for working-tree files). */
+  async definitionsIn(rev: string | null, path: string): Promise<{ defs: Definition[]; text: string } | null> {
+    const text = await this.textAt(rev, path)
+    if (text === null) return null
+    const id = (await this.runner.run(['hash-object', '--stdin'], { readOnly: true, input: text })).stdout.trim()
+    let defs = this.defsCache.get(id)
+    if (!defs) {
+      defs = findDefinitions(path, text)
+      if (this.defsCache.size > 5000) this.defsCache.clear()
+      this.defsCache.set(id, defs)
+    }
+    return { defs, text }
+  }
+
+  /**
+   * Code Peek: where `name` is defined and used, as of `rev` (null: the working tree). git grep
+   * finds every whole-word occurrence; codegraph decides which of those lines define it.
+   */
+  async codePeek(name: string, rev: string | null): Promise<CodePeek> {
+    if (!/^[A-Za-z_$][\w$]*$/.test(name)) throw new Error('Peek works on identifiers.')
+    const MAX_HITS = 400
+    const out = await this.runner.run(['grep', '-n', '-z', '--column', '-w', '-I', '-F', '--max-count=30', '-e', name, ...(rev ? [rev] : []), '--'], { readOnly: true, okCodes: [1] })
+    const all = parseGrep(out.stdout, rev ?? undefined)
+    const hits = all.slice(0, MAX_HITS)
+    // Look for definitions only in files whose matching line could define it, most likely first.
+    const byFile = new Map<string, number[]>()
+    for (const h of hits) byFile.set(h.path, [...(byFile.get(h.path) ?? []), h.line])
+    const defs: CodePeek['definitions'] = []
+    const defLines = new Set<string>()
+    for (const [path] of [...byFile].slice(0, 60)) {
+      const f = await this.definitionsIn(rev, path)
+      if (!f) continue
+      const lines = f.text.split(/\r?\n/)
+      for (const d of f.defs) {
+        if (d.name !== name) continue
+        defLines.add(`${path}:${d.line}`)
+        defs.push({ path, line: d.line, endLine: d.endLine, kind: d.kind, signature: d.signature, preview: lines.slice(d.line - 1, Math.min(d.endLine, d.line + 14)) })
+      }
+    }
+    return {
+      name,
+      definitions: defs,
+      references: hits.filter((h) => !defLines.has(`${h.path}:${h.line}`)).map((h) => ({ path: h.path, line: h.line, column: h.column, text: h.text.trim().slice(0, 300) })),
+      truncated: all.length > MAX_HITS,
+    }
   }
 
   // ---------------------------------------------------------------- pull requests

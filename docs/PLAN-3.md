@@ -164,3 +164,9 @@ changes.
       too, undoable), create one from a branch's menu (pushes first when GitHub lacks it)
 
 Part A is complete.
+
+Part B:
+
+- [x] 30 symbol index (packages/codegraph: definitions by language patterns with scope ends,
+      cached by blob id; uses by git grep -w) and Code Peek: Ctrl/Cmd+click a name in a diff.
+      Exercise 6 in docs/learn

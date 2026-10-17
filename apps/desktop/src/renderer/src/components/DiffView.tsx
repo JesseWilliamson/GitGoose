@@ -4,6 +4,7 @@ import clsx from 'clsx'
 import { ChevronDown, ExternalLink, X } from 'lucide-react'
 import { DropdownMenu } from 'radix-ui'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { CodePeekPanel, identifierFromClick } from './CodePeek'
 import { ImageDiff, imageMime } from './ImageDiff'
 import { discard, openDiffTool, openInEditor, restoreFileFrom, run } from '../lib/actions'
 import { api } from '../lib/api'
@@ -12,6 +13,7 @@ import { pairs, segments, splitRows, wordDiff, type Ranges } from '../lib/diffLa
 import { tokenize, type Tokens } from '../lib/highlight'
 import { codeLineHeight, ensureLoaded, reportError, saveSettings, updateRepo, useSetting, type FileMode, type RepoView } from '../lib/store'
 import { Button, DM, Spinner } from './ui'
+import { modName } from '../lib/keys'
 
 
 export function FileView({ view, target, mode }: { view: RepoView; target: DiffTarget; mode: FileMode }) {
@@ -174,6 +176,9 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
   }, [diff, split])
 
   const scrollRef = useRef<HTMLDivElement>(null)
+  /** The name Code Peek shows (Ctrl/Cmd+click in the diff), or null. */
+  const [peek, setPeek] = useState<string | null>(null)
+  const peekRev = target.kind === 'commit' ? target.hash : target.kind === 'range' ? target.to : null
   // Wrapped lines have different heights, so the virtualizer measures each row; otherwise rows
   // are a fixed height derived from the code font size (no measuring, cheaper scrolling).
   const virt = useVirtualizer({
@@ -247,7 +252,7 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
       {(fileActions || diff.oldPath) && (
         <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-line px-3 text-xs">
           <span className="truncate text-muted" data-testid="diff-hint">
-            {diff.oldPath ? `Renamed from ${diff.oldPath}` : editable ? 'Click lines to select them; shift-click for a range.'
+            {diff.oldPath ? `Renamed from ${diff.oldPath}` : editable ? `Click lines to select them; shift-click for a range; ${modName()}+click a name to peek.`
               : editable === false && ignoreWhitespace && target.kind !== 'commit' && target.kind !== 'range' ? 'Whitespace changes are hidden, so line and hunk staging are off (Settings → Diff).' : ''}
           </span>
           {fileActions}
@@ -260,7 +265,15 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
       ) : diff.hunks.length === 0 ? (
         <div className="flex flex-1 items-center justify-center text-sm text-faint">{diff.change === 'added' ? 'Empty file' : 'Only the file mode changed'}</div>
       ) : (
-        <div ref={scrollRef} className="selectable min-h-0 flex-1 overflow-auto" style={CODE_STYLE} data-testid="diff-lines">
+        <div ref={scrollRef} className="selectable min-h-0 flex-1 overflow-auto" style={CODE_STYLE} data-testid="diff-lines"
+          onMouseDownCapture={(e) => {
+            // Ctrl/Cmd+click a name: peek at it (before line selection sees the click).
+            const name = identifierFromClick(e)
+            if (!name) return
+            e.preventDefault()
+            e.stopPropagation()
+            setPeek(name)
+          }}>
           <div style={{ height: virt.getTotalSize(), position: 'relative', minWidth: '100%' }} className={wrap ? 'w-full' : 'w-max'}>
             {virt.getVirtualItems().map((vi) => {
               const it = items[vi.index]!
@@ -333,6 +346,7 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
           </div>
         </div>
       )}
+      {peek && <CodePeekPanel repoId={view.id} repoPath={view.snapshot.path} name={peek} rev={peekRev} onClose={() => setPeek(null)} />}
     </div>
   )
 }

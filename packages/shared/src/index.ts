@@ -210,6 +210,15 @@ export interface Worktree {
   prunable?: string
 }
 
+/** Code Peek: where a name is defined and used, at a revision or in the working tree. */
+export interface CodePeek {
+  name: string
+  definitions: { path: string; line: number; endLine: number; kind: string; signature: string; preview: string[] }[]
+  references: { path: string; line: number; column: number; text: string }[]
+  /** More matches than were read (a very common name). */
+  truncated: boolean
+}
+
 /** Git LFS in this repository. */
 export interface LfsInfo {
   /** git-lfs is installed (`git lfs version` works). */
