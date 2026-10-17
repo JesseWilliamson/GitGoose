@@ -83,6 +83,14 @@ export const SETTINGS = {
   wrapLines: bool(false, { label: 'Wrap long lines', section: 'Diff' }),
   syntaxHighlighting: bool(true, { label: 'Syntax highlighting', section: 'Diff' }),
   highlightMaxKb: num(400, 50, 4000, 50, { label: 'Highlight files up to', section: 'Diff', unit: 'KB' }),
+  mergeView: choice('three-pane', [
+    { value: 'three-pane', label: 'Three panes' },
+    { value: 'auto', label: 'Three panes, blocks for small conflicts' },
+    { value: 'blocks', label: 'Blocks' },
+  ], {
+    label: 'Conflict view', section: 'Diff', keywords: 'merge resolve intellij',
+    description: 'Three panes: yours, the result and theirs, IntelliJ style. Blocks: pick a side per conflict. Small means fewer than 3 conflicts.',
+  }),
 
   // ---------------------------------------------------------------- Confirmations
   confirmForcePush: bool(true, { label: 'Confirm force push', section: 'Confirmations', description: 'Changes to a remote cannot be undone.' }),

@@ -5,10 +5,11 @@ import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { openInEditor, run } from '../lib/actions'
 import { api } from '../lib/api'
 import { sentence } from '../lib/format'
-import { reportError, updateRepo, type RepoView } from '../lib/store'
+import { reportError, updateRepo, useSetting, type RepoView } from '../lib/store'
 import { Button, Spinner } from './ui'
 
 const ResultEditor = lazy(() => import('./ResultEditor'))
+const MergePanes = lazy(() => import('./MergePanes'))
 
 /**
  * Conflict resolution: one file at a time, one conflict block at a time.
@@ -95,8 +96,20 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
   const segments = useMemo(() => (versions?.merged ? parseConflicts(versions.merged) : []), [versions])
   const blocks = segments.filter((s) => s.kind === 'conflict')
   const allChosen = blocks.length > 0 && blocks.every((_, i) => choices[i])
+  const preferred = useSetting('mergeView')
+  /** Per-file override of the setting, from the header toggle. */
+  const [picked, setPicked] = useState<'three-pane' | 'blocks' | null>(null)
+  const labels = useMemo(() => {
+    const first = segments.find((s) => s.kind === 'conflict')
+    return { ours: first?.oursLabel || 'HEAD', theirs: first?.theirsLabel || 'incoming' }
+  }, [segments])
 
   if (!versions) return <div className="flex flex-1 items-center justify-center text-faint"><Spinner /></div>
+
+  // Three panes need all three texts: not for delete/modify conflicts or binary files.
+  const text = (s: string | null) => s !== null && !s.includes('\0')
+  const canThree = versions.merged !== null && text(versions.ours) && text(versions.theirs) && (versions.base === null || text(versions.base))
+  const mode = !canThree ? 'blocks' : (picked ?? (preferred === 'auto' ? (blocks.length < 3 ? 'blocks' : 'three-pane') : preferred))
 
   const resolveWith = (resolution: 'ours' | 'theirs') =>
     void run(view.id, `Take ${resolution} for ${file.path}`, () => api.resolveConflict(view.id, file.path, resolution), { quiet: true })
@@ -120,7 +133,17 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
         <Button size="sm" variant="ghost" title="Open in your editor (Settings → Integrations)" onClick={() => void openInEditor(`${view.snapshot.path}/${file.path}`)}>
           <ExternalLink size={12} /> Open
         </Button>
-        {versions.merged !== null && (
+        {canThree && (
+          <div className="flex overflow-hidden rounded border border-line" role="group" aria-label="Conflict view">
+            {(['three-pane', 'blocks'] as const).map((v) => (
+              <button key={v} data-testid={`view-${v}`} aria-pressed={mode === v} onClick={() => { setPicked(v); setEdited(null) }}
+                className={clsx('h-6 px-2 text-xs', mode === v ? 'bg-select text-fg' : 'text-muted hover:bg-hover')}>
+                {v === 'three-pane' ? 'Three panes' : 'Blocks'}
+              </button>
+            ))}
+          </div>
+        )}
+        {versions.merged !== null && mode === 'blocks' && (
           <Button size="sm" variant={edited !== null ? 'primary' : 'default'} data-testid="edit-result"
             onClick={() => setEdited(edited === null ? resolveBlocks(versions.merged!, choices) : null)}
             title="Edit the merged file by hand, starting from the sides picked so far">
@@ -133,14 +156,19 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
             {markersLeft ? `${markersLeft} ${markersLeft === 1 ? 'conflict' : 'conflicts'} left` : 'Save resolution'}
           </Button>
         )}
-        {edited === null && blocks.length === 0 && versions.merged !== null && <Button size="sm" onClick={markResolved}>Mark resolved</Button>}
-        {edited === null && blocks.length > 0 && (
+        {mode === 'blocks' && edited === null && blocks.length === 0 && versions.merged !== null && <Button size="sm" onClick={markResolved}>Mark resolved</Button>}
+        {mode === 'blocks' && edited === null && blocks.length > 0 && (
           <Button size="sm" variant="primary" disabled={!allChosen} onClick={save} data-testid="save-resolution">
             Save resolution ({choices.filter(Boolean).length}/{blocks.length})
           </Button>
         )}
       </div>
-      {edited !== null ? (
+      {mode === 'three-pane' ? (
+        <Suspense fallback={<div className="flex flex-1 items-center justify-center text-faint"><Spinner /></div>}>
+          <MergePanes base={versions.base ?? ''} ours={versions.ours!} theirs={versions.theirs!} labels={labels}
+            onSave={(content) => void run(view.id, `Resolve ${file.path}`, () => api.resolveConflict(view.id, file.path, { content }), { quiet: true })} />
+        </Suspense>
+      ) : edited !== null ? (
         <div className="min-h-0 flex-1">
           <Suspense fallback={<div className="flex h-full items-center justify-center text-faint"><Spinner /></div>}>
             <ResultEditor initial={edited} onChange={setEdited} />
