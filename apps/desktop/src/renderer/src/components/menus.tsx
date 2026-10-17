@@ -4,6 +4,7 @@ import {
   merge, newBranch, newTag, push, rebase, renameBranch, reset, revert, shortRef,
 } from '../lib/actions'
 import { getLog, useStore } from '../lib/store'
+import { recomposeWithAi } from './RecomposeDialog'
 import { CM, DM } from './ui'
 
 /** Right-click menu for the graph. Rows record what was clicked in the store; this renders for it. */
@@ -14,6 +15,7 @@ export function GraphMenu({ repoId }: { repoId: string }) {
   const snap = view.snapshot
   const head = currentBranchRef(snap)
   const headName = snap.head.branch ?? 'HEAD'
+  const aiOn = (useStore.getState().settings?.aiProvider ?? 'off') !== 'off'
 
   if (menu.kind === 'ref') {
     const r = menu.ref
@@ -56,6 +58,12 @@ export function GraphMenu({ repoId }: { repoId: string }) {
         <CM.Item onSelect={() => void copyCommits(repoId, menu.hashes, 'diff')}>Copy as diff</CM.Item>
         <CM.Item onSelect={() => void copyCommits(repoId, menu.hashes, 'patch')}>Copy as patch</CM.Item>
         <CM.Item onSelect={() => copy(menu.hashes.join('\n'), 'Copied SHAs')}>Copy SHAs</CM.Item>
+        {aiOn && (
+          <>
+            <CM.Separator />
+            <CM.Item onSelect={() => recomposeWithAi(repoId, menu.hashes)}>Recompose with AI…</CM.Item>
+          </>
+        )}
       </CM.Content>
     )
   }
@@ -72,6 +80,7 @@ export function GraphMenu({ repoId }: { repoId: string }) {
       <CM.Separator />
       <CM.Item onSelect={() => void cherryPick(repoId, hash)} disabled={isHeadCommit}>Cherry-pick onto {headName}</CM.Item>
       <CM.Item onSelect={() => void revert(repoId, hash)}>Revert this commit</CM.Item>
+      {aiOn && <CM.Item onSelect={() => recomposeWithAi(repoId, [hash])}>Split with AI…</CM.Item>}
       <CM.Sub label={`Reset ${headName} to here`}>
         <CM.Item onSelect={() => void reset(repoId, hash, 'soft')}>Soft: keep changes staged</CM.Item>
         <CM.Item onSelect={() => void reset(repoId, hash, 'mixed')}>Mixed: keep changes unstaged</CM.Item>

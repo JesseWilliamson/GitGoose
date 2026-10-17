@@ -21,6 +21,22 @@ export interface BuiltPrompt {
   prompt: string
   /** For resolve-conflict: the one file the agent may write (absolute). */
   writable?: string
+  /** For recompose: the range and its units, to turn the answer into a proposal. */
+  recompose?: RecomposeInfo
+}
+
+export type RecomposeInfo = Awaited<ReturnType<Repo['recomposeInfo']>>
+
+/** More pieces than this is not a commit series a person would review anyway. */
+export const MAX_RECOMPOSE_UNITS = 300
+
+/** What the model sees of one unit: its id, file, size, and (budget permitting) the hunk. */
+export function describeUnit(u: RecomposeInfo['units'][number], maxLines: number): string {
+  const kind = /\nnew file mode/.test(u.header) ? ' (new file)' : /\ndeleted file mode/.test(u.header) ? ' (deleted)' : u.binary ? ' (binary)' : !u.body ? ' (mode change)' : ''
+  const head = `[${u.id}] ${u.path}${kind} +${u.added} -${u.removed}`
+  if (!u.body) return head
+  const lines = u.body.split('\n')
+  return [head, ...lines.slice(0, maxLines), ...(lines.length > maxLines ? [`… ${lines.length - maxLines} more lines`] : [])].join('\n')
 }
 
 const NO_TOOLS = 'Answer from the text below. Do not run commands or edit files.'
@@ -73,6 +89,37 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask): Promise
           NO_TOOLS,
           '',
           truncate(show),
+        ].join('\n'),
+      }
+    }
+    case 'recompose': {
+      const info = await repo.recomposeInfo(task.hashes)
+      if (info.units.length > MAX_RECOMPOSE_UNITS) {
+        throw new Error(`These commits change ${info.units.length} separate places, too many to recompose at once (the limit is ${MAX_RECOMPOSE_UNITS}). Select fewer commits.`)
+      }
+      // Show as much of each hunk as fits: halve the lines per hunk until the whole list fits.
+      let maxLines = 60
+      let units = info.units.map((u) => describeUnit(u, maxLines)).join('\n\n')
+      while (units.length > MAX_DIFF_CHARS && maxLines > 2) {
+        maxLines = Math.floor(maxLines / 2)
+        units = info.units.map((u) => describeUnit(u, maxLines)).join('\n\n')
+      }
+      return {
+        system: 'You organise code changes into clear git commits.',
+        recompose: info,
+        prompt: [
+          `Reorganise ${info.list.length === 1 ? 'this commit' : `these ${info.list.length} commits`} into a clean series of commits a reviewer can follow: each commit one logical change, in an order where each builds on the ones before (for example: refactors first, then the feature, then tests and docs).`,
+          'The changes are cut into numbered pieces below. Assign every piece to exactly one commit; a piece cannot be split. Pieces of the same file may go to different commits.',
+          'Write each message the way the original commits are written (same conventions, such as "feat:" prefixes): a summary line under 72 characters, then a blank line and a short body only when the reason is not obvious.',
+          'Answer with JSON only, no prose and no code fence, in exactly this shape, commits oldest first:',
+          '{"commits": [{"message": "summary\\n\\noptional body", "units": ["U1", "U4"]}]}',
+          NO_TOOLS,
+          '',
+          'The original commits, oldest first:',
+          ...info.messages.map((m) => `- ${m.subject}${m.body ? `\n  ${m.body.split('\n').join('\n  ')}` : ''}`),
+          '',
+          'The pieces:',
+          units,
         ].join('\n'),
       }
     }

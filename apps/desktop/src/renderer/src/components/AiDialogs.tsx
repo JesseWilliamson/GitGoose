@@ -5,6 +5,7 @@ import { run } from '../lib/actions'
 import { answerPermission, cancelAi, useAi } from '../lib/ai'
 import { api, toUiError } from '../lib/api'
 import { toast, useStore } from '../lib/store'
+import { RecomposeDialog } from './RecomposeDialog'
 import { Button, Modal, Spinner } from './ui'
 
 /** Every AI modal: consent, login, tool permission, streamed answers, conflict proposals. */
@@ -16,6 +17,7 @@ export function AiDialogs() {
       <PermissionDialog />
       <OutputDialog />
       <ProposalDialog />
+      <RecomposeDialog />
     </>
   )
 }

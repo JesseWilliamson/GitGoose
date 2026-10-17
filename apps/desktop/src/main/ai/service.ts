@@ -7,7 +7,8 @@ import { tmpdir } from 'node:os'
 import { AcpAgent } from './acp'
 import { anthropicComplete } from './anthropic'
 import type { SecretFile } from './keyStore'
-import { buildPrompt, cleanCommitMessage } from './prompts'
+import { extractJson, repairPlan } from '@gitsquid/git'
+import { buildPrompt, cleanCommitMessage, type BuiltPrompt } from './prompts'
 
 /**
  * AI requests, from the renderer's "✨" to an answer. Plain Node; index.ts wires it to Electron.
@@ -120,6 +121,9 @@ export class AiService {
     const built = await buildPrompt(repo, task)
     const emitText = (text: string) => this.deps.emit({ type: 'ai-text', requestId, text })
     const finish = (text: string) => (task.kind === 'commit-message' ? cleanCommitMessage(text) : text.trim())
+    // A recompose answer becomes a proposal for the review dialog (nothing changes until Apply).
+    const result = (text: string, extra: Partial<AiResult> = {}): AiResult =>
+      task.kind === 'recompose' ? { text: '', recompose: toProposal(task.hashes, built, text) } : { text: finish(text), ...extra }
 
     try {
       if (st.provider === 'anthropic') {
@@ -138,7 +142,7 @@ export class AiService {
           onText: emitText,
           signal: abort.signal,
         })
-        return { text: finish(text) }
+        return result(text)
       }
 
       this.onSettings()
@@ -162,7 +166,7 @@ export class AiService {
         },
       }, abort.signal)
       if (res.stopReason === 'cancelled') throw new AiError('Stopped.', 'ai-cancelled')
-      return { text: finish(res.text), proposal }
+      return result(res.text, { proposal })
     } finally {
       this.requests.delete(requestId)
       // Unanswered questions from this request are moot now.
@@ -187,5 +191,23 @@ export class AiService {
 
   stop(): void {
     this.agent.stop()
+  }
+}
+
+function toProposal(hashes: string[], built: BuiltPrompt, text: string): NonNullable<AiResult['recompose']> {
+  const info = built.recompose!
+  const raw = extractJson(text)
+  if (!raw) throw new AiError('The AI did not answer with a plan. Try again.', 'ai-bad-answer')
+  const { commits, unplaced } = repairPlan(info.units, raw)
+  return {
+    hashes,
+    branch: info.branch,
+    units: info.units.map((u) => ({
+      id: u.id, path: u.path, added: u.added, removed: u.removed, binary: u.binary,
+      preview: u.body.split('\n').slice(0, 14).join('\n'),
+    })),
+    commits,
+    unplaced,
+    onRemote: info.onRemote,
   }
 }

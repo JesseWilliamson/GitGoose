@@ -1,4 +1,4 @@
-import { AI_AUTH_REQUIRED, type AgentAuthMethod, type AiPermissionRequest, type AiResult, type AiTask } from '@gitsquid/shared'
+import { AI_AUTH_REQUIRED, type AgentAuthMethod, type AiPermissionRequest, type AiResult, type AiTask, type RecomposeProposal } from '@gitsquid/shared'
 import { create } from 'zustand'
 import { api, toUiError } from './api'
 import { attention, useStore } from './store'
@@ -19,9 +19,11 @@ export interface AiUi {
   output: { title: string; text: string; requestId: string | null; error: string | null } | null
   /** A conflict resolution the agent proposed, for review. */
   proposal: { repoId: string; path: string; content: string; note: string } | null
+  /** Recompose with AI: waiting for a plan (requestId set), failed, or under review. */
+  recompose: { repoId: string; hashes: string[]; requestId: string | null; proposal: RecomposeProposal | null; error: string | null } | null
 }
 
-export const useAi = create<AiUi>(() => ({ consent: null, login: null, permissions: [], output: null, proposal: null }))
+export const useAi = create<AiUi>(() => ({ consent: null, login: null, permissions: [], output: null, proposal: null, recompose: null }))
 
 const textListeners = new Map<string, (text: string) => void>()
 
@@ -43,6 +45,7 @@ const WHAT: Record<AiTask['kind'], string> = {
   'explain-commit': "the commit's message and diff",
   'explain-error': "the failed action and git's error output",
   'resolve-conflict': 'the conflicted file (the agent reads it), and it may propose an edit to that one file',
+  recompose: "the selected commits' messages and their combined diff",
 }
 
 function openSettings(): void {

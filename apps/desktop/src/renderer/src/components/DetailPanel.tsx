@@ -8,6 +8,7 @@ import { dateTime, sentence, shortHash } from '../lib/format'
 import { avatarSrc, useAvatarVariant } from '../lib/avatar'
 import { ensureLoaded, getLog, reportError, selectCommit, setting, updateRepo, useSetting, type FileMode, type RepoView } from '../lib/store'
 import { Avatar } from './Avatar'
+import { recomposeWithAi } from './RecomposeDialog'
 import { FileRow, statusKind } from './FileList'
 import { modName } from '../lib/keys'
 import { Button, CM, SectionHeader, Spinner } from './ui'
@@ -250,6 +251,7 @@ function MultiPanel({ view, hashes }: { view: RepoView; hashes: string[] }) {
   const log = getLog(view.id)
   const commits = hashes.map((h) => log.commits[log.index.get(h) ?? -1]).filter((c): c is NonNullable<typeof c> => !!c)
   const headName = view.snapshot.head.branch ?? 'HEAD'
+  const aiOn = useAiEnabled()
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="multi-panel">
       <div className="border-b border-line p-3">
@@ -261,6 +263,11 @@ function MultiPanel({ view, hashes }: { view: RepoView; hashes: string[] }) {
           </Button>
           <Button size="sm" onClick={() => void copyCommits(view.id, hashes, 'diff')} data-testid="multi-copy-diff">Copy as diff</Button>
           <Button size="sm" onClick={() => void copyCommits(view.id, hashes, 'patch')} data-testid="multi-copy-patch">Copy as patch</Button>
+          {aiOn && (
+            <Button size="sm" onClick={() => recomposeWithAi(view.id, hashes)} data-testid="multi-recompose" title="Let the AI propose a cleaner set of commits; you review before anything changes">
+              <Sparkles size={12} /> Recompose with AI
+            </Button>
+          )}
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto py-1">

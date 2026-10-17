@@ -46,6 +46,18 @@ async function prompt(params, cx) {
     await say(cx, id, 'Thinking')
     process.exit(3)
   }
+  if (text.includes('Reorganise')) {
+    // A plan in JSON, streamed in pieces: the last piece listed becomes its own first commit.
+    const ids = [...text.matchAll(/^\[(U\d+)\] (\S+)/gm)].map((m) => ({ id: m[1], path: m[2] }))
+    const last = ids[ids.length - 1]
+    const plan = { commits: [
+      { message: `chore: ${last.path} first`, units: [last.id] },
+      { message: 'feat: everything else', units: ids.slice(0, -1).map((u) => u.id) },
+    ] }
+    const json = JSON.stringify(plan)
+    for (let i = 0; i < json.length; i += 40) await say(cx, id, json.slice(i, i + 40))
+    return { stopReason: 'end_turn' }
+  }
   if (text.includes('commit message')) {
     for (const chunk of ['feat: add the widget ', 'registry\n\n', 'Registers widgets by name so plugins can add their own.']) await say(cx, id, chunk)
     return { stopReason: 'end_turn' }

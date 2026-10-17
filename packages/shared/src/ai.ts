@@ -36,6 +36,8 @@ export type AiTask =
   | { kind: 'explain-commit'; hash: string }
   | { kind: 'explain-error'; title: string; detail: string }
   | { kind: 'resolve-conflict'; path: string }
+  /** Rebuild these commits (graph order) as a better-structured set. */
+  | { kind: 'recompose'; hashes: string[] }
 
 export interface AiStatus {
   provider: AiProvider
@@ -76,8 +78,34 @@ export interface AiPermissionRequest {
   options: { optionId: string; name: string; kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always' }[]
 }
 
+/** One piece of a recompose: a hunk, or a whole file when it has no hunks. */
+export interface RecomposeUnitInfo {
+  id: string
+  path: string
+  added: number
+  removed: number
+  binary: boolean
+  /** The first lines of the hunk, for the review dialog. */
+  preview: string
+}
+
+export interface RecomposeProposal {
+  /** The commits being replaced, graph order (newest first). */
+  hashes: string[]
+  branch: string
+  units: RecomposeUnitInfo[]
+  /** The proposed commits, oldest first. */
+  commits: { message: string; units: string[] }[]
+  /** Units the model left out; they were added to the last commit. */
+  unplaced: string[]
+  /** Remote branches that already have these commits (rewriting them means a force-push later). */
+  onRemote: string[]
+}
+
 export interface AiResult {
   text: string
+  /** recompose: the proposed commits, for review before anything changes. */
+  recompose?: RecomposeProposal
   /** resolve-conflict: the file the agent wrote, captured instead of written, for review. */
   proposal?: { path: string; content: string }
 }

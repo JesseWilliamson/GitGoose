@@ -13,6 +13,7 @@ import { CatFile } from './catfile'
 import { parseChangedFiles, parseDiff, untrackedDiff } from './diff'
 import { graphRevs, LOG_FORMAT, LogStream, parseLog } from './log'
 import { searchLog } from './search'
+import { checkPlan, patchFor, splitUnits, type PlannedCommit, type RecomposeUnit } from './recompose'
 import { buildPatch } from './patch'
 import { parseRefs, REFS_FORMAT } from './refs'
 import { GitRunner } from './runner'
@@ -656,6 +657,101 @@ export class Repo {
     return this.moving(`Cherry-pick ${todo.length} ${todo.length === 1 ? 'commit' : 'commits'}`, () => this.git(['cherry-pick', ...mainline, ...todo]))
   }
 
+  // ---------------------------------------------------------------- recompose
+
+  /**
+   * Check that `hashes` (graph order) can be recomposed and describe them: a chain of
+   * non-merge commits on the current branch, with only non-merge commits after it up to HEAD.
+   */
+  async recomposeInfo(hashes: string[]): Promise<{
+    branch: string
+    base: string | null
+    list: string[]
+    after: string[]
+    units: RecomposeUnit[]
+    messages: { hash: string; subject: string; body: string; author: string }[]
+    onRemote: string[]
+  }> {
+    const head = await this.currentHead()
+    if (!head.branch || !head.hash) throw new Error('Check out a branch first: recompose rewrites the current branch.')
+    const list = [...new Set(hashes)].reverse()
+    if (!list.length) throw new Error('Select the commits to recompose.')
+    const parents = await Promise.all(list.map(async (h) => (await this.read(['rev-list', '--parents', '-n', '1', h])).trim().split(' ').slice(1)))
+    if (parents.some((p) => p.length > 1)) throw new Error('Merge commits cannot be recomposed. Select a run of ordinary commits.')
+    if (!list.every((h, i) => i === 0 || parents[i]![0] === list[i - 1])) {
+      throw new Error('Select commits that follow each other (a range, with Shift-click).')
+    }
+    const newest = list[list.length - 1]!
+    if (!(await this.isAncestor(newest, head.hash))) throw new Error(`These commits are not on ${head.branch}.`)
+    const afterMerges = (await this.read(['rev-list', '--min-parents=2', `${newest}..${head.hash}`])).trim()
+    if (afterMerges) throw new Error(`${head.branch} has merge commits after these; recompose only works on a straight line of commits.`)
+    const after = (await this.read(['rev-list', '--reverse', `${newest}..${head.hash}`])).trim().split('\n').filter(Boolean)
+    const base = parents[0]![0] ?? null
+    const diff = await this.read(['diff', '--no-color', '--no-ext-diff', '--no-renames', '--binary', base ?? (await this.emptyTreeHash()), newest])
+    const units = splitUnits(diff)
+    if (!units.length) throw new Error('These commits change nothing, so there is nothing to recompose.')
+    const messages = await Promise.all(list.map(async (h) => {
+      const [subject = '', author = '', body = ''] = (await this.read(['log', '-1', '--format=%s%x00%an <%ae>%x00%b', h])).split('\0')
+      return { hash: h, subject, body: body.trim(), author }
+    }))
+    const onRemote = (await this.read(['branch', '-r', '--format=%(refname:short)', '--contains', list[0]!])).trim().split('\n').filter(Boolean)
+    return { branch: head.branch, base, list, after, units, messages, onRemote }
+  }
+
+  /**
+   * Replace the commits with `plan` (oldest first, every unit exactly once). The new commits are
+   * built in a throwaway index, so the working tree and the real index are never touched; the
+   * last one must have the newest original's tree, so the commits after the range keep their
+   * trees exactly and only get new parents. Then one update-ref moves the branch.
+   */
+  recompose(hashes: string[], plan: PlannedCommit[]): Promise<number> {
+    return this.exclusive(async () => {
+      const info = await this.recomposeInfo(hashes)
+      const problems = checkPlan(info.units, plan)
+      if (problems.length) throw new Error(problems.join(' '))
+      const oldHead = (await this.currentHead()).hash!
+      const index = join(this.gitDir, `gitsquid-recompose-${process.pid}.index`)
+      const env = { GIT_INDEX_FILE: index }
+      // One author keeps the commits theirs; several make you the author, crediting them all.
+      const authors = [...new Set(info.messages.map((m) => m.author))]
+      const authorEnv = authors.length === 1 ? splitAuthor(authors[0]!) : {}
+      const trailer = authors.length > 1 ? `\n\n${authors.map((a) => `Co-authored-by: ${a}`).join('\n')}` : ''
+      try {
+        if (info.base) await this.git(['read-tree', info.base], { env })
+        else await this.git(['read-tree', '--empty'], { env })
+        const byId = new Map(info.units.map((u) => [u.id, u]))
+        let parent = info.base
+        for (const [i, c] of plan.entries()) {
+          const patch = patchFor(c.units.map((id) => byId.get(id)!))
+          try {
+            await this.runner.run(['apply', '--cached', '--whitespace=nowarn', '-'], { env, input: patch })
+          } catch (e) {
+            throw new Error(`Could not build commit ${i + 1} ("${c.message.split('\n')[0]}"): its changes do not apply in this order. Try moving it later.\n${(e as Error).message}`)
+          }
+          const tree = (await this.runner.run(['write-tree'], { env })).stdout.trim()
+          parent = (await this.runner.run(['commit-tree', tree, ...(parent ? ['-p', parent] : [])], {
+            env: { ...env, ...authorEnv }, input: c.message.trim() + trailer + '\n',
+          })).stdout.trim()
+        }
+        const want = (await this.read(['rev-parse', `${info.list[info.list.length - 1]}^{tree}`])).trim()
+        const got = (await this.read(['rev-parse', `${parent}^{tree}`])).trim()
+        if (got !== want) throw new Error('The new commits do not add up to the original result, so nothing was changed.')
+        // The commits after the range: same tree, message and author; new parent.
+        for (const h of info.after) {
+          const [an = '', ae = '', ad = '', msg = ''] = (await this.read(['log', '-1', '--format=%an%x00%ae%x00%ad%x00%B', '--date=raw', h])).split('\0')
+          parent = (await this.runner.run(['commit-tree', `${h}^{tree}`, '-p', parent!], {
+            env: { GIT_AUTHOR_NAME: an, GIT_AUTHOR_EMAIL: ae, GIT_AUTHOR_DATE: ad }, input: msg,
+          })).stdout.trim()
+        }
+        const ref = `refs/heads/${info.branch}`
+        await this.git(['update-ref', '-m', 'gitsquid: recompose', ref, parent!, oldHead])
+        return this.record(`Recompose ${info.list.length} commits`, [{ kind: 'update-ref', ref, to: oldHead, from: parent! }], parent!)
+      } finally {
+        await rm(index, { force: true })
+      }
+    })
+  }
+
   private async isAncestor(a: string, b: string): Promise<boolean> {
     const res = await this.runner.run(['merge-base', '--is-ancestor', a, b], { okCodes: [1], readOnly: true })
     return res.code === 0
@@ -986,4 +1082,10 @@ function lastLine(t: string): string {
 
 function describePaths(paths: string[]): string {
   return paths.length === 1 ? paths[0]! : `${paths.length} files`
+}
+
+/** "Ada Lovelace <ada@example.com>" -> author environment for commit-tree. */
+function splitAuthor(a: string): Record<string, string> {
+  const m = /^(.*) <(.*)>$/.exec(a)
+  return m ? { GIT_AUTHOR_NAME: m[1]!, GIT_AUTHOR_EMAIL: m[2]! } : {}
 }
