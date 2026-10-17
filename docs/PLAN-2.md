@@ -16,7 +16,7 @@ Items, roughly smallest to largest:
 | 6 | A fuller settings page | medium |
 | 7 | Movable, resizable panes | medium |
 | 8 | Three-pane conflict resolution, IntelliJ style | large |
-| 9 | Sign in to use AI features | large, with a policy constraint to read first |
+| 9 | Sign in with GitHub; AI features over ACP | large |
 
 ---
 
@@ -169,8 +169,9 @@ stash icon. Tags and branches stay as pills in the ref column.
 - **Where images come from.** Three sources, chosen in Settings → Graph → "Author avatars":
   - *Initials* (default): the coloured initials circle, no network. Keeps the "no network
     unless asked" rule.
-  - *GitHub*: for `NNN+user@users.noreply.github.com` emails, `https://avatars.githubusercontent.com/u/NNN?s=48`,
-    no API call needed, no auth. Other emails fall back to initials.
+  - *GitHub*: signed out, only `NNN+user@users.noreply.github.com` emails resolve
+    (`https://avatars.githubusercontent.com/u/NNN?s=48`, no API call); signed in (§9a), every
+    author resolves through the commits API. Unknown emails fall back to initials.
   - *Gravatar*: `https://gravatar.com/avatar/<sha256(email)>?s=48&d=404`, falls back to initials
     on 404.
 - **Fetching and caching live in the main process**, not the renderer: the renderer is
@@ -336,77 +337,117 @@ type into the middle for another, save, continue; verify the file content with g
 
 ---
 
-## 9. Sign in to use AI features
+## 9. Sign in: GitHub, and an AI agent over ACP
 
-### Read this first: what Anthropic allows
+Two sign-ins, for two different things. GitHub sign-in gives the app an identity on GitHub
+(avatars for every author, later pull requests, HTTPS push without a credential helper). AI
+features come from an agent the user already has installed and logged into, spoken to over the
+Agent Client Protocol (ACP), so GitSquid never holds AI credentials at all.
 
-Anthropic's Agent SDK documentation says: *"Unless previously approved, Anthropic does not allow
-third party developers to offer claude.ai login or rate limits for their products, including
-agents built on the Claude Agent SDK. Use the API key authentication methods instead."* So
-"sign in with my Claude (claude.ai) subscription" is not something GitSquid may ship to other
-people. The supported ways to authenticate are:
+### 9a. Sign in with GitHub
 
-1. **An API key** from the Claude Console (usage-billed).
-2. **OAuth sign-in to an Anthropic Console account** via `ant auth login`, which stores a
-   profile under `~/.config/anthropic/` that the Anthropic SDK and Claude Code both pick up
-   automatically. This is a real "sign in" button with a browser flow and no key to paste, but it
-   is the Console (API) account, not the consumer subscription.
-3. **Your own local Claude Code login**, for yourself on your own machine: running the `claude`
-   CLI headless (`claude -p … --output-format json`) reuses whatever it is logged in as. This is
-   fine for personal use and development; it is what "sign in with Claude Code" literally means.
-   It cannot be the way a distributed GitSquid authenticates other users (the quote above), so it
-   is an opt-in "Use my local Claude Code" provider labelled as such, not the default.
+**Mechanism: the OAuth device flow.** It is the flow made for desktop apps: no client secret
+(GitHub's docs: "The `client_secret` is not needed for the device flow"), so nothing secret ships
+in the binary. One-time setup by Jesse: register a GitHub OAuth App, enable "Device flow" in its
+settings, and put the public client id in `apps/desktop/src/main/github/config.ts`.
 
-### Design
+Flow, all in the main process (`apps/desktop/src/main/github/`):
 
-**Provider abstraction** in the main process (`apps/desktop/src/main/ai/`), so the features do
-not care which path is used:
+1. `POST https://github.com/login/device/code` with `client_id` and `scope` → `user_code`,
+   `verification_uri`, `device_code`, `interval`.
+2. Show a dialog: the code in large type, a "Open github.com/login/device" button (copies the
+   code to the clipboard too).
+3. Poll `POST https://github.com/login/oauth/access_token` with
+   `grant_type=urn:ietf:params:oauth:grant-type:device_code` every `interval` seconds; handle
+   `authorization_pending`, `slow_down` (add 5 s), `expired_token` (offer a new code),
+   `access_denied`.
+4. Store the token with Electron `safeStorage` (OS keychain), call `GET /user` for login and
+   `avatar_url`, show them in Settings → Accounts with Sign out (which also revokes).
 
-```ts
-interface AiProvider {
-  status(): Promise<{ signedIn: boolean; who?: string }>
-  complete(req: { system: string; prompt: string; maxTokens: number }, onText: (t: string) => void): Promise<string>
-}
-```
+Scopes: `read:user` always; `repo` only when the user turns on a feature that needs it (push
+over HTTPS, pull requests), requested with a second device-flow round so the first sign-in asks
+for as little as possible.
 
-- `AnthropicProvider` uses `@anthropic-ai/sdk` with `claude-opus-5-5`, adaptive thinking
-  (the default), streaming, and the server-side `fallbacks: "default"` safeguard. Credentials:
-  an API key the user pastes (stored with Electron's `safeStorage`, which uses the OS keychain,
-  never plaintext in settings.json), or nothing, in which case the SDK's zero-argument client
-  resolves the `ant auth login` profile. The "Sign in" button runs `ant auth login` (or opens
-  instructions to install `ant`) and polls `status()`.
-- `ClaudeCodeProvider` spawns `claude -p` with `--output-format json` and a system prompt, and
-  reads the JSON result. Available only if the `claude` binary is on PATH; shown with the note
-  above.
+**What it unlocks, in order:**
 
-**No network unless asked** still holds: nothing is sent until the user clicks an AI action,
-and the first click shows a one-time notice saying what is sent (the diff or commit text) and to
-whom.
+| feature | how |
+|---|---|
+| Avatars for every author (§5's "GitHub (signed in)" source) | `GET /repos/{owner}/{repo}/commits/{sha}` returns `author.avatar_url` for the GitHub account behind the commit, whatever email it used. One call per unknown author email per repository, cached email → avatar for 30 days. 5,000 requests/hour signed in, so even a 100k-commit repo with 500 authors is well inside the limit. The unauthenticated noreply-email trick stays as the signed-out fallback. |
+| Push and fetch over HTTPS without a credential helper | the askpass trampoline answers GitHub's password prompt with the token when the remote host is `github.com` and the user has `repo` scope (GitHub accepts an OAuth token as the HTTPS password). |
+| Pull requests (a later plan) | list PRs for the current branch, open one from a pushed branch, show checks. Deliberately not in this round: it is the feature that makes GitKraken heavy, and it should get its own spec. |
 
-**Features**, each a button or palette command, each sending only what it needs:
+Repository → GitHub mapping comes from the `origin` URL (`git@github.com:o/r.git` or
+`https://github.com/o/r`), parsed in the main process; non-GitHub remotes simply get no
+GitHub features.
 
-| feature | input | where it appears |
-|---|---|---|
-| Write commit message | staged diff (capped at ~60 kB, else file list + summary) | ✨ button in the commit box; fills summary and body, editable |
-| Explain this commit | commit message + diff stat + diff (capped) | detail panel |
-| Summarize changes between two refs | `git diff A..B --stat` + diff | palette: "Summarize branch vs main" |
-| Suggest a conflict resolution | base/ours/theirs of one block | three-pane tool, per conflict: proposes text into the result, user accepts |
-| Explain this error | git stderr + command | the attention bar from §2 gets an "Explain" button |
+**Tests:** unit: URL parsing, device-flow state machine against a fake server (all four error
+codes), token round-trip through `safeStorage`. e2e: sign in against a local fake GitHub
+(device code → avatar appears on a commit whose email is not a noreply address).
 
-Streaming output goes to the renderer through the existing event channel (`type: 'ai-text'`),
-so a long explanation appears as it is written. Every feature has a system prompt in
-`apps/desktop/src/main/ai/prompts.ts`, versioned, so changes are reviewable.
+### 9b. AI features over the Agent Client Protocol
 
-**Settings → Integrations → AI**: provider (Off / Anthropic account / local Claude Code),
-Sign in / Sign out, API key field, model (default `claude-opus-5-5`), "never send diffs over N
-kB", and a log of what was sent (local only).
+**What ACP is.** A JSON-RPC protocol, over stdio, between an editor (the *client*) and a coding
+agent it spawns as a subprocess. Zed and JetBrains use it to run Claude, Gemini CLI, Codex and
+others inside the editor. The client sends `initialize` (its capabilities: file access,
+terminals, whether it can run an auth command in a terminal), then `session/new` with a working
+directory, then `session/prompt`; the agent streams `session/update` notifications (message
+chunks, tool calls, plans) and asks the client for permission before tool calls. The agent
+advertises `authMethods` in its `initialize` reply, and a prompt can fail with "auth required",
+which the client resolves by running the advertised login.
 
-**Tests:** unit: provider selection, key storage round-trip through `safeStorage` (mocked
-encryption in CI), prompt builders cap input and include the right files. e2e: with a fake
-provider (an HTTP server on localhost standing in for the API, selected by env var) click ✨ →
-the commit box fills in; the error bar's Explain streams text. No test ever calls the real API.
+**Why it fits GitSquid better than calling an API ourselves:**
 
----
+- GitSquid never stores or sees AI credentials. The agent (Claude, Gemini, Codex, anything
+  ACP-speaking) uses whatever login it already has on the user's machine. That also answers
+  the policy question from the earlier draft of this plan: the user is using their own agent
+  with their own account; GitSquid is an ACP client like Zed, not a product offering claude.ai
+  login. (The Claude adapter is itself built on the Claude Agent SDK, so Anthropic's note that
+  subscription login requires approval for "agents built on the Claude Agent SDK" still applies
+  to how the adapter authenticates; that is the adapter's concern and Anthropic's call, not
+  something GitSquid can grant or bypass. The adapter's own `/login` offers an API key or
+  Claude Code login "where supported".)
+- One provider implementation covers every agent, now and later.
+- The agent can do more than complete text: for "resolve this conflict", it can be given the
+  repository as its working directory and permission to edit exactly one file, with GitSquid
+  showing the resulting diff for approval, instead of us pasting three versions into a prompt.
+
+**Design.** `apps/desktop/src/main/ai/acp.ts` using `@agentclientprotocol/sdk` (the official
+TypeScript library) on the client side:
+
+- **Agent configuration** in Settings → Integrations → AI agent, modelled on Zed's: a preset
+  list (Claude: `npx @agentclientprotocol/claude-agent-acp`; Gemini CLI: `gemini
+  --experimental-acp`; Codex: its ACP adapter) plus "Custom" (command, args, env). A "Test"
+  button spawns it, runs `initialize`, and shows the agent name, version and auth methods.
+- **Lifecycle.** The agent process starts on first use, stays alive while the app runs (startup
+  is seconds), restarts on crash, and is killed on quit. One session per repository, created
+  lazily with `cwd` = the repository path.
+- **Capabilities we advertise:** `fs.readTextFile: true` (so the agent can read files when
+  asked to explain changes), `fs.writeTextFile` only for the conflict feature, `terminal: false`
+  (the agent does not get a shell from a git client), `auth.terminal: true` so terminal-type
+  login methods can be offered: when a prompt returns auth-required, GitSquid shows a dialog
+  naming the method and opens the user's terminal (the external-terminal setting from §6) with
+  the login command, then retries.
+- **Permissions.** Every `requestPermission` becomes a modal in GitSquid (the attention surface
+  from §2) showing the tool call and the file; "Allow once", "Allow for this session", "Deny".
+  Nothing is auto-approved except read-only reads of files inside the open repository.
+- **Prompts** are built in `ai/prompts.ts` exactly as before (commit message from the staged
+  diff, explain a commit, summarize a branch, explain an error, suggest or perform a conflict
+  resolution), each embedding the relevant text in the prompt and asking for a short answer, and
+  each disallowing tools except where the feature needs them. Streamed `agent_message_chunk`
+  updates go to the renderer as `type: 'ai-text'` events.
+- **Fallback provider.** Users with no agent installed can paste an Anthropic API key
+  (`@anthropic-ai/sdk`, `claude-opus-5-5`, key in `safeStorage`). Same `AiProvider` interface,
+  text-only features. The earlier "local Claude Code subprocess" provider is dropped: ACP
+  subsumes it.
+
+**No network unless asked** holds as before: the agent is not spawned until an AI action is
+used, and a one-time notice says what will be sent and to which agent.
+
+**Tests:** unit: an in-process fake ACP agent (the SDK's `agent()` helper) exercising
+initialize, auth-required → login → retry, streaming chunks, permission request → deny, agent
+crash → restart. e2e: with the fake agent configured as "Custom", click ✨ in the commit box →
+summary fills in; Explain on an error bar streams text; the conflict feature's permission modal
+appears and a denial leaves the file untouched. No test ever talks to a real agent or API.
 
 ## 10. Order and process
 
@@ -422,15 +463,16 @@ are judged by eye on it. §1 and §2 are independent and small.
 | D | §5 avatars | CSP unchanged; no renderer network; cache bounds; bench budget |
 | E | §7 panes | layout reducer tests; keyboard resizing; persisted sizes |
 | F | §8 three-way merge | algorithm vs `git merge-file`; result positions after edits |
-| G | §9 AI | no network before consent; key never in plaintext; policy note in UI |
+| G | §9a GitHub sign-in | device flow error paths; token only in safeStorage; scopes minimal |
+| H | §9b ACP agent | no agent spawned before consent; permission modal on every tool call; fake agent in tests |
 
 Each slice: write `docs/specs/00N-<name>.md` from the template (Jesse approves), implementer
 agent builds in a worktree with tests, reviewer agent gets the diff and spec only, CI green,
-Jesse's "teach me this diff" pass, merge. Slices C, D, E and F can run in parallel after B.
+Jesse's "teach me this diff" pass, merge. Slices C, D, E, F and G can run in parallel after B; H after A (it uses the attention surface).
 
 Pieces worth Jesse writing himself, in the spirit of `docs/learn/`: the three-way block
 algorithm (§8), the layout reducer (§7), and the avatar cache protocol handler (§5, a small but
 complete example of main-process ownership of network and disk).
 
 New dependencies (ask-before list): `react-resizable-panels`, `@codemirror/merge`,
-`@anthropic-ai/sdk`. No others.
+`@agentclientprotocol/sdk`, `@anthropic-ai/sdk` (fallback provider only). No others.
