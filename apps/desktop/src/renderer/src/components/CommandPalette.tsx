@@ -1,3 +1,4 @@
+import { movePane, presetLayout } from '@gitsquid/shared'
 import { Command } from 'cmdk'
 import { RDialogCompat } from './RDialogCompat'
 import {
@@ -57,6 +58,10 @@ export function CommandPalette() {
   add('App', 'Clone repository…', () => useStore.setState({ dialog: { kind: 'clone' } }))
   add('App', 'New repository…', () => void initRepo())
   add('App', 'Settings', () => useStore.setState({ page: 'settings' }))
+  add('Layout', 'Default layout', () => void saveSettings({ layout: presetLayout('default', settings!.layout) }))
+  add('Layout', 'Wide graph (hide side panels)', () => void saveSettings({ layout: presetLayout('wide-graph', settings!.layout) }))
+  add('Layout', 'Diff below the graph', () => void saveSettings({ layout: presetLayout('diff-below', settings!.layout) }))
+  add('Layout', 'Diff over the graph', () => void saveSettings({ layout: movePane(settings!.layout, 'diff', 'center') }))
   add('App', 'Keyboard shortcuts', () => useStore.setState({ dialog: { kind: 'shortcuts' } }), '?')
   if (settings) {
     add('App', `Theme: ${settings.theme === 'light' ? 'dark' : 'light'}`, () => void saveSettings({ theme: settings.theme === 'light' ? 'dark' : 'light' }))

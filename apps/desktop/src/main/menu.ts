@@ -58,6 +58,18 @@ export function installMenu(): void {
     {
       label: 'View',
       submenu: [
+        { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+B', click: cmd('toggle-sidebar'), registerAccelerator: false },
+        { label: 'Toggle Details', accelerator: 'CmdOrCtrl+Alt+B', click: cmd('toggle-details'), registerAccelerator: false },
+        { label: 'Toggle Bottom Panel', accelerator: 'CmdOrCtrl+J', click: cmd('toggle-bottom'), registerAccelerator: false },
+        {
+          label: 'Layout',
+          submenu: [
+            { label: 'Default', click: cmd('layout-default') },
+            { label: 'Wide Graph', click: cmd('layout-wide-graph') },
+            { label: 'Diff Below Graph', click: cmd('layout-diff-below') },
+          ],
+        },
+        { type: 'separator' },
         { role: 'reload' }, { role: 'toggleDevTools' }, { type: 'separator' },
         // Zoom is the UI scale setting, so it persists; the renderer handles the keys.
         { label: 'Actual Size', accelerator: 'CmdOrCtrl+0', click: cmd('zoom-reset'), registerAccelerator: false },
