@@ -125,6 +125,7 @@ export class AiService {
     const result = (text: string, extra: Partial<AiResult> = {}): AiResult =>
       task.kind === 'recompose' ? { text: '', recompose: toProposal(task.hashes, built, text) }
         : task.kind === 'review' ? { text: '', review: toReview(task, built, text) }
+        : task.kind === 'fix-finding' ? toFix(built, text, extra.proposal)
         : { text: finish(text), ...extra }
 
     try {
@@ -157,6 +158,7 @@ export class AiService {
         writable: built.writable,
         onWrite: (_path, content) => {
           if (task.kind === 'resolve-conflict') proposal = { path: task.path, content }
+          if (task.kind === 'fix-finding') proposal = { path: task.finding.path, content }
         },
         onPermission: (ask) => {
           const permissionId = this.nextPermission++
@@ -194,6 +196,20 @@ export class AiService {
   stop(): void {
     this.agent.stop()
   }
+}
+
+/**
+ * A proposed fix: the file the agent wrote, or (API mode, or an agent that answered in text) the
+ * last fenced block of its reply. The reply's prose becomes the note. No proposal, no fix.
+ */
+function toFix(built: BuiltPrompt, text: string, written?: { path: string; content: string }): AiResult {
+  const fences = [...text.matchAll(/```[\w-]*\n([\s\S]*?)\n```/g)]
+  const content = written?.content ?? fences.at(-1)?.[1]
+  if (content === undefined) throw new AiError('The AI did not propose a fixed file. Try again.', 'ai-bad-answer')
+  const note = text.replace(/```[\w-]*\n[\s\S]*?\n```/g, '').trim()
+  // A block that lost the file's final newline would show as a change on the last line.
+  const fixed = !written && built.fix!.before.endsWith('\n') && !content.endsWith('\n') ? `${content}\n` : content
+  return { text: note, proposal: { path: built.fix!.path, content: fixed } }
 }
 
 /** The model's review, checked against the change before anything is shown (see verifyFindings). */

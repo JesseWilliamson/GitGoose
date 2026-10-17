@@ -938,6 +938,45 @@ export class Repo {
   }
 
   /**
+   * Apply a review suggestion: replace lines startLine..endLine of the working file, but only if
+   * they are still exactly `original` (what was reviewed). Undoable.
+   */
+  applySuggestion(path: string, startLine: number, endLine: number, original: string[], replacement: string): Promise<number> {
+    return this.exclusive(async () => {
+      const abs = join(this.path, path)
+      const text = await readFile(abs, 'utf8').catch(() => null)
+      if (text === null) throw new Error(`${path} is not in the working tree.`)
+      const eol = text.includes('\r\n') ? '\r\n' : '\n'
+      const lines = text.split(/\r?\n/)
+      const now = lines.slice(startLine - 1, endLine)
+      if (now.length !== original.length || now.some((l, i) => l !== original[i])) {
+        throw new Error(`Lines ${startLine}-${endLine} of ${path} changed since the review: apply it by hand, or review again.`)
+      }
+      const saved = await this.saveFiles([path])
+      lines.splice(startLine - 1, endLine - startLine + 1, ...replacement.split(/\r?\n/))
+      await writeFile(abs, lines.join(eol))
+      return this.record(`Apply suggestion to ${path}`, [{ kind: 'restore-files', files: saved }], (await this.currentHead()).hash)
+    })
+  }
+
+  /** Write a whole working file (an accepted AI fix), only if it still reads `expected`. Undoable. */
+  writeFileChecked(path: string, expected: string, content: string, label: string): Promise<number> {
+    return this.exclusive(async () => {
+      const abs = join(this.path, path)
+      const now = await readFile(abs, 'utf8').catch(() => null)
+      if (now !== expected) throw new Error(`${path} changed since the fix was proposed: ask again.`)
+      const saved = await this.saveFiles([path])
+      await writeFile(abs, content)
+      return this.record(label, [{ kind: 'restore-files', files: saved }], (await this.currentHead()).hash)
+    })
+  }
+
+  /** A working file's text (for fix proposals: what the fix is compared with). */
+  async workingText(path: string): Promise<string | null> {
+    return readFile(join(this.path, path), 'utf8').catch(() => null)
+  }
+
+  /**
    * The change a review covers, ready for the model: parsed file diffs, the label to show, the
    * revision line numbers refer to ('index', 'worktree' or a commit), and each file's text after
    * the change. Lock files and minified files are left out; so are files past the size budget

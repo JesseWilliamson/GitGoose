@@ -77,4 +77,23 @@ describe('review input and verification', () => {
     await expect(repo.reviewInput({ kind: 'commits', hashes: [c2, r.head()] })).rejects.toThrow(/follow each other/)
     repo.dispose()
   })
+
+  it('applies a suggestion only to the lines as reviewed, and writes fixes only over the expected text; both undoable', async () => {
+    const r = setup()
+    const repo = await Repo.open(r.dir, {})
+    const original = ['  const t = price * count', '  return t']
+    const id = await repo.applySuggestion('src/price.ts', 2, 3, original, '  return price * count')
+    expect(await repo.workingText('src/price.ts')).toBe('export function total(price: number, count: number): number {\n  return price * count\n}\n')
+    await expect(repo.applySuggestion('src/price.ts', 2, 3, original, 'x')).rejects.toThrow(/changed since the review/)
+    await repo.undo(id)
+    expect(await repo.workingText('src/price.ts')).toContain('const t = price * count')
+
+    const before = (await repo.workingText('src/price.ts'))!
+    await expect(repo.writeFileChecked('src/price.ts', 'something else', 'new', 'Fix')).rejects.toThrow(/changed since/)
+    const w = await repo.writeFileChecked('src/price.ts', before, 'fixed\n', 'Fix')
+    expect(await repo.workingText('src/price.ts')).toBe('fixed\n')
+    await repo.undo(w)
+    expect(await repo.workingText('src/price.ts')).toBe(before)
+    repo.dispose()
+  })
 })

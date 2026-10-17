@@ -1,7 +1,8 @@
 import type { DiffTarget, ReviewFinding, ReviewProfile, ReviewResult, ReviewScope } from '@gitsquid/shared'
-import { toUiError } from './api'
-import { cancelAi, startAi } from './ai'
+import { api, toUiError } from './api'
+import { cancelAi, startAi, useAi } from './ai'
 import { setting, updateRepo, useStore, type RepoView } from './store'
+import { run } from './actions'
 
 /** A review of one change in a repository: running, failed, or done (findings, minus dismissed ones). */
 export interface ReviewState {
@@ -61,4 +62,36 @@ export function findingsFor(view: RepoView, target: DiffTarget): ReviewFinding[]
 export function targetFor(result: ReviewResult, path: string): DiffTarget {
   if (result.head === 'index') return { kind: 'staged', path }
   return { kind: 'range', from: result.base ?? 'HEAD', to: result.head === 'worktree' ? null : result.head, path }
+}
+
+/** Apply a finding's suggestion to the working file (refused if those lines changed since). */
+export function applySuggestion(id: string, f: ReviewFinding): Promise<boolean> {
+  return run(id, `Apply suggestion to ${f.path}`, () => api.applySuggestion(id, f.path, f.startLine, f.endLine, f.original ?? [], f.suggestion ?? ''))
+    .then((ok) => {
+      if (ok) dismissFinding(id, f.id)
+      return ok
+    })
+}
+
+/** Ask the AI to fix a finding; its new version of the file is shown for review, not written. */
+export function fixWithAi(id: string, f: ReviewFinding): void {
+  const run = startAi(id, { kind: 'fix-finding', finding: f })
+  useAi.setState({ fix: { repoId: id, path: f.path, title: f.title, requestId: run.requestId, before: null, after: null, note: '', error: null } })
+  const mine = () => useAi.getState().fix?.requestId === run.requestId
+  run.done.then(async (res) => {
+    if (!mine()) return
+    if (!res?.proposal) return useAi.setState({ fix: null })
+    const before = await api.workingText(id, f.path)
+    useAi.setState({ fix: { repoId: id, path: f.path, title: f.title, requestId: null, before, after: res.proposal.content, note: res.text, error: null } })
+  }, (e) => {
+    if (mine()) useAi.setState((s) => ({ fix: s.fix && { ...s.fix, requestId: null, error: toUiError(e).message } }))
+  })
+}
+
+/** Write the proposed fix (checked against the file as it was when proposed; undoable). */
+export async function acceptFix(): Promise<void> {
+  const fix = useAi.getState().fix
+  useAi.setState({ fix: null })
+  if (!fix?.after || fix.before === null) return
+  await run(fix.repoId, `Apply AI fix to ${fix.path}`, () => api.writeFileChecked(fix.repoId, fix.path, fix.before!, fix.after!))
 }

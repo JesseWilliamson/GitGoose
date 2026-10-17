@@ -178,3 +178,6 @@ Part B:
       verified (file in the change, lines inside its hunks, known type and severity, no
       duplicates, profile quiet / chill / assertive) before the Review view and diff gutters show
       them; what verification drops is listed with the reason
+- [x] 34 Apply suggestion (only onto the lines as reviewed; undoable) and Fix with AI (the agent's
+      file write, or a fenced file in API mode, becomes a proposal shown as a diff; Use writes it
+      only if the file is unchanged; undoable)

@@ -113,3 +113,38 @@ export function segments(text: string, tokens: { content: string; color?: string
   }
   return out
 }
+
+/** One row of a whole-file comparison: unchanged, removed or added, or "…" for skipped context. */
+export type FileDiffRow = { kind: ' ' | '-' | '+'; text: string } | { kind: 'skip'; count: number }
+
+/**
+ * Two versions of a file as unified diff rows, keeping `context` unchanged lines around each
+ * change and folding the rest (for showing an AI's proposed fix before it is written).
+ */
+export function fileDiffRows(before: string, after: string, context = 3): FileDiffRow[] {
+  const a = before.split('\n')
+  const b = after.split('\n')
+  const hunks = diffLines(a, b)
+  const rows: FileDiffRow[] = []
+  let ai = 0
+  const keep = (from: number, to: number, isFirst: boolean, isLast: boolean) => {
+    // Unchanged a[from..to): show `context` lines after the previous change and before the next.
+    const head = isFirst ? 0 : context
+    const tail = isLast ? 0 : context
+    if (to - from <= head + tail + 1) {
+      for (let i = from; i < to; i++) rows.push({ kind: ' ', text: a[i]! })
+      return
+    }
+    for (let i = from; i < from + head; i++) rows.push({ kind: ' ', text: a[i]! })
+    rows.push({ kind: 'skip', count: to - from - head - tail })
+    for (let i = to - tail; i < to; i++) rows.push({ kind: ' ', text: a[i]! })
+  }
+  hunks.forEach((h, n) => {
+    keep(ai, h.aStart, n === 0, false)
+    for (let i = h.aStart; i < h.aEnd; i++) rows.push({ kind: '-', text: a[i]! })
+    for (let i = h.bStart; i < h.bEnd; i++) rows.push({ kind: '+', text: b[i]! })
+    ai = h.aEnd
+  })
+  if (hunks.length) keep(ai, a.length, false, true)
+  return rows
+}

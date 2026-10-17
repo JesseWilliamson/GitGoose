@@ -46,6 +46,22 @@ async function prompt(params, cx) {
     await say(cx, id, 'Thinking')
     process.exit(3)
   }
+  if (text.includes('Fix this code review finding')) {
+    // Writes the file with the finding's lines replaced (by the suggestion, if there is one).
+    const path = /^File: (.+)$/m.exec(text)?.[1]
+    const [, start, end] = /at lines (\d+)-(\d+)/.exec(text) ?? []
+    const suggestion = /A suggested replacement for those lines:\n([\s\S]*?)\n\nChange only/.exec(text)?.[1]
+    if (!(await ask(cx, id, 'edit-fix', 'edit', `Edit ${path}`, path))) {
+      await say(cx, id, 'Left the file as it was.')
+      return { stopReason: 'end_turn' }
+    }
+    const { content } = await cx.request(acp.methods.client.fs.readTextFile, { sessionId: id, path })
+    const lines = content.split('\n')
+    lines.splice(Number(start) - 1, Number(end) - Number(start) + 1, ...(suggestion ?? 'fixed').split('\n'))
+    await cx.request(acp.methods.client.fs.writeTextFile, { sessionId: id, path, content: lines.join('\n') })
+    await say(cx, id, 'Applied the suggested fix.')
+    return { stopReason: 'end_turn' }
+  }
   if (text.includes('Review this change')) {
     // One finding on the first added line (with a suggestion), and one about a file that is not
     // in the change: verification must drop that one.
@@ -54,7 +70,7 @@ async function prompt(params, cx) {
     const answer = {
       summary: 'Adds a small change; one thing to fix.',
       findings: [
-        { path, startLine: Number(m?.[1] ?? 1), endLine: Number(m?.[1] ?? 1), type: 'bug', severity: 'major', title: 'Possible bug here', message: `This line looks wrong: ${m?.[2] ?? ''}`, suggestion: 'fixed line' },
+        { path, startLine: Number(m?.[1] ?? 1), endLine: Number(m?.[1] ?? 1), type: 'bug', severity: 'major', title: 'Possible bug here', message: `This line looks wrong: ${m?.[2] ?? ''}`, suggestion: (m?.[2] ?? '').replace(' - ', ' + ') || 'fixed line' },
         { path: 'invented/file.ts', startLine: 1, endLine: 1, type: 'bug', severity: 'critical', title: 'Hallucinated', message: 'Not real.' },
       ],
     }

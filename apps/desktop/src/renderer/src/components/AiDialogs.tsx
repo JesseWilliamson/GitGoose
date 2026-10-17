@@ -1,9 +1,12 @@
 import { countConflicts } from '@gitsquid/shared'
+import clsx from 'clsx'
 import { Copy, ShieldQuestion, Sparkles, SquareTerminal } from 'lucide-react'
 import { useState } from 'react'
 import { run } from '../lib/actions'
 import { answerPermission, cancelAi, useAi } from '../lib/ai'
 import { api, toUiError } from '../lib/api'
+import { fileDiffRows } from '../lib/diffLayout'
+import { acceptFix } from '../lib/review'
 import { toast, useStore } from '../lib/store'
 import { RecomposeDialog } from './RecomposeDialog'
 import { Button, Modal, Spinner } from './ui'
@@ -17,6 +20,7 @@ export function AiDialogs() {
       <PermissionDialog />
       <OutputDialog />
       <ProposalDialog />
+      <FixDialog />
       <RecomposeDialog />
     </>
   )
@@ -151,6 +155,42 @@ function OutputDialog() {
             {o.requestId && <Button onClick={() => cancelAi(o.requestId!)}>Stop</Button>}
             <Button variant="primary" onClick={close}>Close</Button>
           </div>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+/** Fix with AI: the proposed file as a diff against the current one. Nothing is written until Use. */
+function FixDialog() {
+  const fix = useAi((s) => s.fix)
+  if (!fix) return null
+  const close = () => {
+    if (fix.requestId) cancelAi(fix.requestId)
+    useAi.setState({ fix: null })
+  }
+  const rows = fix.before !== null && fix.after !== null ? fileDiffRows(fix.before, fix.after) : []
+  return (
+    <Modal open onClose={close} title={`Fix: ${fix.title}`} width={760}>
+      <div className="text-[13px]" data-testid="ai-fix">
+        {fix.requestId && <p className="flex items-center gap-2 text-muted"><Spinner /> Asking for a fix to {fix.path}…</p>}
+        {fix.error && <p className="text-del">{fix.error}</p>}
+        {fix.note && <p className="mb-2 text-muted">{fix.note}</p>}
+        {fix.after !== null && (
+          <>
+            {rows.length === 0 ? <p className="text-faint">The proposal is the same as the file: nothing to change.</p> : (
+              <pre className="selectable max-h-[55vh] overflow-auto rounded border border-line bg-bg py-1 font-mono text-[12px]" data-testid="ai-fix-diff">
+                {rows.map((r, i) => r.kind === 'skip'
+                  ? <div key={i} className="px-2 text-faint">⋯ {r.count} unchanged line{r.count === 1 ? '' : 's'}</div>
+                  : <div key={i} className={clsx('px-2', r.kind === '+' && 'bg-add-bg', r.kind === '-' && 'bg-del-bg')}>{r.kind} {r.text}</div>)}
+              </pre>
+            )}
+            <p className="mt-2 text-xs text-faint">Nothing has been written. Use writes {fix.path} (undoable); it is refused if the file changes meanwhile.</p>
+          </>
+        )}
+        <div className="mt-4 flex justify-end gap-2">
+          <Button onClick={close} data-testid="ai-fix-discard">{fix.after !== null ? 'Discard' : 'Cancel'}</Button>
+          {fix.after !== null && <Button variant="primary" disabled={!rows.length} onClick={() => void acceptFix()} data-testid="ai-fix-accept">Use this fix</Button>}
         </div>
       </div>
     </Modal>

@@ -1,6 +1,6 @@
 import type { DiffLine, Hunk } from '@gitsquid/shared'
 import { describe, expect, it } from 'vitest'
-import { pairs, segments, splitRows, wordDiff } from './diffLayout'
+import { fileDiffRows, pairs, segments, splitRows, wordDiff } from './diffLayout'
 
 const hunk = (spec: string): Hunk => ({
   oldStart: 1, oldLines: 0, newStart: 1, newLines: 0, section: '',
@@ -47,5 +47,20 @@ describe('segments', () => {
       { text: ' 1', color: undefined, changed: false },
     ])
     expect(segments('plain', null, [])).toEqual([{ text: 'plain', color: undefined, changed: false }])
+  })
+})
+
+describe('whole-file diff rows', () => {
+  it('shows each change with context and folds the rest', () => {
+    const before = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'].join('\n')
+    const after = ['1', '2', '3', '4', 'five', '6', '7', '8', '9', '10'].join('\n')
+    expect(fileDiffRows(before, after, 2)).toEqual([
+      { kind: 'skip', count: 2 },
+      { kind: ' ', text: '3' }, { kind: ' ', text: '4' },
+      { kind: '-', text: '5' }, { kind: '+', text: 'five' },
+      { kind: ' ', text: '6' }, { kind: ' ', text: '7' },
+      { kind: 'skip', count: 3 },
+    ])
+    expect(fileDiffRows('same', 'same')).toEqual([])
   })
 })

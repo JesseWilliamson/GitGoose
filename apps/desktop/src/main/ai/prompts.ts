@@ -31,6 +31,8 @@ export interface BuiltPrompt {
   writable?: string
   /** For recompose: the range and its units, to turn the answer into a proposal. */
   recompose?: RecomposeInfo
+  /** For fix-finding: the file (relative) the proposal is for, and its text when asked. */
+  fix?: { path: string; before: string }
   /** For review: what the findings are checked against. */
   review?: { lines: ReviewableLines; texts: Map<string, string>; label: string; head: string; base?: string; skipped: string[] }
 }
@@ -151,6 +153,38 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask): Promise
           '',
           numberedDiff(input.files, (p) => input.texts.get(p) ?? null),
           ...(input.skipped.length ? [`(Not shown, over the size limit: ${input.skipped.join(', ')})`] : []),
+        ].join('\n'),
+      }
+    }
+    case 'fix-finding': {
+      const f = task.finding
+      if (f.path.includes('\0') || f.path.startsWith('/') || f.path.split(/[\\/]/).includes('..')) throw new Error('Bad path')
+      const file = join(repo.path, f.path)
+      const content = await repo.workingText(f.path)
+      if (content === null) throw new Error(`${f.path} is not in the working tree.`)
+      if (content.length > 150_000) throw new Error(`${f.path} is too large to send for a fix.`)
+      const issue = [
+        `File: ${file}`,
+        `Problem (${f.severity} ${f.type}) at lines ${f.startLine}-${f.endLine}: ${f.title}`,
+        f.message,
+        ...(f.suggestion ? ['', 'A suggested replacement for those lines:', f.suggestion] : []),
+      ].join('\n')
+      return {
+        system: 'You fix code review findings with the smallest correct change.',
+        writable: file,
+        fix: { path: f.path, before: content },
+        prompt: [
+          'Fix this code review finding.',
+          issue,
+          '',
+          'Change only what the fix needs, keep the style of the file, and do not touch unrelated code.',
+          'If you can edit files: write the whole fixed file back with your file-writing tool, then reply with one sentence on what you changed. Edit only this file. Do not run commands.',
+          'If you cannot edit files: reply with one sentence on what you changed, then the whole fixed file in one fenced code block.',
+          '',
+          'The file as it is now:',
+          '```',
+          content,
+          '```',
         ].join('\n'),
       }
     }

@@ -2,7 +2,7 @@ import type { FindingSeverity, ReviewFinding } from '@gitsquid/shared'
 import clsx from 'clsx'
 import { Sparkles } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { dismissFinding, startReview, stopReview, targetFor } from '../lib/review'
+import { applySuggestion, dismissFinding, fixWithAi, startReview, stopReview, targetFor } from '../lib/review'
 import { updateRepo, type RepoView } from '../lib/store'
 import { Button, Spinner } from './ui'
 
@@ -75,6 +75,8 @@ export function ReviewView({ view }: { view: RepoView }) {
                   </pre>
                 )}
                 <div className="mt-2 flex gap-2">
+                  {f.suggestion !== undefined && <Button size="sm" onClick={() => void applySuggestion(view.id, f)} data-testid="apply-suggestion">Apply suggestion</Button>}
+                  <Button size="sm" onClick={() => fixWithAi(view.id, f)} data-testid="fix-with-ai"><Sparkles size={12} /> Fix with AI…</Button>
                   <Button size="sm" variant="ghost" onClick={() => open(f)}>Show in diff</Button>
                   <Button size="sm" variant="ghost" onClick={() => dismissFinding(view.id, f.id)}>Dismiss</Button>
                 </div>

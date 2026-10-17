@@ -19,11 +19,13 @@ export interface AiUi {
   output: { title: string; text: string; requestId: string | null; error: string | null } | null
   /** A conflict resolution the agent proposed, for review. */
   proposal: { repoId: string; path: string; content: string; note: string } | null
+  /** Fix with AI: waiting for, or showing, a proposed new version of one file. */
+  fix: { repoId: string; path: string; title: string; requestId: string | null; before: string | null; after: string | null; note: string; error: string | null } | null
   /** Recompose with AI: waiting for a plan (requestId set), failed, or under review. */
   recompose: { repoId: string; hashes: string[]; requestId: string | null; proposal: RecomposeProposal | null; error: string | null } | null
 }
 
-export const useAi = create<AiUi>(() => ({ consent: null, login: null, permissions: [], output: null, proposal: null, recompose: null }))
+export const useAi = create<AiUi>(() => ({ consent: null, login: null, permissions: [], output: null, proposal: null, recompose: null, fix: null }))
 
 const textListeners = new Map<string, (text: string) => void>()
 
@@ -47,6 +49,7 @@ const WHAT: Record<AiTask['kind'], string> = {
   'resolve-conflict': 'the conflicted file (the agent reads it), and it may propose an edit to that one file',
   recompose: "the selected commits' messages and their combined diff",
   review: 'the diff being reviewed, with line numbers and the names of the functions it touches',
+  'fix-finding': 'the file the finding is in, and the finding; the agent may propose a new version of that one file',
 }
 
 function openSettings(): void {

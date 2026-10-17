@@ -94,6 +94,8 @@ export type AiTask =
   | { kind: 'recompose'; hashes: string[] }
   /** Review a change: findings tied to lines, checked against the diff before they are shown. */
   | { kind: 'review'; scope: ReviewScope; profile: ReviewProfile }
+  /** Fix one review finding: the agent proposes the whole file (nothing is written until accepted). */
+  | { kind: 'fix-finding'; finding: ReviewFinding }
 
 export interface AiStatus {
   provider: AiProvider
