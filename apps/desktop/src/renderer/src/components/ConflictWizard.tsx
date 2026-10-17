@@ -2,7 +2,7 @@ import { countConflicts, parseConflicts, resolveBlocks, type ConflictChoice, typ
 import clsx from 'clsx'
 import { CheckCircle2, CircleAlert, ExternalLink, Sparkles } from 'lucide-react'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
-import { openInEditor, run } from '../lib/actions'
+import { openInEditor, openMergeTool, run } from '../lib/actions'
 import { cancelAi, startAi, useAi } from '../lib/ai'
 import { api } from '../lib/api'
 import { opName, sentence } from '../lib/format'
@@ -153,6 +153,9 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
         )}
         <Button size="sm" variant="ghost" title="Open in your editor (Settings → Integrations)" onClick={() => void openInEditor(`${view.snapshot.path}/${file.path}`)}>
           <ExternalLink size={12} /> Open
+        </Button>
+        <Button size="sm" variant="ghost" title="Resolve in your external merge tool (Settings → Diff)" onClick={() => void openMergeTool(view.id, file.path)} data-testid="open-merge-tool">
+          Merge tool
         </Button>
         {canThree && (
           <div className="flex overflow-hidden rounded border border-line" role="group" aria-label="Conflict view">

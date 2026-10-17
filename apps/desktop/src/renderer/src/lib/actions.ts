@@ -1,4 +1,4 @@
-import type { GraphFilter, PullMode, Ref, RepoSnapshot, ResetMode } from '@gitsquid/shared'
+import type { DiffTarget, GraphFilter, PullMode, Ref, RepoSnapshot, ResetMode } from '@gitsquid/shared'
 import { api, toUiError, type UiError } from './api'
 import { activeRepo, addRepo, alertConflicts, ensureLoaded, choose, onSnapshot, openRepo, refreshAux, reportError, setting, toast, updateRepo, useStore } from './store'
 
@@ -317,6 +317,31 @@ export async function compareSinceFork(id: string, base: string, branch: string)
     compare(id, fork, branch, `fork point of ${shortRef(base)}`, shortRef(branch))
   } catch (e) {
     reportError('Could not find where they forked', e)
+  }
+}
+
+// ------------------------------------------------------------------ external tools
+
+/**
+ * Open a diff in the external diff tool. Not through run(): the call lasts until the tool is
+ * closed, and the repository should not look busy all that time.
+ */
+export async function openDiffTool(id: string, target: DiffTarget): Promise<void> {
+  toast({ kind: 'info', title: `Opening ${target.path} in ${setting('diffTool') || 'your diff tool'}…` }, 2000)
+  try {
+    await api.diffTool(id, target)
+  } catch (e) {
+    reportError('The diff tool failed', e)
+  }
+}
+
+/** Resolve a conflicted file in the external merge tool; the snapshot afterwards shows the result. */
+export async function openMergeTool(id: string, path: string): Promise<void> {
+  toast({ kind: 'info', title: `Opening ${path} in ${setting('mergeTool') || 'your merge tool'}…` }, 2000)
+  try {
+    await api.mergeTool(id, path)
+  } catch (e) {
+    reportError('The merge tool failed', e)
   }
 }
 

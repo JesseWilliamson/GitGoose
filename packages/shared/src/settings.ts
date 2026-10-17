@@ -104,6 +104,8 @@ export const SETTINGS = {
   diffLayout: choice('unified', [{ value: 'unified', label: 'Unified' }, { value: 'split', label: 'Side by side' }],
     { label: 'Diff layout', section: 'Diff', keywords: 'split side-by-side', description: 'Also switchable above each diff. Changed words are highlighted in both.' }),
   syntaxHighlighting: bool(true, { label: 'Syntax highlighting', section: 'Diff' }),
+  diffTool: text('', { label: 'External diff tool', section: 'Diff', placeholder: 'git\'s diff.tool', keywords: 'difftool meld beyond compare kdiff3 vscode', description: 'A tool name git knows (git difftool --tool-help), or one you configured with difftool.<name>.cmd. Empty: git\'s diff.tool.' }),
+  mergeTool: text('', { label: 'External merge tool', section: 'Diff', placeholder: 'git\'s merge.tool', keywords: 'mergetool meld kdiff3 p4merge vscode', description: 'Offered in the conflict view. Empty: git\'s merge.tool.' }),
   highlightMaxKb: num(400, 50, 4000, 50, { label: 'Highlight files up to', section: 'Diff', unit: 'KB' }),
   mergeView: choice('three-pane', [
     { value: 'three-pane', label: 'Three panes' },

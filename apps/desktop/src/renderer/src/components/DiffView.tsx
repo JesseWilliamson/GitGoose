@@ -1,11 +1,11 @@
 import type { BlameLine, Commit, DiffTarget, FileDiff, HunkSelection } from '@gitsquid/shared'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import clsx from 'clsx'
-import { ChevronDown, X } from 'lucide-react'
+import { ChevronDown, ExternalLink, X } from 'lucide-react'
 import { DropdownMenu } from 'radix-ui'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ImageDiff, imageMime } from './ImageDiff'
-import { discard, openInEditor, restoreFileFrom, run } from '../lib/actions'
+import { discard, openDiffTool, openInEditor, restoreFileFrom, run } from '../lib/actions'
 import { api } from '../lib/api'
 import { formatDate, hashColor, laneColor, relativeTime, shortHash, splitPath } from '../lib/format'
 import { pairs, segments, splitRows, wordDiff, type Ranges } from '../lib/diffLayout'
@@ -41,6 +41,11 @@ export function FileView({ view, target, mode }: { view: RepoView; target: DiffT
           <span className="ml-2 text-xs text-muted">{where}</span>
         </div>
         {rev && <RevisionMenu view={view} rev={rev} path={target.path} />}
+        {mode === 'diff' && target.kind !== 'untracked' && (
+          <Button size="sm" variant="ghost" onClick={() => void openDiffTool(view.id, target)} title="Open in your external diff tool (Settings → Diff)" data-testid="open-diff-tool">
+            <ExternalLink size={12} /> Diff tool
+          </Button>
+        )}
         {mode === 'diff' && (
           <div className="flex rounded-md border border-line p-0.5 text-xs" role="group" aria-label="Diff layout">
             {(['unified', 'split'] as const).map((l) => (

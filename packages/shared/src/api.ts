@@ -186,6 +186,10 @@ export interface GitSquidApi {
   /** Where two revisions forked from each other. */
   mergeBase(repoId: string, a: string, b: string): Promise<string>
   /** Put a working-tree file back to its content at `rev` (undoable). */
+  /** Open the diff in the external diff tool (Settings → Diff, else git's diff.tool); resolves when it closes. */
+  diffTool(repoId: string, target: DiffTarget): Promise<void>
+  /** Resolve a conflicted file in the external merge tool; resolves when it closes. */
+  mergeTool(repoId: string, path: string): Promise<void>
   /** Both versions of an image file for a diff (null: not there on that side). */
   imagePair(repoId: string, target: DiffTarget): Promise<{ old: ImageSide | null; new: ImageSide | null }>
   /** Save commits as .patch files in a folder the user picks; the paths written, or null if cancelled. */
@@ -271,7 +275,7 @@ export const API_METHODS = [
   'lastCommitMessage',
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'commandLog', 'bisectMark', 'bisectReset', 'identity', 'setIdentity', 'commitTemplate', 'recentAuthors',
   'checkout', 'createBranch', 'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset',
-  'cherryPick', 'cherryPickMany', 'commitsText', 'recomposeApply', 'compareFiles', 'mergeBase', 'restoreFile', 'imagePair', 'savePatches', 'pickPatch', 'applyPatch', 'openFileAt', 'saveFileAt', 'editableCommits', 'dropCommits', 'moveCommits', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'preparedMessage', 'redo', 'redoList', 'revert', 'createTag', 'deleteTag',
+  'cherryPick', 'cherryPickMany', 'commitsText', 'recomposeApply', 'compareFiles', 'mergeBase', 'restoreFile', 'diffTool', 'mergeTool', 'imagePair', 'savePatches', 'pickPatch', 'applyPatch', 'openFileAt', 'saveFileAt', 'editableCommits', 'dropCommits', 'moveCommits', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'preparedMessage', 'redo', 'redoList', 'revert', 'createTag', 'deleteTag',
   'fetch', 'pull', 'push', 'deleteRemoteBranch', 'remotes', 'addRemote', 'removeRemote', 'renameRemote', 'setRemoteUrl',
   'pushTags', 'deleteRemoteTag', 'remoteTags', 'setUpstream', 'fastForward', 'deleteBranches', 'mergedBranches',
   'stashPush', 'stashBranch', 'stashApply', 'stashPop', 'stashDrop',

@@ -4,7 +4,7 @@ import { Archive, Check, ChevronDown, Copy, Minus, MoreHorizontal, Plus, ShieldA
 import clsx from 'clsx'
 import { DropdownMenu } from 'radix-ui'
 import { useEffect, useRef, useState } from 'react'
-import { cherryPickMany, compare, copy, copyCommits, discard as discardFiles, openInEditor, pop, restoreFileFrom, run, stashApply, stashDrop, stashToBranch, stashWith, stashWithMessage } from '../lib/actions'
+import { cherryPickMany, compare, copy, copyCommits, discard as discardFiles, openDiffTool, openInEditor, pop, restoreFileFrom, run, stashApply, stashDrop, stashToBranch, stashWith, stashWithMessage } from '../lib/actions'
 import { cancelAi, startAi, useAiEnabled } from '../lib/ai'
 import { api, toUiError } from '../lib/api'
 import { dateTime, opName, sentence, shortHash, stashLabel } from '../lib/format'
@@ -47,6 +47,7 @@ function FileMenu({ view, target, children }: { view: RepoView; target: DiffTarg
       {children}
       {children && <CM.Separator />}
       <CM.Item onSelect={() => openFile(view, target, 'diff')}>Show changes</CM.Item>
+      {target.kind !== 'untracked' && <CM.Item onSelect={() => void openDiffTool(view.id, target)}>Open in diff tool</CM.Item>}
       {target.kind !== 'untracked' && <CM.Item onSelect={() => openFile(view, target, 'history')}>File history</CM.Item>}
       {target.kind !== 'untracked' && <CM.Item onSelect={() => openFile(view, target, 'blame')}>Blame</CM.Item>}
       {rev && (

@@ -397,6 +397,38 @@ export class Repo {
     }
   }
 
+  /**
+   * Open a diff in the user's external diff tool (`git difftool`), which waits until the tool
+   * is closed. It does not take the write lock: it only reads, and a tool can stay open for long.
+   */
+  async diffTool(target: DiffTarget, tool?: string): Promise<void> {
+    const t = tool ? [`--tool=${tool}`] : []
+    const base = ['difftool', '--no-prompt', ...t]
+    let args: string[]
+    switch (target.kind) {
+      case 'unstaged': args = [...base, '--', target.path]; break
+      case 'staged': args = [...base, '--cached', '--', target.path]; break
+      case 'untracked': throw new Error('An untracked file has nothing to compare with yet: stage it to diff it against nothing.')
+      case 'range': args = [...base, target.from, ...(target.to ? [target.to] : []), '--', ...(target.oldPath ? [target.oldPath] : []), target.path]; break
+      case 'commit': {
+        const parent = (await this.read(['rev-list', '--parents', '-n', '1', target.hash])).trim().split(' ')[1]
+        args = [...base, parent ?? (await this.emptyTreeHash()), target.hash, '--', target.path]
+      }
+    }
+    await this.runner.run(args, { readOnly: true })
+  }
+
+  /**
+   * Resolve a conflicted file in the user's merge tool (`git mergetool`). git marks the file
+   * resolved when the tool reports success (or the file changed, per mergetool.<tool>.trustExitCode).
+   * Outside the write lock, like diffTool: the tool stays open while the user works; the
+   * snapshot that follows shows the result.
+   */
+  async mergeTool(path: string, tool?: string): Promise<void> {
+    await this.runner.run(['mergetool', '--no-prompt', ...(tool ? [`--tool=${tool}`] : []), '--', path])
+    void this.snapshot()
+  }
+
   private async fileAtSpec(spec: string): Promise<Buffer> {
     return (await this.runner.runBuffer(['cat-file', 'blob', spec], { readOnly: true })).stdout
   }
