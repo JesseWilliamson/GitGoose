@@ -127,6 +127,8 @@ export type Dialog =
   | { kind: 'pick'; title: string; placeholder?: string; items: { label: string; detail?: string; value: string }[]; onPick: (value: string) => void }
   /** Open a pull request for a branch. */
   | { kind: 'create-pr'; repoId: string; branch: string }
+  /** The review learnings of a repository, to read and remove. */
+  | { kind: 'learnings'; repoId: string }
   /** Git LFS locks on the server (fetched when the dialog opens). */
   | { kind: 'lfs-locks'; repoId: string }
   /** Branch cleanup: pick merged or stale branches to delete. */

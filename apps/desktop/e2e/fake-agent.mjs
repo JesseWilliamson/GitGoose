@@ -67,7 +67,9 @@ async function prompt(params, cx) {
     // in the change: verification must drop that one.
     const path = /^=== (.+?) \(/m.exec(text)?.[1]
     const m = /^\s*(\d+)\+\| (.*)$/m.exec(text)
-    const answer = {
+    // A team learning that covers this finding: say nothing about it.
+    const learned = /^Learnings:[\s\S]*possible bug here/im.test(text)
+    const answer = learned ? { summary: 'Fine by the team\'s rules.', findings: [] } : {
       summary: 'Adds a small change; one thing to fix.',
       findings: [
         { path, startLine: Number(m?.[1] ?? 1), endLine: Number(m?.[1] ?? 1), type: 'bug', severity: 'major', title: 'Possible bug here', message: `This line looks wrong: ${m?.[2] ?? ''}`, suggestion: (m?.[2] ?? '').replace(' - ', ' + ') || 'fixed line' },

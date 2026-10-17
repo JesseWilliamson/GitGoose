@@ -74,3 +74,28 @@ test('apply a suggestion (undoable); fix with AI shows the change before writing
   await expect.poll(file).toContain('return a + b')
   await app.close()
 })
+
+test('the review follows the project: guideline files shown; a remembered dismissal stops the finding next time', async () => {
+  const r = initRepo()
+  r.commit('root', { 'src/calc.ts': 'export function total(a: number, b: number) {\n  return a + b\n}\n', 'CLAUDE.md': 'Prefer small functions.\n' })
+  r.write('src/calc.ts', 'export function total(a: number, b: number) {\n  return a - b\n}\n')
+  const { app, page } = await launch(r.dir)
+  await page.evaluate((p) => window.gitsquid.setSettings(p as never), AGENT)
+  const finding = await reviewed(page)
+  await expect(page.getByTestId('review-context')).toContainText('Followed CLAUDE.md')
+  await expect(page.getByTestId('review-context')).toContainText('0 learnings')
+
+  await finding.getByTestId('remember-dismissal').click()
+  await expect(page.getByTestId('dialog-input')).toHaveValue('Do not flag "Possible bug here"')
+  await page.getByTestId('dialog-submit').click()
+  await expect(page.getByTestId('finding')).toHaveCount(0)
+
+  await page.getByTestId('review').getByRole('button', { name: 'Review again' }).click()
+  await expect(page.getByTestId('review-summary')).toHaveText("Fine by the team's rules.")
+  await expect(page.getByTestId('review-context')).toContainText('1 learning')
+  await page.getByRole('button', { name: 'Manage learnings' }).click()
+  await expect(page.getByTestId('learnings')).toContainText('Do not flag "Possible bug here"')
+  await page.getByTestId('learnings').getByRole('button', { name: 'Remove' }).click()
+  await expect(page.getByTestId('learnings')).not.toContainText('possible bug')
+  await app.close()
+})

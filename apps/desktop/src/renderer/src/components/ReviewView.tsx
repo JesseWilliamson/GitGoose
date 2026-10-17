@@ -2,8 +2,8 @@ import type { FindingSeverity, ReviewFinding } from '@gitsquid/shared'
 import clsx from 'clsx'
 import { Sparkles } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { applySuggestion, dismissFinding, fixWithAi, startReview, stopReview, targetFor } from '../lib/review'
-import { updateRepo, type RepoView } from '../lib/store'
+import { applySuggestion, dismissFinding, fixWithAi, rememberDismissal, startReview, stopReview, targetFor } from '../lib/review'
+import { updateRepo, useStore, type RepoView } from '../lib/store'
 import { Button, Spinner } from './ui'
 
 export const SEVERITY_STYLE: Record<FindingSeverity, string> = {
@@ -52,6 +52,14 @@ export function ReviewView({ view }: { view: RepoView }) {
       <div className="min-h-0 flex-1 overflow-y-auto">
         {r.error && <div className="m-4 rounded-md border border-del/40 bg-del/10 p-3 text-[13px] text-del">{r.error}</div>}
         {result?.summary && <p className="selectable mx-4 mt-4 text-[13px] text-muted" data-testid="review-summary">{result.summary}</p>}
+        {result && (
+          <p className="mx-4 mt-2 text-xs text-faint" data-testid="review-context">
+            {result.context.guidelines.length ? `Followed ${result.context.guidelines.join(', ')}` : 'No guideline files (CLAUDE.md, AGENTS.md, …) cover these files'}
+            {result.context.pathInstructions.length ? ` · path instructions for ${result.context.pathInstructions.join(', ')}` : ''}
+            {` · ${result.context.learnings} learning${result.context.learnings === 1 ? '' : 's'} · `}
+            <button className="text-accent hover:underline" onClick={() => useStore.setState({ dialog: { kind: 'learnings', repoId: view.id } })}>Manage learnings</button>
+          </p>
+        )}
         {result && !findings.length && !r.error && <p className="mx-4 mt-4 text-[13px] text-faint">Nothing to report{result.findings.length ? ' (all dismissed)' : ''}.</p>}
         {[...byFile].map(([path, list]) => (
           <section key={path} className="mx-4 mt-4">
@@ -79,6 +87,7 @@ export function ReviewView({ view }: { view: RepoView }) {
                   <Button size="sm" onClick={() => fixWithAi(view.id, f)} data-testid="fix-with-ai"><Sparkles size={12} /> Fix with AI…</Button>
                   <Button size="sm" variant="ghost" onClick={() => open(f)}>Show in diff</Button>
                   <Button size="sm" variant="ghost" onClick={() => dismissFinding(view.id, f.id)}>Dismiss</Button>
+                  <Button size="sm" variant="ghost" onClick={() => rememberDismissal(view.id, f)} data-testid="remember-dismissal" title="Dismiss, and tell future reviews not to flag this">Don't flag again…</Button>
                 </div>
               </div>
             ))}

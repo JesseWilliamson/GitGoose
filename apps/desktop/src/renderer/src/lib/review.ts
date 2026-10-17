@@ -1,8 +1,8 @@
 import type { DiffTarget, ReviewFinding, ReviewProfile, ReviewResult, ReviewScope } from '@gitsquid/shared'
 import { api, toUiError } from './api'
 import { cancelAi, startAi, useAi } from './ai'
-import { setting, updateRepo, useStore, type RepoView } from './store'
-import { run } from './actions'
+import { setting, toast, updateRepo, useStore, type RepoView } from './store'
+import { ask, run } from './actions'
 
 /** A review of one change in a repository: running, failed, or done (findings, minus dismissed ones). */
 export interface ReviewState {
@@ -94,4 +94,17 @@ export async function acceptFix(): Promise<void> {
   useAi.setState({ fix: null })
   if (!fix?.after || fix.before === null) return
   await run(fix.repoId, `Apply AI fix to ${fix.path}`, () => api.writeFileChecked(fix.repoId, fix.path, fix.before!, fix.after!))
+}
+
+/**
+ * Dismiss a finding and remember why: the note goes with this repository's future reviews
+ * ("do not flag …"), optionally only for files matching a glob.
+ */
+export function rememberDismissal(id: string, f: ReviewFinding): void {
+  ask('Do not flag this again', 'What to tell future reviews', 'Remember', async (text, path) => {
+    const list = await api.reviewLearnings(id)
+    await api.setReviewLearnings(id, [...list, { text: text.trim(), path: path.trim() || undefined, added: Date.now() }])
+    dismissFinding(id, f.id)
+    toast({ kind: 'success', title: 'Remembered for future reviews' })
+  }, { initial: `Do not flag "${f.title}"${f.type === 'style' ? ' (house style)' : ''}`, extra: { label: 'Only for files matching (optional glob)', placeholder: '**/*.test.ts' } })
 }

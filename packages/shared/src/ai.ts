@@ -82,6 +82,16 @@ export interface ReviewResult {
   dropped: { title: string; reason: string }[]
   /** Files that were in the change but not sent (over the size budget). */
   skipped: string[]
+  /** What the model was told besides the diff (shown, so a review is never a black box). */
+  context: { guidelines: string[]; pathInstructions: string[]; learnings: number }
+}
+
+/** A team preference learned from a dismissed finding, sent with later reviews. */
+export interface ReviewLearning {
+  text: string
+  /** Only for files matching this glob (empty: everywhere). */
+  path?: string
+  added: number
 }
 
 /** What the user asked the AI to do. Each builds its own prompt in main/ai/prompts.ts. */

@@ -11,6 +11,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { findDefinitions, parseGrep, type Definition } from '@gitsquid/codegraph'
 import { parseBlame } from './blame'
 import { coChanges, oldRanges, parseFilesPerCommit } from './insights'
+import { globToRegExp, parsePathInstructions, relevantGuidelines } from './reviewrules'
 import { CatFile } from './catfile'
 import { parseChangedFiles, parseDiff, untrackedDiff } from './diff'
 import { graphRevs, LOG_FORMAT, LogStream, parseLog } from './log'
@@ -1048,6 +1049,32 @@ export class Repo {
       if (text !== null) texts.set(f.path, text)
     }
     return { files: kept, label, head, base, texts, skipped }
+  }
+
+  /**
+   * The project's own review guidance for these files, as of `head` ('worktree', 'index' or a
+   * commit): guideline files covering them (CLAUDE.md, AGENTS.md, …, nearest directory last) and
+   * matching path instructions from .coderabbit.yaml. Bounded to ~24k characters.
+   */
+  async reviewContext(paths: string[], head: string): Promise<{ guidelines: { path: string; scope: string; text: string }[]; pathInstructions: { path: string; instructions: string }[] }> {
+    const rev = head === 'worktree' ? null : head === 'index' ? '' : head
+    const listed = rev === null
+      ? await this.read(['ls-files', '-z', '--cached', '--others', '--exclude-standard'])
+      : rev === '' ? await this.read(['ls-files', '-z']) : await this.read(['ls-tree', '-r', '-z', '--name-only', rev])
+    const all = listed.split('\0').filter(Boolean)
+    const guidelines: { path: string; scope: string; text: string }[] = []
+    let budget = 24_000
+    for (const g of relevantGuidelines(all, paths)) {
+      const text = await this.textAt(rev, g.path)
+      if (!text?.trim()) continue
+      const cut = text.length > 8_000 ? `${text.slice(0, 8_000)}\n[… cut]` : text
+      if (cut.length > budget) break
+      budget -= cut.length
+      guidelines.push({ ...g, text: cut })
+    }
+    const yaml = all.includes('.coderabbit.yaml') ? await this.textAt(rev, '.coderabbit.yaml') : all.includes('.coderabbit.yml') ? await this.textAt(rev, '.coderabbit.yml') : null
+    const pathInstructions = yaml ? parsePathInstructions(yaml).filter((pi) => paths.some((p) => globToRegExp(pi.path).test(p))) : []
+    return { guidelines, pathInstructions }
   }
 
   /** What a branch is measured against: its upstream's remote default branch, else main or master. */

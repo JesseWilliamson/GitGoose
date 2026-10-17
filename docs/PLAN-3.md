@@ -181,3 +181,7 @@ Part B:
 - [x] 34 Apply suggestion (only onto the lines as reviewed; undoable) and Fix with AI (the agent's
       file write, or a fenced file in API mode, becomes a proposal shown as a diff; Use writes it
       only if the file is unchanged; undoable)
+- [x] 35 review rules: guideline files covering the changed files (CLAUDE.md, AGENTS.md, GEMINI.md,
+      .cursorrules, .windsurfrules, copilot-instructions; scoped by directory), path instructions
+      from .coderabbit.yaml, and learnings saved with "Don't flag again" (per repository,
+      optional glob, manageable); the Review view says what the model was told

@@ -1,6 +1,6 @@
 import type { Repo } from '@gitsquid/git'
-import { numberedDiff, reviewableLines, type ReviewableLines } from '@gitsquid/git'
-import type { AiTask, ReviewProfile } from '@gitsquid/shared'
+import { globToRegExp, numberedDiff, reviewableLines, type ReviewableLines } from '@gitsquid/git'
+import type { AiTask, ReviewLearning, ReviewProfile } from '@gitsquid/shared'
 import { join } from 'node:path'
 
 /**
@@ -34,7 +34,7 @@ export interface BuiltPrompt {
   /** For fix-finding: the file (relative) the proposal is for, and its text when asked. */
   fix?: { path: string; before: string }
   /** For review: what the findings are checked against. */
-  review?: { lines: ReviewableLines; texts: Map<string, string>; label: string; head: string; base?: string; skipped: string[] }
+  review?: { lines: ReviewableLines; texts: Map<string, string>; label: string; head: string; base?: string; skipped: string[]; context: { guidelines: string[]; pathInstructions: string[]; learnings: number } }
 }
 
 export type RecomposeInfo = Awaited<ReturnType<Repo['recomposeInfo']>>
@@ -64,7 +64,12 @@ async function git(repo: Repo, args: string[], pathspecs = false): Promise<strin
   return res.stdout
 }
 
-export async function buildPrompt(maybeRepo: Repo | null, task: AiTask): Promise<BuiltPrompt> {
+/** What the caller knows that the repository does not: the learnings saved for it. */
+export interface PromptContext {
+  learnings?: ReviewLearning[]
+}
+
+export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: PromptContext = {}): Promise<BuiltPrompt> {
   if (task.kind === 'explain-error') return explainError(task)
   if (!maybeRepo) throw new Error('Open a repository first.')
   const repo = maybeRepo
@@ -138,9 +143,22 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask): Promise
     case 'review': {
       const input = await repo.reviewInput(task.scope)
       if (!input.files.length) throw new Error('There is nothing to review in that change.')
+      const paths = input.files.map((f) => f.path)
+      const project = await repo.reviewContext(paths, input.head)
+      const learnings = (ctx.learnings ?? []).filter((l) => !l.path || paths.some((p) => globToRegExp(l.path!).test(p)))
+      const guidance = [
+        ...(project.guidelines.length ? ['Project guidelines from the repository. Follow them where they apply (each covers its directory and below):',
+          ...project.guidelines.map((g) => `--- ${g.path} (applies to ${g.scope ? `${g.scope}/` : 'every file'}) ---\n${g.text.trim()}`), ''] : []),
+        ...(project.pathInstructions.length ? ['Path-specific review instructions:', ...project.pathInstructions.map((pi) => `- ${pi.path}: ${pi.instructions}`), ''] : []),
+        ...(learnings.length ? ['Learnings: this team told earlier reviews these things are fine or preferred. Do not flag what they allow:',
+          ...learnings.map((l) => `- ${l.text}${l.path ? ` (for ${l.path})` : ''}`), ''] : []),
+      ]
       return {
         system: 'You are a careful senior engineer reviewing a code change.',
-        review: { lines: reviewableLines(input.files), texts: input.texts, label: input.label, head: input.head, base: input.base, skipped: input.skipped },
+        review: {
+          lines: reviewableLines(input.files), texts: input.texts, label: input.label, head: input.head, base: input.base, skipped: input.skipped,
+          context: { guidelines: project.guidelines.map((g) => g.path), pathInstructions: project.pathInstructions.map((pi) => pi.path), learnings: learnings.length },
+        },
         prompt: [
           `Review this change (${input.label}).`,
           PROFILE_ASK[task.profile],
@@ -151,6 +169,7 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask): Promise
           '{"summary": "two or three sentences on what the change does and its overall quality", "findings": [{"path": "src/a.ts", "startLine": 12, "endLine": 14, "type": "bug|security|performance|maintainability|style|docs|tests", "severity": "critical|major|minor|nit", "title": "short", "message": "what is wrong and why, in plain words", "suggestion": "optional replacement lines"}]}',
           NO_TOOLS,
           '',
+          ...guidance,
           numberedDiff(input.files, (p) => input.texts.get(p) ?? null),
           ...(input.skipped.length ? [`(Not shown, over the size limit: ${input.skipped.join(', ')})`] : []),
         ].join('\n'),

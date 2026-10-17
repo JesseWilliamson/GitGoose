@@ -1,7 +1,7 @@
 import clsx from 'clsx'
 import { KeyRound } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { parseGitHubRemote, type Identity, type LfsLock } from '@gitsquid/shared'
+import { parseGitHubRemote, type Identity, type LfsLock, type ReviewLearning } from '@gitsquid/shared'
 import { cleanupCandidates, cloneRepo, confirmAction, deleteBranches, lfsLock, loadPulls, openPull, run, STALE_DAYS } from '../lib/actions'
 import { relativeTime } from '../lib/format'
 import { COMMANDS, FIXED_KEYS, formatCombo, keymap, modName } from '../lib/keys'
@@ -43,6 +43,7 @@ export function Dialogs() {
   if (dialog.kind === 'shortcuts') return <ShortcutsDialog close={close} />
   if (dialog.kind === 'text') return <TextDialog key={dialog.title} d={dialog} close={close} />
   if (dialog.kind === 'cleanup') return <CleanupDialog repoId={dialog.repoId} close={close} />
+  if (dialog.kind === 'learnings') return <LearningsDialog repoId={dialog.repoId} close={close} />
   if (dialog.kind === 'create-pr') return <CreatePullDialog repoId={dialog.repoId} branch={dialog.branch} close={close} />
   if (dialog.kind === 'lfs-locks') return <LfsLocksDialog repoId={dialog.repoId} close={close} />
   if (dialog.kind === 'pick') return <PickDialog key={dialog.title} d={dialog} close={close} />
@@ -229,6 +230,34 @@ function CreatePullDialog({ repoId, branch, close }: { repoId: string; branch: s
           <Button type="submit" variant="primary" disabled={!title.trim() || !remote} data-testid="dialog-submit">Create pull request</Button>
         </div>
       </form>
+    </Modal>
+  )
+}
+
+/** What this repository's reviews have been told to accept (saved from dismissed findings). */
+function LearningsDialog({ repoId, close }: { repoId: string; close: () => void }) {
+  const [list, setList] = useState<ReviewLearning[] | null>(null)
+  useEffect(() => {
+    void api.reviewLearnings(repoId).then(setList)
+  }, [repoId])
+  const remove = async (i: number) => {
+    const next = list!.filter((_, n) => n !== i)
+    await api.setReviewLearnings(repoId, next)
+    setList(next)
+  }
+  return (
+    <Modal open onClose={close} title="Review learnings" width={560}>
+      <p className="mb-3 text-[13px] text-muted">Sent with every review of this repository. They come from "Don't flag again" on findings.</p>
+      {list?.length === 0 && <p className="mb-3 text-[13px] text-faint">None yet.</p>}
+      <div className="mb-3 max-h-72 overflow-y-auto" data-testid="learnings">
+        {list?.map((l, i) => (
+          <div key={i} className="flex items-center gap-2 border-b border-line/60 py-1.5 text-[13px]">
+            <span className="min-w-0 flex-1">{l.text}{l.path && <span className="ml-2 font-mono text-[11px] text-faint">{l.path}</span>}</span>
+            <Button size="sm" variant="ghost" onClick={() => void remove(i)}>Remove</Button>
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-end"><Button onClick={close}>Close</Button></div>
     </Modal>
   )
 }

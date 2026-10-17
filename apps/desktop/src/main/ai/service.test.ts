@@ -148,4 +148,29 @@ describe('prompts', () => {
     expect(sent).toContain('Review this change (Staged changes)')
     expect(sent).toContain('    1+| export const widgets = new Map()')
   })
+
+  it('tells the review about the project: guideline files, path instructions and learnings', async () => {
+    const fake = await fakeAnthropic(['{"summary": "ok", "findings": []}'])
+    cleanup.push(() => fake.close())
+    const t = await setup({
+      aiProvider: 'anthropic',
+      reviewLearnings: {},
+    }, fake)
+    t.r.write('CLAUDE.md', 'Use tabs.\n').write('docs/AGENTS.md', 'Only for docs.\n')
+    t.r.write('.coderabbit.yaml', 'reviews:\n  path_instructions:\n    - path: "**/*.ts"\n      instructions: "No default exports."\n    - path: "docs/**"\n      instructions: "Not this one."\n')
+    // Already part of the project (committed); only widgets.ts is staged for review.
+    t.r.git('add', 'CLAUDE.md', 'docs/AGENTS.md', '.coderabbit.yaml')
+    t.r.git('commit', '-q', '-m', 'project rules', '--', 'CLAUDE.md', 'docs/AGENTS.md', '.coderabbit.yaml')
+    t.ai['deps'].setSettings({ reviewLearnings: { [t.repo.path]: [{ text: 'Maps without types are fine here', added: 1 }, { text: 'Only for css', path: '*.css', added: 2 }] } })
+    t.ai.setApiKey('sk-test')
+    t.ai.consent()
+    const res = await t.ai.run('r1', 'x', { kind: 'review', scope: { kind: 'staged' }, profile: 'chill' })
+    expect(res.review!.context).toEqual({ guidelines: ['CLAUDE.md'], pathInstructions: ['**/*.ts'], learnings: 1 })
+    const sent = (fake.requests[0] as unknown as { messages: { content: string }[] }).messages[0]!.content
+    expect(sent).toContain('--- CLAUDE.md (applies to every file) ---\nUse tabs.')
+    expect(sent).not.toContain('Only for docs.')
+    expect(sent).toContain('- **/*.ts: No default exports.')
+    expect(sent).toContain('- Maps without types are fine here')
+    expect(sent).not.toContain('Only for css')
+  })
 })

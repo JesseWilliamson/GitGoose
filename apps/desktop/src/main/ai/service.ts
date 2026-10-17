@@ -118,7 +118,7 @@ export class AiService {
     // Explaining an error needs no repository (it may have happened with none open).
     const repo = task.kind === 'explain-error' && !repoId ? null : this.deps.repo(repoId)
     const cwd = repo?.path ?? tmpdir()
-    const built = await buildPrompt(repo, task)
+    const built = await buildPrompt(repo, task, { learnings: repo ? this.deps.settings().reviewLearnings[repo.path] : undefined })
     const emitText = (text: string) => this.deps.emit({ type: 'ai-text', requestId, text })
     const finish = (text: string) => (task.kind === 'commit-message' ? cleanCommitMessage(text) : text.trim())
     // A recompose answer becomes a proposal for the review dialog (nothing changes until Apply).
@@ -218,7 +218,7 @@ function toReview(task: Extract<AiTask, { kind: 'review' }>, built: BuiltPrompt,
   const raw = extractJson(text)
   if (!raw) throw new AiError('The AI did not answer with findings. Try again.', 'ai-bad-answer')
   const v = verifyFindings(raw, r.lines, (p) => r.texts.get(p) ?? null, task.profile)
-  return { scope: task.scope, profile: task.profile, label: r.label, head: r.head, base: r.base, summary: v.summary, findings: v.findings, dropped: v.dropped, skipped: r.skipped }
+  return { scope: task.scope, profile: task.profile, label: r.label, head: r.head, base: r.base, summary: v.summary, findings: v.findings, dropped: v.dropped, skipped: r.skipped, context: r.context }
 }
 
 function toProposal(hashes: string[], built: BuiltPrompt, text: string): NonNullable<AiResult['recompose']> {

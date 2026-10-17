@@ -2,7 +2,7 @@ import type {
   BlameLine, ChangedFile, ChangeInsights, CodePeek, CommandRecord, GraphFilter, ImageSide, LfsInfo, LfsLock, Identity, Person, Commit, CommitDetails, ConflictFile, DiffTarget, FileDiff, RepoSnapshot,
   ReflogEntry, Remote, SearchField, Submodule, Worktree, StashEntry, UndoEntry,
 } from './index'
-import type { AgentInfo, AiPermissionRequest, AiResult, AiStatus, AiTask } from './ai'
+import type { AgentInfo, AiPermissionRequest, AiResult, AiStatus, AiTask, ReviewLearning } from './ai'
 import type { DeviceCodeInfo, GitHubAccount, GitHubStatus, PullRequest, PullRequestList } from './github'
 import type { Settings } from './settings'
 
@@ -156,6 +156,9 @@ export interface GitSquidApi {
   /** Write an accepted AI fix, if the file still reads `expected`. Undoable. */
   writeFileChecked(repoId: string, path: string, expected: string, content: string): Promise<UndoId>
   workingText(repoId: string, path: string): Promise<string | null>
+  /** Learnings sent with this repository's reviews. */
+  reviewLearnings(repoId: string): Promise<ReviewLearning[]>
+  setReviewLearnings(repoId: string, learnings: ReviewLearning[]): Promise<void>
   /** History's hints for the uncommitted change: usual companions missing, and whose lines it changes. */
   changeInsights(repoId: string): Promise<ChangeInsights>
   /** Where an identifier is defined and used, at `rev` (null: the working tree). */
@@ -299,7 +302,7 @@ export const API_METHODS = [
   'aiStatus', 'aiConsent', 'aiRun', 'aiCancel', 'aiRespondPermission', 'aiAgentInfo', 'aiAuthenticate', 'aiSetApiKey',
   'snapshot', 'logPage', 'commitDetails', 'diff', 'fileHistory', 'blame', 'search', 'stashList', 'reflog', 'setGraphFilter', 'submodules', 'updateSubmodules', 'syncSubmodules', 'addSubmodule', 'removeSubmodule', 'worktrees', 'addWorktree', 'removeWorktree', 'lockWorktree', 'pruneWorktrees',
   'lastCommitMessage',
-  'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'codePeek', 'changeInsights', 'applySuggestion', 'writeFileChecked', 'workingText', 'lfsInfo', 'lfsInstall', 'lfsTrack', 'lfsPull', 'lfsLocks', 'lfsLock', 'commandLog', 'bisectMark', 'bisectReset', 'identity', 'setIdentity', 'commitTemplate', 'recentAuthors',
+  'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'codePeek', 'reviewLearnings', 'setReviewLearnings', 'changeInsights', 'applySuggestion', 'writeFileChecked', 'workingText', 'lfsInfo', 'lfsInstall', 'lfsTrack', 'lfsPull', 'lfsLocks', 'lfsLock', 'commandLog', 'bisectMark', 'bisectReset', 'identity', 'setIdentity', 'commitTemplate', 'recentAuthors',
   'checkout', 'createBranch', 'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset',
   'cherryPick', 'cherryPickMany', 'commitsText', 'recomposeApply', 'compareFiles', 'mergeBase', 'restoreFile', 'diffTool', 'mergeTool', 'imagePair', 'savePatches', 'pickPatch', 'applyPatch', 'openFileAt', 'saveFileAt', 'editableCommits', 'dropCommits', 'moveCommits', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'preparedMessage', 'redo', 'redoList', 'revert', 'createTag', 'deleteTag',
   'fetch', 'pull', 'push', 'deleteRemoteBranch', 'remotes', 'addRemote', 'removeRemote', 'renameRemote', 'setRemoteUrl',

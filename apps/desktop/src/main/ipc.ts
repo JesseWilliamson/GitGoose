@@ -143,6 +143,13 @@ export function createHandlers(
     commit: (id, message, opts) => r(id).commit(message, opts),
     codePeek: (id, name, rev) => r(id).codePeek(name, rev),
     changeInsights: (id) => r(id).changeInsights(),
+    reviewLearnings: async (id) => getSettings().reviewLearnings[r(id).path] ?? [],
+    setReviewLearnings: async (id, learnings) => {
+      const all = { ...getSettings().reviewLearnings }
+      if (learnings.length) all[r(id).path] = learnings
+      else delete all[r(id).path]
+      setSettings({ reviewLearnings: all })
+    },
     applySuggestion: (id, path, start, end, original, replacement) => r(id).applySuggestion(path, start, end, original, replacement),
     writeFileChecked: (id, path, expected, content) => r(id).writeFileChecked(path, expected, content, `Apply AI fix to ${path}`),
     workingText: (id, path) => r(id).workingText(path),
