@@ -204,7 +204,7 @@ export function createHandlers(
     redo: (id) => r(id).redo(),
     redoList: async (id) => r(id).redoList(),
     revert: (id, hash) => r(id).revert(hash),
-    createTag: (id, name, hash, message) => r(id).createTag(name, hash, message),
+    createTag: (id, name, hash, message, opts) => r(id).createTag(name, hash, message, opts),
     deleteTag: (id, name) => r(id).deleteTag(name),
 
     fetch: (id, opts) => r(id).fetch(opts),

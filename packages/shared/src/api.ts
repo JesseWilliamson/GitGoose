@@ -202,7 +202,7 @@ export interface GitSquidApi {
   /** Several commits as a diff or as format-patch text (graph order in, oldest first out). */
   commitsText(repoId: string, hashes: string[], format: 'diff' | 'patch'): Promise<string>
   revert(repoId: string, hash: string): Promise<UndoId>
-  createTag(repoId: string, name: string, hash: string, message?: string): Promise<UndoId>
+  createTag(repoId: string, name: string, hash: string, message?: string, opts?: { sign?: boolean }): Promise<UndoId>
   deleteTag(repoId: string, name: string): Promise<UndoId>
 
   // Remotes

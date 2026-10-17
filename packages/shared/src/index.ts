@@ -34,6 +34,19 @@ export interface CommitDetails extends Commit {
   committerName: string
   committerEmail: string
   files: ChangedFile[]
+  /** Present when the commit is signed (GPG, SSH or X.509). */
+  signature?: Signature
+}
+
+/**
+ * git's verdict on a signature (%G?): G good, U good but the key is not trusted, X expired
+ * signature, Y expired key, R revoked key, B bad (the commit was changed after signing), E
+ * cannot be checked (no key, or no gpg / allowed signers file).
+ */
+export interface Signature {
+  status: 'G' | 'U' | 'X' | 'Y' | 'R' | 'B' | 'E'
+  signer?: string
+  key?: string
 }
 
 export type RefKind = 'local' | 'remote' | 'tag' | 'stash'

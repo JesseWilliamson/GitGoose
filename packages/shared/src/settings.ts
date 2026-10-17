@@ -93,6 +93,7 @@ export const SETTINGS = {
   pruneOnFetch: bool(true, { label: 'Prune deleted remote branches on fetch', section: 'Git' }),
   signOff: bool(false, { label: 'Add Signed-off-by to commits', section: 'Git', keywords: 'dco' }),
   gpgSign: bool(false, { label: 'Sign commits (-S)', section: 'Git', keywords: 'gpg ssh signing', description: 'Uses the signing key from your git config.' }),
+  signTags: bool(false, { label: 'Sign tags (-s)', section: 'Git', keywords: 'gpg ssh signing', description: 'New tags are signed (and annotated) with the signing key from your git config.' }),
 
   // ---------------------------------------------------------------- Diff
   contextLines: num(3, 1, 20, 1, { label: 'Context lines', section: 'Diff', unit: 'lines', description: 'Unchanged lines shown around each change.' }),

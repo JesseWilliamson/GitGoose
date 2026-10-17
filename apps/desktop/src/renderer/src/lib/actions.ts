@@ -366,8 +366,9 @@ export const revert = (id: string, hash: string) =>
 
 export function newTag(id: string, hash: string): void {
   ask('New tag', 'Tag name', 'Create tag', (name, message) => {
-    void run(id, `Create tag ${name}`, () => api.createTag(id, name.trim(), hash, message.trim() || undefined))
-  }, { placeholder: 'v1.0.0', extra: { label: 'Message (optional, makes an annotated tag)' } })
+    const sign = setting('signTags')
+    void run(id, `Create tag ${name}`, () => api.createTag(id, name.trim(), hash, message.trim() || undefined, { sign }), { success: sign ? `Created signed tag ${name.trim()}` : undefined })
+  }, { placeholder: 'v1.0.0', extra: { label: setting('signTags') ? 'Message (signed tags are annotated; default: the tag name)' : 'Message (optional, makes an annotated tag)' } })
 }
 
 export const deleteTag = (id: string, name: string) =>

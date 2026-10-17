@@ -1,6 +1,6 @@
 import type { ChangedFile, CommitDetails, DiffTarget, StatusEntry } from '@gitsquid/shared'
-import type { Identity, Person } from '@gitsquid/shared'
-import { Archive, Check, ChevronDown, Copy, Minus, MoreHorizontal, Plus, Sparkles, Undo2, X } from 'lucide-react'
+import type { Identity, Person, Signature } from '@gitsquid/shared'
+import { Archive, Check, ChevronDown, Copy, Minus, MoreHorizontal, Plus, ShieldAlert, ShieldCheck, Sparkles, Undo2, X } from 'lucide-react'
 import clsx from 'clsx'
 import { DropdownMenu } from 'radix-ui'
 import { useEffect, useRef, useState } from 'react'
@@ -362,6 +362,28 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
   )
 }
 
+/** What git said about a commit's signature, in words, with the signer and key on hover. */
+const SIGNATURE: Record<Signature['status'], { text: string; tone: string }> = {
+  G: { text: 'Verified signature', tone: 'text-add' },
+  U: { text: 'Good signature from a key you have not marked as trusted', tone: 'text-add' },
+  X: { text: 'Signature has expired', tone: 'text-warn' },
+  Y: { text: 'Signed with a key that has expired', tone: 'text-warn' },
+  R: { text: 'Signed with a revoked key', tone: 'text-del' },
+  B: { text: 'Bad signature: the commit changed after it was signed', tone: 'text-del' },
+  E: { text: 'Signed, but the signature cannot be checked (missing key or tool)', tone: 'text-muted' },
+}
+
+function SignatureBadge({ sig }: { sig: Signature }) {
+  const s = SIGNATURE[sig.status]
+  return (
+    <div className={clsx('mt-2 flex items-center gap-1.5 text-xs', s.tone)} data-testid="signature" data-status={sig.status}
+      title={[sig.signer && `Signer: ${sig.signer}`, sig.key && `Key: ${sig.key}`].filter(Boolean).join('\n') || undefined}>
+      {sig.status === 'B' || sig.status === 'R' ? <ShieldAlert size={13} /> : <ShieldCheck size={13} />}
+      <span>{s.text}{sig.signer && (sig.status === 'G' || sig.status === 'U') ? ` · ${sig.signer}` : ''}</span>
+    </div>
+  )
+}
+
 // ------------------------------------------------------------------ comparing
 
 function ComparePanel({ view, sel }: { view: RepoView; sel: Extract<RepoView['selected'], { kind: 'compare' }> }) {
@@ -564,6 +586,7 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
             )}
           </div>
         </div>
+        {d.signature && <SignatureBadge sig={d.signature} />}
         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs text-muted">
           <button className="flex items-center gap-1 hover:text-fg" onClick={() => copy(d.hash, 'Copied SHA')} title="Copy SHA">
             {shortHash(d.hash)} <Copy size={11} />

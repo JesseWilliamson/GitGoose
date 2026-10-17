@@ -141,3 +141,5 @@ changes.
 - [x] 24 identity (this repository or global, undoable; shown over the commit box), commit
       templates (comment lines become the placeholder), co-author trailers from recent authors
 - [x] 28 (part) skip hooks for one commit; a failing hook's output is in the attention bar
+- [x] 25 signature verification in commit details (only signed commits are verified; failures
+      read "cannot be checked"), signed tags (Settings → Git)

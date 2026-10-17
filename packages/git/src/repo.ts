@@ -1,5 +1,5 @@
 import type {
-  BlameLine, ChangedFile, GraphFilter, Identity, Person, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
+  BlameLine, ChangedFile, GraphFilter, Identity, Person, Signature, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
   LogPage, Ref, Remote, RepoOperation, ReflogEntry, RepoSnapshot, ResetMode, Resolution, SearchField, SelectionRequest,
   StashEntry, StatusEntry, Submodule, UndoEntry, Worktree,
 } from '@gitsquid/shared'
@@ -296,7 +296,25 @@ export class Repo {
       hash: f[0]!, parents, authorName: f[2]!, authorEmail: f[3]!,
       authorDate: Number(f[4]), commitDate: Number(f[5]), subject: f[6]!,
       committerName: f[7]!, committerEmail: f[8]!, body: (f[9] ?? '').trim(),
-      files,
+      files, signature: opts.stash ? undefined : await this.signature(hash),
+    }
+  }
+
+  /**
+   * Verify a commit's signature, if it has one. Verifying runs gpg (or ssh-keygen), so it is done
+   * only for signed commits, found by the gpgsig header in the raw object; a failure to verify is
+   * reported as "cannot check", never as an error that would hide the commit's details.
+   */
+  private async signature(hash: string): Promise<Signature | undefined> {
+    const raw = await this.read(['cat-file', 'commit', hash])
+    const headers = raw.slice(0, raw.indexOf('\n\n'))
+    if (!/^gpgsig(-sha256)? /m.test(headers)) return undefined
+    try {
+      const out = (await this.runner.run(['show', '-s', '--format=%G?%x00%GS%x00%GK', hash, '--'], { readOnly: true, okCodes: [1, 128] })).stdout
+      const [status = 'E', signer, key] = out.trim().split('\0')
+      return { status: (/^[GUXYRB]$/.test(status) ? status : 'E') as Signature['status'], signer: signer || undefined, key: key || undefined }
+    } catch {
+      return { status: 'E' }
     }
   }
 
@@ -1428,9 +1446,11 @@ export class Repo {
     return this.moving(`Revert ${hash.slice(0, 7)}`, () => this.git(['revert', '--no-edit', ...mainline, hash]))
   }
 
-  createTag(name: string, hash: string, message?: string): Promise<number> {
+  /** `sign` makes a signed tag (-s, with your signing key); signed tags are annotated, so it needs a message. */
+  createTag(name: string, hash: string, message?: string, opts: { sign?: boolean } = {}): Promise<number> {
     return this.exclusive(async () => {
-      await this.git(['tag', ...(message ? ['-a', '-m', message] : []), name, hash])
+      const kind = opts.sign ? ['-s', '-m', message || name] : message ? ['-a', '-m', message] : []
+      await this.git(['tag', ...kind, name, hash])
       const obj = await this.revParse(`refs/tags/${name}`)
       return this.record(`Create tag ${name}`, [{ kind: 'update-ref', ref: `refs/tags/${name}`, to: null, from: obj }], (await this.currentHead()).hash)
     })
