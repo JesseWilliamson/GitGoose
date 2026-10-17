@@ -33,9 +33,11 @@ function readText(path: string): string {
 export function detectLinters(root: string): Spec[] {
   const out: Spec[] = []
   const pkg = readText(join(root, 'package.json'))
-  const eslintBin = join(root, 'node_modules', '.bin', process.platform === 'win32' ? 'eslint.cmd' : 'eslint')
-  if (/"eslint"\s*:/.test(pkg) && existsSync(eslintBin)) {
-    out.push({ name: 'ESLint', command: `"${eslintBin}" --format json {files}`, extensions: ['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.mts', '.cts'], source: 'detected' })
+  // ESLint's own script run by node, not the node_modules/.bin shim: on Windows that is a .cmd,
+  // which Node only starts through a shell, and the shim needs node on PATH anyway.
+  const eslintJs = join(root, 'node_modules', 'eslint', 'bin', 'eslint.js')
+  if (/"eslint"\s*:/.test(pkg) && existsSync(eslintJs) && onPath('node')) {
+    out.push({ name: 'ESLint', command: `node "${eslintJs}" --format json {files}`, extensions: ['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.mts', '.cts'], source: 'detected' })
   }
   const pyproject = readText(join(root, 'pyproject.toml'))
   if ((existsSync(join(root, 'ruff.toml')) || existsSync(join(root, '.ruff.toml')) || /^\[tool\.ruff/m.test(pyproject)) && onPath('ruff')) {

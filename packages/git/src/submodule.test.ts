@@ -40,7 +40,9 @@ describe('submodules', () => {
     const rm = await repo.removeSubmodule('vendor/lib')
     expect(await repo.submodules()).toEqual([])
     await repo.undo(rm)
-    expect((await repo.submodules())[0]!.checkedOut).toBe(libHead)
+    expect((await repo.submodules())[0]).toMatchObject({ checkedOut: libHead, dirty: false })
+    // Inside first, so a failure names the file that differs.
+    expect(app.git('-C', 'vendor/lib', 'status', '--porcelain', '--ignored')).toBe('')
     expect(app.git('status', '--porcelain')).toBe('')
     repo.dispose()
   })

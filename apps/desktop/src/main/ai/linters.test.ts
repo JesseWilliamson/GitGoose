@@ -62,7 +62,7 @@ describe('linters in reviews', () => {
       const res = await lintForReview(repo.path, settings, ['a.ts'], input.texts, addedLines(input.files))
       expect(res.findings).toEqual([])
       expect(res.runs[0]).toMatchObject({ status: 'skipped', note: allow === null ? 'not allowed yet' : 'you chose not to run it here' })
-      expect(linters(repo.path, settings)[0]!.decision).toBe(allow === null ? null : 'deny')
+      expect(linters(repo.path, settings).find((l) => l.source === 'settings')!.decision).toBe(allow === null ? null : 'deny')
     }
   })
 
@@ -95,8 +95,21 @@ describe('linters in reviews', () => {
     const dir = tempDir()
     writeFileSync(join(dir, 'package.json'), '{"devDependencies": {"eslint": "^9.0.0"}}')
     expect(detectLinters(dir).map((l) => l.name)).not.toContain('ESLint')
-    mkdirSync(join(dir, 'node_modules', '.bin'), { recursive: true })
-    writeFileSync(join(dir, 'node_modules', '.bin', 'eslint'), '')
-    expect(detectLinters(dir).find((l) => l.name === 'ESLint')).toMatchObject({ command: expect.stringContaining('--format json {files}') })
+    mkdirSync(join(dir, 'node_modules', 'eslint', 'bin'), { recursive: true })
+    writeFileSync(join(dir, 'node_modules', 'eslint', 'bin', 'eslint.js'), 'console.log("[]")\n')
+    const eslint = detectLinters(dir).find((l) => l.name === 'ESLint')
+    expect(eslint).toMatchObject({ command: expect.stringContaining('--format json {files}') })
+    expect(toolName(eslint!.command)).toBe('eslint')
+  })
+
+  it('runs a detected ESLint without a shell, on every platform', async () => {
+    const dir = tempDir()
+    writeFileSync(join(dir, 'package.json'), '{"devDependencies": {"eslint": "^9.0.0"}}')
+    mkdirSync(join(dir, 'node_modules', 'eslint', 'bin'), { recursive: true })
+    writeFileSync(join(dir, 'node_modules', 'eslint', 'bin', 'eslint.js'), 'console.log(JSON.stringify(process.argv.slice(2)))\n')
+    writeFileSync(join(dir, 'a b.ts'), '')
+    const res = await runLinter(dir, detectLinters(dir).find((l) => l.name === 'ESLint')!.command, ['a b.ts'])
+    expect(res).toMatchObject({ ok: true })
+    expect(JSON.parse(res.output)).toEqual(['--format', 'json', 'a b.ts'])
   })
 })

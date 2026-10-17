@@ -1,9 +1,9 @@
 import { initRepo, tempDir } from '@gitsquid/fixtures'
-import { existsSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { Repo } from './repo'
-import { parseWorktrees } from './worktree'
+import { parseWorktrees, realPathOf } from './worktree'
 
 describe('worktrees', () => {
   it('parses the porcelain list: branch, detached, locked, prunable', () => {
@@ -60,5 +60,26 @@ describe('worktrees', () => {
     await repo.pruneWorktrees()
     expect(await repo.worktrees()).toHaveLength(1)
     repo.dispose()
+  })
+
+  it('finds a worktree given a path through a symlink (git reports the resolved one)', async () => {
+    const r = initRepo()
+    r.commit('root', { 'a.txt': 'a\n' })
+    const repo = await Repo.open(r.dir, {})
+    const real = tempDir('gitsquid-wt-')
+    const link = join(tempDir('gitsquid-wt-'), 'link')
+    symlinkSync(real, link)
+    await repo.addWorktree(join(link, 'w'), { at: 'HEAD' })
+    expect(await repo.removeWorktree(join(link, 'w'))).not.toBeNull()
+    expect(await repo.worktrees()).toHaveLength(1)
+    repo.dispose()
+  })
+
+  it('resolves symlinks in paths that do not exist yet', async () => {
+    const real = tempDir('gitsquid-wt-')
+    const link = join(tempDir('gitsquid-wt-'), 'link')
+    symlinkSync(real, link)
+    expect(await realPathOf(join(link, 'not', 'yet'))).toBe(join(await realPathOf(real), 'not', 'yet'))
+    expect(await realPathOf(join(link, '..', 'link'))).toBe(await realPathOf(real))
   })
 })
