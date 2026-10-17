@@ -34,7 +34,7 @@ export function Sidebar({ view }: { view: RepoView }) {
   }
 
   return (
-    <aside className="flex w-56 shrink-0 flex-col border-r border-line bg-panel">
+    <aside className="flex h-full min-h-0 w-full flex-col bg-panel">
       <div className="p-2">
         <input
           value={filter}

@@ -1,21 +1,19 @@
+import { presetLayout } from '@gitsquid/shared'
 import { useEffect } from 'react'
 import { fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, stash, undo } from '../lib/actions'
 import { comboOf, keymap } from '../lib/keys'
 import { closeTab, onCommand, saveSettings, setting, useActiveRepo, useStore } from '../lib/store'
 import { AttentionBar } from './AttentionBar'
 import { CommandPalette } from './CommandPalette'
-import { ConflictWizard } from './ConflictWizard'
-import { DetailPanel } from './DetailPanel'
 import { Dialogs, PromptDialog, Toasts } from './Dialogs'
-import { FileView } from './DiffView'
-import { Graph } from './Graph'
 import { DropMenu } from './menus'
 import { SettingsPage } from './SettingsPage'
-import { Sidebar } from './Sidebar'
 import { StatusBar } from './StatusBar'
 import { TabBar } from './TabBar'
 import { Toolbar } from './Toolbar'
 import { Welcome } from './Welcome'
+import { toggleBottom, toggleSlotOf } from './Workspace'
+import { Workspace } from './Workspace'
 
 function isTyping(): boolean {
   const el = document.activeElement
@@ -37,6 +35,12 @@ function useCommands() {
         case 'zoom-in': return void saveSettings({ uiScale: setting('uiScale') + 0.1 })
         case 'zoom-out': return void saveSettings({ uiScale: setting('uiScale') - 0.1 })
         case 'zoom-reset': return void saveSettings({ uiScale: 1 })
+        case 'toggle-sidebar': return toggleSlotOf('branches')
+        case 'toggle-details': return toggleSlotOf('details')
+        case 'toggle-bottom': return toggleBottom()
+        case 'layout-default': return void saveSettings({ layout: presetLayout('default', setting('layout')) })
+        case 'layout-wide-graph': return void saveSettings({ layout: presetLayout('wide-graph', setting('layout')) })
+        case 'layout-diff-below': return void saveSettings({ layout: presetLayout('diff-below', setting('layout')) })
       }
       if (!id) return
       switch (name) {
@@ -109,15 +113,7 @@ export function App() {
       ) : (
         <>
           <Toolbar view={view} />
-          <div className="flex min-h-0 flex-1">
-            <Sidebar view={view} />
-            <main className="flex min-w-0 flex-1 flex-col">
-              {view.center.kind === 'graph' && <Graph view={view} />}
-              {view.center.kind === 'file' && <FileView view={view} target={view.center.target} mode={view.center.mode} />}
-              {view.center.kind === 'conflicts' && <ConflictWizard view={view} />}
-            </main>
-            <DetailPanel view={view} />
-          </div>
+          <Workspace view={view} />
           <StatusBar view={view} />
         </>
       )}
