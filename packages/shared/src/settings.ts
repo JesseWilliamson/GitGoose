@@ -61,7 +61,7 @@ export const SETTINGS = {
     { value: 'gravatar', label: 'Gravatar' },
   ], {
     label: 'Author avatars', section: 'Graph', keywords: 'picture photo image node',
-    description: 'GitHub and Gravatar send a hash of each author email (or their GitHub user id) to that service to fetch the picture. Images are cached for 30 days.',
+    description: 'GitHub: authors with a GitHub noreply address; once you sign in with GitHub (Accounts), any author whose commits GitHub has. Gravatar: sends a hash of each author email. Images are cached for 30 days.',
   }),
   showRemoteBranches: bool(true, { label: 'Show remote branches on the graph', section: 'Graph' }),
   showTags: bool(true, { label: 'Show tags on the graph', section: 'Graph' }),
@@ -104,6 +104,12 @@ export const SETTINGS = {
     description: '{file} and {line} are filled in. Empty opens files with the system default app.',
   }),
   terminalCommand: text('', { label: 'Terminal', section: 'Integrations', placeholder: 'System default', description: 'Runs in the repository folder.' }),
+
+  // ---------------------------------------------------------------- Accounts
+  githubHttps: bool(false, {
+    label: 'Use your GitHub sign-in for HTTPS push and fetch', section: 'Accounts', keywords: 'token password credential',
+    description: 'Answers GitHub\'s password prompt with your sign-in (needs repository access, asked for once). Your credential helpers are skipped for github.com while this is on.',
+  }),
 
   // ---------------------------------------------------------------- Startup
   reopenTabs: bool(true, { label: 'Reopen last session’s tabs', section: 'Startup' }),
