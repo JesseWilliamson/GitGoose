@@ -1,11 +1,11 @@
-import { countConflicts, parseConflicts, resolveBlocks, type ConflictChoice, type ConflictFile, type ConflictVersions } from '@gitsquid/shared'
+import { countConflicts, parseConflicts, resolveBlocks, type ConflictBlock, type ConflictChoice, type ConflictFile, type ConflictVersions } from '@gitsquid/shared'
 import clsx from 'clsx'
-import { CheckCircle2, CircleAlert, ExternalLink, Sparkles } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, CircleAlert, ExternalLink, GitMerge, Sparkles, Wrench } from 'lucide-react'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { openInEditor, openMergeTool, run } from '../lib/actions'
 import { cancelAi, startAi, useAi } from '../lib/ai'
 import { api } from '../lib/api'
-import { opName, sentence } from '../lib/format'
+import { opName, sentence, splitPath } from '../lib/format'
 import { reportError, updateRepo, useSetting, type RepoView } from '../lib/store'
 import { Button, Spinner } from './ui'
 
@@ -13,9 +13,11 @@ const ResultEditor = lazy(() => import('./ResultEditor'))
 const MergePanes = lazy(() => import('./MergePanes'))
 
 /**
- * Tower-style conflict resolution: one file at a time, one conflict block at a time.
- * Each block shows our side and their side; pick one, both, or edit the file elsewhere.
- * When nothing is left unmerged, Continue finishes the merge/rebase/cherry-pick/revert.
+ * Resolving conflicts, one file at a time. The files are tabs along the top (with how far along
+ * the whole operation is), so the file being resolved gets the full width: the three-pane view
+ * (yours and theirs above, the result below) or, for a few small conflicts, one card per
+ * conflict. Yours is blue and theirs amber in every part of it. When nothing is left unmerged,
+ * Continue finishes the merge, rebase, cherry-pick, revert or patch.
  */
 export function ConflictWizard({ view }: { view: RepoView }) {
   const [files, setFiles] = useState<ConflictFile[] | null>(null)
@@ -30,57 +32,73 @@ export function ConflictWizard({ view }: { view: RepoView }) {
     }, (e) => reportError('Could not list conflicts', e))
   }, [view.id, unmergedKey, view.worktreeTick])
 
+  // Resolved here means staged during this operation; the count drives the progress bar.
   const resolved = view.snapshot.status.filter((e) => e.kind !== 'unmerged' && e.index !== '.' && e.kind !== 'untracked')
+  const total = (files?.length ?? 0) + resolved.length
   const opLabel = op ? opName(op) : 'operation'
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col" data-testid="conflicts">
-      <div className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-panel px-4">
-        <CircleAlert size={18} className="text-warn" />
+      <div className="flex h-14 shrink-0 items-center gap-3 border-b border-line bg-panel px-4">
+        <span className="flex size-8 items-center justify-center rounded-lg bg-warn/15 text-warn"><GitMerge size={17} /></span>
         <div className="min-w-0 flex-1">
           <div className="text-[14px] font-semibold">{op ? `${sentence(opLabel)} in progress` : 'No operation in progress'}</div>
-          <div className="text-xs text-muted">
-            {files === null ? 'Checking…' : files.length ? `${files.length} ${files.length === 1 ? 'file has' : 'files have'} conflicts` : 'All conflicts resolved'}
+          <div className="flex items-center gap-2 text-xs text-muted">
+            <span data-testid="conflict-progress">
+              {files === null ? 'Checking…' : files.length ? `${resolved.length} of ${total} ${total === 1 ? 'file' : 'files'} resolved` : 'All conflicts resolved'}
+            </span>
+            {total > 0 && (
+              <span className="h-1.5 w-32 overflow-hidden rounded-full bg-hover" aria-hidden>
+                <span className="block h-full rounded-full bg-add transition-[width]" style={{ width: `${(resolved.length / total) * 100}%` }} />
+              </span>
+            )}
           </div>
         </div>
-        <Button onClick={() => updateRepo(view.id, { center: { kind: 'graph' } })} variant="ghost">Back to graph</Button>
+        <Button onClick={() => updateRepo(view.id, { center: { kind: 'graph' } })} variant="ghost"><ArrowLeft size={13} /> Back to graph</Button>
         {op && (
           <>
             <Button onClick={() => void run(view.id, `Abort ${opLabel}`, () => api.abortOperation(view.id))}>Abort {opLabel}</Button>
             <Button variant="primary" data-testid="continue-op" disabled={!files || files.length > 0}
+              title={files?.length ? 'Resolve every file first' : `Finish the ${opLabel}`}
               onClick={() => void run(view.id, `Continue ${opLabel}`, () => api.continueOperation(view.id), { success: `${sentence(opLabel)} complete` })}>
               Continue {opLabel}
             </Button>
           </>
         )}
       </div>
-      <div className="flex min-h-0 flex-1">
-        <div className="w-64 shrink-0 overflow-y-auto border-r border-line bg-panel py-2">
-          <div className="px-3 pb-1 text-[11px] font-semibold text-muted uppercase">Conflicted</div>
-          {files?.map((f) => (
-            <button key={f.path} onClick={() => setCurrent(f.path)} data-testid="conflict-file"
-              className={clsx('flex h-7 w-full items-center gap-2 px-3 text-left text-[13px]', current === f.path ? 'bg-select' : 'hover:bg-hover')}>
+      {/* The files, as tabs: conflicted first, then the ones already resolved. */}
+      <div className="flex shrink-0 items-end gap-1 overflow-x-auto border-b border-line bg-panel px-3 pt-2" role="tablist" aria-label="Files">
+        {files?.map((f) => {
+          const { dir, name } = splitPath(f.path)
+          return (
+            <button key={f.path} role="tab" aria-selected={current === f.path} onClick={() => setCurrent(f.path)} data-testid="conflict-file" title={f.path}
+              className={clsx('-mb-px flex h-8 max-w-72 shrink-0 items-center gap-1.5 rounded-t-md border px-3 text-[13px]',
+                current === f.path ? 'border-line border-b-bg bg-bg text-fg' : 'border-transparent text-muted hover:bg-hover hover:text-fg')}>
               <CircleAlert size={13} className="shrink-0 text-del" />
-              <span className="min-w-0 flex-1 truncate">{f.path}</span>
-              <span className="text-[11px] text-faint">{f.blocks || f.code}</span>
+              <span className="min-w-0 truncate"><span className="text-faint">{dir}</span>{name}</span>
+              <span className="shrink-0 rounded-full bg-del/15 px-1.5 text-[10px] font-semibold text-del" title={f.blocks ? `${f.blocks} conflicts` : f.code}>{f.blocks || f.code}</span>
             </button>
-          ))}
-          {resolved.length > 0 && <div className="mt-3 px-3 pb-1 text-[11px] font-semibold text-muted uppercase">Resolved / staged</div>}
-          {resolved.map((e) => (
-            <div key={e.path} className="flex h-7 items-center gap-2 px-3 text-[13px] text-muted">
-              <CheckCircle2 size={13} className="shrink-0 text-add" />
-              <span className="truncate">{e.path}</span>
-            </div>
-          ))}
-        </div>
-        {current && files?.some((f) => f.path === current) ? (
-          <ConflictFileView key={current} view={view} file={files.find((f) => f.path === current)!} />
-        ) : (
-          <div className="flex flex-1 items-center justify-center text-sm text-faint">
-            {files?.length === 0 ? `Everything is resolved. Continue the ${opLabel} when ready.` : 'Select a file'}
-          </div>
-        )}
+          )
+        })}
+        {resolved.map((e) => (
+          <span key={e.path} className="-mb-px flex h-8 max-w-60 shrink-0 items-center gap-1.5 px-3 text-[13px] text-faint" data-testid="resolved-file" title={`${e.path}: resolved`}>
+            <CheckCircle2 size={13} className="shrink-0 text-add" />
+            <span className="min-w-0 truncate">{splitPath(e.path).name}</span>
+          </span>
+        ))}
       </div>
+      {current && files?.some((f) => f.path === current) ? (
+        <ConflictFileView key={current} view={view} file={files.find((f) => f.path === current)!} />
+      ) : (
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm text-faint">
+          {files?.length === 0 ? (
+            <>
+              <CheckCircle2 size={28} className="text-add" />
+              <span>Everything is resolved. Continue the {opLabel} when ready.</span>
+            </>
+          ) : 'Select a file'}
+        </div>
+      )}
     </div>
   )
 }
@@ -136,33 +154,41 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
   const markersLeft = edited === null ? 0 : countConflicts(edited)
   const markResolved = () =>
     void run(view.id, `Mark ${file.path} resolved`, () => api.resolveConflict(view.id, file.path, { content: versions.merged ?? '' }), { quiet: true })
+  const { dir, name } = splitPath(file.path)
 
   let blockNo = -1
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-2 border-b border-line px-3 py-1.5">
-        <span className="min-w-32 flex-1 truncate text-[13px] font-semibold" title={file.path}>{file.path}</span>
-        <Button size="sm" onClick={() => resolveWith('ours')} disabled={versions.ours === null && versions.theirs === null}>
-          {versions.ours === null ? 'Keep deleted (ours)' : 'Take ours'}
-        </Button>
-        <Button size="sm" onClick={() => resolveWith('theirs')}>{versions.theirs === null ? 'Keep deleted (theirs)' : 'Take theirs'}</Button>
+      <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-2 border-b border-line px-3 py-1.5">
+        <span className="min-w-32 flex-1 truncate text-[13px]" title={file.path}><span className="text-faint">{dir}</span><span className="font-semibold">{name}</span></span>
+        {/* The whole file from one side, in that side's colour. */}
+        <div className="flex overflow-hidden rounded-md border border-line" role="group" aria-label="Take the whole file">
+          <button onClick={() => resolveWith('ours')} disabled={versions.ours === null && versions.theirs === null}
+            className="flex h-7 items-center gap-1.5 px-2.5 text-xs hover:bg-hover disabled:opacity-40" title={`Resolve the whole file with your version (${labels.ours})`}>
+            <i className="size-2 rounded-sm bg-ours" /> {versions.ours === null ? 'Keep deleted (ours)' : 'Take ours'}
+          </button>
+          <button onClick={() => resolveWith('theirs')} className="flex h-7 items-center gap-1.5 border-l border-line px-2.5 text-xs hover:bg-hover"
+            title={`Resolve the whole file with their version (${labels.theirs})`}>
+            <i className="size-2 rounded-sm bg-theirs" /> {versions.theirs === null ? 'Keep deleted (theirs)' : 'Take theirs'}
+          </button>
+        </div>
         {agentOn && versions.merged !== null && (
           <Button size="sm" onClick={askAi} data-testid="ai-resolve" title={asking ? 'Stop' : 'Ask your AI agent to propose a resolution (you review it before anything is written)'}>
             {asking ? <><Spinner /> Stop</> : <><Sparkles size={12} /> Ask AI</>}
           </Button>
         )}
-        <Button size="sm" variant="ghost" title="Open in your editor (Settings → Integrations)" onClick={() => void openInEditor(`${view.snapshot.path}/${file.path}`)}>
-          <ExternalLink size={12} /> Open
+        <Button size="sm" variant="ghost" title="Open in your editor (Settings → Integrations)" aria-label="Open in your editor" onClick={() => void openInEditor(`${view.snapshot.path}/${file.path}`)}>
+          <ExternalLink size={13} />
         </Button>
-        <Button size="sm" variant="ghost" title="Resolve in your external merge tool (Settings → Diff)" onClick={() => void openMergeTool(view.id, file.path)} data-testid="open-merge-tool">
-          Merge tool
+        <Button size="sm" variant="ghost" title="Resolve in your external merge tool (Settings → Diff)" aria-label="Open in the merge tool" onClick={() => void openMergeTool(view.id, file.path)} data-testid="open-merge-tool">
+          <Wrench size={13} />
         </Button>
         {canThree && (
-          <div className="flex overflow-hidden rounded border border-line" role="group" aria-label="Conflict view">
+          <div className="flex overflow-hidden rounded-md border border-line" role="group" aria-label="Conflict view">
             {(['three-pane', 'blocks'] as const).map((v) => (
               <button key={v} data-testid={`view-${v}`} aria-pressed={mode === v} onClick={() => { setPicked(v); setEdited(null) }}
-                className={clsx('h-6 px-2 text-xs', mode === v ? 'bg-select text-fg' : 'text-muted hover:bg-hover')}>
-                {v === 'three-pane' ? 'Three panes' : 'Blocks'}
+                className={clsx('h-7 px-2.5 text-xs', v === 'blocks' && 'border-l border-line', mode === v ? 'bg-select font-medium text-fg' : 'text-muted hover:bg-hover')}>
+                {v === 'three-pane' ? 'Three panes' : 'Cards'}
               </button>
             ))}
           </div>
@@ -171,7 +197,7 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
           <Button size="sm" variant={edited !== null ? 'primary' : 'default'} data-testid="edit-result"
             onClick={() => setEdited(edited === null ? resolveBlocks(versions.merged!, choices) : null)}
             title="Edit the merged file by hand, starting from the sides picked so far">
-            {edited === null ? 'Edit result' : 'Back to blocks'}
+            {edited === null ? 'Edit result' : 'Back to cards'}
           </Button>
         )}
         {edited !== null && (
@@ -182,7 +208,8 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
         )}
         {mode === 'blocks' && edited === null && blocks.length === 0 && versions.merged !== null && <Button size="sm" onClick={markResolved}>Mark resolved</Button>}
         {mode === 'blocks' && edited === null && blocks.length > 0 && (
-          <Button size="sm" variant="primary" disabled={!allChosen} onClick={save} data-testid="save-resolution">
+          <Button size="sm" variant="primary" disabled={!allChosen} onClick={save} data-testid="save-resolution"
+            title={allChosen ? 'Write this file and mark it resolved' : 'Decide every conflict first'}>
             Save resolution ({choices.filter(Boolean).length}/{blocks.length})
           </Button>
         )}
@@ -199,57 +226,106 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
           </Suspense>
         </div>
       ) : (
-      <div className="selectable min-h-0 flex-1 overflow-auto p-3 font-mono text-[12px]">
-        {versions.merged === null && (
-          <div className="font-sans text-sm text-muted">
-            This file was deleted on one side and changed on the other. Take ours or theirs to decide whether it stays.
-          </div>
-        )}
-        {blocks.length === 0 && versions.merged !== null && (
-          <div className="mb-3 font-sans text-sm text-muted">No conflict markers left in this file. Mark it resolved to stage it.</div>
-        )}
-        {segments.map((seg, si) => {
-          if (seg.kind === 'text') {
-            // Show a little context around each conflict instead of the whole file.
-            const lines = seg.lines
-            const shown = lines.length > 8 ? [...lines.slice(0, si === 0 ? 0 : 3), '⋯', ...lines.slice(-3)] : lines
-            return <pre key={si} className="px-2 text-faint">{shown.join('\n')}</pre>
-          }
-          blockNo++
-          const b = blockNo
-          const choice = choices[b]
-          const choose = (c: ConflictChoice) => setChoices((prev) => { const n = [...prev]; n[b] = c; return n })
-          return (
-            <div key={si} className="my-2 overflow-hidden rounded-md border border-line font-mono" data-testid="conflict-block">
-              <div className="grid grid-cols-2">
-                <Side title={`Ours (${seg.oursLabel || 'HEAD'})`} lines={seg.ours} active={choice === 'ours' || choice === 'both'} onPick={() => choose('ours')} pickLabel="Use ours" testId="use-ours" />
-                <Side title={`Theirs (${seg.theirsLabel || 'incoming'})`} lines={seg.theirs} active={choice === 'theirs' || choice === 'both'} onPick={() => choose('theirs')} pickLabel="Use theirs" border testId="use-theirs" />
-              </div>
-              <div className="flex items-center gap-2 border-t border-line bg-panel px-2 py-1 font-sans text-xs">
-                <span className="text-muted">Conflict {b + 1}:</span>
-                <Button size="sm" variant={choice === 'both' ? 'primary' : 'ghost'} onClick={() => choose('both')}>Use both (ours first)</Button>
-                {seg.base && <Button size="sm" variant={choice === 'base' ? 'primary' : 'ghost'} onClick={() => choose('base')}>Use original</Button>}
-                <span className="ml-auto text-faint">{choice ? `Using ${choice}` : 'Not decided'}</span>
-              </div>
+        <div className="selectable min-h-0 flex-1 overflow-auto bg-panel px-4 py-3">
+          {versions.merged === null && (
+            <div className="mx-auto max-w-2xl rounded-lg border border-line bg-bg p-4 text-sm text-muted">
+              This file was deleted on one side and changed on the other. Take ours or theirs to decide whether it stays.
             </div>
-          )
-        })}
-      </div>
+          )}
+          {blocks.length === 0 && versions.merged !== null && (
+            <div className="mb-3 text-sm text-muted">No conflict markers left in this file. Mark it resolved to stage it.</div>
+          )}
+          {segments.map((seg, si) => {
+            if (seg.kind === 'text') {
+              // A little context around each conflict instead of the whole file.
+              const lines = seg.lines
+              const shown = lines.length > 8 ? [...lines.slice(0, si === 0 ? 0 : 3), '⋯', ...lines.slice(-3)] : lines
+              return <pre key={si} className="px-3 font-mono text-[12px] text-faint">{shown.join('\n')}</pre>
+            }
+            blockNo++
+            const b = blockNo
+            return (
+              <ConflictCard key={si} seg={seg} index={b} count={blocks.length} choice={choices[b]}
+                onChoose={(c) => setChoices((prev) => { const n = [...prev]; n[b] = c; return n })} />
+            )
+          })}
+        </div>
       )}
     </div>
   )
 }
 
-function Side({ title, lines, active, onPick, pickLabel, border, testId }: {
-  title: string; lines: string[]; active: boolean; onPick: () => void; pickLabel: string; border?: boolean; testId: string
+const CHOICES: { value: ConflictChoice; label: string; testId: string; title: string }[] = [
+  { value: 'ours', label: 'Ours', testId: 'choice-ours', title: 'Keep only your lines' },
+  { value: 'theirs', label: 'Theirs', testId: 'choice-theirs', title: 'Keep only their lines' },
+  { value: 'both', label: 'Both', testId: 'choice-both', title: 'Yours, then theirs' },
+  { value: 'both-theirs-first', label: 'Both, theirs first', testId: 'choice-both-theirs-first', title: 'Theirs, then yours' },
+  { value: 'base', label: 'Original', testId: 'choice-base', title: 'The lines as they were before either change' },
+]
+
+/**
+ * One conflict: both sides next to each other (click a side to take it), a row of choices, and
+ * what the file will contain here once decided, coloured by where each line came from.
+ */
+function ConflictCard({ seg, index, count, choice, onChoose }: {
+  seg: ConflictBlock; index: number; count: number; choice: ConflictChoice | undefined; onChoose: (c: ConflictChoice) => void
 }) {
+  const result: { line: string; from: 'ours' | 'theirs' | 'base' }[] =
+    choice === 'ours' ? seg.ours.map((line) => ({ line, from: 'ours' }))
+    : choice === 'theirs' ? seg.theirs.map((line) => ({ line, from: 'theirs' }))
+    : choice === 'both' ? [...seg.ours.map((line) => ({ line, from: 'ours' as const })), ...seg.theirs.map((line) => ({ line, from: 'theirs' as const }))]
+    : choice === 'both-theirs-first' ? [...seg.theirs.map((line) => ({ line, from: 'theirs' as const })), ...seg.ours.map((line) => ({ line, from: 'ours' as const }))]
+    : choice === 'base' ? (seg.base ?? []).map((line) => ({ line, from: 'base' }))
+    : []
+  const takes = (side: 'ours' | 'theirs') => choice === side || choice === 'both' || choice === 'both-theirs-first'
   return (
-    <div className={clsx('min-w-0', border && 'border-l border-line', active && 'bg-add-bg')}>
-      <div className="flex items-center justify-between border-b border-line px-2 py-1 font-sans text-xs">
-        <span className="truncate font-semibold text-muted">{title}</span>
-        <Button size="sm" variant={active ? 'primary' : 'default'} onClick={onPick} data-testid={testId}>{pickLabel}</Button>
+    <div className={clsx('my-3 overflow-hidden rounded-lg border bg-bg shadow-sm', choice ? 'border-line' : 'border-del/50')} data-testid="conflict-block" data-choice={choice ?? ''}>
+      <div className="flex flex-wrap items-center gap-2 border-b border-line bg-panel px-3 py-1.5 text-xs">
+        <span className={clsx('font-semibold', choice ? 'text-add' : 'text-del')}>{choice ? '✓' : '!'} Conflict {index + 1} of {count}</span>
+        <div className="ml-auto flex flex-wrap overflow-hidden rounded-md border border-line" role="radiogroup" aria-label={`Conflict ${index + 1}`}>
+          {CHOICES.filter((c) => c.value !== 'base' || seg.base).map((c, i) => (
+            <button key={c.value} role="radio" aria-checked={choice === c.value} onClick={() => onChoose(c.value)} title={c.title} data-testid={c.testId}
+              className={clsx('flex h-6 items-center gap-1 px-2', i > 0 && 'border-l border-line', choice === c.value ? 'bg-accent text-accent-fg' : 'text-muted hover:bg-hover hover:text-fg')}>
+              {c.value === 'ours' && <i className="size-1.5 rounded-sm bg-ours" />}
+              {c.value === 'theirs' && <i className="size-1.5 rounded-sm bg-theirs" />}
+              {c.label}
+            </button>
+          ))}
+        </div>
       </div>
-      <pre className="overflow-x-auto px-2 py-1">{lines.length ? lines.join('\n') : <span className="text-faint italic">(nothing)</span>}</pre>
+      <div className="grid grid-cols-2 font-mono text-[12px]">
+        <SidePanel side="ours" label={seg.oursLabel || 'HEAD'} lines={seg.ours} taken={takes('ours')} onTake={() => onChoose(choice === 'theirs' ? 'both-theirs-first' : 'ours')} />
+        <SidePanel side="theirs" label={seg.theirsLabel || 'incoming'} lines={seg.theirs} taken={takes('theirs')} onTake={() => onChoose(choice === 'ours' ? 'both' : 'theirs')} />
+      </div>
+      <div className="border-t border-line" data-testid="conflict-result">
+        <div className="px-3 pt-1.5 text-[11px] font-semibold text-faint uppercase">Result</div>
+        {choice ? (
+          <pre className="px-0 pt-1 pb-2 font-mono text-[12px]">
+            {result.length ? result.map((r, i) => (
+              <div key={i} className="px-3" style={{ boxShadow: `inset 3px 0 0 ${r.from === 'base' ? 'var(--gs-faint)' : `var(--gs-${r.from})`}`, background: r.from === 'base' ? undefined : `color-mix(in srgb, var(--gs-${r.from}) 8%, transparent)` }}>
+                {r.line || ' '}
+              </div>
+            )) : <div className="px-3 text-faint italic">(nothing: these lines are removed)</div>}
+          </pre>
+        ) : <div className="px-3 pt-0.5 pb-2 text-xs text-faint">Pick a side above, or a choice on the right.</div>}
+      </div>
     </div>
+  )
+}
+
+/** One side of a conflict card. Clicking it takes it (adding to the other side if that was taken). */
+function SidePanel({ side, label, lines, taken, onTake }: { side: 'ours' | 'theirs'; label: string; lines: string[]; taken: boolean; onTake: () => void }) {
+  return (
+    <button onClick={onTake} data-testid={side === 'ours' ? 'use-ours' : 'use-theirs'} aria-pressed={taken}
+      title={taken ? `${side === 'ours' ? 'Your' : 'Their'} lines are in the result` : `Take ${side === 'ours' ? 'your' : 'their'} lines`}
+      className={clsx('min-w-0 text-left', side === 'theirs' && 'border-l border-line')}
+      style={{ background: `color-mix(in srgb, var(--gs-${side}) ${taken ? 16 : 5}%, transparent)`, boxShadow: taken ? `inset 0 0 0 2px var(--gs-${side})` : undefined }}>
+      <div className="flex items-center gap-2 px-3 py-1 font-sans text-[11px]">
+        <span className={clsx('rounded px-1 font-bold text-white', side === 'ours' ? 'bg-ours' : 'bg-theirs')}>{side === 'ours' ? 'A' : 'B'}</span>
+        <span className="min-w-0 flex-1 truncate font-semibold text-muted">{side === 'ours' ? 'Yours' : 'Theirs'} ({label})</span>
+        <span className={clsx('shrink-0', taken ? 'font-semibold' : 'text-faint')} style={taken ? { color: `var(--gs-${side})` } : undefined}>{taken ? '✓ in result' : 'Click to take'}</span>
+      </div>
+      <pre className="overflow-x-auto px-3 pb-2">{lines.length ? lines.join('\n') : <span className="text-faint italic">(nothing)</span>}</pre>
+    </button>
   )
 }
