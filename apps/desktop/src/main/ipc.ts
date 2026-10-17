@@ -19,7 +19,7 @@ export function broadcast(event: GitSquidEvent): void {
 /** Methods that change the repository. After each one we refresh and push a snapshot right away. */
 const WRITES = new Set<ApiMethod>([
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'checkout', 'createBranch',
-  'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset', 'cherryPick', 'cherryPickMany', 'recomposeApply', 'revert', 'createTag',
+  'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset', 'cherryPick', 'cherryPickMany', 'recomposeApply', 'dropCommits', 'moveCommits', 'revert', 'createTag',
   'deleteTag', 'fetch', 'pull', 'push', 'deleteRemoteBranch', 'stashPush', 'stashApply', 'stashPop',
   'stashDrop', 'resolveConflict', 'continueOperation', 'abortOperation', 'undo',
 ])
@@ -119,6 +119,9 @@ export function createHandlers(
     cherryPickMany: (id, hashes) => r(id).cherryPickMany(hashes),
     commitsText: (id, hashes, format) => r(id).commitsText(hashes, format),
     recomposeApply: (id, hashes, commits) => r(id).recompose(hashes, commits),
+    editableCommits: (id) => r(id).editableCommits(),
+    dropCommits: (id, hashes) => r(id).dropCommits(hashes),
+    moveCommits: (id, hashes, target, where) => r(id).moveCommits(hashes, target, where),
     revert: (id, hash) => r(id).revert(hash),
     createTag: (id, name, hash, message) => r(id).createTag(name, hash, message),
     deleteTag: (id, name) => r(id).deleteTag(name),

@@ -657,6 +657,85 @@ export class Repo {
     return this.moving(`Cherry-pick ${todo.length} ${todo.length === 1 ? 'commit' : 'commits'}`, () => this.git(['cherry-pick', ...mainline, ...todo]))
   }
 
+  // ---------------------------------------------------------------- editing history
+
+  /**
+   * The commits on the current branch that can be dropped or moved: from HEAD along first
+   * parents, newest first, stopping before the first merge and before the root commit (moving
+   * those needs --rebase-merges or --root, more than these simple edits should do).
+   */
+  async editableCommits(limit = 1000): Promise<string[]> {
+    const head = await this.currentHead()
+    if (!head.branch || !head.hash) return []
+    const out: string[] = []
+    const lines = (await this.read(['rev-list', '--first-parent', '--parents', '-n', String(limit + 1), 'HEAD'])).trim().split('\n')
+    for (const line of lines) {
+      const [h, ...parents] = line.split(' ')
+      if (parents.length !== 1) break
+      out.push(h!)
+    }
+    return out
+  }
+
+  /** Drop commits from the current branch (the ones after them are replayed). */
+  dropCommits(hashes: string[]): Promise<number | null> {
+    return this.reorder(`Drop ${hashes.length === 1 ? `${hashes[0]!.slice(0, 7)}` : `${hashes.length} commits`}`, async (chain) => {
+      const drop = new Set(hashes)
+      if (!hashes.every((h) => chain.includes(h))) throw new Error('Only commits on the current branch, after its last merge, can be dropped.')
+      return chain.filter((h) => !drop.has(h))
+    })
+  }
+
+  /**
+   * Move commits (kept in their relative order) to just above (newer than) or below (older than)
+   * `target`, on the current branch.
+   */
+  moveCommits(hashes: string[], target: string, where: 'above' | 'below'): Promise<number | null> {
+    return this.reorder(`Move ${hashes.length === 1 ? hashes[0]!.slice(0, 7) : `${hashes.length} commits`}`, async (chain) => {
+      if (![...hashes, target].every((h) => chain.includes(h))) {
+        throw new Error('Only commits on the current branch, after its last merge, can be moved.')
+      }
+      if (hashes.includes(target)) return chain
+      const moving = chain.filter((h) => hashes.includes(h))
+      const rest = chain.filter((h) => !hashes.includes(h))
+      const at = rest.indexOf(target) + (where === 'above' ? 1 : 0)
+      return [...rest.slice(0, at), ...moving, ...rest.slice(at)]
+    })
+  }
+
+  /**
+   * Rewrite the editable part of the branch to `plan(chain)` (oldest first) with an interactive
+   * rebase whose todo list we write ourselves. Only the part from the first changed position is
+   * replayed. --autostash keeps uncommitted work out of the way; a conflict stops the rebase like
+   * any other (the conflict wizard takes over, and Abort puts everything back).
+   */
+  private reorder(label: string, plan: (chainOldestFirst: string[]) => Promise<string[]>): Promise<number | null> {
+    return this.exclusive(async () => {
+      if (this.operation()) throw new Error(`Finish the ${this.operation()} in progress first.`)
+      const chain = (await this.editableCommits()).reverse()
+      const next = await plan(chain)
+      let i = 0
+      while (i < chain.length && chain[i] === next[i]) i++
+      if (i === chain.length && next.length === chain.length) return null
+      const base = (await this.read(['rev-parse', `${chain[i]}^`])).trim()
+      const todo = next.slice(i).map((h) => `pick ${h}`).join('\n') || 'noop'
+      const file = join(this.gitDir, `gitsquid-todo-${process.pid}`)
+      await writeFile(file, todo + '\n')
+      const before = (await this.currentHead()).hash!
+      try {
+        // git runs the sequence editor through a shell with the todo path appended.
+        // rebase.updateRefs=false, not --no-update-refs: the flag needs git 2.38+, config is ignored before.
+        await this.git(['-c', 'rebase.updateRefs=false', 'rebase', '-i', '--autostash', base], {
+          env: { GIT_SEQUENCE_EDITOR: `cp ${shellQuote(file)}` },
+        })
+      } finally {
+        await rm(file, { force: true })
+      }
+      const after = (await this.currentHead()).hash
+      return after === before ? null : this.record(label, [{ kind: 'reset', to: before, mode: 'keep' }], after)
+    })
+  }
+
   // ---------------------------------------------------------------- recompose
 
   /**
@@ -1088,4 +1167,9 @@ function describePaths(paths: string[]): string {
 function splitAuthor(a: string): Record<string, string> {
   const m = /^(.*) <(.*)>$/.exec(a)
   return m ? { GIT_AUTHOR_NAME: m[1]!, GIT_AUTHOR_EMAIL: m[2]! } : {}
+}
+
+/** Quote for a POSIX shell (git runs editors through one, also on Windows). */
+function shellQuote(s: string): string {
+  return `'${s.replace(/\\/g, '/').replace(/'/g, `'\\''`)}'`
 }

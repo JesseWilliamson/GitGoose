@@ -144,6 +144,12 @@ export interface GitSquidApi {
    * RecomposeProposal, oldest first). The branch ends at the same tree; one undo entry.
    */
   recomposeApply(repoId: string, hashes: string[], commits: { message: string; units: string[] }[]): Promise<UndoId>
+  /** Commits on the current branch that drop/move can edit (newest first; stops at a merge). */
+  editableCommits(repoId: string): Promise<string[]>
+  /** Remove commits from the current branch; later commits are replayed (may stop on conflicts). */
+  dropCommits(repoId: string, hashes: string[]): Promise<UndoId>
+  /** Move commits to just above (newer) or below (older) `target` on the current branch. */
+  moveCommits(repoId: string, hashes: string[], target: string, where: 'above' | 'below'): Promise<UndoId>
   /** Several commits as a diff or as format-patch text (graph order in, oldest first out). */
   commitsText(repoId: string, hashes: string[], format: 'diff' | 'patch'): Promise<string>
   revert(repoId: string, hash: string): Promise<UndoId>
@@ -187,7 +193,7 @@ export const API_METHODS = [
   'lastCommitMessage',
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit',
   'checkout', 'createBranch', 'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset',
-  'cherryPick', 'cherryPickMany', 'commitsText', 'recomposeApply', 'revert', 'createTag', 'deleteTag',
+  'cherryPick', 'cherryPickMany', 'commitsText', 'recomposeApply', 'editableCommits', 'dropCommits', 'moveCommits', 'revert', 'createTag', 'deleteTag',
   'fetch', 'pull', 'push', 'deleteRemoteBranch',
   'stashPush', 'stashApply', 'stashPop', 'stashDrop',
   'conflicts', 'conflictVersions', 'resolveConflict', 'continueOperation', 'abortOperation',

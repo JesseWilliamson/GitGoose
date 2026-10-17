@@ -1,6 +1,6 @@
 import { DropdownMenu } from 'radix-ui'
 import {
-  checkout, cherryPick, cherryPickMany, copy, copyCommits, currentBranchRef, deleteBranch, deleteRemoteBranch, deleteTag, dropOptions,
+ checkout, cherryPick, cherryPickMany, copy, copyCommits, dropCommits, moveCommits, currentBranchRef, deleteBranch, deleteRemoteBranch, deleteTag, dropOptions,
   merge, newBranch, newTag, push, rebase, renameBranch, reset, revert, shortRef,
 } from '../lib/actions'
 import { getLog, useStore } from '../lib/store'
@@ -58,6 +58,12 @@ export function GraphMenu({ repoId }: { repoId: string }) {
         <CM.Item onSelect={() => void copyCommits(repoId, menu.hashes, 'diff')}>Copy as diff</CM.Item>
         <CM.Item onSelect={() => void copyCommits(repoId, menu.hashes, 'patch')}>Copy as patch</CM.Item>
         <CM.Item onSelect={() => copy(menu.hashes.join('\n'), 'Copied SHAs')}>Copy SHAs</CM.Item>
+        {menu.hashes.every((h) => view.editable.includes(h)) && (
+          <>
+            <CM.Separator />
+            <CM.Item danger onSelect={() => void dropCommits(repoId, menu.hashes)}>Drop {n} commits</CM.Item>
+          </>
+        )}
         {aiOn && (
           <>
             <CM.Separator />
@@ -70,6 +76,8 @@ export function GraphMenu({ repoId }: { repoId: string }) {
 
   const hash = menu.hash
   const commit = getLog(repoId).commits[getLog(repoId).index.get(hash) ?? -1]
+  /** Where this commit sits among the ones drop/move can edit (newest first), or -1. */
+  const editAt = view.editable.indexOf(hash)
   const isHeadCommit = hash === snap.head.hash
   return (
     <CM.Content>
@@ -80,6 +88,14 @@ export function GraphMenu({ repoId }: { repoId: string }) {
       <CM.Separator />
       <CM.Item onSelect={() => void cherryPick(repoId, hash)} disabled={isHeadCommit}>Cherry-pick onto {headName}</CM.Item>
       <CM.Item onSelect={() => void revert(repoId, hash)}>Revert this commit</CM.Item>
+      {editAt >= 0 && (
+        <>
+          <CM.Separator />
+          <CM.Item disabled={editAt === 0} onSelect={() => void moveCommits(repoId, [hash], view.editable[editAt - 1]!, 'above')}>Move commit up</CM.Item>
+          <CM.Item disabled={editAt === view.editable.length - 1} onSelect={() => void moveCommits(repoId, [hash], view.editable[editAt + 1]!, 'below')}>Move commit down</CM.Item>
+          <CM.Item danger onSelect={() => void dropCommits(repoId, [hash])}>Drop commit</CM.Item>
+        </>
+      )}
       {aiOn && <CM.Item onSelect={() => recomposeWithAi(repoId, [hash])}>Split with AI…</CM.Item>}
       <CM.Sub label={`Reset ${headName} to here`}>
         <CM.Item onSelect={() => void reset(repoId, hash, 'soft')}>Soft: keep changes staged</CM.Item>

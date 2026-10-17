@@ -1,6 +1,6 @@
 import type { PullMode, Ref, RepoSnapshot, ResetMode } from '@gitsquid/shared'
 import { api, toUiError, type UiError } from './api'
-import { activeRepo, addRepo, choose, onSnapshot, openRepo, refreshAux, reportError, setting, toast, updateRepo, useStore } from './store'
+import { activeRepo, addRepo, alertConflicts, choose, onSnapshot, openRepo, refreshAux, reportError, setting, toast, updateRepo, useStore } from './store'
 
 /** The undo entry ids an action produced: a single id, an array of them (multi-step actions), or none. */
 function undoIdsOf(result: unknown): number[] {
@@ -46,10 +46,11 @@ export async function run(
     // A merge, rebase, cherry-pick or pull that stops on conflicts is not a failure to report
     // as an error: it is the start of the conflict workflow.
     const snap = await api.snapshot(id).catch(() => null)
-    if (snap?.operation && snap.status.some((x) => x.kind === 'unmerged')) {
+    if (snap?.status.some((x) => x.kind === 'unmerged')) {
       onSnapshot(snap)
       updateRepo(id, { center: { kind: 'conflicts' } })
-      toast({ kind: 'info', title: `${capitalize(snap.operation)} stopped on conflicts`, detail: 'Resolve them, then continue.' })
+      // The pushed snapshot may have arrived first (then onSnapshot saw no change): alert anyway.
+      alertConflicts(id, snap)
     } else if (!opts.onError?.(toUiError(e))) {
       reportError(`${label} failed`, e)
     }
@@ -58,10 +59,6 @@ export async function run(
     updateRepo(id, { busy: null })
     void refreshAux(id)
   }
-}
-
-function capitalize(s: string): string {
-  return s[0]!.toUpperCase() + s.slice(1)
 }
 
 /** Undo the most recent operation (toolbar, Ctrl+Z / ⌘Z, palette). */
@@ -255,6 +252,12 @@ export async function copyCommits(id: string, hashes: string[], format: 'diff' |
     reportError(`Could not copy the ${format}`, e)
   }
 }
+
+export const dropCommits = (id: string, hashes: string[]) =>
+  run(id, hashes.length === 1 ? `Drop ${hashes[0]!.slice(0, 7)}` : `Drop ${hashes.length} commits`, () => api.dropCommits(id, hashes))
+
+export const moveCommits = (id: string, hashes: string[], target: string, where: 'above' | 'below') =>
+  run(id, hashes.length === 1 ? `Move ${hashes[0]!.slice(0, 7)}` : `Move ${hashes.length} commits`, () => api.moveCommits(id, hashes, target, where))
 
 export const revert = (id: string, hash: string) =>
   run(id, `Revert ${hash.slice(0, 7)}`, () => api.revert(id, hash))

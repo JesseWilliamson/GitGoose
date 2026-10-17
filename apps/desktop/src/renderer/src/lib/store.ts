@@ -40,6 +40,8 @@ export interface RepoView {
   searchOpen: boolean
   /** Bumped to focus the search bar again (Ctrl+F while it is open). */
   searchFocus: number
+  /** Commits that drop / move / drag can edit: the current branch back to its last merge, newest first. */
+  editable: string[]
   stashes: StashEntry[]
   undo: UndoEntry[]
   progress: string | null
@@ -69,6 +71,8 @@ export interface Choice {
  */
 export interface Attention {
   id: number
+  /** Attentions with the same key replace each other (one "conflicts" row per repository). */
+  key?: string
   title: string
   detail?: string
   actions?: Choice[]
@@ -316,7 +320,7 @@ function newView(snap: RepoSnapshot): RepoView {
     id: snap.id, snapshot: snap, logVersion: 0,
     selected: snap.status.length ? { kind: 'wip' } : snap.head.hash ? { kind: 'commit', hash: snap.head.hash } : { kind: 'wip' },
     center: snap.operation && snap.status.some((e) => e.kind === 'unmerged') ? { kind: 'conflicts' } : { kind: 'graph' },
-    search: null, searchOpen: false, searchFocus: 0, stashes: [], undo: [], progress: null, busy: null, worktreeTick: 0,
+    search: null, searchOpen: false, searchFocus: 0, editable: [], stashes: [], undo: [], progress: null, busy: null, worktreeTick: 0,
   }
 }
 
@@ -379,9 +383,12 @@ export function onSnapshot(snap: RepoSnapshot): void {
   const hasConflicts = snap.status.some((e) => e.kind === 'unmerged')
   updateRepo(snap.id, (v) => ({
     snapshot: snap,
-    // A merge/rebase just stopped on conflicts: show the conflict wizard.
-    center: hasConflicts && !hadConflicts ? { kind: 'conflicts' } : !snap.operation && v.center.kind === 'conflicts' ? { kind: 'graph' } : v.center,
+    // Something just stopped on conflicts: show the conflict wizard. Leave it once the operation
+    // is over and nothing is unmerged (a stash pop has no operation, only unmerged files).
+    center: hasConflicts && !hadConflicts ? { kind: 'conflicts' } : !snap.operation && !hasConflicts && v.center.kind === 'conflicts' ? { kind: 'graph' } : v.center,
   }))
+  if (hasConflicts && !hadConflicts) alertConflicts(snap.id, snap)
+  else if (!hasConflicts) dismissAttentionKey(`conflicts-${snap.id}`)
   if (snap.refsVersion !== getLog(snap.id).generation) {
     resetLog(snap.id, snap)
     void loadMore(snap.id)
@@ -391,8 +398,8 @@ export function onSnapshot(snap: RepoSnapshot): void {
 
 export async function refreshAux(id: string): Promise<void> {
   try {
-    const [stashes, undo] = await Promise.all([api.stashList(id), api.undoList(id)])
-    updateRepo(id, { stashes, undo })
+    const [stashes, undo, editable] = await Promise.all([api.stashList(id), api.undoList(id), api.editableCommits(id)])
+    updateRepo(id, { stashes, undo, editable })
   } catch {
     // The tab was closed meanwhile.
   }
@@ -525,8 +532,34 @@ export function reportError(title: string, e: unknown, actions?: Choice[]): numb
 export function attention(a: Omit<Attention, 'id' | 'time'>): number {
   const id = nextAttention++
   // Newest first; keep the last few so a burst of failures cannot fill the screen.
-  set((s) => ({ attentions: [{ ...a, id, time: Date.now() }, ...s.attentions].slice(0, 5) }))
+  set((s) => ({ attentions: [{ ...a, id, time: Date.now() }, ...s.attentions.filter((x) => !a.key || x.key !== a.key)].slice(0, 5) }))
   return id
+}
+
+export function dismissAttentionKey(key: string): void {
+  set((s) => (s.attentions.some((a) => a.key === key) ? { attentions: s.attentions.filter((a) => a.key !== key) } : s))
+}
+
+/**
+ * Conflicts appeared (a merge, rebase, cherry-pick, revert, pull or stash pop stopped): say so in
+ * the attention bar, where it cannot be missed, with the two ways forward. It goes away by
+ * itself once nothing is unmerged.
+ */
+export function alertConflicts(id: string, snap: RepoSnapshot): void {
+  const files = snap.status.filter((e) => e.kind === 'unmerged').length
+  const op = snap.operation
+  const what = op ? `The ${op} stopped` : 'Applying the changes stopped'
+  attention({
+    key: `conflicts-${id}`,
+    title: `${what}: ${files} ${files === 1 ? 'file has' : 'files have'} conflicts`,
+    detail: op
+      ? `Resolve them in the conflict view, then continue the ${op}. Abort puts everything back as it was before the ${op}.`
+      : 'Resolve them in the conflict view and mark each file resolved.',
+    actions: [
+      { label: 'Resolve conflicts', variant: 'primary', run: () => updateRepo(id, { center: { kind: 'conflicts' } }) },
+      ...(op ? [{ label: `Abort ${op}`, run: () => void api.abortOperation(id).catch((e) => reportError(`Abort ${op} failed`, e)) }] : []),
+    ],
+  })
 }
 
 export function dismissAttention(id: number): void {

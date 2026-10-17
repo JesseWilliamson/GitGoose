@@ -6,7 +6,7 @@ import { Cloud, Laptop, Settings2, Tag } from 'lucide-react'
 import { ContextMenu, DropdownMenu } from 'radix-ui'
 import { memo, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import type { AvatarSource } from '@gitsquid/shared'
-import { checkout } from '../lib/actions'
+import { checkout, moveCommits } from '../lib/actions'
 import { avatarSrc, useAvatarVariant } from '../lib/avatar'
 import { formatDate, laneColor, shortHash } from '../lib/format'
 import { getLog, loadMore, saveSettings, selectCommit, selectedHashes, selectionCursor, updateRepo, useSetting, useStore, type RepoView } from '../lib/store'
@@ -25,6 +25,8 @@ const AUTO_LANES = 8
 const MIN_GRAPH_W = 64
 const MAX_GRAPH_W = 800
 export const REF_MIME = 'application/x-gitsquid-ref'
+/** Commits being dragged to a new place in the branch (JSON list of hashes). */
+export const COMMITS_MIME = 'application/x-gitsquid-commits'
 const COL_AUTHOR = 'hidden @2xl:flex'
 const COL_DATE = 'hidden @xl:block'
 const COL_SHA = 'hidden @3xl:block'
@@ -133,6 +135,7 @@ function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
   const graphW = userW ?? Math.max(MIN_GRAPH_W, Math.min(log.maxWidth, AUTO_LANES) * LANE_W + 12)
 
   const selectedSet = useMemo(() => new Set(selectedHashes(view.selected)), [view.selected])
+  const editableSet = useMemo(() => new Set(view.editable), [view.editable])
   // Keep the selected row in view when it changes (keyboard navigation, search, jumping to a parent).
   let selectedIndex = -1
   const cursor = selectionCursor(view.selected)
@@ -232,6 +235,7 @@ function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
                     headBranch={snap.head.branch}
                     isHead={commit.hash === snap.head.hash}
                     selected={selectedSet.has(commit.hash)}
+                    editable={editableSet.has(commit.hash)}
                     hit={hits ? hits.has(commit.hash) : null}
                     showPending={showWip}
                     graphW={graphW}
@@ -350,6 +354,8 @@ const CommitRow = memo(function CommitRow(props: {
   headBranch: string | undefined
   isHead: boolean
   selected: boolean
+  /** On the part of the current branch that can be reordered: draggable, and a drop target. */
+  editable: boolean
   hit: boolean | null
   showPending: boolean
   graphW: number
@@ -359,10 +365,28 @@ const CommitRow = memo(function CommitRow(props: {
   const src = avatarSrc(commit.authorEmail, look.avatars, look.avatarVariant)
   const author = useMemo(() => ({ name: commit.authorName, email: commit.authorEmail, src }), [commit.authorName, commit.authorEmail, src])
   const [dropping, setDropping] = useState(false)
+  /** Where dragged commits would land: just above (newer than) or below this one. */
+  const [dropAt, setDropAt] = useState<'above' | 'below' | null>(null)
   const pills = useMemo(() => (props.refs ? pillsFor(props.refs, props.headBranch, { remotes: look.showRemotes, tags: look.showTags }) : []),
     [props.refs, props.headBranch, look.showRemotes, look.showTags])
 
+  const onDragStart = (e: DragEvent) => {
+    // A branch pill inside the row starts its own drag.
+    if (!props.editable || (e.target as HTMLElement).closest('[data-testid="ref-pill"]')) return
+    const sel = useStore.getState().repos[repoId]?.selected
+    const hashes = sel?.kind === 'commits' && sel.hashes.includes(commit.hash) ? sel.hashes : [commit.hash]
+    e.dataTransfer.setData(COMMITS_MIME, JSON.stringify(hashes))
+    e.dataTransfer.effectAllowed = 'move'
+  }
   const onDragOver = (e: DragEvent) => {
+    if (e.dataTransfer.types.includes(COMMITS_MIME)) {
+      if (!props.editable) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      const box = (e.currentTarget as HTMLElement).getBoundingClientRect()
+      setDropAt(e.clientY < box.top + box.height / 2 ? 'above' : 'below')
+      return
+    }
     if (!e.dataTransfer.types.includes(REF_MIME)) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
@@ -370,6 +394,15 @@ const CommitRow = memo(function CommitRow(props: {
   }
   const onDrop = (e: DragEvent, ref?: Ref) => {
     setDropping(false)
+    const commits = e.dataTransfer.getData(COMMITS_MIME)
+    if (commits) {
+      e.preventDefault()
+      const where = dropAt ?? 'above'
+      setDropAt(null)
+      const hashes = JSON.parse(commits) as string[]
+      if (!hashes.includes(commit.hash)) void moveCommits(repoId, hashes, commit.hash, where)
+      return
+    }
     const raw = e.dataTransfer.getData(REF_MIME)
     if (!raw) return
     e.preventDefault()
@@ -394,8 +427,13 @@ const CommitRow = memo(function CommitRow(props: {
         if (sel?.kind === 'commits' && sel.hashes.includes(commit.hash)) useStore.setState({ menu: { kind: 'commits', hashes: sel.hashes } })
         else useStore.setState({ menu: { kind: 'commit', hash: commit.hash } })
       }}
+      draggable={props.editable}
+      onDragStart={onDragStart}
       onDragOver={onDragOver}
-      onDragLeave={() => setDropping(false)}
+      onDragLeave={() => {
+        setDropping(false)
+        setDropAt(null)
+      }}
       onDrop={(e) => onDrop(e)}
       className={clsx(
         'flex items-center text-[13px]',
@@ -428,6 +466,9 @@ const CommitRow = memo(function CommitRow(props: {
       {look.cols.sha && <div style={{ width: SHA_W }} className={clsx('shrink-0 px-2 font-mono text-xs text-faint', COL_SHA)}>{shortHash(commit.hash)}</div>}
       {/* Lines up with the header's gear. */}
       <div className="w-7 shrink-0" />
+      {dropAt && (
+        <div data-testid="drop-line" className={clsx('pointer-events-none absolute inset-x-0 h-0.5 bg-accent', dropAt === 'above' ? 'top-0' : 'bottom-0')} />
+      )}
     </div>
   )
 })
