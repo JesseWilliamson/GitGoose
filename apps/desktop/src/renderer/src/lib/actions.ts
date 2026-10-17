@@ -541,6 +541,37 @@ export function pop(id: string, index = 0): void {
   void run(id, 'Pop stash', () => api.stashPop(id, index), { success: 'Stash popped' })
 }
 
+/** The stash variants: only some files, only what is staged, or everything but leave the staged part in place. */
+export function stashWith(id: string, opts: { paths?: string[]; staged?: boolean; keepIndex?: boolean; message?: string }): Promise<boolean> {
+  const what = opts.paths?.length === 1 ? opts.paths[0] : opts.paths ? `${opts.paths.length} files` : opts.staged ? 'staged changes' : 'changes'
+  return run(id, `Stash ${what}`, () => api.stashPush(id, { includeUntracked: !opts.staged, ...opts }), {
+    success: opts.keepIndex ? 'Stashed; the staged changes are still in place' : `Stashed ${what}`,
+  })
+}
+
+export function stashWithMessage(id: string): void {
+  ask('Stash changes', 'Message', 'Stash', (message) => void stashWith(id, { message: message.trim() }), { placeholder: 'What these changes are' })
+}
+
+/** A branch where the stash was made, with the stash applied: for a stash that no longer applies here. */
+export function stashToBranch(id: string, index: number): void {
+  ask(`Create a branch from stash@{${index}}`, 'Branch name', 'Create branch', (name) => {
+    void run(id, `Stash to branch ${name.trim()}`, () => api.stashBranch(id, index, name.trim())).then((ok) => {
+      // The stash is gone; what it held is now uncommitted changes on the new branch.
+      if (ok) updateRepo(id, { selected: { kind: 'wip' }, center: { kind: 'graph' } })
+    })
+  }, { placeholder: 'rescued-work' })
+}
+
+/**
+ * Restore a file in the working copy to its version at `rev`, which may be a stash (then a file
+ * the stash saved as untracked is found too).
+ */
+export function restoreFileFrom(id: string, path: string, rev: string): Promise<boolean> {
+  const stash = useStore.getState().repos[id]?.stashes.find((s) => s.hash === rev)
+  return run(id, stash ? `Take ${path} from ${stash.ref}` : `Restore ${path}`, () => api.restoreFile(id, path, rev, { stash: !!stash }))
+}
+
 export const stashApply = (id: string, index: number) => run(id, 'Apply stash', () => api.stashApply(id, index), { success: 'Stash applied' })
 export const stashDrop = (id: string, index: number) => run(id, 'Drop stash', () => api.stashDrop(id, index), { success: 'Stash dropped' })
 

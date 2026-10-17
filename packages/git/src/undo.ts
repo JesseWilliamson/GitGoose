@@ -39,6 +39,12 @@ export type UndoAction =
   | { kind: 'stash-apply'; hash: string }
   /** Write every file of a saved tree into the working tree (backup taken during conflicts). */
   | { kind: 'restore-tree'; tree: string }
+  /**
+   * Throw away working-tree changes that are saved elsewhere (a stash entry being restored), but
+   * only if they are still exactly `tree` plus the `untracked` files: anything else the user
+   * changed since makes it refuse, before it touches a thing.
+   */
+  | { kind: 'drop-applied'; tree: string; untracked: { path: string; blob: string }[] }
   /** Write saved blobs back to the working tree. `blob: null` means the file did not exist. */
   | { kind: 'restore-files'; files: { path: string; blob: string | null; mode?: number }[] }
 

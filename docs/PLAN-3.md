@@ -124,3 +124,6 @@ changes.
       cleanup (merged and stale badges, delete several in one undoable step)
 - [x] 20 reflog view (sidebar, palette, Repository menu): lost commits marked, restore as a
       branch under the name it had, check out, reset to an entry
+- [x] 18 stash only some files, only the staged changes, or everything keeping the staged part;
+      a branch from a stash (undo drops the applied changes only if they are untouched); take one
+      file from a stash, untracked files included

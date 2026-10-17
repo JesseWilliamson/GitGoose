@@ -4,7 +4,7 @@ import clsx from 'clsx'
 import { ChevronDown, X } from 'lucide-react'
 import { DropdownMenu } from 'radix-ui'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { discard, openInEditor, run } from '../lib/actions'
+import { discard, openInEditor, restoreFileFrom, run } from '../lib/actions'
 import { api } from '../lib/api'
 import { formatDate, hashColor, laneColor, relativeTime, shortHash, splitPath } from '../lib/format'
 import { pairs, segments, splitRows, wordDiff, type Ranges } from '../lib/diffLayout'
@@ -356,7 +356,7 @@ function RevisionMenu({ view, rev, path }: { view: RepoView; rev: string; path: 
         <DM.Item onSelect={() => void api.openFileAt(view.id, rev, path).catch((e) => reportError('Could not open the file', e))}>Open this version</DM.Item>
         <DM.Item onSelect={() => void api.saveFileAt(view.id, rev, path).catch((e) => reportError('Could not save the file', e))}>Save this version as…</DM.Item>
         <DM.Separator />
-        <DM.Item onSelect={() => void run(view.id, `Restore ${path}`, () => api.restoreFile(view.id, path, rev))}>Restore the working copy to this version</DM.Item>
+        <DM.Item onSelect={() => void restoreFileFrom(view.id, path, rev)}>{view.stashes.some((s) => s.hash === rev) ? 'Take this file from the stash' : 'Restore the working copy to this version'}</DM.Item>
       </DM.Content>
     </DropdownMenu.Root>
   )

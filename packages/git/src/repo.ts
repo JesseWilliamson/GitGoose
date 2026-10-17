@@ -349,10 +349,19 @@ export class Repo {
    * Put a file in the working tree back to its content at `rev` (or delete it, when it did not
    * exist there). The current content is saved first, so it can be undone.
    */
-  restoreFile(path: string, rev: string): Promise<number> {
+  /**
+   * Write a file as of `rev` into the working copy (or delete it if `rev` does not have it).
+   * With `stash`, `rev` is a stash commit: a file stashed with -u lives in its third parent.
+   */
+  restoreFile(path: string, rev: string, opts: { stash?: boolean } = {}): Promise<number> {
     return this.exclusive(async () => {
       const saved = await this.saveFiles([path])
-      const exists = (await this.runner.run(['cat-file', '-e', `${rev}:${path}`], { okCodes: [128, 1], readOnly: true })).code === 0
+      const has = async (r: string) => (await this.runner.run(['cat-file', '-e', `${r}:${path}`], { okCodes: [128, 1], readOnly: true })).code === 0
+      let exists = await has(rev)
+      if (!exists && opts.stash && (await has(`${rev}^3`))) {
+        rev = `${rev}^3`
+        exists = true
+      }
       if (exists) await this.git(['restore', `--source=${rev}`, '--worktree', '--', path])
       else await rm(join(this.path, path), { force: true })
       return this.record(`Restore ${path} from ${rev.slice(0, 7)}`, [{ kind: 'restore-files', files: saved }], (await this.currentHead()).hash)
@@ -1249,13 +1258,58 @@ export class Repo {
     }
   }
 
-  stashPush(opts: { message?: string; includeUntracked?: boolean } = {}): Promise<number | null> {
+  /**
+   * Stash changes: everything (`includeUntracked` adds new files), only some `paths`, only what is
+   * staged (`staged`), or everything while leaving the staged changes in place (`keepIndex`, to
+   * test exactly what is about to be committed). Undo pops it back with --index. After a
+   * --staged stash of a partly staged file that pop can refuse; the stash is kept when it does.
+   */
+  stashPush(opts: { message?: string; includeUntracked?: boolean; paths?: string[]; staged?: boolean; keepIndex?: boolean } = {}): Promise<number | null> {
     return this.exclusive(async () => {
       const before = await this.topStash()
-      await this.git(['stash', 'push', ...(opts.includeUntracked ? ['-u'] : []), ...(opts.message ? ['-m', opts.message] : [])])
+      await this.git([
+        'stash', 'push',
+        ...(opts.includeUntracked && !opts.staged ? ['-u'] : []),
+        ...(opts.staged ? ['--staged'] : []),
+        ...(opts.keepIndex ? ['--keep-index'] : []),
+        ...(opts.message ? ['-m', opts.message] : []),
+        ...(opts.paths?.length ? ['--', ...opts.paths] : []),
+      ])
       const after = await this.topStash()
       if (!after || after === before) return null
-      return this.record('Stash changes', [{ kind: 'stash-pop', hash: after }], (await this.currentHead()).hash)
+      const what = opts.paths?.length ? describePaths(opts.paths) : opts.staged ? 'staged changes' : 'changes'
+      return this.record(`Stash ${what}`, [{ kind: 'stash-pop', hash: after }], (await this.currentHead()).hash)
+    })
+  }
+
+  /**
+   * `git stash branch`: a new branch where the stash was made, checked out, with the stash
+   * applied and dropped. The way out when a stash no longer applies to where you are now. Undo
+   * puts the stash entry back and returns to where you were; the applied changes are dropped
+   * (they are in the restored stash), unless you edited the files since, when undo refuses.
+   */
+  stashBranch(index: number, name: string): Promise<number> {
+    return this.exclusive(async () => {
+      const entry = (await this.stashList()).find((s) => s.index === index)
+      if (!entry) throw new Error(`No stash@{${index}}`)
+      const before = await this.currentHead()
+      // What applying it will leave in the working tree: the stash's tree, plus its untracked files.
+      const tree = await this.revParse(`${entry.hash}^{tree}`)
+      const third = await this.runner.run(['rev-parse', '--verify', '-q', `${entry.hash}^3`], { readOnly: true, okCodes: [1] })
+      const untracked = third.code === 0
+        ? (await this.read(['ls-tree', '-r', '-z', third.stdout.trim()])).split('\0').filter(Boolean).map((l) => {
+            const tab = l.indexOf('\t')
+            return { path: l.slice(tab + 1), blob: l.slice(0, tab).split(' ')[2]! }
+          })
+        : []
+      await this.git(['stash', 'branch', name, entry.ref])
+      const tip = await this.revParse(`refs/heads/${name}`)
+      return this.record(`Stash to branch ${name}`, [
+        { kind: 'drop-applied', tree, untracked },
+        { kind: 'stash-store', hash: entry.hash, message: entry.message },
+        this.returnTo(before),
+        { kind: 'update-ref', ref: `refs/heads/${name}`, to: null, from: tip },
+      ], (await this.currentHead()).hash)
     })
   }
 
@@ -1493,6 +1547,19 @@ export class Repo {
         } finally {
           await rm(tmp, { force: true })
         }
+        break
+      }
+      case 'drop-applied': {
+        // `stash create` snapshots the tracked working tree without touching anything.
+        const w = (await this.git(['stash', 'create'])).stdout.trim()
+        const tree = await this.revParse(`${w || 'HEAD'}^{tree}`)
+        const changed = 'The working tree changed since, so undo cannot tell your edits from the stash: commit or stash them first.'
+        if (tree !== a.tree) throw new Error(changed)
+        for (const f of a.untracked) {
+          if ((await this.read(['hash-object', '--', f.path])).trim() !== f.blob) throw new Error(changed)
+        }
+        await this.git(['reset', '--hard', '-q'])
+        for (const f of a.untracked) await rm(join(this.path, f.path), { force: true })
         break
       }
       case 'restore-files':

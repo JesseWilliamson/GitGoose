@@ -3,7 +3,7 @@ import clsx from 'clsx'
 import { Archive, ChevronDown, ChevronRight, Cloud, GitBranch, History, Plus, Tag } from 'lucide-react'
 import { ContextMenu } from 'radix-ui'
 import { useMemo, useState, type ReactNode } from 'react'
-import { addRemote, checkout, isStale, pop, remoteNames, stashApply, stashDrop } from '../lib/actions'
+import { addRemote, checkout, isStale, pop, remoteNames, stashApply, stashDrop, stashToBranch } from '../lib/actions'
 import { relativeTime, stashLabel } from '../lib/format'
 import { ensureLoaded, updateRepo, useStore, type RepoView } from '../lib/store'
 import { REF_MIME } from './Graph'
@@ -187,6 +187,7 @@ function StashItem({ repoId, index, message, date, selected, onSelect }: {
       <CM.Content>
         <CM.Item onSelect={() => pop(repoId, index)}>Pop (apply and delete)</CM.Item>
         <CM.Item onSelect={() => void stashApply(repoId, index)}>Apply</CM.Item>
+        <CM.Item onSelect={() => stashToBranch(repoId, index)}>Create a branch from this stash…</CM.Item>
         <CM.Separator />
         <CM.Item danger onSelect={() => void stashDrop(repoId, index)}>Drop</CM.Item>
       </CM.Content>

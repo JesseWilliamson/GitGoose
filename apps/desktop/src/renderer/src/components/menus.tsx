@@ -1,7 +1,7 @@
 import { DropdownMenu } from 'radix-ui'
 import {
  addRemote, checkRemoteTags, cleanupBranches, clearPushUrl, deleteRemoteTag, editRemoteUrl, fastForward, fetchAll, fetchRemote, pushBranch, pushTags, pushTo, remoteNames, removeRemote, renameRemote, setUpstream,
- checkout, cherryPick, cherryPickMany, compare, compareSinceFork, copy, fixupInto, pop, reword, squashCommit, stashApply, stashDrop, copyCommits, dropCommits, moveCommits, currentBranchRef, deleteBranch, deleteRemoteBranch, deleteTag, dropOptions,
+ stashToBranch, checkout, cherryPick, cherryPickMany, compare, compareSinceFork, copy, fixupInto, pop, reword, squashCommit, stashApply, stashDrop, copyCommits, dropCommits, moveCommits, currentBranchRef, deleteBranch, deleteRemoteBranch, deleteTag, dropOptions,
   merge, newBranch, newTag, push, rebase, renameBranch, reset, revert, shortRef,
 } from '../lib/actions'
 import { shortHash, stashLabel } from '../lib/format'
@@ -159,6 +159,7 @@ export function GraphMenu({ repoId }: { repoId: string }) {
         <CM.Label>{s.ref}: {stashLabel(s.message)}</CM.Label>
         <CM.Item onSelect={() => void stashApply(repoId, s.index)}>Apply stash</CM.Item>
         <CM.Item onSelect={() => pop(repoId, s.index)}>Pop stash</CM.Item>
+        <CM.Item onSelect={() => stashToBranch(repoId, s.index)}>Create a branch from this stash…</CM.Item>
         <CM.Separator />
         <CM.Item danger onSelect={() => void stashDrop(repoId, s.index)}>Drop stash</CM.Item>
       </CM.Content>

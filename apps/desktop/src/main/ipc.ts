@@ -24,7 +24,7 @@ const WRITES = new Set<ApiMethod>([
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'checkout', 'createBranch',
   'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset', 'cherryPick', 'cherryPickMany', 'recomposeApply', 'dropCommits', 'moveCommits', 'restoreFile', 'addRemote', 'removeRemote', 'renameRemote', 'setRemoteUrl', 'pushTags',
   'deleteRemoteTag', 'setUpstream', 'fastForward', 'deleteBranches', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'redo', 'revert', 'createTag',
-  'deleteTag', 'fetch', 'pull', 'push', 'deleteRemoteBranch', 'stashPush', 'stashApply', 'stashPop',
+  'deleteTag', 'fetch', 'pull', 'push', 'deleteRemoteBranch', 'stashPush', 'stashBranch', 'stashApply', 'stashPop',
   'stashDrop', 'resolveConflict', 'continueOperation', 'abortOperation', 'undo',
 ])
 
@@ -139,7 +139,7 @@ export function createHandlers(
     mergedBranches: (id) => r(id).mergedBranches(),
     compareFiles: (id, from, to) => r(id).compareFiles(from, to),
     mergeBase: (id, a, b) => r(id).mergeBase(a, b),
-    restoreFile: (id, path, rev) => r(id).restoreFile(path, rev),
+    restoreFile: (id, path, rev, opts) => r(id).restoreFile(path, rev, opts),
     openFileAt: async (id, rev, path) => {
       // A read-only copy under the temp folder, named so the editor knows the language.
       const dir = await mkdtemp(join(tmpdir(), `gitsquid-${rev.slice(0, 7)}-`))
@@ -176,6 +176,7 @@ export function createHandlers(
     deleteRemoteBranch: (id, ref) => r(id).deleteRemoteBranch(ref),
 
     stashPush: (id, opts) => r(id).stashPush(opts),
+    stashBranch: (id, i, name) => r(id).stashBranch(i, name),
     stashApply: (id, i) => r(id).stashApply(i),
     stashPop: (id, i) => r(id).stashPop(i),
     stashDrop: (id, i) => r(id).stashDrop(i),

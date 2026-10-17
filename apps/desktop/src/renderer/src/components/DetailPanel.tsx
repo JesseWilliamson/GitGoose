@@ -1,7 +1,8 @@
 import type { ChangedFile, CommitDetails, DiffTarget, StatusEntry } from '@gitsquid/shared'
-import { Check, Copy, Minus, Plus, Sparkles, Undo2, X } from 'lucide-react'
+import { Archive, Check, ChevronDown, Copy, Minus, Plus, Sparkles, Undo2, X } from 'lucide-react'
+import { DropdownMenu } from 'radix-ui'
 import { useEffect, useRef, useState } from 'react'
-import { cherryPickMany, compare, copy, copyCommits, discard as discardFiles, openInEditor, pop, run, stashApply, stashDrop } from '../lib/actions'
+import { cherryPickMany, compare, copy, copyCommits, discard as discardFiles, openInEditor, pop, restoreFileFrom, run, stashApply, stashDrop, stashToBranch, stashWith, stashWithMessage } from '../lib/actions'
 import { cancelAi, startAi, useAiEnabled } from '../lib/ai'
 import { api, toUiError } from '../lib/api'
 import { dateTime, sentence, shortHash, stashLabel } from '../lib/format'
@@ -11,7 +12,7 @@ import { Avatar } from './Avatar'
 import { recomposeWithAi } from './RecomposeDialog'
 import { FileRow, statusKind } from './FileList'
 import { modName } from '../lib/keys'
-import { Button, CM, SectionHeader, Spinner } from './ui'
+import { Button, CM, DM, SectionHeader, Spinner } from './ui'
 
 export function DetailPanel({ view }: { view: RepoView }) {
   return (
@@ -50,8 +51,8 @@ function FileMenu({ view, target, children }: { view: RepoView; target: DiffTarg
           <CM.Separator />
           <CM.Item onSelect={() => void api.openFileAt(view.id, rev, target.path).catch((e) => reportError('Could not open the file', e))}>Open this version</CM.Item>
           <CM.Item onSelect={() => void api.saveFileAt(view.id, rev, target.path).catch((e) => reportError('Could not save the file', e))}>Save this version as…</CM.Item>
-          <CM.Item onSelect={() => void run(view.id, `Restore ${target.path}`, () => api.restoreFile(view.id, target.path, rev))}>Restore the working copy to this version</CM.Item>
-          {target.kind === 'commit' && (
+          <CM.Item onSelect={() => void restoreFileFrom(view.id, target.path, rev)}>{view.stashes.some((s) => s.hash === rev) ? 'Take this file from the stash' : 'Restore the working copy to this version'}</CM.Item>
+          {target.kind === 'commit' && !view.stashes.some((s) => s.hash === rev) && (
             <CM.Item onSelect={() => void run(view.id, `Restore ${target.path}`, () => api.restoreFile(view.id, target.path, `${target.hash}^`))}>Restore the working copy to before this commit</CM.Item>
           )}
         </>
@@ -82,9 +83,25 @@ function WipPanel({ view }: { view: RepoView }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="border-b border-line px-3 py-2 text-[13px]">
-        <span className="font-semibold">{st.length} file {st.length === 1 ? 'change' : 'changes'}</span>
-        <span className="text-muted"> on {view.snapshot.head.branch ?? (view.snapshot.head.detached ? 'detached HEAD' : 'a new branch')}</span>
+      <div className="flex items-center gap-2 border-b border-line px-3 py-2 text-[13px]">
+        <span className="min-w-0 flex-1 truncate">
+          <span className="font-semibold">{st.length} file {st.length === 1 ? 'change' : 'changes'}</span>
+          <span className="text-muted"> on {view.snapshot.head.branch ?? (view.snapshot.head.detached ? 'detached HEAD' : 'a new branch')}</span>
+        </span>
+        {st.length > 0 && (
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <Button size="sm" variant="ghost" data-testid="stash-menu"><Archive size={12} /> Stash <ChevronDown size={12} /></Button>
+            </DropdownMenu.Trigger>
+            <DM.Content align="end">
+              <DM.Item onSelect={() => void stashWith(id, {})}>Stash all changes</DM.Item>
+              <DM.Item onSelect={() => stashWithMessage(id)}>Stash with a message…</DM.Item>
+              <DM.Separator />
+              <DM.Item disabled={!staged.length} onSelect={() => void stashWith(id, { staged: true })}>Stash only the staged changes</DM.Item>
+              <DM.Item disabled={!staged.length} onSelect={() => void stashWith(id, { keepIndex: true })}>Stash all, keep the staged changes in place</DM.Item>
+            </DM.Content>
+          </DropdownMenu.Root>
+        )}
       </div>
       {view.snapshot.operation && (
         <div className="flex items-center justify-between gap-2 border-b border-line bg-warn/10 px-3 py-2 text-[13px]">
@@ -108,6 +125,7 @@ function WipPanel({ view }: { view: RepoView }) {
                   selected={isOpen(view, t)} onClick={() => openFile(view, t)}
                   menu={<FileMenu view={view} target={t}>
                     <CM.Item onSelect={() => void stage([e.path])}>Stage</CM.Item>
+                    <CM.Item onSelect={() => void stashWith(id, { paths: [e.path] })}>Stash this file</CM.Item>
                     <CM.Item onSelect={() => void discard([e.path])}>{e.kind === 'untracked' ? 'Delete (undoable)' : 'Discard changes (undoable)'}</CM.Item>
                     {e.kind === 'untracked' && (
                       <CM.Item onSelect={() => void run(id, `Ignore ${e.path}`, () => api.ignorePaths(id, [e.path]))}>Add to .gitignore</CM.Item>
@@ -132,7 +150,10 @@ function WipPanel({ view }: { view: RepoView }) {
               return (
                 <FileRow key={e.path} path={e.path} oldPath={e.origPath} kind={statusKind(e.index)} testId="staged-file"
                   selected={isOpen(view, t)} onClick={() => openFile(view, t)}
-                  menu={<FileMenu view={view} target={t}><CM.Item onSelect={() => void unstage([e.path])}>Unstage</CM.Item></FileMenu>}
+                  menu={<FileMenu view={view} target={t}>
+                    <CM.Item onSelect={() => void unstage([e.path])}>Unstage</CM.Item>
+                    <CM.Item onSelect={() => void stashWith(id, { paths: [e.path] })}>Stash this file</CM.Item>
+                  </FileMenu>}
                   actions={<IconAction title="Unstage file" onClick={() => void unstage([e.path])}><Minus size={12} /></IconAction>} />
               )
             })}
@@ -438,6 +459,7 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
             updateRepo(view.id, { selected: { kind: 'wip' }, center: { kind: 'graph' } })
             void stashDrop(view.id, stash.index)
           }}>Drop</Button>
+          <Button size="sm" variant="ghost" title="A new branch where the stash was made, with the stash applied" onClick={() => stashToBranch(view.id, stash.index)}>Branch…</Button>
         </div>
       )}
       <div className="selectable border-b border-line p-3">

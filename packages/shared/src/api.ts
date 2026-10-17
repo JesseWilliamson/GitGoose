@@ -161,7 +161,8 @@ export interface GitSquidApi {
   /** Where two revisions forked from each other. */
   mergeBase(repoId: string, a: string, b: string): Promise<string>
   /** Put a working-tree file back to its content at `rev` (undoable). */
-  restoreFile(repoId: string, path: string, rev: string): Promise<UndoId>
+  /** `stash`: rev is a stash commit, whose untracked files live in its third parent. */
+  restoreFile(repoId: string, path: string, rev: string, opts?: { stash?: boolean }): Promise<UndoId>
   /** Open a file as it was at `rev` in the default app (a read-only temporary copy). */
   openFileAt(repoId: string, rev: string, path: string): Promise<void>
   /** Save a file as it was at `rev` where the user chooses; false when they cancel. */
@@ -202,7 +203,9 @@ export interface GitSquidApi {
   deleteRemoteBranch(repoId: string, remoteRef: string): Promise<void>
 
   // Stash
-  stashPush(repoId: string, opts?: { message?: string; includeUntracked?: boolean }): Promise<UndoId>
+  stashPush(repoId: string, opts?: { message?: string; includeUntracked?: boolean; paths?: string[]; staged?: boolean; keepIndex?: boolean }): Promise<UndoId>
+  /** A new branch at the stash's base with the stash applied (and dropped). */
+  stashBranch(repoId: string, index: number, name: string): Promise<UndoId>
   stashApply(repoId: string, index: number): Promise<void>
   stashPop(repoId: string, index: number): Promise<UndoId>
   stashDrop(repoId: string, index: number): Promise<UndoId>
@@ -238,7 +241,7 @@ export const API_METHODS = [
   'cherryPick', 'cherryPickMany', 'commitsText', 'recomposeApply', 'compareFiles', 'mergeBase', 'restoreFile', 'openFileAt', 'saveFileAt', 'editableCommits', 'dropCommits', 'moveCommits', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'preparedMessage', 'redo', 'redoList', 'revert', 'createTag', 'deleteTag',
   'fetch', 'pull', 'push', 'deleteRemoteBranch', 'remotes', 'addRemote', 'removeRemote', 'renameRemote', 'setRemoteUrl',
   'pushTags', 'deleteRemoteTag', 'remoteTags', 'setUpstream', 'fastForward', 'deleteBranches', 'mergedBranches',
-  'stashPush', 'stashApply', 'stashPop', 'stashDrop',
+  'stashPush', 'stashBranch', 'stashApply', 'stashPop', 'stashDrop',
   'conflicts', 'conflictVersions', 'resolveConflict', 'continueOperation', 'abortOperation',
   'undoList', 'undo',
 ] as const satisfies readonly ApiMethod[]
