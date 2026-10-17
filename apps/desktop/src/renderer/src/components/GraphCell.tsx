@@ -1,32 +1,47 @@
 import type { Row } from '@gitsquid/graph'
 import { memo } from 'react'
-import { laneColor } from '../lib/format'
+import { hashColor, initials, laneColor } from '../lib/format'
 
 /** Graph row height: normal and compact (Settings → Appearance). */
 export const ROW_H = 28
 export const ROW_H_COMPACT = 22
-export const LANE_W = 16
+/** Wide enough for an avatar node (radius 9) with room for the lines either side. */
+export const LANE_W = 20
 const PAD = 6
 
 export const laneX = (lane: number) => PAD + lane * LANE_W + LANE_W / 2
+
+export interface NodeAuthor {
+  name: string
+  email: string
+  /** Avatar image (gitsquid-avatar: URL), or null for initials only. */
+  src: string | null
+}
 
 /**
  * One row of the graph as SVG. The layout already decided everything; this only draws:
  * straight lines for 'pass' edges, and curves for lines that change column on their way into
  * (top half) or out of (bottom half) the node.
+ *
+ * Nodes, like GitKraken's: a commit is its author's avatar ringed in the lane colour (initials
+ * underneath, so they show while the image loads or when there is none); a merge is a small
+ * dot; HEAD gets an extra outer ring.
  */
-export const GraphCell = memo(function GraphCell({ row, width, showPending, isHead, h = ROW_H }: {
+export const GraphCell = memo(function GraphCell({ row, width, showPending, isHead, h = ROW_H, author }: {
   row: Row
   width: number
-  h?: number
-  /** Draw the dashed HEAD lane (only when there is an uncommitted-changes row above). */
   showPending: boolean
   isHead: boolean
+  h?: number
+  author: NodeAuthor
 }) {
   const mid = h / 2
   const cx = laneX(row.lane)
+  const color = laneColor(row.color)
+  const r = h < ROW_H ? 8 : 9
+  const clip = `clip-${row.hash}`
   return (
-    <svg width={width} height={h} className="block shrink-0 overflow-hidden" aria-hidden>
+    <svg width={width} height={h} className="block shrink-0 overflow-hidden" aria-hidden data-node={row.merge ? 'merge' : 'commit'}>
       {row.edges.map((e, i) => {
         if (e.pending && !showPending) return null
         const x1 = laneX(e.from)
@@ -40,19 +55,40 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
             strokeDasharray={e.pending ? '3 3' : undefined} opacity={e.pending ? 0.7 : 1} />
         )
       })}
-      {isHead && <circle cx={cx} cy={mid} r={8} fill="none" stroke={laneColor(row.color)} strokeWidth={1.5} />}
-      <circle cx={cx} cy={mid} r={row.merge ? 3.5 : 5} fill={laneColor(row.color)} stroke="var(--gs-bg)" strokeWidth={1.5} />
+      {row.merge ? (
+        <circle cx={cx} cy={mid} r={4} fill={color} stroke="var(--gs-bg)" strokeWidth={1.5} />
+      ) : (
+        <g data-testid="avatar-node">
+          {isHead && <circle cx={cx} cy={mid} r={r + 3} fill="none" stroke={color} strokeWidth={1.5} />}
+          <circle cx={cx} cy={mid} r={r} fill={color} />
+          <circle cx={cx} cy={mid} r={r - 2} fill={laneColor(hashColor(author.email))} />
+          <text x={cx} y={mid} dy="0.35em" textAnchor="middle" fontSize={r > 8 ? 7.5 : 6.5} fontWeight={700} fill="#fff"
+            style={{ pointerEvents: 'none', fontFamily: 'var(--font-sans)' }}>{initials(author.name)}</text>
+          {author.src && (
+            <>
+              <defs>
+                <clipPath id={clip}><circle cx={cx} cy={mid} r={r - 2} /></clipPath>
+              </defs>
+              <image href={author.src} x={cx - (r - 2)} y={mid - (r - 2)} width={(r - 2) * 2} height={(r - 2) * 2}
+                clipPath={`url(#${clip})`} preserveAspectRatio="xMidYMid slice" />
+            </>
+          )}
+        </g>
+      )}
     </svg>
   )
 })
 
-/** The "uncommitted changes" node: hollow and dashed, in HEAD's lane, joined to HEAD below. */
+/** The "uncommitted changes" node: hollow and dashed with a pencil, in HEAD's lane, joined to HEAD below. */
 export function WipCell({ width, hasHead, h = ROW_H }: { width: number; hasHead: boolean; h?: number }) {
   const cx = laneX(0)
+  const r = h < ROW_H ? 8 : 9
   return (
     <svg width={width} height={h} className="block shrink-0" aria-hidden>
-      {hasHead && <path d={`M${cx} ${h / 2 + 6}V${h}`} stroke={laneColor(0)} strokeWidth={2} strokeDasharray="3 3" opacity={0.7} />}
-      <circle cx={cx} cy={h / 2} r={6} fill="var(--gs-bg)" stroke={laneColor(0)} strokeWidth={2} strokeDasharray="3 2" />
+      {hasHead && <path d={`M${cx} ${h / 2 + r}V${h}`} stroke={laneColor(0)} strokeWidth={2} strokeDasharray="3 3" opacity={0.7} />}
+      <circle cx={cx} cy={h / 2} r={r} fill="var(--gs-bg)" stroke={laneColor(0)} strokeWidth={2} strokeDasharray="3 2" />
+      {/* A pencil: "you are editing here". */}
+      <path d={`M${cx - 3} ${h / 2 + 3}l1-3 4-4 2 2-4 4z`} fill={laneColor(0)} />
     </svg>
   )
 }
