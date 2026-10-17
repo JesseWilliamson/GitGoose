@@ -177,6 +177,20 @@ export interface Worktree {
   prunable?: string
 }
 
+/** Who commits are made as, and where that comes from. */
+export interface Identity {
+  name?: string
+  email?: string
+  /** Where the effective values are set: this repository, the user's global config, or nowhere. */
+  scope: 'local' | 'global' | null
+  global: { name?: string; email?: string }
+}
+
+export interface Person {
+  name: string
+  email: string
+}
+
 export interface Submodule {
   name: string
   path: string

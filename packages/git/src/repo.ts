@@ -1,12 +1,12 @@
 import type {
-  BlameLine, ChangedFile, GraphFilter, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
+  BlameLine, ChangedFile, GraphFilter, Identity, Person, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
   LogPage, Ref, Remote, RepoOperation, ReflogEntry, RepoSnapshot, ResetMode, Resolution, SearchField, SelectionRequest,
   StashEntry, StatusEntry, Submodule, UndoEntry, Worktree,
 } from '@gitsquid/shared'
 import { countConflicts } from '@gitsquid/shared'
 import { existsSync } from 'node:fs'
 import { lstat, readFile, realpath, rm, writeFile, chmod, mkdir } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { parseBlame } from './blame'
 import { CatFile } from './catfile'
@@ -585,10 +585,11 @@ export class Repo {
     })
   }
 
-  commit(message: string, opts: { amend?: boolean; signOff?: boolean; gpgSign?: boolean } = {}): Promise<number> {
+  /** `noVerify` skips the pre-commit and commit-msg hooks. */
+  commit(message: string, opts: { amend?: boolean; signOff?: boolean; gpgSign?: boolean; noVerify?: boolean } = {}): Promise<number> {
     return this.exclusive(async () => {
       const before = await this.currentHead()
-      const flags = [...(opts.amend ? ['--amend'] : []), ...(opts.signOff ? ['--signoff'] : []), ...(opts.gpgSign ? ['-S'] : [])]
+      const flags = [...(opts.amend ? ['--amend'] : []), ...(opts.signOff ? ['--signoff'] : []), ...(opts.gpgSign ? ['-S'] : []), ...(opts.noVerify ? ['--no-verify'] : [])]
       await this.git(['commit', '-F', '-', ...flags], { input: message })
       const after = await this.currentHead()
       const actions: UndoAction[] = before.hash
@@ -775,6 +776,61 @@ export class Repo {
     return this.exclusive(async () => {
       await this.git(['worktree', 'prune'])
     })
+  }
+
+  // ---------------------------------------------------------------- identity and templates
+
+  private async configGet(scope: 'local' | 'global' | null, key: string): Promise<string | undefined> {
+    const r = await this.runner.run(['config', ...(scope ? [`--${scope}`] : []), '--get', key], { readOnly: true, okCodes: [1] })
+    return r.code === 0 ? r.stdout.replace(/\n$/, '') : undefined
+  }
+
+  async identity(): Promise<Identity> {
+    const [ln, le, gn, ge, name, email] = await Promise.all([
+      this.configGet('local', 'user.name'), this.configGet('local', 'user.email'),
+      this.configGet('global', 'user.name'), this.configGet('global', 'user.email'),
+      this.configGet(null, 'user.name'), this.configGet(null, 'user.email'),
+    ])
+    return { name, email, scope: ln !== undefined || le !== undefined ? 'local' : gn !== undefined || ge !== undefined ? 'global' : null, global: { name: gn, email: ge } }
+  }
+
+  /**
+   * Set who commits are made as, for this repository or (global) every repository. Null clears
+   * this repository's own value, so the global one applies again. Undoable: the old values go back.
+   */
+  setIdentity(scope: 'local' | 'global', name: string | null, email: string | null): Promise<number> {
+    return this.exclusive(async () => {
+      const actions: UndoAction[] = []
+      for (const [key, value] of [['user.name', name], ['user.email', email]] as const) {
+        actions.push({ kind: 'config', scope, key, value: (await this.configGet(scope, key)) ?? null })
+        if (value === null) await this.git(['config', `--${scope}`, '--unset', key], { okCodes: [5] })
+        else await this.git(['config', `--${scope}`, key, value])
+      }
+      return this.record(scope === 'global' ? 'Change your global identity' : 'Change this repository\'s identity', actions, (await this.currentHead()).hash)
+    })
+  }
+
+  /** The commit message template (commit.template), when one is set and readable. */
+  async commitTemplate(): Promise<string | null> {
+    const path = await this.configGet(null, 'commit.template')
+    if (!path) return null
+    const abs = path.startsWith('~') ? join(homedir(), path.slice(1)) : resolve(this.path, path)
+    return readFile(abs, 'utf8').catch(() => null)
+  }
+
+  /** People who recently authored commits here, most active first: co-author suggestions. */
+  async recentAuthors(limit = 30): Promise<Person[]> {
+    const out = await this.read(['log', '--all', '-n', '2000', '--format=%aN%x00%aE'])
+    const counts = new Map<string, { p: Person; n: number }>()
+    for (const line of out.split('\n')) {
+      const [name, email] = line.split('\0')
+      if (!name || !email) continue
+      const key = email.toLowerCase()
+      const c = counts.get(key)
+      if (c) c.n++
+      else counts.set(key, { p: { name, email }, n: 1 })
+    }
+    return [...counts.values()].sort((a, b) => b.n - a.n).slice(0, limit).map((c) => c.p)
   }
 
   // ---------------------------------------------------------------- submodules
@@ -1748,6 +1804,10 @@ export class Repo {
         }
         break
       }
+      case 'config':
+        if (a.value === null) await this.git(['config', `--${a.scope}`, '--unset', a.key], { okCodes: [5] })
+        else await this.git(['config', `--${a.scope}`, a.key, a.value])
+        break
       case 'submodule-forget': {
         const inside = (args: string[]) => this.runner.run(['-C', a.path, ...args], { readOnly: true, okCodes: [128] })
         const head = await inside(['rev-parse', 'HEAD'])

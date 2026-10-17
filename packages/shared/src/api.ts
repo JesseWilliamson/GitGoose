@@ -1,5 +1,5 @@
 import type {
-  BlameLine, ChangedFile, GraphFilter, Commit, CommitDetails, ConflictFile, DiffTarget, FileDiff, RepoSnapshot,
+  BlameLine, ChangedFile, GraphFilter, Identity, Person, Commit, CommitDetails, ConflictFile, DiffTarget, FileDiff, RepoSnapshot,
   ReflogEntry, Remote, SearchField, Submodule, Worktree, StashEntry, UndoEntry,
 } from './index'
 import type { AgentInfo, AiPermissionRequest, AiResult, AiStatus, AiTask } from './ai'
@@ -142,7 +142,13 @@ export interface GitSquidApi {
   applySelection(repoId: string, req: SelectionRequest): Promise<UndoId>
   /** Append the paths to the repository's top-level .gitignore. */
   ignorePaths(repoId: string, paths: string[]): Promise<UndoId>
-  commit(repoId: string, message: string, opts?: { amend?: boolean; signOff?: boolean; gpgSign?: boolean }): Promise<UndoId>
+  /** `noVerify` skips the commit hooks. */
+  commit(repoId: string, message: string, opts?: { amend?: boolean; signOff?: boolean; gpgSign?: boolean; noVerify?: boolean }): Promise<UndoId>
+  identity(repoId: string): Promise<Identity>
+  /** null clears the value (for the repository: the global one applies again). */
+  setIdentity(repoId: string, scope: 'local' | 'global', name: string | null, email: string | null): Promise<UndoId>
+  commitTemplate(repoId: string): Promise<string | null>
+  recentAuthors(repoId: string): Promise<Person[]>
 
   // Branches and history
   checkout(repoId: string, ref: string): Promise<UndoId>
@@ -256,7 +262,7 @@ export const API_METHODS = [
   'aiStatus', 'aiConsent', 'aiRun', 'aiCancel', 'aiRespondPermission', 'aiAgentInfo', 'aiAuthenticate', 'aiSetApiKey',
   'snapshot', 'logPage', 'commitDetails', 'diff', 'fileHistory', 'blame', 'search', 'stashList', 'reflog', 'setGraphFilter', 'submodules', 'updateSubmodules', 'syncSubmodules', 'addSubmodule', 'removeSubmodule', 'worktrees', 'addWorktree', 'removeWorktree', 'lockWorktree', 'pruneWorktrees',
   'lastCommitMessage',
-  'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit',
+  'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'identity', 'setIdentity', 'commitTemplate', 'recentAuthors',
   'checkout', 'createBranch', 'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset',
   'cherryPick', 'cherryPickMany', 'commitsText', 'recomposeApply', 'compareFiles', 'mergeBase', 'restoreFile', 'savePatches', 'pickPatch', 'applyPatch', 'openFileAt', 'saveFileAt', 'editableCommits', 'dropCommits', 'moveCommits', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'preparedMessage', 'redo', 'redoList', 'revert', 'createTag', 'deleteTag',
   'fetch', 'pull', 'push', 'deleteRemoteBranch', 'remotes', 'addRemote', 'removeRemote', 'renameRemote', 'setRemoteUrl',

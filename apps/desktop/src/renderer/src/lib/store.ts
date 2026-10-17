@@ -112,6 +112,10 @@ export type Dialog =
   | { kind: 'shortcuts' }
   /** Several lines of text (a commit message). */
   | { kind: 'text'; title: string; initial: string; confirm: string; onSubmit: (text: string) => void }
+  /** Who commits are made as, for this repository or globally. `onSaved` refreshes whoever asked. */
+  | { kind: 'identity'; repoId: string; onSaved?: () => void }
+  /** Pick one of many (filterable): co-authors, remote branches. */
+  | { kind: 'pick'; title: string; placeholder?: string; items: { label: string; detail?: string; value: string }[]; onPick: (value: string) => void }
   /** Branch cleanup: pick merged or stale branches to delete. */
   | { kind: 'cleanup'; repoId: string }
 

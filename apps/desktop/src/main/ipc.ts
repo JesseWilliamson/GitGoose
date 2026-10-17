@@ -22,7 +22,7 @@ export function broadcast(event: GitSquidEvent): void {
 /** Methods that change the repository. After each one we refresh and push a snapshot right away. */
 const WRITES = new Set<ApiMethod>([
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'checkout', 'createBranch',
-  'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset', 'cherryPick', 'cherryPickMany', 'recomposeApply', 'dropCommits', 'moveCommits', 'restoreFile', 'applyPatch', 'setGraphFilter', 'updateSubmodules', 'syncSubmodules', 'addSubmodule', 'removeSubmodule', 'addWorktree', 'removeWorktree', 'lockWorktree', 'pruneWorktrees', 'addRemote', 'removeRemote', 'renameRemote', 'setRemoteUrl', 'pushTags',
+  'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset', 'cherryPick', 'cherryPickMany', 'recomposeApply', 'dropCommits', 'moveCommits', 'restoreFile', 'applyPatch', 'setIdentity', 'setGraphFilter', 'updateSubmodules', 'syncSubmodules', 'addSubmodule', 'removeSubmodule', 'addWorktree', 'removeWorktree', 'lockWorktree', 'pruneWorktrees', 'addRemote', 'removeRemote', 'renameRemote', 'setRemoteUrl', 'pushTags',
   'deleteRemoteTag', 'setUpstream', 'fastForward', 'deleteBranches', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'redo', 'revert', 'createTag',
   'deleteTag', 'fetch', 'pull', 'push', 'deleteRemoteBranch', 'stashPush', 'stashBranch', 'stashApply', 'stashPop',
   'stashDrop', 'resolveConflict', 'continueOperation', 'abortOperation', 'undo',
@@ -130,6 +130,10 @@ export function createHandlers(
     applySelection: (id, req) => r(id).applySelection(req),
     ignorePaths: (id, paths) => r(id).ignorePaths(paths),
     commit: (id, message, opts) => r(id).commit(message, opts),
+    identity: (id) => r(id).identity(),
+    setIdentity: (id, scope, name, email) => r(id).setIdentity(scope, name, email),
+    commitTemplate: (id) => r(id).commitTemplate(),
+    recentAuthors: (id) => r(id).recentAuthors(),
 
     checkout: (id, ref) => r(id).checkout(ref),
     createBranch: (id, name, opts) => r(id).createBranch(name, opts),

@@ -1,5 +1,7 @@
 import type { ChangedFile, CommitDetails, DiffTarget, StatusEntry } from '@gitsquid/shared'
-import { Archive, Check, ChevronDown, Copy, Minus, Plus, Sparkles, Undo2, X } from 'lucide-react'
+import type { Identity, Person } from '@gitsquid/shared'
+import { Archive, Check, ChevronDown, Copy, Minus, MoreHorizontal, Plus, Sparkles, Undo2, X } from 'lucide-react'
+import clsx from 'clsx'
 import { DropdownMenu } from 'radix-ui'
 import { useEffect, useRef, useState } from 'react'
 import { cherryPickMany, compare, copy, copyCommits, discard as discardFiles, openInEditor, pop, restoreFileFrom, run, stashApply, stashDrop, stashToBranch, stashWith, stashWithMessage } from '../lib/actions'
@@ -7,7 +9,8 @@ import { cancelAi, startAi, useAiEnabled } from '../lib/ai'
 import { api, toUiError } from '../lib/api'
 import { dateTime, opName, sentence, shortHash, stashLabel } from '../lib/format'
 import { avatarSrc, useAvatarVariant } from '../lib/avatar'
-import { ensureLoaded, getLog, reportError, selectCommit, setting, updateRepo, useSetting, type FileMode, type RepoView } from '../lib/store'
+import { addTrailer, isUntouched, splitTemplate } from '../lib/commitMessage'
+import { ensureLoaded, getLog, reportError, selectCommit, setting, toast, updateRepo, useSetting, useStore, type FileMode, type RepoView } from '../lib/store'
 import { Avatar } from './Avatar'
 import { recomposeWithAi } from './RecomposeDialog'
 import { FileRow, statusKind } from './FileList'
@@ -179,8 +182,52 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
   const [summary, setSummary] = useState('')
   const [body, setBody] = useState('')
   const [amend, setAmend] = useState(false)
+  /** Skip the pre-commit and commit-msg hooks for the next commit (it resets after committing). */
+  const [noVerify, setNoVerify] = useState(false)
   const id = view.id
-  const canCommit = summary.trim().length > 0 && (stagedCount > 0 || amend) && !view.busy
+  const [identity, setIdentity] = useState<Identity | null>(null)
+  /** Co-authored-by trailers credit the people who wrote the change with you (GitHub shows them). */
+  const pickCoAuthor = async () => {
+    const people: Person[] = await api.recentAuthors(id).catch(() => [])
+    const others = people.filter((p) => p.email !== identity?.email)
+    if (!others.length) return toast({ kind: 'info', title: 'No other authors in this repository yet' })
+    useStore.setState({
+      dialog: {
+        kind: 'pick', title: 'Add a co-author', placeholder: 'Name or email',
+        items: others.map((p) => ({ label: p.name, detail: p.email, value: `${p.name} <${p.email}>` })),
+        onPick: (who) => setBody((b) => addTrailer(b, `Co-authored-by: ${who}`)),
+      },
+    })
+  }
+  // Who we commit as; re-read after undo / redo (they can change it) and after the dialog saves.
+  const [identityTick, setIdentityTick] = useState(0)
+  const undoKey = `${view.undo[0]?.id}|${view.redo.length}`
+  useEffect(() => {
+    let live = true
+    void api.identity(id).then((i) => live && setIdentity(i), () => {})
+    return () => {
+      live = false
+    }
+  }, [id, identityTick, undoKey])
+  // commit.template: prefill what is not a comment, show the comments as guidance.
+  const template = useRef<{ summary: string; body: string; hint: string } | null>(null)
+  const [hint, setHint] = useState('')
+  useEffect(() => {
+    let live = true
+    void api.commitTemplate(id).then((t) => {
+      if (!live || !t) return
+      const parts = splitTemplate(t)
+      template.current = parts
+      setHint(parts.hint)
+      setSummary((s) => s || parts.summary)
+      setBody((b) => b || parts.body)
+    }, () => {})
+    return () => {
+      live = false
+    }
+  }, [id])
+  // A message that is still exactly the template has not been written.
+  const canCommit = summary.trim().length > 0 && (stagedCount > 0 || amend) && !view.busy && !(template.current && isUntouched(summary, body, template.current))
   const aiOn = useAiEnabled()
   // After a squash merge (or a merge stopped before its commit) git prepares a message: offer it.
   const prepared = useRef('')
@@ -234,12 +281,13 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
   const commit = async () => {
     if (!canCommit) return
     const message = body.trim() ? `${summary.trim()}\n\n${body.trim()}\n` : `${summary.trim()}\n`
-    const opts = { amend, signOff: setting('signOff'), gpgSign: setting('gpgSign') }
+    const opts = { amend, signOff: setting('signOff'), gpgSign: setting('gpgSign'), noVerify }
     const ok = await run(id, amend ? 'Amend commit' : 'Commit', () => api.commit(id, message, opts), { success: amend ? 'Commit amended' : 'Committed' })
     if (ok) {
-      setSummary('')
-      setBody('')
+      setSummary(template.current?.summary ?? '')
+      setBody(template.current?.body ?? '')
       setAmend(false)
+      setNoVerify(false)
     }
   }
 
@@ -252,6 +300,11 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
 
   return (
     <div className="border-t border-line p-3" data-testid="commit-box">
+      <button onClick={() => useStore.setState({ dialog: { kind: 'identity', repoId: id, onSaved: () => setIdentityTick((t) => t + 1) } })}
+        title={identity?.scope === 'local' ? 'Set for this repository' : identity?.scope === 'global' ? 'Your global identity' : 'No identity set: git will refuse to commit'}
+        className={clsx('mb-2 block max-w-full truncate text-left text-[11px] hover:text-fg', identity && !identity.scope ? 'text-warn' : 'text-faint')} data-testid="commit-identity">
+        {identity ? (identity.name || identity.email ? `as ${identity.name ?? '?'} <${identity.email ?? '?'}>${identity.scope === 'local' ? ' · this repository' : ''}` : 'Set who you commit as…') : '\u00a0'}
+      </button>
       <div className="relative">
         <input
           value={summary}
@@ -268,9 +321,10 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
         value={body}
         onChange={(e) => setBody(e.target.value)}
         onKeyDown={onKey}
-        placeholder="Description"
+        placeholder={hint || 'Description'}
         style={{ fontFamily: 'var(--gs-code-font)', fontSize: 'var(--gs-code-size)' }}
         rows={3}
+        data-testid="commit-body"
         className="mt-2 w-full resize-none rounded-md border border-line bg-bg px-2 py-1.5 text-[13px] outline-none focus:border-accent"
       />
       <div className="mt-2 flex items-center justify-between gap-2">
@@ -279,6 +333,19 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
             <input type="checkbox" checked={amend} onChange={(e) => void toggleAmend(e.target.checked)} disabled={!view.snapshot.head.hash} />
             Amend previous commit
           </label>
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <Button size="sm" variant="ghost" title="Commit options" aria-label="Commit options" data-testid="commit-options">
+                <MoreHorizontal size={14} />{noVerify && <span className="text-[10px] text-warn">no hooks</span>}
+              </Button>
+            </DropdownMenu.Trigger>
+            <DM.Content>
+              <DM.Check checked={noVerify} onChange={setNoVerify} testId="skip-hooks">Skip hooks for this commit (--no-verify)</DM.Check>
+              <DM.Item onSelect={() => void pickCoAuthor()}>Add co-author…</DM.Item>
+              <DM.Separator />
+              <DM.Item onSelect={() => useStore.setState({ dialog: { kind: 'identity', repoId: id, onSaved: () => setIdentityTick((t) => t + 1) } })}>Change who you commit as…</DM.Item>
+            </DM.Content>
+          </DropdownMenu.Root>
           {aiOn && (
             <Button size="sm" variant="ghost" onClick={() => void writeMessage()} disabled={!writing && stagedCount === 0} data-testid="ai-commit-message"
               title={writing ? 'Stop' : 'Write the message with AI, from the staged changes'}>

@@ -106,6 +106,14 @@ export const DM = {
   ),
   Separator: () => <DropdownMenu.Separator className="my-1 h-px bg-line" />,
   Label: ({ children }: { children: ReactNode }) => <DropdownMenu.Label className="px-2 py-1 text-[11px] text-faint">{children}</DropdownMenu.Label>,
+  Sub: ({ label, children }: { label: string; children: ReactNode }) => (
+    <DropdownMenu.Sub>
+      <DropdownMenu.SubTrigger className={clsx(menuItem, 'justify-between')}>{label}<span className="text-faint">›</span></DropdownMenu.SubTrigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.SubContent className={clsx(menuContent, 'max-h-80 overflow-y-auto')}>{children}</DropdownMenu.SubContent>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Sub>
+  ),
 }
 
 export function Modal({ open, onClose, title, children, width = 440 }: {

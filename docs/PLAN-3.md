@@ -138,3 +138,6 @@ changes.
       from the clone git keeps), open as a tab
 - [x] 10 hide and solo branches (eye button and menus; a whole remote can be hidden), a bar over
       the graph saying what is left out with Show all; remembered per repository
+- [x] 24 identity (this repository or global, undoable; shown over the commit box), commit
+      templates (comment lines become the placeholder), co-author trailers from recent authors
+- [x] 28 (part) skip hooks for one commit; a failing hook's output is in the attention bar

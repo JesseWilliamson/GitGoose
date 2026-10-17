@@ -1,6 +1,8 @@
+import clsx from 'clsx'
 import { KeyRound } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { cleanupCandidates, cloneRepo, deleteBranches, STALE_DAYS } from '../lib/actions'
+import type { Identity } from '@gitsquid/shared'
+import { cleanupCandidates, cloneRepo, deleteBranches, run, STALE_DAYS } from '../lib/actions'
 import { relativeTime } from '../lib/format'
 import { COMMANDS, FIXED_KEYS, formatCombo, keymap, modName } from '../lib/keys'
 import { api } from '../lib/api'
@@ -41,6 +43,8 @@ export function Dialogs() {
   if (dialog.kind === 'shortcuts') return <ShortcutsDialog close={close} />
   if (dialog.kind === 'text') return <TextDialog key={dialog.title} d={dialog} close={close} />
   if (dialog.kind === 'cleanup') return <CleanupDialog repoId={dialog.repoId} close={close} />
+  if (dialog.kind === 'pick') return <PickDialog key={dialog.title} d={dialog} close={close} />
+  if (dialog.kind === 'identity') return <IdentityDialog repoId={dialog.repoId} onSaved={dialog.onSaved} close={close} />
   return <CloneDialog close={close} />
 }
 
@@ -113,6 +117,90 @@ function CleanupDialog({ repoId, close }: { repoId: string; close: () => void })
         <Button variant={unmerged ? 'danger' : 'primary'} disabled={picked.size === 0} onClick={submit} data-testid="dialog-submit">
           Delete {picked.size} branch{picked.size === 1 ? '' : 'es'}
         </Button>
+      </div>
+    </Modal>
+  )
+}
+
+/**
+ * Who commits are made as. Git reads user.name / user.email from the repository's own config
+ * first, then the user's global config; this edits either, and can drop the repository's
+ * override so the global identity applies again.
+ */
+function IdentityDialog({ repoId, onSaved, close }: { repoId: string; onSaved?: () => void; close: () => void }) {
+  const [current, setCurrent] = useState<Identity | null>(null)
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [scope, setScope] = useState<'local' | 'global'>('global')
+  useEffect(() => {
+    void api.identity(repoId).then((i) => {
+      setCurrent(i)
+      setName(i.name ?? '')
+      setEmail(i.email ?? '')
+      setScope(i.scope === 'local' ? 'local' : 'global')
+    })
+  }, [repoId])
+  const save = (s: 'local' | 'global', n: string | null, e: string | null) => {
+    close()
+    void run(repoId, 'Change identity', () => api.setIdentity(repoId, s, n, e), { success: n ? `Committing as ${n}` : 'Using your global identity here' }).then(() => onSaved?.())
+  }
+  const submit = (ev: React.FormEvent) => {
+    ev.preventDefault()
+    if (name.trim() && email.trim()) save(scope, name.trim(), email.trim())
+  }
+  return (
+    <Modal open onClose={close} title="Who you commit as" width={460}>
+      <form onSubmit={submit} className="space-y-3" data-testid="identity-dialog">
+        <TextField autoFocus label="Name" value={name} onChange={(e) => setName(e.target.value)} />
+        <TextField label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <div className="space-y-1 text-[13px]">
+          <label className="flex items-center gap-2"><input type="radio" checked={scope === 'global'} onChange={() => setScope('global')} /> Every repository (your global git config)</label>
+          <label className="flex items-center gap-2"><input type="radio" checked={scope === 'local'} onChange={() => setScope('local')} /> Only this repository</label>
+        </div>
+        {current?.scope === 'local' && current.global.name && (
+          <p className="text-xs text-muted">
+            This repository overrides your global identity ({current.global.name} &lt;{current.global.email}&gt;).{' '}
+            <button type="button" className="text-accent hover:underline" onClick={() => save('local', null, null)}>Use the global one here</button>
+          </p>
+        )}
+        <div className="flex justify-end gap-2">
+          <Button type="button" onClick={close}>Cancel</Button>
+          <Button type="submit" variant="primary" disabled={!name.trim() || !email.trim()} data-testid="dialog-submit">Save</Button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+/** Choose one item from a filterable list: type to narrow, arrows to move, Enter to pick. */
+function PickDialog({ d, close }: { d: Extract<NonNullable<ReturnType<typeof useStore.getState>['dialog']>, { kind: 'pick' }>; close: () => void }) {
+  const [q, setQ] = useState('')
+  const [at, setAt] = useState(0)
+  const f = q.trim().toLowerCase()
+  const shown = d.items.filter((i) => !f || i.label.toLowerCase().includes(f) || i.detail?.toLowerCase().includes(f))
+  const pick = (value: string) => {
+    close()
+    d.onPick(value)
+  }
+  return (
+    <Modal open onClose={close} title={d.title}>
+      <input autoFocus value={q} placeholder={d.placeholder ?? 'Filter'} data-testid="pick-filter"
+        onChange={(e) => { setQ(e.target.value); setAt(0) }}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown') { e.preventDefault(); setAt((a) => Math.min(a + 1, shown.length - 1)) }
+          else if (e.key === 'ArrowUp') { e.preventDefault(); setAt((a) => Math.max(a - 1, 0)) }
+          else if (e.key === 'Enter' && shown[at]) { e.preventDefault(); pick(shown[at]!.value) }
+        }}
+        className="mb-2 h-8 w-full rounded-md border border-line bg-bg px-2 text-[13px] outline-none focus:border-accent" />
+      <div className="max-h-72 overflow-y-auto" role="listbox">
+        {shown.map((i, n) => (
+          <div key={i.value} role="option" aria-selected={n === at} onMouseEnter={() => setAt(n)} onClick={() => pick(i.value)} data-testid="pick-item"
+            className={clsx('flex h-8 cursor-default items-center gap-2 rounded px-2 text-[13px]', n === at && 'bg-accent text-accent-fg')}>
+            <span className="truncate">{i.label}</span>
+            {i.detail && <span className={clsx('truncate text-xs', n === at ? 'text-accent-fg/80' : 'text-faint')}>{i.detail}</span>}
+          </div>
+        ))}
+        {shown.length === 0 && <div className="px-2 py-2 text-xs text-faint">Nothing matches</div>}
       </div>
     </Modal>
   )
@@ -224,7 +312,8 @@ export function Toasts() {
   const toasts = useStore((s) => s.toasts)
   const [expanded, setExpanded] = useState<number | null>(null)
   return (
-    <div className="pointer-events-none fixed right-4 bottom-8 z-50 flex w-96 flex-col gap-2" data-testid="toasts">
+    // Bottom centre, over the graph: bottom right would cover the Commit button for 5 seconds.
+    <div className="pointer-events-none fixed bottom-8 left-1/2 z-50 flex w-96 max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-col gap-2" data-testid="toasts">
       {toasts.map((t) => (
         <div key={t.id} role="status" data-kind={t.kind}
           className="pointer-events-auto rounded-lg border border-line bg-raised p-3 text-[13px] shadow-xl shadow-black/30">

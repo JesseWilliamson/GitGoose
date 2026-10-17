@@ -54,6 +54,8 @@ export type UndoAction =
    */
   | { kind: 'submodule-forget'; path: string; name: string; commit: string }
   | { kind: 'submodule-restore'; path: string }
+  /** Put a config value back (null: unset it), in this repository's config or the user's global one. */
+  | { kind: 'config'; scope: 'local' | 'global'; key: string; value: string | null }
   /** Write saved blobs back to the working tree. `blob: null` means the file did not exist. */
   | { kind: 'restore-files'; files: { path: string; blob: string | null; mode?: number }[] }
 

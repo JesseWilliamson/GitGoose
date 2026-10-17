@@ -43,6 +43,7 @@ export function CommandPalette() {
     add('Repository', 'Show reflog (recover lost commits)', () => useStore.setState((s) => ({ repos: { ...s.repos, [id]: { ...s.repos[id]!, center: { kind: 'reflog' } } } })))
     add('Repository', 'Clean up branches…', () => cleanupBranches(id))
     add('Repository', 'Add remote…', () => addRemote(id))
+    add('Repository', 'Change who you commit as…', () => useStore.setState({ dialog: { kind: 'identity', repoId: id } }))
     add('Repository', 'Add worktree…', () => addWorktree(id))
     add('Repository', 'Add submodule…', () => addSubmodule(id))
     if (active.submodules.length) add('Repository', 'Update submodules', () => void updateSubmodules(id))
