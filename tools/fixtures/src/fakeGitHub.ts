@@ -21,6 +21,19 @@ export interface FakeGitHubOptions {
   user?: { login: string; name: string | null }
   /** sha -> GitHub login of that commit's author, for GET /repos/:o/:r/commits/:sha. */
   commits?: Record<string, string>
+  /** Open pull requests, in GitHub's JSON shape (POST /pulls adds to it). */
+  pulls?: FakePull[]
+}
+
+export interface FakePull {
+  number: number
+  title: string
+  body?: string
+  draft?: boolean
+  html_url: string
+  user: { login: string }
+  head: { ref: string; sha: string; repo: { full_name: string } }
+  base: { ref: string }
 }
 
 export interface FakeGitHub {
@@ -30,6 +43,8 @@ export interface FakeGitHub {
   hits: string[]
   /** Tokens handed out. */
   tokens: string[]
+  /** The open pull requests (including ones the app created). */
+  pulls: FakePull[]
   opts: FakeGitHubOptions
   close(): Promise<void>
 }
@@ -45,6 +60,7 @@ export async function fakeGitHub(opts: FakeGitHubOptions = {}): Promise<FakeGitH
   const clientId = opts.clientId ?? 'test-client'
   const hits: string[] = []
   const tokens: string[] = []
+  const pulls: FakePull[] = opts.pulls ?? []
   let polls = 0
   let scope = ''
   let url = ''
@@ -91,6 +107,23 @@ export async function fakeGitHub(opts: FakeGitHubOptions = {}): Promise<FakeGitH
       if (!login) return json(422, { message: 'No commit found for SHA' })
       return json(200, { sha: commit[3], author: { login, avatar_url: `${url}/avatars/${login}.png` } })
     }
+    const pullsPath = /^\/repos\/([^/]+)\/([^/]+)\/pulls$/.exec(path)
+    if (pullsPath && req.method === 'GET') {
+      if (!authed) return json(401, { message: 'Bad credentials' })
+      return json(200, pulls)
+    }
+    if (pullsPath && req.method === 'POST') {
+      if (!authed) return json(401, { message: 'Bad credentials' })
+      const b = (await body(req)) as unknown as { title: string; body: string; head: string; base: string; draft?: boolean }
+      if (pulls.some((p) => p.head.ref === b.head)) return json(422, { message: 'Validation Failed', errors: [{ message: `A pull request already exists for ${pullsPath[1]}:${b.head}.` }] })
+      const pr: FakePull = {
+        number: Math.max(0, ...pulls.map((p) => p.number)) + 1, title: b.title, body: b.body, draft: !!b.draft,
+        html_url: `${url}/${pullsPath[1]}/${pullsPath[2]}/pull/${pulls.length + 1}`, user: { login: opts.user?.login ?? 'octocat' },
+        head: { ref: b.head, sha: '', repo: { full_name: `${pullsPath[1]}/${pullsPath[2]}` } }, base: { ref: b.base },
+      }
+      pulls.push(pr)
+      return json(201, pr)
+    }
     if (req.method === 'GET' && path.startsWith('/avatars/')) {
       res.writeHead(200, { 'content-type': 'image/png' })
       return res.end(FAKE_AVATAR_PNG)
@@ -100,7 +133,7 @@ export async function fakeGitHub(opts: FakeGitHubOptions = {}): Promise<FakeGitH
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
   url = `http://127.0.0.1:${(server.address() as { port: number }).port}`
   return {
-    url, server, hits, tokens, opts,
+    url, server, hits, tokens, opts, pulls,
     close: () => new Promise<void>((r) => server.close(() => r())),
   }
 }

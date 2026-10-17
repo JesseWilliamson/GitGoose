@@ -6,6 +6,6 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": { "typecheck": "tsc -p tsconfig.json" },
-  "dependencies": { "@gitsquid/shared": "workspace:*" },
+  "dependencies": { "@gitsquid/codegraph": "workspace:*", "@gitsquid/shared": "workspace:*" },
   "devDependencies": { "@gitsquid/fixtures": "workspace:*" }
 }

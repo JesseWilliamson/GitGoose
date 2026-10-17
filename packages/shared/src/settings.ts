@@ -1,4 +1,23 @@
+import type { GraphFilter } from './index'
+import type { AskThread, PushCheck, ReviewLearning } from './ai'
 import { DEFAULT_LAYOUT, normalizeLayout, type PaneLayout } from './layout'
+
+export type GraphColumn = 'refs' | 'graph' | 'author' | 'date' | 'sha'
+export type GraphColumns = Record<GraphColumn, boolean>
+export const GRAPH_COLUMNS: { id: GraphColumn; label: string }[] = [
+  { id: 'refs', label: 'Branch / Tag' },
+  { id: 'graph', label: 'Graph' },
+  { id: 'author', label: 'Author' },
+  { id: 'date', label: 'Date / Time' },
+  { id: 'sha', label: 'SHA' },
+]
+/** The defaults: branch / tag, graph and message. Author, date and SHA are a click away in the gear menu. */
+export const DEFAULT_GRAPH_COLUMNS: GraphColumns = { refs: true, graph: true, author: false, date: false, sha: false }
+
+function normalizeColumns(raw: unknown): GraphColumns {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  return Object.fromEntries(GRAPH_COLUMNS.map((c) => [c.id, typeof r[c.id] === 'boolean' ? r[c.id] : DEFAULT_GRAPH_COLUMNS[c.id]])) as GraphColumns
+}
 
 /**
  * Every setting in one table. The settings page, defaults, validation and migration all come
@@ -50,6 +69,7 @@ export const SETTINGS = {
   }),
   codeFontSize: num(12, 10, 20, 1, { label: 'Code font size', section: 'Appearance', unit: 'px', description: 'Diffs, blame, conflict editors and the commit message.' }),
   codeFontFamily: text('', { label: 'Code font', section: 'Appearance', placeholder: 'System monospace', description: 'A CSS font family list, e.g. "JetBrains Mono", monospace.' }),
+  fileTree: bool(false, { label: 'Show changed files as a tree', section: 'Appearance', keywords: 'folder list view', description: 'In the changes and commit file lists. Also the toggle beside their filter box.' }),
   dateFormat: choice('relative', [{ value: 'relative', label: 'Relative (3 days ago)' }, { value: 'absolute', label: 'Absolute (12 Mar 2026)' }, { value: 'both', label: 'Both' }],
     { label: 'Dates', section: 'Appearance' }),
   compactRows: bool(false, { label: 'Compact graph rows', section: 'Appearance', keywords: 'density row height' }),
@@ -65,23 +85,34 @@ export const SETTINGS = {
   }),
   showRemoteBranches: bool(true, { label: 'Show remote branches on the graph', section: 'Graph' }),
   showTags: bool(true, { label: 'Show tags on the graph', section: 'Graph' }),
+  showStashes: bool(true, { label: 'Show stashes on the graph', section: 'Graph', description: 'Each stash as a node beside the commit it was made on.' }),
 
   // ---------------------------------------------------------------- Git
   gitPath: text('git', { label: 'Git executable', section: 'Git', placeholder: 'git', description: 'Applies to repositories opened after the change.' }),
   pullMode: choice('merge', [{ value: 'merge', label: 'Merge' }, { value: 'rebase', label: 'Rebase' }, { value: 'ff-only', label: 'Fast-forward only' }],
     { label: 'Pull', section: 'Git', description: 'What the Pull button does when your branch and its upstream have both moved.' }),
+  pushSecretCheck: bool(true, {
+    label: 'Scan pushes for secrets', section: 'Git', keywords: 'pre-push check credential token key',
+    description: 'Before a push, the commits being pushed are scanned for keys and tokens (on this computer; nothing is sent). A match stops the push until you choose to push anyway.',
+  }),
   fetchOnOpen: bool(false, { label: 'Fetch when a repository opens', section: 'Git', description: 'Off by default: it uses the network.' }),
   autoFetchMinutes: num(0, 0, 60, 5, { label: 'Fetch automatically every', section: 'Git', unit: 'min', description: '0 turns it off.' }),
   pruneOnFetch: bool(true, { label: 'Prune deleted remote branches on fetch', section: 'Git' }),
   signOff: bool(false, { label: 'Add Signed-off-by to commits', section: 'Git', keywords: 'dco' }),
   gpgSign: bool(false, { label: 'Sign commits (-S)', section: 'Git', keywords: 'gpg ssh signing', description: 'Uses the signing key from your git config.' }),
+  changeHints: bool(true, { label: 'Hints from history before committing', section: 'Git', keywords: 'co-change owners blame insights', description: 'Above the commit box: files that usually change with yours but are missing, and whose lines you are changing. Computed locally from history.' }),
+  signTags: bool(false, { label: 'Sign tags (-s)', section: 'Git', keywords: 'gpg ssh signing', description: 'New tags are signed (and annotated) with the signing key from your git config.' }),
 
   // ---------------------------------------------------------------- Diff
   contextLines: num(3, 1, 20, 1, { label: 'Context lines', section: 'Diff', unit: 'lines', description: 'Unchanged lines shown around each change.' }),
   ignoreWhitespace: bool(false, { label: 'Ignore whitespace changes', section: 'Diff', description: 'Line staging is turned off while this is on: the hidden changes would be staged too.' }),
   tabSize: num(4, 1, 8, 1, { label: 'Tab size', section: 'Diff', unit: 'spaces' }),
   wrapLines: bool(false, { label: 'Wrap long lines', section: 'Diff' }),
+  diffLayout: choice('unified', [{ value: 'unified', label: 'Unified' }, { value: 'split', label: 'Side by side' }],
+    { label: 'Diff layout', section: 'Diff', keywords: 'split side-by-side', description: 'Also switchable above each diff. Changed words are highlighted in both.' }),
   syntaxHighlighting: bool(true, { label: 'Syntax highlighting', section: 'Diff' }),
+  diffTool: text('', { label: 'External diff tool', section: 'Diff', placeholder: 'git\'s diff.tool', keywords: 'difftool meld beyond compare kdiff3 vscode', description: 'A tool name git knows (git difftool --tool-help), or one you configured with difftool.<name>.cmd. Empty: git\'s diff.tool.' }),
+  mergeTool: text('', { label: 'External merge tool', section: 'Diff', placeholder: 'git\'s merge.tool', keywords: 'mergetool meld kdiff3 p4merge vscode', description: 'Offered in the conflict view. Empty: git\'s merge.tool.' }),
   highlightMaxKb: num(400, 50, 4000, 50, { label: 'Highlight files up to', section: 'Diff', unit: 'KB' }),
   mergeView: choice('three-pane', [
     { value: 'three-pane', label: 'Three panes' },
@@ -126,7 +157,17 @@ export const SETTINGS = {
   }),
   anthropicModel: text('claude-opus-5-5', { label: 'Model (API key only)', section: 'AI', placeholder: 'claude-opus-5-5' }),
   /** Providers the user agreed to send content to, e.g. "agent:npx -y …" or "anthropic". */
+  reviewProfile: choice('chill', [{ value: 'quiet', label: 'Quiet: only real problems' }, { value: 'chill', label: 'Chill: no nits or style' }, { value: 'assertive', label: 'Assertive: everything, nits too' }],
+    { label: 'Review style', section: 'AI', keywords: 'code review findings nits coderabbit', description: 'How much AI review says. Findings are always checked against the diff before they are shown.' }),
+  reviewLinter: text('', {
+    label: 'Extra linter for reviews', section: 'AI', placeholder: 'npx stylelint --formatter unix {files}', keywords: 'lint eslint ruff shellcheck',
+    description: 'Runs on the changed files during an AI review, besides the linters GitSquid finds in the repository (ESLint, Ruff, ShellCheck). {files} is replaced by the files; output as path:line:col: message. Asked for once per repository.',
+  }),
   aiConsent: internal([] as string[]),
+  /** The user's own pre-push checks, per repository path (besides those in .coderabbit.yaml). */
+  pushChecks: internal<Record<string, PushCheck[]>>({}),
+  /** Linter commands the user allowed (true) or refused (false), keyed "<repo path>\n<command>". */
+  linterDecisions: internal<Record<string, boolean>>({}),
 
   // ---------------------------------------------------------------- Accounts
   githubHttps: bool(false, {
@@ -147,6 +188,14 @@ export const SETTINGS = {
   recentRepos: internal<string[]>([]),
   openRepos: internal<string[]>([]),
   graphWidth: internal<number | null>(null),
+  /** Which optional graph columns show (the commit message always does). From the gear in the graph header. */
+  graphColumns: internal<GraphColumns>({ ...DEFAULT_GRAPH_COLUMNS }),
+  /** Questions asked about code, per repository path, newest first (kept to 100). */
+  askThreads: internal<Record<string, AskThread[]>>({}),
+  /** Review learnings per repository path ("do not flag X"), from dismissed findings. */
+  reviewLearnings: internal<Record<string, ReviewLearning[]>>({}),
+  /** Hidden and soloed branches, per repository path (empty filters are not stored). */
+  graphFilters: internal<Record<string, GraphFilter>>({}),
   /** Pane arrangement (packages/shared/src/layout.ts); repaired with normalizeLayout when read. */
   layout: internal<PaneLayout>(DEFAULT_LAYOUT),
 } satisfies Record<string, SettingSpec>
@@ -182,6 +231,7 @@ export function validateSetting<K extends SettingKey>(key: K, value: unknown): S
       return Object.fromEntries(Object.entries(value).filter(([, v]) => typeof v === 'string')) as Settings[K]
     case 'internal':
       if (key === 'layout') return normalizeLayout(value) as Settings[K]
+      if (key === 'graphColumns') return normalizeColumns(value) as Settings[K]
       // App state is trusted as long as its JSON shape matches the default's.
       if (value === undefined) return fallback
       if (Array.isArray(spec.default) !== Array.isArray(value)) return fallback

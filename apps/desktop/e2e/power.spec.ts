@@ -81,13 +81,22 @@ test('shows file history and blame', async () => {
   await app.close()
 })
 
-test('runs commands from the palette', async () => {
+test('search finds a branch: Enter shows it in the graph, Ctrl+Enter checks it out', async () => {
   const r = makeFixture('branches')
   const { app, page } = await launch(r.dir)
   await expect(page.getByTestId('commit-row').first()).toBeVisible()
   await page.keyboard.press('Control+k')
   await page.getByTestId('palette-input').fill('feature')
+  await expect(page.getByTestId('omni-item').first()).toHaveAttribute('data-kind', 'branch')
+  await expect(page.getByTestId('omni-footer')).toContainText('check out')
   await page.keyboard.press('Enter')
+  const tip = r.git('rev-parse', 'feature').trim()
+  await expect(page.locator(`[data-testid="commit-row"][data-hash="${tip}"]`)).toHaveClass(/bg-select/)
+  expect(r.git('branch', '--show-current').trim()).toBe('main')
+
+  await page.keyboard.press('Control+k')
+  await page.getByTestId('palette-input').fill('feature')
+  await page.keyboard.press('Control+Enter')
   await expect(page.getByTestId('status-bar')).toContainText('feature')
   expect(r.git('branch', '--show-current').trim()).toBe('feature')
   await app.close()
@@ -98,7 +107,7 @@ test('lists keyboard shortcuts with ?', async () => {
   const { app, page } = await launch(r.dir)
   await page.getByTestId('commit-row').first().click()
   await page.keyboard.press('?')
-  await expect(page.getByTestId('shortcuts')).toContainText('Command palette')
+  await expect(page.getByTestId('shortcuts')).toContainText('Search everything')
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('shortcuts')).toHaveCount(0)
   await app.close()

@@ -1,10 +1,10 @@
-import { presetLayout } from '@gitsquid/shared'
+import { DEFAULT_LAYOUT, setCollapsed } from '@gitsquid/shared'
 import { useEffect } from 'react'
-import { fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, stash, undo } from '../lib/actions'
+import { applyPatchFile, applyPatchFromClipboard, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, redo, stash, undo } from '../lib/actions'
 import { comboOf, keymap } from '../lib/keys'
-import { closeTab, onCommand, saveSettings, setting, useActiveRepo, useStore } from '../lib/store'
+import { closeTab, onCommand, runCommand, updateRepo, saveSettings, setting, useActiveRepo, useStore } from '../lib/store'
 import { AttentionBar } from './AttentionBar'
-import { CommandPalette } from './CommandPalette'
+import { OmniSearch } from './OmniSearch'
 import { Dialogs, PromptDialog, Toasts } from './Dialogs'
 import { DropMenu } from './menus'
 import { SettingsPage } from './SettingsPage'
@@ -13,7 +13,7 @@ import { StatusBar } from './StatusBar'
 import { TabBar } from './TabBar'
 import { Toolbar } from './Toolbar'
 import { Welcome } from './Welcome'
-import { toggleBottom, toggleSlotOf } from './Workspace'
+import { toggleSlot } from './Workspace'
 import { Workspace } from './Workspace'
 
 function isTyping(): boolean {
@@ -32,16 +32,15 @@ function useCommands() {
         case 'clone-repo': return useStore.setState({ dialog: { kind: 'clone' } })
         case 'init-repo': return void initRepo()
         case 'settings': return useStore.setState({ page: s.page === 'settings' ? null : 'settings' })
-        case 'palette': return useStore.setState({ palette: !s.palette })
+        case 'palette': return useStore.setState({ omni: s.omni ? null : { query: '> ' } })
+        case 'search': return useStore.setState({ omni: { query: '' } })
         case 'zoom-in': return void saveSettings({ uiScale: setting('uiScale') + 0.1 })
         case 'zoom-out': return void saveSettings({ uiScale: setting('uiScale') - 0.1 })
         case 'zoom-reset': return void saveSettings({ uiScale: 1 })
-        case 'toggle-sidebar': return toggleSlotOf('branches')
-        case 'toggle-details': return toggleSlotOf('details')
-        case 'toggle-bottom': return toggleBottom()
-        case 'layout-default': return void saveSettings({ layout: presetLayout('default', setting('layout')) })
-        case 'layout-wide-graph': return void saveSettings({ layout: presetLayout('wide-graph', setting('layout')) })
-        case 'layout-diff-below': return void saveSettings({ layout: presetLayout('diff-below', setting('layout')) })
+        case 'toggle-sidebar': return toggleSlot('left')
+        case 'toggle-details': return toggleSlot('right')
+        case 'layout-default': return void saveSettings({ layout: structuredClone(DEFAULT_LAYOUT) })
+        case 'layout-wide-graph': return void saveSettings({ layout: setCollapsed(setCollapsed(setting('layout'), 'left', true), 'right', true) })
       }
       if (!id) return
       switch (name) {
@@ -49,6 +48,10 @@ function useCommands() {
           // From the menu: in a text field undo typing; anywhere else undo the last git operation.
           if (isTyping()) document.execCommand('undo')
           else void undo(id)
+          return
+        case 'redo':
+          if (isTyping()) document.execCommand('redo')
+          else void redo(id)
           return
         case 'close-tab': return void closeTab(id)
         case 'fetch': return void fetchAll(id)
@@ -59,11 +62,15 @@ function useCommands() {
         case 'pop': return pop(id)
         case 'reveal': return void window.gitsquid.revealPath(s.repos[id]!.snapshot.path)
         case 'terminal': return void openTerminal(id)
+        case 'apply-patch': return void applyPatchFile(id)
+        case 'apply-patch-clipboard': return void applyPatchFromClipboard(id)
+        case 'reflog': return updateRepo(id, { center: { kind: 'reflog' } })
+        case 'command-log': return updateRepo(id, { center: { kind: 'commands' } })
       }
     }
     const off = onCommand(handle)
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && useStore.getState().page && !useStore.getState().dialog && !useStore.getState().palette) {
+      if (e.key === 'Escape' && useStore.getState().page && !useStore.getState().dialog && !useStore.getState().omni) {
         useStore.setState({ page: null })
         return
       }
@@ -85,10 +92,11 @@ function useCommands() {
       }
       const name = keymap(setting('keybindings')).get(combo)
       if (!name) return
-      // In a text field, Cmd/Ctrl+Z belongs to the text field.
-      if (name === 'undo' && isTyping()) return
+      // In a text field, undo and redo belong to the text field.
+      if ((name === 'undo' || name === 'redo') && isTyping()) return
       e.preventDefault()
-      handle(name)
+      // Through the same path as the menu, so components listening for a command hear keys too.
+      runCommand(name)
     }
     window.addEventListener('keydown', onKey)
     return () => {
@@ -118,7 +126,7 @@ export function App() {
           <StatusBar view={view} />
         </>
       )}
-      <CommandPalette />
+      <OmniSearch />
       <Dialogs />
       <AiDialogs />
       <PromptDialog />

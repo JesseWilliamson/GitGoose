@@ -63,3 +63,23 @@ export function githubPromptKind(prompt: string): 'username' | 'password' | null
   if (!m) return null
   return m[1] === 'Username' ? 'username' : 'password'
 }
+
+/** An open pull request on the repository's GitHub remote. */
+export interface PullRequest {
+  number: number
+  title: string
+  author: string
+  /** The PR's branch name (on the fork, when `fromFork`). */
+  branch: string
+  headSha: string
+  base: string
+  draft: boolean
+  url: string
+  fromFork: boolean
+}
+
+/** What the pull request list can show: why it is empty, or the PRs. */
+export type PullRequestList =
+  | { state: 'no-remote' }
+  | { state: 'signed-out' }
+  | { state: 'ok'; owner: string; repo: string; pulls: PullRequest[] }

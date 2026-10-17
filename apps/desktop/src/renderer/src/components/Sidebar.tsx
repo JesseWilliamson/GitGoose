@@ -1,11 +1,12 @@
 import type { Ref } from '@gitsquid/shared'
 import clsx from 'clsx'
-import { Archive, ChevronDown, ChevronRight, Cloud, GitBranch, Tag } from 'lucide-react'
+import { Archive, Boxes, ChevronDown, ChevronRight, Cloud, Eye, EyeOff, Focus, FolderTree, GitBranch, GitPullRequest, HardDrive, History, Plus, RefreshCw, Tag } from 'lucide-react'
 import { ContextMenu } from 'radix-ui'
 import { useMemo, useState, type ReactNode } from 'react'
-import { checkout, pop, stashApply, stashDrop } from '../lib/actions'
-import { relativeTime } from '../lib/format'
-import { ensureLoaded, updateRepo, useStore, type RepoView } from '../lib/store'
+import { addRemote, addWorktree, checkoutPull, hasGitHubRemote, lfsPull, lfsSetUp, loadPulls, checkout, hideInGraph, showAllInGraph, showInGraph, isStale, pop, remoteNames, stashApply, stashDrop, stashToBranch } from '../lib/actions'
+import { relativeTime, stashLabel } from '../lib/format'
+import { refShown } from '../lib/graphFilter'
+import { ensureLoaded, openRepo, updateRepo, useStore, type RepoView } from '../lib/store'
 import { REF_MIME } from './Graph'
 import { GraphMenu } from './menus'
 import { CM } from './ui'
@@ -19,14 +20,25 @@ export function Sidebar({ view }: { view: RepoView }) {
   const locals = snap.refs.filter((r) => r.kind === 'local' && match(r))
   const tags = snap.refs.filter((r) => r.kind === 'tag' && match(r)).reverse()
   const remotes = useMemo(() => {
-    const m = new Map<string, Ref[]>()
+    const m = new Map<string, Ref[]>(remoteNames(view).map((n) => [n, []]))
     for (const r of snap.refs) {
       if (r.kind !== 'remote' || !match(r)) continue
       const remote = r.shortName.split('/')[0]!
-      m.set(remote, [...(m.get(remote) ?? []), r])
+      m.get(remote)?.push(r)
     }
     return m
-  }, [snap.refs, f])
+  }, [snap.refs, view.remotes, f])
+  const merged = new Set(view.merged)
+  /** Pull requests by their branch name (same-repository PRs only), from the last time the list was loaded. */
+  const prByBranch = new Map(view.pulls?.state === 'ok' ? view.pulls.pulls.filter((p) => !p.fromFork).map((p) => [p.branch, p]) : [])
+  /** Branches checked out in another worktree (git will not check them out here). */
+  const elsewhere = new Map(view.worktrees.filter((w) => !w.current && w.branch).map((w) => [w.branch!, w.path]))
+  /** After "Check which tags are on <remote>": the tags it does not have. */
+  const onRemote = view.remoteTags ? new Set(view.remoteTags.names) : null
+  /** Branches in the graph out of all of them, as in "Viewing 1181/1181". */
+  const branches = snap.refs.filter((r) => r.kind === 'local' || r.kind === 'remote')
+  const shown = branches.filter((r) => refShown(r, snap.filter, snap.head.branch)).length
+  const menuFor = (section: 'local' | 'remotes' | 'tags' | 'worktrees' | 'submodules' | 'lfs') => () => useStore.setState({ menu: { kind: 'section', section } })
 
   const jump = async (hash: string) => {
     updateRepo(view.id, { selected: { kind: 'commit', hash }, center: { kind: 'graph' } })
@@ -35,6 +47,11 @@ export function Sidebar({ view }: { view: RepoView }) {
 
   return (
     <aside className="flex h-full min-h-0 w-full flex-col bg-panel">
+      <div className="flex h-6 items-center gap-1.5 px-3 pt-1.5 text-xs text-muted" data-testid="sidebar-viewing">
+        <Eye size={12} className="shrink-0" />
+        <span className="min-w-0 flex-1 truncate">Viewing {shown.toLocaleString()}/{branches.length.toLocaleString()}</span>
+        {shown < branches.length && <button onClick={() => showAllInGraph(view.id)} className="shrink-0 font-medium text-accent hover:underline">Show all</button>}
+      </div>
       <div className="p-2">
         <input
           value={filter}
@@ -46,26 +63,129 @@ export function Sidebar({ view }: { view: RepoView }) {
       <ContextMenu.Root>
         <ContextMenu.Trigger asChild>
           <div className="min-h-0 flex-1 overflow-y-auto pb-4" data-testid="sidebar">
-            <Section title="Local" count={locals.length} icon={<GitBranch size={13} />}>
-              {locals.map((r) => (
-                <RefItem key={r.name} r={r} label={r.shortName} view={view} onJump={jump} head={r.shortName === snap.head.branch}>
-                  {(r.ahead ?? 0) > 0 && <span className="text-[10px] text-add">↑{r.ahead}</span>}
-                  {(r.behind ?? 0) > 0 && <span className="text-[10px] text-warn">↓{r.behind}</span>}
-                  {r.upstreamGone && <span className="text-[10px] text-faint" title="Upstream deleted">gone</span>}
+            <Section title="Local" count={locals.length} icon={<GitBranch size={13} />} onContextMenu={menuFor('local')}>
+              {locals.map((r) => {
+                const head = r.shortName === snap.head.branch
+                return (
+                  <RefItem key={r.name} r={r} label={r.shortName} view={view} onJump={jump} head={head}>
+                    {(r.ahead ?? 0) > 0 && <span className="text-[10px] text-add">↑{r.ahead}</span>}
+                    {(r.behind ?? 0) > 0 && <span className="text-[10px] text-warn">↓{r.behind}</span>}
+                    {r.upstreamGone && <span className="text-[10px] text-faint" title="Upstream deleted">gone</span>}
+                    {!head && merged.has(r.shortName) && <Badge title={`Already in ${snap.head.branch ?? 'HEAD'}: safe to delete`}>merged</Badge>}
+                    {!head && isStale(r) && <Badge title="No commits for 90 days">stale</Badge>}
+                    {elsewhere.has(r.shortName) && <Badge title={`Checked out in ${elsewhere.get(r.shortName)}`}>worktree</Badge>}
+                    {prByBranch.has(r.shortName) && <Badge title={`Pull request #${prByBranch.get(r.shortName)!.number}: ${prByBranch.get(r.shortName)!.title}`}>#{prByBranch.get(r.shortName)!.number}</Badge>}
+                  </RefItem>
+                )
+              })}
+            </Section>
+            <Section title="Remotes" count={remotes.size} icon={<Cloud size={13} />} onContextMenu={menuFor('remotes')}
+              action={<button title="Add remote" aria-label="Add remote" onClick={() => addRemote(view.id)} className="rounded p-0.5 text-faint hover:bg-hover hover:text-fg"><Plus size={13} /></button>}>
+              {[...remotes.entries()].filter(([, refs]) => !f || refs.length).map(([remote, refs]) => (
+                <Section key={remote} title={remote} count={refs.length} icon={null} defaultOpen={false} depth={1}
+                  testId="remote-section" onContextMenu={() => useStore.setState({ menu: { kind: 'remote', remote } })}>
+                  {refs.map((r) => (
+                    <RefItem key={r.name} r={r} label={r.shortName.slice(remote.length + 1)} view={view} onJump={jump} depth={1} />
+                  ))}
+                  {refs.length === 0 && <Empty depth={1}>Not fetched yet</Empty>}
+                </Section>
+              ))}
+              {remotes.size === 0 && <Empty>No remotes</Empty>}
+            </Section>
+            {hasGitHubRemote(view) && (
+              <Section title="Pull requests" count={view.pulls?.state === 'ok' ? view.pulls.pulls.length : 0} icon={<GitPullRequest size={13} />} defaultOpen={false}
+                onOpen={() => { if (!view.pulls && !view.pullsLoading) void loadPulls(view.id) }}
+                action={<button title="Refresh pull requests (asks GitHub)" aria-label="Refresh pull requests" onClick={() => void loadPulls(view.id)}
+                  className="rounded p-0.5 text-faint hover:bg-hover hover:text-fg"><RefreshCw size={12} className={view.pullsLoading ? 'animate-spin' : ''} /></button>}>
+                {view.pullsLoading && !view.pulls && <Empty>Asking GitHub…</Empty>}
+                {view.pulls?.state === 'signed-out' && (
+                  <div className="py-1 pr-3 pl-8 text-xs text-muted">
+                    <button className="text-accent hover:underline" onClick={() => useStore.setState({ page: 'settings' })}>Sign in with GitHub</button> to see pull requests.
+                  </div>
+                )}
+                {view.pulls?.state === 'ok' && view.pulls.pulls.length === 0 && <Empty>No open pull requests</Empty>}
+                {view.pulls?.state === 'ok' && view.pulls.pulls.map((p) => (
+                  <div key={p.number} data-testid="pull-item" data-number={p.number}
+                    onDoubleClick={() => void checkoutPull(view.id, p.number)}
+                    onContextMenu={() => useStore.setState({ menu: { kind: 'pull', number: p.number } })}
+                    title={`#${p.number} ${p.title}\n${p.author} wants to merge ${p.branch} into ${p.base}\nDouble-click to check it out`}
+                    className="flex h-6 cursor-default items-center gap-1.5 pr-3 pl-8 text-[13px] hover:bg-hover">
+                    <span className="shrink-0 text-[11px] text-faint">#{p.number}</span>
+                    <span className="min-w-0 flex-1 truncate">{p.title}</span>
+                    {p.draft && <Badge title="Draft">draft</Badge>}
+                    {p.fromFork && <Badge title="From a fork">fork</Badge>}
+                  </div>
+                ))}
+              </Section>
+            )}
+            <Section title="Tags" count={tags.length} icon={<Tag size={13} />} defaultOpen={false} onContextMenu={menuFor('tags')}>
+              {tags.map((r) => (
+                <RefItem key={r.name} r={r} label={r.shortName} view={view} onJump={jump}>
+                  {onRemote && !onRemote.has(r.shortName) && <Badge title={`Not on ${view.remoteTags!.remote}`}>local only</Badge>}
                 </RefItem>
               ))}
             </Section>
-            {[...remotes.entries()].map(([remote, refs]) => (
-              <Section key={remote} title={remote} count={refs.length} icon={<Cloud size={13} />} defaultOpen={false}>
-                {refs.map((r) => (
-                  <RefItem key={r.name} r={r} label={r.shortName.slice(remote.length + 1)} view={view} onJump={jump} />
+            {/* Collapsed while there is only this one; re-keyed so it opens when a second appears. */}
+            <Section key={view.worktrees.length > 1 ? 'many' : 'one'} title="Worktrees" count={view.worktrees.length} icon={<FolderTree size={13} />} defaultOpen={view.worktrees.length > 1}
+              onContextMenu={menuFor('worktrees')}
+              action={<button title="Add worktree" aria-label="Add worktree" onClick={() => addWorktree(view.id)} className="rounded p-0.5 text-faint hover:bg-hover hover:text-fg"><Plus size={13} /></button>}>
+              {view.worktrees.map((w) => {
+                const folder = w.path.split(/[\\/]/).filter(Boolean).pop()
+                return (
+                  <div key={w.path} data-testid="worktree-item" data-path={w.path}
+                    onClick={() => { const r = snap.refs.find((x) => x.kind === 'local' && x.shortName === w.branch); if (r) void jump(r.hash) }}
+                    onDoubleClick={() => !w.current && void openRepo(w.path)}
+                    onContextMenu={() => useStore.setState({ menu: { kind: 'worktree', path: w.path } })}
+                    title={`${w.path}${w.current ? '\nThis tab' : '\nDouble-click to open it in a tab'}`}
+                    className={clsx('flex h-6 cursor-default items-center gap-1.5 pr-3 pl-8 text-[13px] hover:bg-hover', w.current && 'font-semibold')}>
+                    {w.current && <span className="-ml-4 w-3 text-[10px] text-accent">✓</span>}
+                    <span className="min-w-0 flex-1 truncate">{w.branch ?? `detached at ${w.head?.slice(0, 7) ?? '?'}`}</span>
+                    <span className="max-w-24 truncate text-[10px] text-faint">{folder}</span>
+                    {w.locked !== undefined && <Badge title={w.locked || 'Locked'}>locked</Badge>}
+                    {w.prunable && <Badge title={w.prunable}>missing</Badge>}
+                  </div>
+                )
+              })}
+            </Section>
+            {view.submodules.length > 0 && (
+              <Section title="Submodules" count={view.submodules.length} icon={<Boxes size={13} />} onContextMenu={menuFor('submodules')}>
+                {view.submodules.map((m) => (
+                  <div key={m.path} data-testid="submodule-item" data-path={m.path}
+                    onDoubleClick={() => m.checkedOut && void openRepo(`${snap.path}/${m.path}`)}
+                    onContextMenu={() => useStore.setState({ menu: { kind: 'submodule', path: m.path } })}
+                    title={`${m.path}\n${m.url}${m.checkedOut ? '\nDouble-click to open it in a tab' : ''}`}
+                    className="flex h-6 cursor-default items-center gap-1.5 pr-3 pl-8 text-[13px] hover:bg-hover">
+                    <span className="min-w-0 flex-1 truncate">{m.path}</span>
+                    {!m.checkedOut && <Badge title="Not cloned yet: Update to check it out">not cloned</Badge>}
+                    {m.checkedOut && m.recorded && m.checkedOut !== m.recorded && <Badge title={`At ${m.checkedOut.slice(0, 7)}; this repository records ${m.recorded.slice(0, 7)}`}>moved</Badge>}
+                    {m.dirty && <Badge title="Has uncommitted changes inside">changes</Badge>}
+                  </div>
                 ))}
               </Section>
-            ))}
-            {remotes.size === 0 && !f && <Section title="Remotes" count={0} icon={<Cloud size={13} />}><Empty>No remotes</Empty></Section>}
-            <Section title="Tags" count={tags.length} icon={<Tag size={13} />} defaultOpen={false}>
-              {tags.map((r) => <RefItem key={r.name} r={r} label={r.shortName} view={view} onJump={jump} />)}
-            </Section>
+            )}
+            {view.lfs?.used && (
+              <Section title="Git LFS" count={view.lfs.files.length} icon={<HardDrive size={13} />} defaultOpen={false} onContextMenu={menuFor('lfs')}>
+                {!view.lfs.ready && (
+                  <div className="flex items-center gap-2 py-1 pr-3 pl-8 text-xs text-warn" data-testid="lfs-setup">
+                    <span className="min-w-0 flex-1">Not set up here: LFS files stay pointers.</span>
+                    <button className="font-medium text-accent hover:underline" onClick={() => void lfsSetUp(view.id)}>Set up</button>
+                  </div>
+                )}
+                {view.lfs.patterns.map((p) => (
+                  <div key={p.pattern} data-testid="lfs-pattern" onContextMenu={() => useStore.setState({ menu: { kind: 'lfs-pattern', pattern: p.pattern } })}
+                    title={`From ${p.source}`} className="flex h-6 cursor-default items-center gap-1.5 pr-3 pl-8 font-mono text-[12px] hover:bg-hover">
+                    <span className="min-w-0 flex-1 truncate">{p.pattern}</span>
+                    {p.lockable && <Badge title="Lockable: checked out read-only until you lock it">lockable</Badge>}
+                  </div>
+                ))}
+                {view.lfs.files.some((f) => !f.downloaded) && (
+                  <div className="flex items-center gap-2 py-1 pr-3 pl-8 text-xs text-muted">
+                    <span className="min-w-0 flex-1">{view.lfs.files.filter((f) => !f.downloaded).length} not downloaded</span>
+                    <button className="font-medium text-accent hover:underline" onClick={() => void lfsPull(view.id)}>Pull</button>
+                  </div>
+                )}
+              </Section>
+            )}
             <Section title="Stashes" count={view.stashes.length} icon={<Archive size={13} />}>
               {view.stashes.map((s) => (
                 <StashItem key={s.ref} repoId={view.id} index={s.index} message={s.message} date={s.date}
@@ -74,6 +194,11 @@ export function Sidebar({ view }: { view: RepoView }) {
               ))}
               {view.stashes.length === 0 && <Empty>No stashes</Empty>}
             </Section>
+            <button onClick={() => updateRepo(view.id, { center: { kind: 'reflog' } })} data-testid="open-reflog"
+              title="Every place HEAD has been: recover deleted branches and lost commits"
+              className={clsx('mt-1 flex h-7 w-full items-center gap-1.5 pr-2 pl-[27px] text-[12px] font-semibold hover:text-fg', view.center.kind === 'reflog' ? 'text-fg' : 'text-muted')}>
+              <History size={13} /> Reflog
+            </button>
           </div>
         </ContextMenu.Trigger>
         <GraphMenu repoId={view.id} />
@@ -82,31 +207,52 @@ export function Sidebar({ view }: { view: RepoView }) {
   )
 }
 
-function Section({ title, count, icon, children, defaultOpen = true }: {
-  title: string; count: number; icon: ReactNode; children: ReactNode; defaultOpen?: boolean
+function Section({ title, count, icon, children, defaultOpen = true, depth = 0, action, onContextMenu, testId, onOpen }: {
+  title: string; count: number; icon: ReactNode; children: ReactNode; defaultOpen?: boolean; depth?: number
+  /** Called when the user opens the section (to load what it shows on demand). */
+  onOpen?: () => void
+  /** A small button at the end of the header (Add remote). */
+  action?: ReactNode
+  /** Right-click on the header: records the menu target (the sidebar's menu renders it). */
+  onContextMenu?: () => void
+  testId?: string
 }) {
   const [open, setOpen] = useState(defaultOpen)
   return (
-    <div className="mt-1">
-      <button onClick={() => setOpen(!open)} className="flex h-7 w-full items-center gap-1.5 px-2 text-[12px] font-semibold text-muted hover:text-fg">
-        {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-        {icon}
-        <span className="flex-1 truncate text-left">{title}</span>
-        <span className="text-[11px] font-normal text-faint">{count}</span>
-      </button>
+    <div className={depth ? '' : 'mt-1'} data-testid={testId} data-name={title}>
+      <div className="flex h-7 items-center pr-2" onContextMenu={onContextMenu}>
+        <button onClick={() => { if (!open) onOpen?.(); setOpen(!open) }} style={{ paddingLeft: 8 + depth * 16 }}
+          className={clsx('flex h-full min-w-0 flex-1 items-center gap-1.5 text-[12px] hover:text-fg', depth ? 'font-medium text-muted' : 'font-semibold text-muted')}>
+          {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+          {icon}
+          <span className="flex-1 truncate text-left">{title}</span>
+          <span className="text-[11px] font-normal text-faint">{count}</span>
+        </button>
+        {action && <span className="ml-1">{action}</span>}
+      </div>
       {open && <div>{children}</div>}
     </div>
   )
 }
 
-function Empty({ children }: { children: ReactNode }) {
-  return <div className="px-8 py-1 text-xs text-faint">{children}</div>
+function Badge({ title, children }: { title: string; children: ReactNode }) {
+  return <span title={title} className="rounded bg-hover px-1 text-[10px] text-faint">{children}</span>
 }
 
-function RefItem({ r, label, view, onJump, head, children }: {
-  r: Ref; label: string; view: RepoView; onJump: (hash: string) => void; head?: boolean; children?: ReactNode
+function Empty({ children, depth = 0 }: { children: ReactNode; depth?: number }) {
+  return <div className="py-1 text-xs text-faint" style={{ paddingLeft: 32 + depth * 16 }}>{children}</div>
+}
+
+function RefItem({ r, label, view, onJump, head, depth = 0, children }: {
+  r: Ref; label: string; view: RepoView; onJump: (hash: string) => void; head?: boolean; depth?: number; children?: ReactNode
 }) {
   const selected = view.selected.kind === 'commit' && view.selected.hash === r.hash
+  const filter = view.snapshot.filter
+  const remote = r.kind === 'remote' ? `refs/remotes/${r.shortName.split('/')[0]}/*` : null
+  const hidden = filter.hidden.includes(r.name) || (!!remote && filter.hidden.includes(remote))
+  const soloed = filter.solo.includes(r.name)
+  /** Out of the graph: hidden, or not among the soloed refs. HEAD's branch always shows. */
+  const out = !head && !refShown(r, filter, view.snapshot.head.branch)
   return (
     <div
       draggable={r.kind !== 'tag'}
@@ -120,11 +266,24 @@ function RefItem({ r, label, view, onJump, head, children }: {
       data-testid="sidebar-ref"
       data-ref={r.name}
       title={`${r.name}\nDouble-click to check out`}
-      className={clsx('flex h-6 cursor-default items-center gap-1.5 pr-3 pl-8 text-[13px]', selected ? 'bg-select' : 'hover:bg-hover', head && 'font-semibold')}
+      style={{ paddingLeft: 32 + depth * 16 }}
+      className={clsx('group flex h-6 cursor-default items-center gap-1.5 pr-3 text-[13px]', selected ? 'bg-select' : 'hover:bg-hover', head && 'font-semibold')}
     >
       {head && <span className="-ml-4 w-3 text-[10px] text-accent">✓</span>}
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      {children}
+      <span className={clsx('min-w-[4.5rem] flex-1 truncate', out && 'text-faint line-through decoration-faint/50')} data-testid="ref-label">{label}</span>
+      {/* Badges give way before the branch name does: the name is what you are looking for. They
+          wrap onto a second line that is cut off, so a badge that does not fit disappears whole
+          instead of showing as "sta". */}
+      {children && <span className="flex h-4 min-w-0 shrink flex-wrap items-center justify-end gap-x-1 overflow-hidden">{children}</span>}
+      {soloed && <span title="Soloed: the graph shows only soloed branches"><Focus size={12} className="text-accent" /></span>}
+      {!head && (
+        <button
+          onClick={(e) => { e.stopPropagation(); if (filter.hidden.includes(r.name)) showInGraph(view.id, r.name); else hideInGraph(view.id, r.name) }}
+          title={hidden ? 'Show in the graph' : 'Hide in the graph'} aria-label={hidden ? 'Show in the graph' : 'Hide in the graph'} data-testid="toggle-hidden"
+          className={clsx('rounded p-0.5 text-faint hover:text-fg', hidden ? '' : 'opacity-0 group-hover:opacity-100')}>
+          {hidden ? <EyeOff size={12} /> : <Eye size={12} />}
+        </button>
+      )}
     </div>
   )
 }
@@ -143,13 +302,14 @@ function StashItem({ repoId, index, message, date, selected, onSelect }: {
           title={`${message}\n${relativeTime(date)}\nClick to see its changes, double-click to pop`}
           className={clsx('flex h-6 items-center gap-1.5 pr-3 pl-8 text-[13px]', selected ? 'bg-select' : 'hover:bg-hover')}
         >
-          <span className="min-w-0 flex-1 truncate">{message.replace(/^On [^:]+: /, '')}</span>
+          <span className="min-w-0 flex-1 truncate">{stashLabel(message)}</span>
           <span className="text-[10px] text-faint">{relativeTime(date)}</span>
         </div>
       </ContextMenu.Trigger>
       <CM.Content>
         <CM.Item onSelect={() => pop(repoId, index)}>Pop (apply and delete)</CM.Item>
         <CM.Item onSelect={() => void stashApply(repoId, index)}>Apply</CM.Item>
+        <CM.Item onSelect={() => stashToBranch(repoId, index)}>Create a branch from this stash…</CM.Item>
         <CM.Separator />
         <CM.Item danger onSelect={() => void stashDrop(repoId, index)}>Drop</CM.Item>
       </CM.Content>

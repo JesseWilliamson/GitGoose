@@ -136,10 +136,10 @@ test('compact rows and hiding tags change the graph', async () => {
   const r = makeFixture('tags')
   const { app, page } = await launch(r.dir)
   await expect(page.locator('[data-testid="ref-pill"][data-ref="refs/tags/v0.2"]')).toBeVisible()
-  expect((await page.getByTestId('commit-row').first().boundingBox())!.height).toBe(28)
+  expect((await page.getByTestId('commit-row').first().boundingBox())!.height).toBe(32)
   await set(page, { compactRows: true, showTags: false })
   await expect(page.locator('[data-testid="ref-pill"][data-ref="refs/tags/v0.2"]')).toHaveCount(0)
-  await expect.poll(async () => (await page.getByTestId('commit-row').first().boundingBox())!.height).toBe(22)
+  await expect.poll(async () => (await page.getByTestId('commit-row').first().boundingBox())!.height).toBe(24)
   await app.close()
 })
 

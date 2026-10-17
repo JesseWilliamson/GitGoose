@@ -25,14 +25,39 @@ export type UndoAction =
   | { kind: 'read-tree'; tree: string }
   | { kind: 'checkout'; target: string; detach: boolean }
   | { kind: 'rename-branch'; from: string; to: string }
-  | { kind: 'set-upstream'; branch: string; upstream: string }
+  /** upstream null: the branch tracked nothing. */
+  | { kind: 'set-upstream'; branch: string; upstream: string | null }
+  /** Remotes: put one back (undo of remove), remove one (undo of add), rename, or set a URL. */
+  | { kind: 'remote-add'; name: string; url: string; pushUrl?: string }
+  | { kind: 'remote-remove'; name: string }
+  | { kind: 'remote-rename'; from: string; to: string }
+  | { kind: 'remote-url'; name: string; url: string | null; push: boolean }
   /** Pop the stash entry whose commit is `hash`, wherever it now sits in the list. */
   | { kind: 'stash-pop'; hash: string }
   | { kind: 'stash-store'; hash: string; message: string }
+  /** Drop the stash entry whose commit is `hash` (undo of a snapshot: the working tree was never touched). */
+  | { kind: 'stash-drop'; hash: string }
   /** Apply a stash commit made with `git stash create` (no ref, just the object). */
   | { kind: 'stash-apply'; hash: string }
   /** Write every file of a saved tree into the working tree (backup taken during conflicts). */
   | { kind: 'restore-tree'; tree: string }
+  /**
+   * Throw away working-tree changes that are saved elsewhere (a stash entry being restored), but
+   * only if they are still exactly `tree` plus the `untracked` files: anything else the user
+   * changed since makes it refuse, before it touches a thing.
+   */
+  | { kind: 'drop-applied'; tree: string; untracked: { path: string; blob: string }[] }
+  /** Worktrees: remove one (git refuses if it has changes), or add one back with a branch or a detached commit. */
+  | { kind: 'worktree-remove'; path: string }
+  | { kind: 'worktree-add'; path: string; branch?: string; commit: string }
+  /**
+   * Submodules. forget: undo of add, deletes its checkout and clone, refusing if it moved from
+   * `commit` or has changes. restore: undo of remove, checks it out again from the clone git kept.
+   */
+  | { kind: 'submodule-forget'; path: string; name: string; commit: string }
+  | { kind: 'submodule-restore'; path: string }
+  /** Put a config value back (null: unset it), in this repository's config or the user's global one. */
+  | { kind: 'config'; scope: 'local' | 'global'; key: string; value: string | null }
   /** Write saved blobs back to the working tree. `blob: null` means the file did not exist. */
   | { kind: 'restore-files'; files: { path: string; blob: string | null; mode?: number }[] }
 
@@ -47,15 +72,44 @@ export interface JournalEntry {
 
 export class UndoJournal {
   private entries: JournalEntry[] = []
+  /** Undone entries that can be redone: the redo actions, and the entry to put back afterwards. */
+  private redos: { redo: JournalEntry; original: JournalEntry }[] = []
   private nextId = 1
 
   constructor(private limit = 100) {}
 
+  /** A new operation: like in an editor, it ends any chance to redo what was undone before it. */
   record(label: string, actions: UndoAction[], expectHead: string | undefined): JournalEntry {
     const entry: JournalEntry = { id: this.nextId++, label, time: Date.now(), actions, expectHead }
+    this.redos = []
+    this.restore(entry)
+    return entry
+  }
+
+  /** Put an entry back on the undo stack (after a redo) without clearing the redo stack. */
+  restore(entry: JournalEntry): void {
     this.entries.push(entry)
     if (this.entries.length > this.limit) this.entries.shift()
-    return entry
+  }
+
+  pushRedo(redo: JournalEntry, original: JournalEntry): void {
+    this.redos.push({ redo, original })
+  }
+
+  peekRedo() {
+    return this.redos[this.redos.length - 1]
+  }
+
+  popRedo() {
+    return this.redos.pop()
+  }
+
+  clearRedo(): void {
+    this.redos = []
+  }
+
+  redoList(): UndoEntry[] {
+    return this.redos.map(({ redo }) => ({ id: redo.id, label: redo.label, time: redo.time })).reverse()
   }
 
   peek(): JournalEntry | undefined {

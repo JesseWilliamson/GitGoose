@@ -14,9 +14,10 @@ export interface KeyCommand {
 }
 
 export const COMMANDS: KeyCommand[] = [
-  { id: 'palette', label: 'Command palette', defaults: ['mod+k', 'mod+shift+p'] },
+  { id: 'search', label: 'Search everything', defaults: ['mod+k', 'mod+f'] },
+  { id: 'palette', label: 'Commands', defaults: ['mod+p', 'mod+shift+p'] },
   { id: 'undo', label: 'Undo the last git operation', defaults: ['mod+z'] },
-  { id: 'search', label: 'Find commits', defaults: ['mod+f'] },
+  { id: 'redo', label: 'Redo what was undone', defaults: ['mod+shift+z', 'mod+y'] },
   { id: 'open-repo', label: 'Open repository', defaults: ['mod+o'] },
   { id: 'close-tab', label: 'Close tab', defaults: ['mod+w'] },
   { id: 'settings', label: 'Settings', defaults: ['mod+,'] },
@@ -31,7 +32,6 @@ export const COMMANDS: KeyCommand[] = [
   { id: 'zoom-reset', label: 'Actual size', defaults: ['mod+0'] },
   { id: 'toggle-sidebar', label: 'Show or hide the sidebar', defaults: ['mod+b'] },
   { id: 'toggle-details', label: 'Show or hide the details panel', defaults: ['mod+alt+b'] },
-  { id: 'toggle-bottom', label: 'Show or hide the bottom panel', defaults: ['mod+j'] },
 ]
 
 const mac = typeof window !== 'undefined' && window.gitsquid?.platform === 'darwin'
@@ -88,9 +88,16 @@ export function formatCombo(combo: string): string {
   return mac ? parts.join('') : parts.join('+')
 }
 
+/** The first shortcut bound to a command, formatted for a tooltip ("" when it has none). */
+export function shortcutOf(id: string, overrides: Record<string, string> = {}): string {
+  const combo = bindings(overrides).get(id)?.[0]
+  return combo ? formatCombo(combo) : ''
+}
+
 /** Keys that are not configurable commands, for the shortcuts dialog. */
 export const FIXED_KEYS: { keys: string; what: string }[] = [
-  { keys: 'Enter / Shift+Enter', what: 'Next / previous search match' },
+  { keys: 'Enter / Shift+Enter', what: 'Next / previous match in the graph (after “Show matching commits in the graph”)' },
+  { keys: '> (in search)', what: 'Search commands only' },
   { keys: 'J / K  or  ↓ / ↑', what: 'Next / previous commit in the graph' },
   { keys: 'PageDown / PageUp, Home / End', what: 'Move through the graph faster' },
   { keys: 'mod+Enter', what: 'Commit (in the message box)' },
