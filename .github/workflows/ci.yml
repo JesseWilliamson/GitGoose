@@ -4,6 +4,9 @@ on:
   push:
     branches: [master, main]
   pull_request:
+  # Nightly, so slow performance drift shows up even on quiet days.
+  schedule:
+    - cron: '17 3 * * *'
 
 jobs:
   test:
