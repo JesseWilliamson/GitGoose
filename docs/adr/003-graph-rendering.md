@@ -32,3 +32,10 @@
 
 The first measurement found rows re-rendering on every scroll frame (a fresh `style` object
 defeated `memo`): 48 fps. Passing `top` as a number fixed it.
+
+## Column width (added after testing on expressjs/express)
+
+Real histories can have dozens of lanes open at once: about 40 in Express, from long-lived release
+branches and hundreds of tags. Sizing the graph column to fit them all left commit messages a few
+characters wide. The column now shows at most 8 lanes by default and clips the rest (a "›" in
+the header says lanes are hidden); dragging the header edge resizes it and the width persists.
