@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { SecretFile } from './keyStore'
 import { buildPrompt, cleanCommitMessage, MAX_DIFF_CHARS } from './prompts'
-import { AiService } from './service'
+import { AiService, previewOf } from './service'
 
 const FAKE = join(import.meta.dirname, '../../../e2e/fake-agent.mjs')
 const memoryKeychain = { secure: () => true, encrypt: (s: string) => Buffer.from(s), decrypt: (b: Buffer) => b.toString() }
@@ -286,5 +286,15 @@ describe('prompts', () => {
     expect(again.incremental).toEqual({ sent: 0, unchanged: 1, addressed: [] })
     expect(again.findings).toMatchObject([{ title: 'Type the map', status: 'open' }])
     expect(again.summary).toBe('Nothing changed in the reviewed code since the last review.')
+  })
+})
+
+describe('recompose previews', () => {
+  it('keeps a change whole up to 200 lines, and says how much was cut', () => {
+    const body = (n: number) => ['@@ -1 +1 @@', ...Array.from({ length: n }, (_, i) => `+line ${i}`)].join('\n')
+    expect(previewOf(body(20))).toBe(body(20))
+    const cut = previewOf(body(300)).split('\n')
+    expect(cut).toHaveLength(201)
+    expect(cut.at(-1)).toBe('… 101 more lines')
   })
 })
