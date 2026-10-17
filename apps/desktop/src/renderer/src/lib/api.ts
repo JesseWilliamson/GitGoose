@@ -5,13 +5,14 @@ export interface UiError {
   message: string
   stderr?: string
   command?: string
+  code?: string
 }
 
 export function toUiError(e: unknown): UiError {
   if (e && typeof e === 'object' && 'message' in e) {
-    const x = e as { message: string; stderr?: string; command?: string }
+    const x = e as { message: string; stderr?: string; command?: string; code?: string }
     // Electron prefixes errors that cross IPC; strip it if present.
-    return { message: x.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''), stderr: x.stderr, command: x.command }
+    return { message: x.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''), stderr: x.stderr, command: x.command, code: x.code }
   }
   return { message: String(e) }
 }

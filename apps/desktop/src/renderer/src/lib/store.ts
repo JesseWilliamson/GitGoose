@@ -2,6 +2,7 @@ import { GraphLayout, type Row } from '@gitsquid/graph'
 import { SETTINGS, type Commit, type DiffTarget, type GitHubStatus, type GitSquidEvent, type Ref, type RepoSnapshot, type SearchField, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitsquid/shared'
 import { create } from 'zustand'
 import { api, toUiError, type UiError } from './api'
+import { onAiEvent } from './ai'
 
 export type Selection = { kind: 'wip' } | { kind: 'commit'; hash: string }
 
@@ -366,6 +367,11 @@ function onEvent(e: GitSquidEvent): void {
       break
     case 'github':
       set({ github: e.status })
+      break
+    case 'ai-text':
+    case 'ai-permission':
+    case 'ai-permission-closed':
+      onAiEvent(e)
       break
   }
 }

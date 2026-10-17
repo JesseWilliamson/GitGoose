@@ -1,0 +1,191 @@
+import type { Repo } from '@gitsquid/git'
+import {
+  agentCommandLine, agentLabel, commandArgv,
+  type AgentInfo, type AgentPreset, type AiPermissionRequest, type AiResult, type AiStatus, type AiTask, type GitSquidEvent, type Settings,
+} from '@gitsquid/shared'
+import { tmpdir } from 'node:os'
+import { AcpAgent } from './acp'
+import { anthropicComplete } from './anthropic'
+import type { SecretFile } from './keyStore'
+import { buildPrompt, cleanCommitMessage } from './prompts'
+
+/**
+ * AI requests, from the renderer's "✨" to an answer. Plain Node; index.ts wires it to Electron.
+ *
+ * The rules this class enforces (the renderer asks nicely first, but main decides):
+ *   - nothing is sent, and no agent is started, until the user has agreed to this provider
+ *   - every tool call the agent asks about goes to the user (see acp.ts for the one exception)
+ *   - an agent's file write is only ever a proposal the user then accepts or not
+ */
+export interface AiServiceDeps {
+  settings: () => Settings
+  setSettings: (patch: Partial<Settings>) => void
+  repo: (repoId: string) => Repo
+  apiKey: SecretFile
+  emit: (event: GitSquidEvent) => void
+  anthropicBaseURL?: string
+  fetch?: typeof fetch
+}
+
+export class AiError extends Error {
+  constructor(message: string, readonly code: string) {
+    super(message)
+    this.name = 'AiError'
+  }
+}
+
+export class AiService {
+  readonly agent: AcpAgent
+  private requests = new Map<string, { cancel: () => void }>()
+  private permissions = new Map<number, { requestId: string; resolve: (optionId: string | null) => void }>()
+  private nextPermission = 1
+  /** The agent command the running process was started with (restart when it changes). */
+  private agentCommand = ''
+
+  constructor(private deps: AiServiceDeps) {
+    this.agent = new AcpAgent(() => {
+      const argv = commandArgv(this.commandLine(), {})
+      return { command: argv[0] ?? '', args: argv.slice(1) }
+    })
+  }
+
+  private commandLine(): string {
+    const s = this.deps.settings()
+    return agentCommandLine(s.aiAgent as AgentPreset, s.aiAgentCommand)
+  }
+
+  /** What the user agreed to: a provider, and for agents the exact command. */
+  private consentKey(): string {
+    const s = this.deps.settings()
+    if (s.aiProvider === 'agent') return `agent:${this.commandLine()}`
+    if (s.aiProvider === 'anthropic') return 'anthropic'
+    return ''
+  }
+
+  status(): AiStatus {
+    const s = this.deps.settings()
+    const key = this.consentKey()
+    const hasApiKey = !!this.deps.apiKey.get()
+    return {
+      provider: s.aiProvider,
+      label: s.aiProvider === 'anthropic' ? 'Anthropic API' : agentLabel(s.aiAgent as AgentPreset, s.aiAgentCommand),
+      ready: s.aiProvider === 'agent' ? !!this.commandLine() : s.aiProvider === 'anthropic' ? hasApiKey : false,
+      consented: !!key && s.aiConsent.includes(key),
+      hasApiKey,
+      keyInMemoryOnly: hasApiKey && !this.deps.apiKey.persisted(),
+    }
+  }
+
+  consent(): AiStatus {
+    const key = this.consentKey()
+    const s = this.deps.settings()
+    if (key && !s.aiConsent.includes(key)) this.deps.setSettings({ aiConsent: [...s.aiConsent, key] })
+    return this.status()
+  }
+
+  setApiKey(key: string | null): AiStatus {
+    this.deps.apiKey.set(key?.trim() || null)
+    return this.status()
+  }
+
+  /** Settings changed: an agent started with an old command is stopped (the next use restarts). */
+  onSettings(): void {
+    if (this.agentCommand && this.agentCommand !== this.commandLine()) {
+      this.agent.stop()
+      this.agentCommand = ''
+    }
+  }
+
+  /** Start the agent and report who it is (Settings → AI → Test). The user clicked, so this may spawn. */
+  async agentInfo(): Promise<AgentInfo> {
+    this.onSettings()
+    this.agentCommand = this.commandLine()
+    return this.agent.info()
+  }
+
+  async authenticate(methodId: string): Promise<void> {
+    await this.agent.authenticate(methodId)
+  }
+
+  async run(requestId: string, repoId: string, task: AiTask): Promise<AiResult> {
+    const st = this.status()
+    if (st.provider === 'off') throw new AiError('AI features are off. Turn them on in Settings → AI.', 'ai-off')
+    if (!st.ready) {
+      throw new AiError(st.provider === 'anthropic' ? 'Add an Anthropic API key in Settings → AI.' : 'Set the agent command in Settings → AI.', 'ai-setup')
+    }
+    if (!st.consented) throw new AiError(`You have not agreed to send content to ${st.label} yet.`, 'ai-consent')
+    // Explaining an error needs no repository (it may have happened with none open).
+    const repo = task.kind === 'explain-error' && !repoId ? null : this.deps.repo(repoId)
+    const cwd = repo?.path ?? tmpdir()
+    const built = await buildPrompt(repo, task)
+    const emitText = (text: string) => this.deps.emit({ type: 'ai-text', requestId, text })
+    const finish = (text: string) => (task.kind === 'commit-message' ? cleanCommitMessage(text) : text.trim())
+
+    try {
+      if (st.provider === 'anthropic') {
+        if (task.kind === 'resolve-conflict') {
+          throw new AiError('Resolving a conflict needs an agent (it edits the file). The API key mode only writes text.', 'ai-unsupported')
+        }
+        const abort = new AbortController()
+        this.requests.set(requestId, { cancel: () => abort.abort() })
+        const text = await anthropicComplete({
+          apiKey: this.deps.apiKey.get()!,
+          model: this.deps.settings().anthropicModel || 'claude-opus-5-5',
+          system: built.system,
+          prompt: built.prompt,
+          baseURL: this.deps.anthropicBaseURL,
+          fetch: this.deps.fetch,
+          onText: emitText,
+          signal: abort.signal,
+        })
+        return { text: finish(text) }
+      }
+
+      this.onSettings()
+      this.agentCommand = this.commandLine()
+      let proposal: AiResult['proposal']
+      const abort = new AbortController()
+      this.requests.set(requestId, { cancel: () => abort.abort() })
+      const res = await this.agent.prompt(cwd, `${built.system}\n\n${built.prompt}`, {
+        onText: emitText,
+        writable: built.writable,
+        onWrite: (_path, content) => {
+          if (task.kind === 'resolve-conflict') proposal = { path: task.path, content }
+        },
+        onPermission: (ask) => {
+          const permissionId = this.nextPermission++
+          const request: AiPermissionRequest = { permissionId, requestId, ...ask }
+          return new Promise((resolve) => {
+            this.permissions.set(permissionId, { requestId, resolve })
+            this.deps.emit({ type: 'ai-permission', request })
+          })
+        },
+      }, abort.signal)
+      if (res.stopReason === 'cancelled') throw new AiError('Stopped.', 'ai-cancelled')
+      return { text: finish(res.text), proposal }
+    } finally {
+      this.requests.delete(requestId)
+      // Unanswered questions from this request are moot now.
+      for (const [id, p] of this.permissions) {
+        if (p.requestId !== requestId) continue
+        this.permissions.delete(id)
+        p.resolve(null)
+        this.deps.emit({ type: 'ai-permission-closed', permissionId: id })
+      }
+    }
+  }
+
+  cancel(requestId: string): void {
+    this.requests.get(requestId)?.cancel()
+  }
+
+  respondPermission(permissionId: number, optionId: string | null): void {
+    const p = this.permissions.get(permissionId)
+    this.permissions.delete(permissionId)
+    p?.resolve(optionId)
+  }
+
+  stop(): void {
+    this.agent.stop()
+  }
+}
