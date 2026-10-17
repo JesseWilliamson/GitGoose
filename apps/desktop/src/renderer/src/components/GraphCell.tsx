@@ -1,5 +1,6 @@
 import type { Row } from '@gitsquid/graph'
 import { memo } from 'react'
+import { edgePath } from '../lib/edges'
 import { hashColor, initials, laneColor } from '../lib/format'
 
 /** Graph row height: normal and compact (Settings → Appearance). */
@@ -23,15 +24,15 @@ export interface NodeAuthor {
 }
 
 /**
- * One row of the graph as SVG. The layout already decided everything; this only draws:
- * straight lines for 'pass' edges, and curves for lines that change column on their way into
- * (top half) or out of (bottom half) the node.
+ * One row of the graph as SVG. The layout already decided everything; this only draws the
+ * edges (see edgePath), the node, and, when the row has branch pills, a line from the pills to
+ * the node so it is clear which commit a branch points at.
  *
  * Nodes, like GitKraken's: a commit is its author's avatar ringed in the lane colour (initials
  * underneath, so they show while the image loads or when there is none); a merge is a small
  * dot; HEAD gets an extra outer ring.
  */
-export const GraphCell = memo(function GraphCell({ row, width, showPending, isHead, h = ROW_H, author, stash }: {
+export const GraphCell = memo(function GraphCell({ row, width, showPending, isHead, h = ROW_H, author, stash, refLine }: {
   row: Row
   width: number
   showPending: boolean
@@ -40,26 +41,28 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
   author: NodeAuthor
   /** A stash: drawn as a dashed box (it is not a commit on any branch). */
   stash?: boolean
+  /** The row has branch pills: draw their connector from the left edge to the node. */
+  refLine?: boolean
 }) {
   const mid = h / 2
-  const cx = laneX(row.lane)
+  // A node whose lane is past the column's width (many lanes open, column not widened) is kept
+  // at the right edge with a dashed ring, rather than clipped away and leaving a row with no node.
+  const lastX = width - LANE_W / 2
+  const offscreen = laneX(row.lane) > lastX
+  const cx = offscreen ? lastX : laneX(row.lane)
   const color = laneColor(row.color)
   const r = nodeRadius(h)
   const stroke = lineWidth(h)
   const clip = `clip-${row.hash}`
   return (
-    <svg width={width} height={h} className="block shrink-0 overflow-hidden" aria-hidden data-node={row.merge ? 'merge' : 'commit'}>
+    <svg width={width} height={h} className="block shrink-0 overflow-hidden" aria-hidden data-node={row.merge ? 'merge' : 'commit'}
+      data-offscreen={offscreen || undefined}>
+      {refLine && <path d={`M0 ${mid}H${cx}`} stroke={color} strokeWidth={2} opacity={0.85} data-testid="ref-line" />}
       {row.edges.map((e, i) => {
         if (e.pending && !showPending) return null
-        const x1 = laneX(e.from)
-        const x2 = laneX(e.to)
-        let d: string
-        if (e.part === 'pass') d = `M${x1} 0V${h}`
-        else if (e.part === 'top') d = x1 === x2 ? `M${x1} 0V${mid}` : `M${x1} 0C${x1} ${mid * 0.9} ${x2} ${mid * 0.3} ${x2} ${mid}`
-        else d = x1 === x2 ? `M${x1} ${mid}V${h}` : `M${x1} ${mid}C${x1} ${mid + mid * 0.7} ${x2} ${mid + mid * 0.1} ${x2} ${h}`
         return (
-          <path key={i} d={d} fill="none" stroke={laneColor(e.color)} strokeWidth={stroke} strokeLinecap="round"
-            strokeDasharray={e.pending ? '3 4' : undefined} opacity={e.pending ? 0.7 : 1} />
+          <path key={i} d={edgePath(e.part, laneX(e.from), laneX(e.to), h)} fill="none" stroke={laneColor(e.color)} strokeWidth={stroke}
+            strokeLinecap="round" strokeLinejoin="round" strokeDasharray={e.pending ? '3 4' : undefined} opacity={e.pending ? 0.7 : 1} />
         )
       })}
       {stash ? (
@@ -73,6 +76,7 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
       ) : (
         <g data-testid="avatar-node">
           {isHead && <circle cx={cx} cy={mid} r={r + 3} fill="none" stroke={color} strokeWidth={2} />}
+          {offscreen && <circle cx={cx} cy={mid} r={r + 2.5} fill="none" stroke={color} strokeWidth={1.5} strokeDasharray="2 2" />}
           <circle cx={cx} cy={mid} r={r} fill={color} />
           <circle cx={cx} cy={mid} r={r - 2} fill={laneColor(hashColor(author.email))} />
           <text x={cx} y={mid} dy="0.35em" textAnchor="middle" fontSize={r > 9 ? 9 : 7.5} fontWeight={700} fill="#fff"

@@ -3,8 +3,9 @@ import clsx from 'clsx'
 import { Archive, Boxes, ChevronDown, ChevronRight, Cloud, Eye, EyeOff, Focus, FolderTree, GitBranch, GitPullRequest, HardDrive, History, Plus, RefreshCw, Tag } from 'lucide-react'
 import { ContextMenu } from 'radix-ui'
 import { useMemo, useState, type ReactNode } from 'react'
-import { addRemote, addWorktree, checkoutPull, hasGitHubRemote, lfsPull, lfsSetUp, loadPulls, checkout, hideInGraph, showInGraph, isStale, pop, remoteNames, stashApply, stashDrop, stashToBranch } from '../lib/actions'
+import { addRemote, addWorktree, checkoutPull, hasGitHubRemote, lfsPull, lfsSetUp, loadPulls, checkout, hideInGraph, showAllInGraph, showInGraph, isStale, pop, remoteNames, stashApply, stashDrop, stashToBranch } from '../lib/actions'
 import { relativeTime, stashLabel } from '../lib/format'
+import { refShown } from '../lib/graphFilter'
 import { ensureLoaded, openRepo, updateRepo, useStore, type RepoView } from '../lib/store'
 import { REF_MIME } from './Graph'
 import { GraphMenu } from './menus'
@@ -34,6 +35,9 @@ export function Sidebar({ view }: { view: RepoView }) {
   const elsewhere = new Map(view.worktrees.filter((w) => !w.current && w.branch).map((w) => [w.branch!, w.path]))
   /** After "Check which tags are on <remote>": the tags it does not have. */
   const onRemote = view.remoteTags ? new Set(view.remoteTags.names) : null
+  /** Branches in the graph out of all of them, like GitKraken's "Viewing 1181/1181". */
+  const branches = snap.refs.filter((r) => r.kind === 'local' || r.kind === 'remote')
+  const shown = branches.filter((r) => refShown(r, snap.filter, snap.head.branch)).length
   const menuFor = (section: 'local' | 'remotes' | 'tags' | 'worktrees' | 'submodules' | 'lfs') => () => useStore.setState({ menu: { kind: 'section', section } })
 
   const jump = async (hash: string) => {
@@ -43,6 +47,11 @@ export function Sidebar({ view }: { view: RepoView }) {
 
   return (
     <aside className="flex h-full min-h-0 w-full flex-col bg-panel">
+      <div className="flex h-6 items-center gap-1.5 px-3 pt-1.5 text-xs text-muted" data-testid="sidebar-viewing">
+        <Eye size={12} className="shrink-0" />
+        <span className="min-w-0 flex-1 truncate">Viewing {shown.toLocaleString()}/{branches.length.toLocaleString()}</span>
+        {shown < branches.length && <button onClick={() => showAllInGraph(view.id)} className="shrink-0 font-medium text-accent hover:underline">Show all</button>}
+      </div>
       <div className="p-2">
         <input
           value={filter}
@@ -243,7 +252,7 @@ function RefItem({ r, label, view, onJump, head, depth = 0, children }: {
   const hidden = filter.hidden.includes(r.name) || (!!remote && filter.hidden.includes(remote))
   const soloed = filter.solo.includes(r.name)
   /** Out of the graph: hidden, or not among the soloed refs. HEAD's branch always shows. */
-  const out = !head && (hidden || (filter.solo.length > 0 && !soloed))
+  const out = !head && !refShown(r, filter, view.snapshot.head.branch)
   return (
     <div
       draggable={r.kind !== 'tag'}
@@ -262,8 +271,10 @@ function RefItem({ r, label, view, onJump, head, depth = 0, children }: {
     >
       {head && <span className="-ml-4 w-3 text-[10px] text-accent">✓</span>}
       <span className={clsx('min-w-[4.5rem] flex-1 truncate', out && 'text-faint line-through decoration-faint/50')} data-testid="ref-label">{label}</span>
-      {/* Badges are clipped before the branch name is: the name is what you are looking for. */}
-      {children && <span className="flex min-w-0 shrink items-center gap-1 overflow-hidden">{children}</span>}
+      {/* Badges give way before the branch name does: the name is what you are looking for. They
+          wrap onto a second line that is cut off, so a badge that does not fit disappears whole
+          instead of showing as "sta". */}
+      {children && <span className="flex h-4 min-w-0 shrink flex-wrap items-center justify-end gap-x-1 overflow-hidden">{children}</span>}
       {soloed && <span title="Soloed: the graph shows only soloed branches"><Focus size={12} className="text-accent" /></span>}
       {!head && (
         <button

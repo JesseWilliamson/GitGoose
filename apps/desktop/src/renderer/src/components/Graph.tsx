@@ -8,7 +8,7 @@ import { memo, useEffect, useMemo, useRef, useState, type DragEvent } from 'reac
 import type { AvatarSource } from '@gitsquid/shared'
 import { checkout, moveCommits, squashOnto } from '../lib/actions'
 import { avatarSrc, useAvatarVariant } from '../lib/avatar'
-import { formatDate, laneColor, shortHash, stashLabel } from '../lib/format'
+import { formatDate, laneColor, relativeTime, shortHash, stashLabel } from '../lib/format'
 import { ensureLoaded, getLog, loadMore, saveSettings, selectCommit, selectedHashes, selectionCursor, updateRepo, useSetting, useStore, type RepoView } from '../lib/store'
 import { GraphCell, LANE_W, ROW_H, ROW_H_COMPACT, WipCell } from './GraphCell'
 import { GraphMenu } from './menus'
@@ -397,6 +397,11 @@ const CommitRow = memo(function CommitRow(props: {
   const [dropAt, setDropAt] = useState<'above' | 'onto' | 'below' | null>(null)
   const pills = useMemo(() => (props.refs ? pillsFor(props.refs, props.headBranch, { remotes: look.showRemotes, tags: look.showTags }) : []),
     [props.refs, props.headBranch, look.showRemotes, look.showTags])
+  const lane = laneColor(row.color)
+  /** Pills (or a stash or bisect mark) in the first column: joined to the node by a line. */
+  const labelled = look.cols.refs && (pills.length > 0 || !!props.stash || !!props.bisect)
+  // Like GitKraken: without a Date column, recent commits still say when, inside the message cell.
+  const recent = !look.cols.date && Date.now() / 1000 - commit.authorDate < 86_400
 
   const onDragStart = (e: DragEvent) => {
     // A branch pill inside the row starts its own drag.
@@ -443,7 +448,6 @@ const CommitRow = memo(function CommitRow(props: {
 
   return (
     <div
-      style={{ position: 'absolute', top: 0, left: 0, right: 0, height: look.rowH, transform: `translateY(${props.top}px)` }}
       data-testid="commit-row"
       data-hash={commit.hash}
       // Shift-click would otherwise also select the text between the two rows.
@@ -473,9 +477,13 @@ const CommitRow = memo(function CommitRow(props: {
         dropping && 'outline outline-2 -outline-offset-2 outline-accent',
         props.hit === false && 'opacity-35',
       )}
+      // The selected row takes its lane's colour, as in GitKraken (bg-select stays as the class).
+      style={{ position: 'absolute', top: 0, left: 0, right: 0, height: look.rowH, transform: `translateY(${props.top}px)`,
+        ...(props.selected ? { background: `color-mix(in srgb, ${lane} 24%, var(--gs-bg))` } : {}) }}
     >
       {look.cols.refs && (
-        <div style={{ width: REFS_W }} className="flex min-w-0 shrink-0 items-center gap-1 overflow-hidden px-2">
+        <div style={{ width: REFS_W, ...(labelled && !props.selected ? { background: `color-mix(in srgb, ${lane} 9%, transparent)` } : {}) }}
+          className="flex h-full min-w-0 shrink-0 items-center gap-1 overflow-hidden pl-2">
           {props.bisect && (
             <span className={clsx('flex h-5 shrink-0 items-center rounded border px-1.5 text-[11px] font-medium', BISECT_PILL[props.bisect])} data-testid="bisect-pill">{props.bisect}</span>
           )}
@@ -488,15 +496,22 @@ const CommitRow = memo(function CommitRow(props: {
             <RefPill key={p.key} pill={p} color={row.color} repoId={repoId} hash={commit.hash} onDrop={onDrop} />
           ))}
           {pills.length > 2 && (
-            <span className="shrink-0 rounded bg-raised px-1 text-[11px] text-muted" title={pills.slice(2).map((p) => p.label).join(', ')}>
+            <span className="shrink-0 rounded-[3px] px-1 text-[11px] font-medium" title={pills.slice(2).map((p) => p.label).join('\n')}
+              style={{ background: `color-mix(in srgb, ${lane} 30%, transparent)` }}>
               +{pills.length - 2}
             </span>
           )}
+          {/* The line from the pills to the node; GraphCell continues it up to the node. */}
+          {labelled && <span className="h-0.5 min-w-2 flex-1" style={{ background: lane, opacity: 0.85 }} />}
         </div>
       )}
-      {look.cols.graph && <GraphCell row={row} width={props.graphW} showPending={props.showPending} isHead={props.isHead} h={look.rowH} author={author} stash={!!commit.stash} />}
-      <div className={clsx('min-w-0 flex-1 truncate px-2', props.hit && 'font-semibold text-fg', props.stash && 'text-muted italic')}>
-        {props.stash ? stashLabel(props.stash.message) : commit.subject}
+      {look.cols.graph && (
+        <GraphCell row={row} width={props.graphW} showPending={props.showPending} isHead={props.isHead} h={look.rowH} author={author}
+          stash={!!commit.stash} refLine={labelled} />
+      )}
+      <div className={clsx('flex min-w-0 flex-1 items-center gap-2 px-2', props.hit && 'font-semibold text-fg', props.stash && 'text-muted italic')}>
+        <span className="min-w-0 flex-1 truncate">{props.stash ? stashLabel(props.stash.message) : commit.subject}</span>
+        {recent && <span className="shrink-0 text-[11px] text-faint" data-testid="row-time">{relativeTime(commit.authorDate)}</span>}
       </div>
       {/* No avatar here: the graph node already is one. */}
       {look.cols.author && (
@@ -546,11 +561,12 @@ function RefPill({ pill, color, repoId, hash, onDrop }: {
       onDoubleClick={() => void checkout(repoId, ref.name)}
       title={[pill.local?.name, ...pill.remotes.map((r) => r.name), pill.tag?.name].filter(Boolean).join('\n')}
       className={clsx(
-        'flex h-5 max-w-full min-w-0 shrink cursor-grab items-center gap-1 rounded border px-1.5 text-[11px]',
-        pill.isHead ? 'font-semibold text-fg' : 'text-fg/90',
+        'flex h-5 max-w-full min-w-0 shrink cursor-grab items-center gap-1 rounded-[3px] px-1.5 text-[11px] font-medium',
+        pill.isHead ? 'text-white' : 'text-fg',
         over && 'ring-2 ring-accent',
       )}
-      style={{ borderColor: laneColor(color), background: `color-mix(in srgb, ${laneColor(color)} ${pill.isHead ? 35 : 18}%, transparent)` }}
+      // Like GitKraken: a filled tab in the lane's colour; the checked-out branch is solid.
+      style={{ background: pill.isHead ? laneColor(color) : `color-mix(in srgb, ${laneColor(color)} 30%, transparent)` }}
     >
       {pill.isHead && <span className="text-[10px]">✓</span>}
       {pill.tag ? <Tag size={10} className="shrink-0" /> : null}

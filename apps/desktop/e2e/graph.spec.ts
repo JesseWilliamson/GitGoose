@@ -1,5 +1,6 @@
 import { makeFixture, makeLargeRepo } from '@gitsquid/fixtures'
 import { expect, test } from '@playwright/test'
+import { execFileSync } from 'node:child_process'
 import { launch } from './app'
 
 test('loads history page by page as you scroll', async () => {
@@ -126,27 +127,57 @@ test('caps the graph column on wide histories and lets the user resize it', asyn
   await app.close()
 })
 
-test('the gear in the graph header hides and shows columns; the author column has no avatar', async () => {
+test('the gear in the graph header shows and hides columns; the author column has no avatar', async () => {
   const r = makeFixture('linear')
   const { app, page } = await launch(r.dir)
   const header = page.getByTestId('graph-header')
   const row = page.getByTestId('commit-row').first()
-  await expect(header).toContainText('SHA')
-  // The graph node is the author's avatar, so the author column is just the name.
-  await expect(row.getByTestId('author-cell')).toHaveText('Ada Lovelace')
-  await expect(row.getByTestId('author-cell').locator('img, svg')).toHaveCount(0)
+  // GitKraken's defaults: branch / tag, graph and message.
+  await expect(header).toContainText('Commit message')
+  await expect(header).not.toContainText('SHA')
+  await expect(row.getByTestId('author-cell')).toHaveCount(0)
   await page.getByTestId('graph-columns').click()
   await page.getByTestId('col-sha').click()
   await page.getByTestId('col-author').click()
   await page.keyboard.press('Escape')
-  await expect(header).not.toContainText('SHA')
-  await expect(header).not.toContainText('Author')
-  await expect(row.getByTestId('author-cell')).toHaveCount(0)
+  await expect(header).toContainText('SHA')
+  // The graph node is the author's avatar, so the author column is just the name.
+  await expect(row.getByTestId('author-cell')).toHaveText('Ada Lovelace')
+  await expect(row.getByTestId('author-cell').locator('img, svg')).toHaveCount(0)
   await expect.poll(async () => (await page.evaluate(() => window.gitsquid.getSettings())).graphColumns)
-    .toEqual({ refs: true, graph: true, author: false, date: true, sha: false })
+    .toEqual({ refs: true, graph: true, author: true, date: false, sha: true })
   await page.getByTestId('graph-columns').click()
   await page.getByRole('menuitem', { name: 'Reset columns' }).click()
-  await expect(header).toContainText('SHA')
+  await expect(header).not.toContainText('SHA')
+  await app.close()
+})
+
+test('GitKraken look: pills joined to their node, recent times inline, far lanes pinned, viewing count', async () => {
+  const r = makeFixture('linear')
+  for (let i = 0; i < 12; i++) {
+    r.checkout('-b', `b${i}`, 'main~4')
+    r.commit(`work on b${i}`, { [`b${i}.txt`]: 'x\n' })
+  }
+  r.checkout('main')
+  // A commit made now (fixture commits are from 2023): its time shows in the message cell.
+  execFileSync('git', ['commit', '-q', '--allow-empty', '-m', 'just now'], {
+    cwd: r.dir, env: { ...process.env, GIT_AUTHOR_NAME: 'Ada Lovelace', GIT_AUTHOR_EMAIL: 'ada@example.com', GIT_COMMITTER_NAME: 'Ada Lovelace', GIT_COMMITTER_EMAIL: 'ada@example.com' },
+  })
+  const { app, page } = await launch(r.dir)
+  const head = page.locator(`[data-testid="commit-row"][data-hash="${r.head()}"]`)
+  await expect(head.getByTestId('row-time')).toHaveText(/just now|min ago/)
+  await expect(head.getByTestId('ref-line')).toHaveCount(1)
+  const plain = page.getByTestId('commit-row').filter({ hasText: 'Commit 4' })
+  await expect(plain.getByTestId('ref-line')).toHaveCount(0)
+  await expect(plain.getByTestId('row-time')).toHaveCount(0)
+  // Thirteen lanes in a column sized for eight: the far nodes stay visible at the edge.
+  await expect(page.locator('[data-testid="commit-row"] svg[data-offscreen]').first()).toBeVisible()
+  await expect(page.getByTestId('sidebar-viewing')).toHaveText('Viewing 13/13')
+  await page.locator('[data-testid="sidebar-ref"][data-ref="refs/heads/b3"]').hover()
+  await page.locator('[data-testid="sidebar-ref"][data-ref="refs/heads/b3"]').getByTestId('toggle-hidden').click()
+  await expect(page.getByTestId('sidebar-viewing')).toContainText('Viewing 12/13')
+  await page.getByTestId('sidebar-viewing').getByRole('button', { name: 'Show all' }).click()
+  await expect(page.getByTestId('sidebar-viewing')).toHaveText('Viewing 13/13')
   await app.close()
 })
 

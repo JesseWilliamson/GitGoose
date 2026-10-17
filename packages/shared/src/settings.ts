@@ -11,11 +11,12 @@ export const GRAPH_COLUMNS: { id: GraphColumn; label: string }[] = [
   { id: 'date', label: 'Date / Time' },
   { id: 'sha', label: 'SHA' },
 ]
-export const DEFAULT_GRAPH_COLUMNS: GraphColumns = { refs: true, graph: true, author: true, date: true, sha: true }
+/** GitKraken's defaults: branch / tag, graph and message. Author, date and SHA are a click away in the gear menu. */
+export const DEFAULT_GRAPH_COLUMNS: GraphColumns = { refs: true, graph: true, author: false, date: false, sha: false }
 
 function normalizeColumns(raw: unknown): GraphColumns {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
-  return Object.fromEntries(GRAPH_COLUMNS.map((c) => [c.id, typeof r[c.id] === 'boolean' ? r[c.id] : true])) as GraphColumns
+  return Object.fromEntries(GRAPH_COLUMNS.map((c) => [c.id, typeof r[c.id] === 'boolean' ? r[c.id] : DEFAULT_GRAPH_COLUMNS[c.id]])) as GraphColumns
 }
 
 /**
