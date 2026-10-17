@@ -4,7 +4,7 @@ import { Archive, ChevronDown, ChevronRight, Cloud, GitBranch, Tag } from 'lucid
 import { ContextMenu } from 'radix-ui'
 import { useMemo, useState, type ReactNode } from 'react'
 import { checkout, pop, stashApply, stashDrop } from '../lib/actions'
-import { relativeTime } from '../lib/format'
+import { relativeTime, stashLabel } from '../lib/format'
 import { ensureLoaded, updateRepo, useStore, type RepoView } from '../lib/store'
 import { REF_MIME } from './Graph'
 import { GraphMenu } from './menus'
@@ -143,7 +143,7 @@ function StashItem({ repoId, index, message, date, selected, onSelect }: {
           title={`${message}\n${relativeTime(date)}\nClick to see its changes, double-click to pop`}
           className={clsx('flex h-6 items-center gap-1.5 pr-3 pl-8 text-[13px]', selected ? 'bg-select' : 'hover:bg-hover')}
         >
-          <span className="min-w-0 flex-1 truncate">{message.replace(/^On [^:]+: /, '')}</span>
+          <span className="min-w-0 flex-1 truncate">{stashLabel(message)}</span>
           <span className="text-[10px] text-faint">{relativeTime(date)}</span>
         </div>
       </ContextMenu.Trigger>

@@ -80,13 +80,37 @@ export class LogStream {
   private parser = new LogParser()
   private waiters: { need: number; resolve: () => void }[] = []
   private want = 0
+  private stashSet: Set<string>
+  /** Index and untracked-files commits of stashes: never shown. */
+  private hidden = new Set<string>()
 
   constructor(
     private runner: GitRunner,
     private revs: string[] = GRAPH_REVS,
     /** How far beyond the last request to read before pausing. */
     private readAhead = 2000,
-  ) {}
+    /** Stash commits to show in the graph, each attached to the commit it was made on. */
+    stashes: string[] = [],
+  ) {
+    this.stashSet = new Set(stashes)
+    this.revs = [...revs, ...stashes]
+  }
+
+  /**
+   * A stash is a merge commit: parent 1 is where it was made, parent 2 the staged changes, parent
+   * 3 (with -u) the untracked files. In the graph it should look like one node beside its base,
+   * so it keeps only parent 1, and the helper commits (reachable from nothing else) are dropped.
+   * --topo-order puts a stash before its parents, so they are known by the time they arrive.
+   */
+  private accept(c: Commit): boolean {
+    if (this.hidden.has(c.hash)) return false
+    if (this.stashSet.has(c.hash)) {
+      for (const p of c.parents.slice(1)) this.hidden.add(p)
+      c.parents = c.parents.slice(0, 1)
+      c.stash = true
+    }
+    return true
+  }
 
   private start(): void {
     const child = this.runner.spawn(
@@ -96,7 +120,7 @@ export class LogStream {
     this.child = child
     child.stdout!.setEncoding('utf8')
     child.stdout!.on('data', (chunk: string) => {
-      for (const c of this.parser.push(chunk)) this.commits.push(c)
+      for (const c of this.parser.push(chunk)) if (this.accept(c)) this.commits.push(c)
       this.settle()
       if (this.commits.length >= this.want + this.readAhead) child.stdout!.pause()
     })

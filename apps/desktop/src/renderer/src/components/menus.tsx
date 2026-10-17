@@ -1,8 +1,9 @@
 import { DropdownMenu } from 'radix-ui'
 import {
- checkout, cherryPick, cherryPickMany, copy, copyCommits, dropCommits, moveCommits, currentBranchRef, deleteBranch, deleteRemoteBranch, deleteTag, dropOptions,
+ checkout, cherryPick, cherryPickMany, copy, pop, stashApply, stashDrop, copyCommits, dropCommits, moveCommits, currentBranchRef, deleteBranch, deleteRemoteBranch, deleteTag, dropOptions,
   merge, newBranch, newTag, push, rebase, renameBranch, reset, revert, shortRef,
 } from '../lib/actions'
+import { stashLabel } from '../lib/format'
 import { getLog, useStore } from '../lib/store'
 import { recomposeWithAi } from './RecomposeDialog'
 import { CM, DM } from './ui'
@@ -44,6 +45,19 @@ export function GraphMenu({ repoId }: { repoId: string }) {
         {r.kind === 'tag' && <CM.Item danger onSelect={() => void deleteTag(repoId, name)}>Delete tag {name}</CM.Item>}
         <CM.Separator />
         <CM.Item onSelect={() => copy(name, 'Copied name')}>Copy name</CM.Item>
+      </CM.Content>
+    )
+  }
+
+  if (menu.kind === 'stash') {
+    const s = menu.stash
+    return (
+      <CM.Content>
+        <CM.Label>{s.ref}: {stashLabel(s.message)}</CM.Label>
+        <CM.Item onSelect={() => void stashApply(repoId, s.index)}>Apply stash</CM.Item>
+        <CM.Item onSelect={() => pop(repoId, s.index)}>Pop stash</CM.Item>
+        <CM.Separator />
+        <CM.Item danger onSelect={() => void stashDrop(repoId, s.index)}>Drop stash</CM.Item>
       </CM.Content>
     )
   }

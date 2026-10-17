@@ -81,6 +81,7 @@ export const SETTINGS = {
   }),
   showRemoteBranches: bool(true, { label: 'Show remote branches on the graph', section: 'Graph' }),
   showTags: bool(true, { label: 'Show tags on the graph', section: 'Graph' }),
+  showStashes: bool(true, { label: 'Show stashes on the graph', section: 'Graph', description: 'Each stash as a node beside the commit it was made on.' }),
 
   // ---------------------------------------------------------------- Git
   gitPath: text('git', { label: 'Git executable', section: 'Git', placeholder: 'git', description: 'Applies to repositories opened after the change.' }),

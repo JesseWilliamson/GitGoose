@@ -25,7 +25,7 @@ export class RepoManager {
   private open = new Map<string, Open>()
 
   constructor(
-    private options: () => { gitPath: string; env: Record<string, string> },
+    private options: () => { gitPath: string; env: Record<string, string>; showStashes?: boolean },
     private emit: (snapshot: RepoSnapshot) => void,
     private onProgress: (repoId: string, text: string | null) => void,
     private onWorktree: (repoId: string) => void,
@@ -47,6 +47,7 @@ export class RepoManager {
   }
 
   async add(repo: Repo): Promise<RepoSnapshot> {
+    repo.setShowStashes(this.options().showStashes ?? true)
     const entry: Open = { repo, subscriptions: [], timer: null, lastJson: '' }
     this.open.set(repo.id, entry)
     const snapshot = await repo.snapshot()

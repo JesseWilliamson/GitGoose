@@ -64,3 +64,11 @@ export function formatDate(unixSeconds: number, mode: 'relative' | 'absolute' | 
   }
   return relativeTime(unixSeconds)
 }
+
+/**
+ * A stash's message for display: a message the user typed loses git's "On main: " prefix; an
+ * automatic one ("WIP on main: abc123 subject") keeps it, since it is the only description.
+ */
+export function stashLabel(message: string): string {
+  return message.replace(/^On [^:]+: /, '')
+}

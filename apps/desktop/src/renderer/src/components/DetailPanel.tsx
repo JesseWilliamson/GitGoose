@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { cherryPickMany, copy, copyCommits, discard as discardFiles, openInEditor, pop, run, stashApply, stashDrop } from '../lib/actions'
 import { cancelAi, startAi, useAiEnabled } from '../lib/ai'
 import { api, toUiError } from '../lib/api'
-import { dateTime, sentence, shortHash } from '../lib/format'
+import { dateTime, sentence, shortHash, stashLabel } from '../lib/format'
 import { avatarSrc, useAvatarVariant } from '../lib/avatar'
 import { ensureLoaded, getLog, reportError, selectCommit, setting, updateRepo, useSetting, type FileMode, type RepoView } from '../lib/store'
 import { Avatar } from './Avatar'
@@ -349,7 +349,7 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
         </div>
       )}
       <div className="selectable border-b border-line p-3">
-        <div className="text-[14px] leading-snug font-semibold">{stash ? stash.message : d.subject}</div>
+        <div className="text-[14px] leading-snug font-semibold">{stash ? stashLabel(stash.message) : d.subject}</div>
         {d.body && <pre className="mt-2 max-h-40 overflow-y-auto font-sans text-[13px] whitespace-pre-wrap text-muted">{d.body}</pre>}
         {aiOn && !stash && (
           <div className="mt-2">

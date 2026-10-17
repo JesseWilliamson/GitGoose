@@ -1,14 +1,14 @@
 import type { Row } from '@gitsquid/graph'
-import { DEFAULT_GRAPH_COLUMNS, GRAPH_COLUMNS, type Commit, type GraphColumns, type Ref } from '@gitsquid/shared'
+import { DEFAULT_GRAPH_COLUMNS, GRAPH_COLUMNS, type Commit, type GraphColumns, type Ref, type StashEntry } from '@gitsquid/shared'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import clsx from 'clsx'
-import { Cloud, Laptop, Settings2, Tag } from 'lucide-react'
+import { Archive, Cloud, Laptop, Settings2, Tag } from 'lucide-react'
 import { ContextMenu, DropdownMenu } from 'radix-ui'
 import { memo, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import type { AvatarSource } from '@gitsquid/shared'
 import { checkout, moveCommits } from '../lib/actions'
 import { avatarSrc, useAvatarVariant } from '../lib/avatar'
-import { formatDate, laneColor, shortHash } from '../lib/format'
+import { formatDate, laneColor, shortHash, stashLabel } from '../lib/format'
 import { getLog, loadMore, saveSettings, selectCommit, selectedHashes, selectionCursor, updateRepo, useSetting, useStore, type RepoView } from '../lib/store'
 import { GraphCell, LANE_W, ROW_H, ROW_H_COMPACT, WipCell } from './GraphCell'
 import { GraphMenu } from './menus'
@@ -136,6 +136,7 @@ function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
 
   const selectedSet = useMemo(() => new Set(selectedHashes(view.selected)), [view.selected])
   const editableSet = useMemo(() => new Set(view.editable), [view.editable])
+  const stashByHash = useMemo(() => new Map(view.stashes.map((s) => [s.hash, s])), [view.stashes])
   // Keep the selected row in view when it changes (keyboard navigation, search, jumping to a parent).
   let selectedIndex = -1
   const cursor = selectionCursor(view.selected)
@@ -236,6 +237,7 @@ function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
                     isHead={commit.hash === snap.head.hash}
                     selected={selectedSet.has(commit.hash)}
                     editable={editableSet.has(commit.hash)}
+                    stash={commit.stash ? stashByHash.get(commit.hash) : undefined}
                     hit={hits ? hits.has(commit.hash) : null}
                     showPending={showWip}
                     graphW={graphW}
@@ -356,6 +358,8 @@ const CommitRow = memo(function CommitRow(props: {
   selected: boolean
   /** On the part of the current branch that can be reordered: draggable, and a drop target. */
   editable: boolean
+  /** Set when this row is a stash (its entry, for the label and the menu). */
+  stash?: StashEntry
   hit: boolean | null
   showPending: boolean
   graphW: number
@@ -424,7 +428,8 @@ const CommitRow = memo(function CommitRow(props: {
         if ((e.target as HTMLElement).closest('[data-testid="ref-pill"]')) return
         // On one of several selected commits, the menu acts on all of them.
         const sel = useStore.getState().repos[repoId]?.selected
-        if (sel?.kind === 'commits' && sel.hashes.includes(commit.hash)) useStore.setState({ menu: { kind: 'commits', hashes: sel.hashes } })
+        if (props.stash) useStore.setState({ menu: { kind: 'stash', stash: props.stash } })
+        else if (sel?.kind === 'commits' && sel.hashes.includes(commit.hash)) useStore.setState({ menu: { kind: 'commits', hashes: sel.hashes } })
         else useStore.setState({ menu: { kind: 'commit', hash: commit.hash } })
       }}
       draggable={props.editable}
@@ -444,6 +449,11 @@ const CommitRow = memo(function CommitRow(props: {
     >
       {look.cols.refs && (
         <div style={{ width: REFS_W }} className="flex min-w-0 shrink-0 items-center gap-1 overflow-hidden px-2">
+          {props.stash && (
+            <span className="flex h-5 shrink-0 items-center gap-1 rounded border border-dashed border-line px-1.5 text-[11px] text-muted" data-testid="stash-pill">
+              <Archive size={10} /> {props.stash.ref}
+            </span>
+          )}
           {pills.slice(0, 2).map((p) => (
             <RefPill key={p.key} pill={p} color={row.color} repoId={repoId} hash={commit.hash} onDrop={onDrop} />
           ))}
@@ -454,8 +464,10 @@ const CommitRow = memo(function CommitRow(props: {
           )}
         </div>
       )}
-      {look.cols.graph && <GraphCell row={row} width={props.graphW} showPending={props.showPending} isHead={props.isHead} h={look.rowH} author={author} />}
-      <div className={clsx('min-w-0 flex-1 truncate px-2', props.hit && 'font-semibold text-fg')}>{commit.subject}</div>
+      {look.cols.graph && <GraphCell row={row} width={props.graphW} showPending={props.showPending} isHead={props.isHead} h={look.rowH} author={author} stash={!!commit.stash} />}
+      <div className={clsx('min-w-0 flex-1 truncate px-2', props.hit && 'font-semibold text-fg', props.stash && 'text-muted italic')}>
+        {props.stash ? stashLabel(props.stash.message) : commit.subject}
+      </div>
       {/* No avatar here: the graph node already is one. */}
       {look.cols.author && (
         <div style={{ width: AUTHOR_W }} className={clsx('min-w-0 shrink-0 items-center px-2 text-muted', COL_AUTHOR)} data-testid="author-cell">

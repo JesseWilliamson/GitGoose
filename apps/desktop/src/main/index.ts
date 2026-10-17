@@ -104,7 +104,7 @@ const prompts = {
 }
 const askpass = new AskpassServer((message, secret) => prompts.ask(message, secret))
 
-const gitOpts = () => ({ gitPath: getSettings().gitPath || 'git', env: gitEnv })
+const gitOpts = () => ({ gitPath: getSettings().gitPath || 'git', env: gitEnv, showStashes: getSettings().showStashes })
 
 // ------------------------------------------------------------ AI
 
@@ -171,9 +171,15 @@ function createWindow(): BrowserWindow {
   return win
 }
 
+let lastShowStashes = getSettings().showStashes
 onSettingsChanged((settings) => {
   refreshCredentialEnv()
   ai.onSettings()
+  if (settings.showStashes !== lastShowStashes) {
+    lastShowStashes = settings.showStashes
+    for (const repo of repos.all()) repo.setShowStashes(settings.showStashes)
+    repos.refreshAll()
+  }
   broadcast({ type: 'settings', settings })
 })
 

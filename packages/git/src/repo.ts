@@ -146,7 +146,8 @@ export class Repo {
     ])
     const status = parseStatus(statusOut)
     const refs = parseRefs(refsOut)
-    const key = `${status.head.branch}|${status.head.hash}|` + refs.map((r) => `${r.name}=${r.hash}`).join(',')
+    const stashes = this.showStashes ? await this.stashHashes() : []
+    const key = `${status.head.branch}|${status.head.hash}|` + refs.map((r) => `${r.name}=${r.hash}`).join(',') + `|${stashes.join(',')}`
     if (key !== this.refsKey) {
       this.refsKey = key
       this.refsVersion++
@@ -216,9 +217,35 @@ export class Repo {
 
   // ---------------------------------------------------------------- reading
 
+  /** Show stashes as nodes in the graph (the showStashes setting). */
+  private showStashes = true
+
+  setShowStashes(show: boolean): void {
+    if (show === this.showStashes) return
+    this.showStashes = show
+    // Force a new log (and a new refsVersion, so the renderer starts over too).
+    this.refsKey = ''
+  }
+
+  /**
+   * Stash commits, newest first, straight from the stash reflog file: no process, cheap enough
+   * to read on every snapshot (dropping stash@{2} changes only the reflog, not refs/stash).
+   */
+  private async stashHashes(): Promise<string[]> {
+    try {
+      const text = await readFile(join(this.commonDir, 'logs', 'refs', 'stash'), 'utf8')
+      return text.split('\n').filter(Boolean).map((l) => l.split(' ')[1]!).filter((h) => /^[0-9a-f]{40,64}$/.test(h)).reverse()
+    } catch {
+      return []
+    }
+  }
+
   async logPage(offset: number, count: number): Promise<LogPage> {
     if (!this.last) await this.snapshot()
-    if (!this.log) this.log = new LogStream(this.runner, graphRevs(this.last!.head.hash))
+    if (!this.log) {
+      const stashes = this.showStashes ? await this.stashHashes() : []
+      this.log = new LogStream(this.runner, graphRevs(this.last!.head.hash), undefined, stashes)
+    }
     const generation = this.refsVersion
     const log = this.log
     const { commits, done } = await log.page(offset, count)

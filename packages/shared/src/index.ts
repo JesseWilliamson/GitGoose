@@ -22,6 +22,11 @@ export interface Commit {
   /** Unix seconds. */
   commitDate: number
   subject: string
+  /**
+   * A stash shown in the graph: its only parent here is the commit it was made on (git also
+   * records helper commits for the index and untracked files; the log hides those).
+   */
+  stash?: boolean
 }
 
 export interface CommitDetails extends Commit {

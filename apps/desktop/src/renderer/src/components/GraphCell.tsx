@@ -31,13 +31,15 @@ export interface NodeAuthor {
  * underneath, so they show while the image loads or when there is none); a merge is a small
  * dot; HEAD gets an extra outer ring.
  */
-export const GraphCell = memo(function GraphCell({ row, width, showPending, isHead, h = ROW_H, author }: {
+export const GraphCell = memo(function GraphCell({ row, width, showPending, isHead, h = ROW_H, author, stash }: {
   row: Row
   width: number
   showPending: boolean
   isHead: boolean
   h?: number
   author: NodeAuthor
+  /** A stash: drawn as a dashed box (it is not a commit on any branch). */
+  stash?: boolean
 }) {
   const mid = h / 2
   const cx = laneX(row.lane)
@@ -60,7 +62,13 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
             strokeDasharray={e.pending ? '3 4' : undefined} opacity={e.pending ? 0.7 : 1} />
         )
       })}
-      {row.merge ? (
+      {stash ? (
+        <g data-testid="stash-node">
+          <rect x={cx - r + 1} y={mid - r + 1} width={(r - 1) * 2} height={(r - 1) * 2} rx={3} fill="var(--gs-bg)" stroke={color} strokeWidth={2} strokeDasharray="3 2" />
+          {/* An archive box: lid and body. */}
+          <path transform={`translate(${cx} ${mid}) scale(${r / 11})`} d="M-5 -4h10v3h-10z M-4 -1v5h8v-5 M-1.5 1h3" fill="none" stroke={color} strokeWidth={1.4} strokeLinejoin="round" />
+        </g>
+      ) : row.merge ? (
         <circle cx={cx} cy={mid} r={r > 9 ? 5.5 : 4.5} fill={color} stroke="var(--gs-bg)" strokeWidth={1.5} />
       ) : (
         <g data-testid="avatar-node">

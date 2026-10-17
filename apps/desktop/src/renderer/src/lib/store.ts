@@ -108,6 +108,7 @@ export interface DropRequest {
 export type MenuTarget =
   | { kind: 'commit'; hash: string }
   | { kind: 'commits'; hashes: string[] }
+  | { kind: 'stash'; stash: StashEntry }
   | { kind: 'ref'; ref: Ref; hash: string }
   | null
 
