@@ -53,6 +53,16 @@ export function parseGitHubRemote(url: string): { owner: string; repo: string } 
 }
 
 /**
+ * The repository's GitHub remote: origin when it is on GitHub, else the first one that is. Main
+ * (pull requests) and the renderer (where to push first) both pick with this, so they agree.
+ */
+export function pickGitHubRemote(remotes: { name: string; url: string }[]): { owner: string; repo: string; remote: string } | null {
+  const found = remotes.map((r) => ({ remote: r.name, gh: parseGitHubRemote(r.url) })).filter((x) => x.gh)
+  const pick = found.find((x) => x.remote === 'origin') ?? found[0]
+  return pick ? { ...pick.gh!, remote: pick.remote } : null
+}
+
+/**
  * Which part of a git credential prompt this is, when it is for https://github.com exactly.
  * Git asks "Username for 'https://github.com': " and then
  * "Password for 'https://user@github.com': ". The host must match exactly: the token must never
