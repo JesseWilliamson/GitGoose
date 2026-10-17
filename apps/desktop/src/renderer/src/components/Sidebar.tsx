@@ -1,9 +1,9 @@
 import type { Ref } from '@gitsquid/shared'
 import clsx from 'clsx'
-import { Archive, Boxes, ChevronDown, ChevronRight, Cloud, Eye, EyeOff, Focus, FolderTree, GitBranch, HardDrive, History, Plus, Tag } from 'lucide-react'
+import { Archive, Boxes, ChevronDown, ChevronRight, Cloud, Eye, EyeOff, Focus, FolderTree, GitBranch, GitPullRequest, HardDrive, History, Plus, RefreshCw, Tag } from 'lucide-react'
 import { ContextMenu } from 'radix-ui'
 import { useMemo, useState, type ReactNode } from 'react'
-import { addRemote, addWorktree, lfsPull, lfsSetUp, checkout, hideInGraph, showInGraph, isStale, pop, remoteNames, stashApply, stashDrop, stashToBranch } from '../lib/actions'
+import { addRemote, addWorktree, checkoutPull, hasGitHubRemote, lfsPull, lfsSetUp, loadPulls, checkout, hideInGraph, showInGraph, isStale, pop, remoteNames, stashApply, stashDrop, stashToBranch } from '../lib/actions'
 import { relativeTime, stashLabel } from '../lib/format'
 import { ensureLoaded, openRepo, updateRepo, useStore, type RepoView } from '../lib/store'
 import { REF_MIME } from './Graph'
@@ -28,6 +28,8 @@ export function Sidebar({ view }: { view: RepoView }) {
     return m
   }, [snap.refs, view.remotes, f])
   const merged = new Set(view.merged)
+  /** Pull requests by their branch name (same-repository PRs only), from the last time the list was loaded. */
+  const prByBranch = new Map(view.pulls?.state === 'ok' ? view.pulls.pulls.filter((p) => !p.fromFork).map((p) => [p.branch, p]) : [])
   /** Branches checked out in another worktree (git will not check them out here). */
   const elsewhere = new Map(view.worktrees.filter((w) => !w.current && w.branch).map((w) => [w.branch!, w.path]))
   /** After "Check which tags are on <remote>": the tags it does not have. */
@@ -63,6 +65,7 @@ export function Sidebar({ view }: { view: RepoView }) {
                     {!head && merged.has(r.shortName) && <Badge title={`Already in ${snap.head.branch ?? 'HEAD'}: safe to delete`}>merged</Badge>}
                     {!head && isStale(r) && <Badge title="No commits for 90 days">stale</Badge>}
                     {elsewhere.has(r.shortName) && <Badge title={`Checked out in ${elsewhere.get(r.shortName)}`}>worktree</Badge>}
+                    {prByBranch.has(r.shortName) && <Badge title={`Pull request #${prByBranch.get(r.shortName)!.number}: ${prByBranch.get(r.shortName)!.title}`}>#{prByBranch.get(r.shortName)!.number}</Badge>}
                   </RefItem>
                 )
               })}
@@ -80,6 +83,32 @@ export function Sidebar({ view }: { view: RepoView }) {
               ))}
               {remotes.size === 0 && <Empty>No remotes</Empty>}
             </Section>
+            {hasGitHubRemote(view) && (
+              <Section title="Pull requests" count={view.pulls?.state === 'ok' ? view.pulls.pulls.length : 0} icon={<GitPullRequest size={13} />} defaultOpen={false}
+                onOpen={() => { if (!view.pulls && !view.pullsLoading) void loadPulls(view.id) }}
+                action={<button title="Refresh pull requests (asks GitHub)" aria-label="Refresh pull requests" onClick={() => void loadPulls(view.id)}
+                  className="rounded p-0.5 text-faint hover:bg-hover hover:text-fg"><RefreshCw size={12} className={view.pullsLoading ? 'animate-spin' : ''} /></button>}>
+                {view.pullsLoading && !view.pulls && <Empty>Asking GitHub…</Empty>}
+                {view.pulls?.state === 'signed-out' && (
+                  <div className="py-1 pr-3 pl-8 text-xs text-muted">
+                    <button className="text-accent hover:underline" onClick={() => useStore.setState({ page: 'settings' })}>Sign in with GitHub</button> to see pull requests.
+                  </div>
+                )}
+                {view.pulls?.state === 'ok' && view.pulls.pulls.length === 0 && <Empty>No open pull requests</Empty>}
+                {view.pulls?.state === 'ok' && view.pulls.pulls.map((p) => (
+                  <div key={p.number} data-testid="pull-item" data-number={p.number}
+                    onDoubleClick={() => void checkoutPull(view.id, p.number)}
+                    onContextMenu={() => useStore.setState({ menu: { kind: 'pull', number: p.number } })}
+                    title={`#${p.number} ${p.title}\n${p.author} wants to merge ${p.branch} into ${p.base}\nDouble-click to check it out`}
+                    className="flex h-6 cursor-default items-center gap-1.5 pr-3 pl-8 text-[13px] hover:bg-hover">
+                    <span className="shrink-0 text-[11px] text-faint">#{p.number}</span>
+                    <span className="min-w-0 flex-1 truncate">{p.title}</span>
+                    {p.draft && <Badge title="Draft">draft</Badge>}
+                    {p.fromFork && <Badge title="From a fork">fork</Badge>}
+                  </div>
+                ))}
+              </Section>
+            )}
             <Section title="Tags" count={tags.length} icon={<Tag size={13} />} defaultOpen={false} onContextMenu={menuFor('tags')}>
               {tags.map((r) => (
                 <RefItem key={r.name} r={r} label={r.shortName} view={view} onJump={jump}>
@@ -169,8 +198,10 @@ export function Sidebar({ view }: { view: RepoView }) {
   )
 }
 
-function Section({ title, count, icon, children, defaultOpen = true, depth = 0, action, onContextMenu, testId }: {
+function Section({ title, count, icon, children, defaultOpen = true, depth = 0, action, onContextMenu, testId, onOpen }: {
   title: string; count: number; icon: ReactNode; children: ReactNode; defaultOpen?: boolean; depth?: number
+  /** Called when the user opens the section (to load what it shows on demand). */
+  onOpen?: () => void
   /** A small button at the end of the header (Add remote). */
   action?: ReactNode
   /** Right-click on the header: records the menu target (the sidebar's menu renders it). */
@@ -181,7 +212,7 @@ function Section({ title, count, icon, children, defaultOpen = true, depth = 0, 
   return (
     <div className={depth ? '' : 'mt-1'} data-testid={testId} data-name={title}>
       <div className="flex h-7 items-center pr-2" onContextMenu={onContextMenu}>
-        <button onClick={() => setOpen(!open)} style={{ paddingLeft: 8 + depth * 16 }}
+        <button onClick={() => { if (!open) onOpen?.(); setOpen(!open) }} style={{ paddingLeft: 8 + depth * 16 }}
           className={clsx('flex h-full min-w-0 flex-1 items-center gap-1.5 text-[12px] hover:text-fg', depth ? 'font-medium text-muted' : 'font-semibold text-muted')}>
           {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
           {icon}

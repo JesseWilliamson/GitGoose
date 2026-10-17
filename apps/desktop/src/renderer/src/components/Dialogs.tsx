@@ -1,12 +1,12 @@
 import clsx from 'clsx'
 import { KeyRound } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import type { Identity, LfsLock } from '@gitsquid/shared'
-import { cleanupCandidates, cloneRepo, confirmAction, deleteBranches, lfsLock, run, STALE_DAYS } from '../lib/actions'
+import { parseGitHubRemote, type Identity, type LfsLock } from '@gitsquid/shared'
+import { cleanupCandidates, cloneRepo, confirmAction, deleteBranches, lfsLock, loadPulls, openPull, run, STALE_DAYS } from '../lib/actions'
 import { relativeTime } from '../lib/format'
 import { COMMANDS, FIXED_KEYS, formatCombo, keymap, modName } from '../lib/keys'
 import { api } from '../lib/api'
-import { dismissToast, setting, useStore } from '../lib/store'
+import { dismissToast, setting, toast, useStore } from '../lib/store'
 import { Button, Modal, TextField } from './ui'
 
 export function Dialogs() {
@@ -43,6 +43,7 @@ export function Dialogs() {
   if (dialog.kind === 'shortcuts') return <ShortcutsDialog close={close} />
   if (dialog.kind === 'text') return <TextDialog key={dialog.title} d={dialog} close={close} />
   if (dialog.kind === 'cleanup') return <CleanupDialog repoId={dialog.repoId} close={close} />
+  if (dialog.kind === 'create-pr') return <CreatePullDialog repoId={dialog.repoId} branch={dialog.branch} close={close} />
   if (dialog.kind === 'lfs-locks') return <LfsLocksDialog repoId={dialog.repoId} close={close} />
   if (dialog.kind === 'pick') return <PickDialog key={dialog.title} d={dialog} close={close} />
   if (dialog.kind === 'identity') return <IdentityDialog repoId={dialog.repoId} onSaved={dialog.onSaved} close={close} />
@@ -167,6 +168,65 @@ function IdentityDialog({ repoId, onSaved, close }: { repoId: string; onSaved?: 
         <div className="flex justify-end gap-2">
           <Button type="button" onClick={close}>Cancel</Button>
           <Button type="submit" variant="primary" disabled={!name.trim() || !email.trim()} data-testid="dialog-submit">Save</Button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+/**
+ * Open a pull request for a branch. If GitHub does not have the branch's latest commits yet, it
+ * is pushed first (to the GitHub remote, under the same name), since a pull request is made of
+ * what is on GitHub.
+ */
+function CreatePullDialog({ repoId, branch, close }: { repoId: string; branch: string; close: () => void }) {
+  const view = useStore((s) => s.repos[repoId])
+  const remote = view?.remotes.find((r) => parseGitHubRemote(r.fetchUrl))?.name
+  const bases = (view?.snapshot.refs ?? []).filter((r) => r.kind === 'remote' && remote && r.shortName.startsWith(`${remote}/`))
+    .map((r) => r.shortName.slice(remote!.length + 1)).filter((b) => b !== branch && b !== 'HEAD')
+  const [title, setTitle] = useState('')
+  const [body, setBody] = useState('')
+  const [base, setBase] = useState(() => ['main', 'master', 'develop'].find((b) => bases.includes(b)) ?? bases[0] ?? 'main')
+  const [draft, setDraft] = useState(false)
+  const local = view?.snapshot.refs.find((r) => r.name === `refs/heads/${branch}`)
+  useEffect(() => {
+    if (local) void api.commitDetails(repoId, local.hash).then((d) => setTitle((t) => t || d.subject), () => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repoId, local?.hash])
+  // GitHub needs the branch with its latest commits: tracked on the GitHub remote, nothing unpushed.
+  const needsPush = !local?.upstream || local.upstream !== `refs/remotes/${remote}/${branch}` || local.upstreamGone || (local.ahead ?? 0) > 0
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!title.trim() || !remote) return
+    close()
+    void run(repoId, 'Create pull request', async () => {
+      if (needsPush) await api.push(repoId, { branch, remote })
+      const pr = await api.createPullRequest(repoId, { branch, base, title: title.trim(), body: body.trim(), draft })
+      toast({ kind: 'success', title: `Opened pull request #${pr.number}`, action: { label: 'Open', run: () => openPull(pr.url) } }, 8000)
+      void loadPulls(repoId)
+    }, { quiet: true })
+  }
+  return (
+    <Modal open onClose={close} title={`Pull request for ${branch}`} width={520}>
+      <form onSubmit={submit} className="space-y-3" data-testid="create-pr">
+        <TextField autoFocus label="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
+        <label className="block">
+          <span className="mb-1 block text-xs text-muted">Description</span>
+          <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={5} placeholder="What this changes and why"
+            className="w-full resize-y rounded-md border border-line bg-bg px-2 py-1.5 text-[13px] outline-none focus:border-accent" />
+        </label>
+        <div className="flex items-center gap-3 text-[13px]">
+          <label className="flex items-center gap-2">Into
+            <select value={base} onChange={(e) => setBase(e.target.value)} aria-label="Base branch" className="h-7 rounded-md border border-line bg-bg px-1 text-[13px]">
+              {(bases.length ? bases : [base]).map((b) => <option key={b} value={b}>{b}</option>)}
+            </select>
+          </label>
+          <label className="flex items-center gap-1.5"><input type="checkbox" checked={draft} onChange={(e) => setDraft(e.target.checked)} /> Draft</label>
+        </div>
+        {needsPush && <p className="text-xs text-muted">{branch} will be pushed to {remote} first.</p>}
+        <div className="flex justify-end gap-2">
+          <Button type="button" onClick={close}>Cancel</Button>
+          <Button type="submit" variant="primary" disabled={!title.trim() || !remote} data-testid="dialog-submit">Create pull request</Button>
         </div>
       </form>
     </Modal>

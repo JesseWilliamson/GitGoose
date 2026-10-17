@@ -1,6 +1,6 @@
 import { DropdownMenu } from 'radix-ui'
 import {
- lfsPull, lfsTrack, lfsUntrack, bisectMark, hideInGraph, showInGraph, soloInGraph, unsoloInGraph, addRemote, addSubmodule, addWorktree, removeSubmodule, syncSubmodules, updateSubmodules, lockWorktree, pruneWorktrees, removeWorktree, checkRemoteTags, cleanupBranches, clearPushUrl, deleteRemoteTag, editRemoteUrl, fastForward, fetchAll, fetchRemote, pushBranch, pushTags, pushTo, remoteNames, removeRemote, renameRemote, setUpstream,
+ checkoutPull, createPull, hasGitHubRemote, openPull, lfsPull, lfsTrack, lfsUntrack, bisectMark, hideInGraph, showInGraph, soloInGraph, unsoloInGraph, addRemote, addSubmodule, addWorktree, removeSubmodule, syncSubmodules, updateSubmodules, lockWorktree, pruneWorktrees, removeWorktree, checkRemoteTags, cleanupBranches, clearPushUrl, deleteRemoteTag, editRemoteUrl, fastForward, fetchAll, fetchRemote, pushBranch, pushTags, pushTo, remoteNames, removeRemote, renameRemote, setUpstream,
  savePatches, stashToBranch, checkout, cherryPick, cherryPickMany, compare, compareSinceFork, copy, fixupInto, pop, reword, squashCommit, stashApply, stashDrop, copyCommits, dropCommits, moveCommits, currentBranchRef, deleteBranch, deleteRemoteBranch, deleteTag, dropOptions,
   merge, newBranch, newTag, push, rebase, renameBranch, reset, revert, shortRef,
 } from '../lib/actions'
@@ -82,6 +82,7 @@ export function GraphMenu({ repoId }: { repoId: string }) {
               </CM.Sub>
             )}
             {r.upstream && <CM.Item onSelect={() => void setUpstream(repoId, name, null)}>Stop tracking {shortRef(r.upstream)}</CM.Item>}
+            {hasGitHubRemote(view) && <CM.Item onSelect={() => createPull(repoId, name)}>Create pull request…</CM.Item>}
             {worktree ? <CM.Item onSelect={() => void openRepo(worktree.path)}>Open the worktree with {name}</CM.Item>
               : !isHead && <CM.Item onSelect={() => addWorktree(repoId, name)}>Check out in a new worktree…</CM.Item>}
             <CM.Item onSelect={() => renameBranch(repoId, name)}>Rename {name}…</CM.Item>
@@ -157,6 +158,19 @@ export function GraphMenu({ repoId }: { repoId: string }) {
               : !w.current && <CM.Item danger onSelect={() => removeWorktree(repoId, w.path)}>Remove worktree</CM.Item>}
           </>
         )}
+      </CM.Content>
+    )
+  }
+
+  if (menu.kind === 'pull') {
+    const p = view.pulls?.state === 'ok' ? view.pulls.pulls.find((x) => x.number === menu.number) : undefined
+    if (!p) return <CM.Content><CM.Label>Refresh the list</CM.Label></CM.Content>
+    return (
+      <CM.Content>
+        <CM.Label>#{p.number} {p.title}</CM.Label>
+        <CM.Item onSelect={() => void checkoutPull(repoId, p.number)}>Check out (as pr/{p.number})</CM.Item>
+        <CM.Item onSelect={() => openPull(p.url)}>Open on GitHub</CM.Item>
+        <CM.Item onSelect={() => copy(p.url, 'Copied URL')}>Copy URL</CM.Item>
       </CM.Content>
     )
   }

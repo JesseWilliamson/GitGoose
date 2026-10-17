@@ -213,4 +213,50 @@ describe('GitHub service', () => {
     await expect(svc.waitForSignIn()).rejects.toMatchObject({ code: 'access_denied' })
     expect(svc.status().account).toBeNull()
   })
+
+  it('lists and creates pull requests only for a GitHub remote and a signed-in user', async () => {
+    const { s, svc, repos } = await setup({ pulls: [{
+      number: 7, title: 'Fix the widget', html_url: 'https://github.com/acme/widgets/pull/7', user: { login: 'grace' },
+      head: { ref: 'fix-widget', sha: 'abc', repo: { full_name: 'someone/widgets' } }, base: { ref: 'main' },
+    }] })
+    const r = makeFixture('linear')
+    const repo = await Repo.open(r.dir, {})
+    repos.push(repo)
+    expect(await svc.pullRequests(repo)).toEqual({ state: 'no-remote' })
+    r.git('remote', 'add', 'origin', 'git@github.com:acme/widgets.git')
+    expect(await svc.pullRequests(repo)).toEqual({ state: 'signed-out' })
+    expect(s.hits.filter((h) => h.includes('/pulls'))).toEqual([])
+
+    await svc.startSignIn(GITHUB_SCOPES.repo)
+    await svc.waitForSignIn()
+    const list = await svc.pullRequests(repo)
+    expect(list).toMatchObject({ state: 'ok', owner: 'acme', repo: 'widgets', pulls: [{ number: 7, author: 'grace', branch: 'fix-widget', fromFork: true }] })
+
+    const pr = await svc.createPullRequest(repo, { branch: 'feature', base: 'main', title: 'Add feature', body: 'Why', draft: true })
+    expect(pr).toMatchObject({ number: 8, title: 'Add feature', branch: 'feature', base: 'main', draft: true, fromFork: false })
+    await expect(svc.createPullRequest(repo, { branch: 'feature', base: 'main', title: 'Again', body: '', draft: false }))
+      .rejects.toThrow(/A pull request already exists/)
+    repo.dispose()
+  })
+
+  it('checks out a pull request by fetching pull/N/head, undoably', async () => {
+    // The "GitHub" repository: a bare repo with a pull request ref, as GitHub keeps them.
+    const upstream = makeFixture('linear')
+    const prHead = upstream.commit('pr work', { 'pr.txt': 'pr\n' })
+    upstream.git('update-ref', 'refs/pull/3/head', prHead)
+    upstream.git('reset', '-q', '--hard', 'HEAD~1')
+    const r = makeFixture('linear')
+    r.git('remote', 'add', 'origin', 'https://github.com/acme/widgets.git')
+    // Point that URL at the local repository: nothing goes to github.com.
+    r.git('config', `url.${upstream.dir}.insteadOf`, 'https://github.com/acme/widgets.git')
+    const repo = await Repo.open(r.dir, {})
+    const before = r.head()
+    const id = await repo.checkoutPullRequest('origin', 3)
+    expect(r.git('branch', '--show-current').trim()).toBe('pr/3')
+    expect(r.head()).toBe(prHead)
+    await repo.undo(id)
+    expect(r.head()).toBe(before)
+    expect(r.git('branch', '--list', 'pr/3')).toBe('')
+    repo.dispose()
+  })
 })

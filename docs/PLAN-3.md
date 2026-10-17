@@ -159,3 +159,8 @@ changes.
       a file's type from its menu (undoable), pull, lock / unlock and a locks dialog (network,
       on request), LFS images shown in image diffs from the local store. Not tested against a
       lock server (none in CI); lock / unlock surface the server's error when it refuses.
+- [x] 29 GitHub pull requests: a sidebar list loaded only when opened or refreshed (signed-out and
+      no-remote states say so), #N badges on branches, check out any PR (pull/N/head, forks
+      too, undoable), create one from a branch's menu (pushes first when GitHub lacks it)
+
+Part A is complete.

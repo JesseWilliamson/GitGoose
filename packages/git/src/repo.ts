@@ -875,6 +875,27 @@ export class Repo {
     })
   }
 
+  // ---------------------------------------------------------------- pull requests
+
+  /**
+   * Fetch a GitHub pull request's head (refs/pull/N/head: it exists for PRs from forks too) into
+   * a local branch and check it out. Undo returns to where you were and deletes the branch.
+   */
+  checkoutPullRequest(remote: string, num: number, branch = `pr/${num}`): Promise<number> {
+    return this.exclusive(async () => {
+      const before = await this.currentHead()
+      const existed = (await this.refs()).find((r) => r.name === `refs/heads/${branch}`)
+      if (existed && before.branch === branch) throw new Error(`${branch} is checked out: switch away to update it from the pull request.`)
+      await this.progress(['fetch', '--progress', remote, `+refs/pull/${num}/head:refs/heads/${branch}`])
+      await this.git(['checkout', branch])
+      const tip = await this.revParse(`refs/heads/${branch}`)
+      return this.record(`Check out pull request #${num}`, [
+        this.returnTo(before),
+        { kind: 'update-ref', ref: `refs/heads/${branch}`, to: existed?.hash ?? null, from: tip },
+      ], (await this.currentHead()).hash)
+    })
+  }
+
   // ---------------------------------------------------------------- Git LFS
 
   private lfsVersion: string | null | undefined

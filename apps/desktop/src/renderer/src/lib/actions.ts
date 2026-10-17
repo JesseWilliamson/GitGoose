@@ -1,4 +1,4 @@
-import type { DiffTarget, GraphFilter, PullMode, Ref, RepoSnapshot, ResetMode } from '@gitsquid/shared'
+import { parseGitHubRemote, type DiffTarget, type GraphFilter, type PullMode, type Ref, type RepoSnapshot, type ResetMode } from '@gitsquid/shared'
 import { api, toUiError, type UiError } from './api'
 import { activeRepo, addRepo, alertConflicts, ensureLoaded, choose, onSnapshot, openRepo, refreshAux, reportError, setting, toast, updateRepo, useStore } from './store'
 
@@ -318,6 +318,36 @@ export async function compareSinceFork(id: string, base: string, branch: string)
   } catch (e) {
     reportError('Could not find where they forked', e)
   }
+}
+
+// ------------------------------------------------------------------ GitHub pull requests
+
+/** Does any remote point at GitHub? (Decides whether pull request features show at all.) */
+export function hasGitHubRemote(view: { remotes: { fetchUrl: string }[] }): boolean {
+  return view.remotes.some((r) => parseGitHubRemote(r.fetchUrl))
+}
+
+/** Ask GitHub for the open pull requests (only on request: opening the list, or refresh). */
+export async function loadPulls(id: string): Promise<void> {
+  updateRepo(id, { pullsLoading: true })
+  try {
+    updateRepo(id, { pulls: await api.pullRequests(id) })
+  } catch (e) {
+    reportError('Could not load pull requests', e)
+  } finally {
+    updateRepo(id, { pullsLoading: false })
+  }
+}
+
+export const checkoutPull = (id: string, num: number) =>
+  run(id, `Check out pull request #${num}`, () => api.checkoutPullRequest(id, num))
+
+export function openPull(url: string): void {
+  void api.openPullRequest(url).catch((e) => reportError('Could not open the pull request', e))
+}
+
+export function createPull(id: string, branch: string): void {
+  useStore.setState({ dialog: { kind: 'create-pr', repoId: id, branch } })
 }
 
 // ------------------------------------------------------------------ Git LFS

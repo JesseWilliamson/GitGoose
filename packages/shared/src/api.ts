@@ -3,7 +3,7 @@ import type {
   ReflogEntry, Remote, SearchField, Submodule, Worktree, StashEntry, UndoEntry,
 } from './index'
 import type { AgentInfo, AiPermissionRequest, AiResult, AiStatus, AiTask } from './ai'
-import type { DeviceCodeInfo, GitHubAccount, GitHubStatus } from './github'
+import type { DeviceCodeInfo, GitHubAccount, GitHubStatus, PullRequest, PullRequestList } from './github'
 import type { Settings } from './settings'
 
 export interface LogPage {
@@ -84,6 +84,13 @@ export interface GitSquidApi {
   /** Open a GitHub page in the browser: where to enter the code, or where to revoke access. */
   githubOpenPage(page: 'verification' | 'applications'): Promise<void>
   githubSignOut(): Promise<void>
+  /** Network: the GitHub remote's open pull requests (only when the user opens the list). */
+  pullRequests(repoId: string): Promise<PullRequestList>
+  createPullRequest(repoId: string, pr: { branch: string; base: string; title: string; body: string; draft: boolean }): Promise<PullRequest>
+  /** Fetch pull/N/head into pr/N (or `branch`) and check it out. Undoable. */
+  checkoutPullRequest(repoId: string, num: number, branch?: string): Promise<UndoId>
+  /** Open a pull request's page (GitHub URLs only). */
+  openPullRequest(url: string): Promise<void>
 
   // AI (see apps/desktop/src/main/ai/)
   aiStatus(): Promise<AiStatus>
@@ -279,7 +286,7 @@ export type ApiMethod = keyof GitSquidApi
 export const API_METHODS = [
   'getSettings', 'setSettings', 'pickDirectory', 'openRepo', 'closeRepo', 'initRepo', 'cloneRepo',
   'respondPrompt', 'openPath', 'openInEditor', 'openTerminal', 'revealPath', 'logError',
-  'githubStatus', 'githubSignIn', 'githubWaitForSignIn', 'githubCancelSignIn', 'githubOpenPage', 'githubSignOut',
+  'githubStatus', 'githubSignIn', 'githubWaitForSignIn', 'githubCancelSignIn', 'githubOpenPage', 'githubSignOut', 'pullRequests', 'createPullRequest', 'checkoutPullRequest', 'openPullRequest',
   'aiStatus', 'aiConsent', 'aiRun', 'aiCancel', 'aiRespondPermission', 'aiAgentInfo', 'aiAuthenticate', 'aiSetApiKey',
   'snapshot', 'logPage', 'commitDetails', 'diff', 'fileHistory', 'blame', 'search', 'stashList', 'reflog', 'setGraphFilter', 'submodules', 'updateSubmodules', 'syncSubmodules', 'addSubmodule', 'removeSubmodule', 'worktrees', 'addWorktree', 'removeWorktree', 'lockWorktree', 'pruneWorktrees',
   'lastCommitMessage',
