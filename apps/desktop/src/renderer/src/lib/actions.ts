@@ -605,6 +605,30 @@ export const lockWorktree = (id: string, path: string, lock: boolean) =>
 
 export const pruneWorktrees = (id: string) => run(id, 'Prune worktrees', () => api.pruneWorktrees(id), { success: 'Forgot worktrees whose folders are gone' })
 
+// ------------------------------------------------------------------ submodules
+
+export function addSubmodule(id: string): void {
+  ask('Add submodule', 'Repository URL', 'Add submodule', (url, folder) => {
+    const path = folder.trim() || url.trim().replace(/\.git$/, '').split(/[\\/:]/).filter(Boolean).pop() || 'submodule'
+    void run(id, `Add submodule ${path}`, () => api.addSubmodule(id, url.trim(), path), { success: `Added ${path}: commit to record it` }).then(showStaged(id))
+  }, { placeholder: 'https://github.com/owner/library.git', extra: { label: 'Folder (empty: the repository name)' } })
+}
+
+/** Check out the commits the repository records (cloning ones that are missing). */
+export const updateSubmodules = (id: string, paths?: string[]) =>
+  run(id, paths?.length === 1 ? `Update ${paths[0]}` : 'Update submodules', () => api.updateSubmodules(id, paths), { success: 'Submodules are at their recorded commits' })
+
+export const syncSubmodules = (id: string) => run(id, 'Sync submodule URLs', () => api.syncSubmodules(id), { success: 'Submodule URLs copied from .gitmodules' })
+
+export const removeSubmodule = (id: string, path: string) =>
+  run(id, `Remove submodule ${path}`, () => api.removeSubmodule(id, path), { success: `Removed ${path}: commit to record it` }).then(showStaged(id))
+
+/** After an action that leaves staged changes to commit: show them in the commit box. */
+const showStaged = (id: string) => (ok: boolean) => {
+  if (ok) updateRepo(id, { selected: { kind: 'wip' }, center: { kind: 'graph' } })
+  return ok
+}
+
 // ------------------------------------------------------------------ stash
 
 export function stash(id: string): void {

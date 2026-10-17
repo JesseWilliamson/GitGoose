@@ -1,6 +1,6 @@
 import type {
   BlameLine, ChangedFile, Commit, CommitDetails, ConflictFile, DiffTarget, FileDiff, RepoSnapshot,
-  ReflogEntry, Remote, SearchField, Worktree, StashEntry, UndoEntry,
+  ReflogEntry, Remote, SearchField, Submodule, Worktree, StashEntry, UndoEntry,
 } from './index'
 import type { AgentInfo, AiPermissionRequest, AiResult, AiStatus, AiTask } from './ai'
 import type { DeviceCodeInfo, GitHubAccount, GitHubStatus } from './github'
@@ -117,6 +117,12 @@ export interface GitSquidApi {
   blame(repoId: string, path: string, rev?: string): Promise<BlameLine[]>
   search(repoId: string, field: SearchField, query: string): Promise<string[]>
   stashList(repoId: string): Promise<StashEntry[]>
+  submodules(repoId: string): Promise<Submodule[]>
+  /** Init, clone if needed, and check out the recorded commits (all, or just `paths`). */
+  updateSubmodules(repoId: string, paths?: string[]): Promise<void>
+  syncSubmodules(repoId: string): Promise<void>
+  addSubmodule(repoId: string, url: string, path: string): Promise<UndoId>
+  removeSubmodule(repoId: string, path: string): Promise<UndoId>
   worktrees(repoId: string): Promise<Worktree[]>
   addWorktree(repoId: string, path: string, opts: { branch?: string; newBranch?: string; at?: string }): Promise<UndoId>
   /** Without force, git refuses if the worktree has changes (and undo can check it out again). */
@@ -246,7 +252,7 @@ export const API_METHODS = [
   'respondPrompt', 'openPath', 'openInEditor', 'openTerminal', 'revealPath', 'logError',
   'githubStatus', 'githubSignIn', 'githubWaitForSignIn', 'githubCancelSignIn', 'githubOpenPage', 'githubSignOut',
   'aiStatus', 'aiConsent', 'aiRun', 'aiCancel', 'aiRespondPermission', 'aiAgentInfo', 'aiAuthenticate', 'aiSetApiKey',
-  'snapshot', 'logPage', 'commitDetails', 'diff', 'fileHistory', 'blame', 'search', 'stashList', 'reflog', 'worktrees', 'addWorktree', 'removeWorktree', 'lockWorktree', 'pruneWorktrees',
+  'snapshot', 'logPage', 'commitDetails', 'diff', 'fileHistory', 'blame', 'search', 'stashList', 'reflog', 'submodules', 'updateSubmodules', 'syncSubmodules', 'addSubmodule', 'removeSubmodule', 'worktrees', 'addWorktree', 'removeWorktree', 'lockWorktree', 'pruneWorktrees',
   'lastCommitMessage',
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit',
   'checkout', 'createBranch', 'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset',

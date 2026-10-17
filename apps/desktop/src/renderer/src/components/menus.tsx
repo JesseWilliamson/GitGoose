@@ -1,6 +1,6 @@
 import { DropdownMenu } from 'radix-ui'
 import {
- addRemote, addWorktree, lockWorktree, pruneWorktrees, removeWorktree, checkRemoteTags, cleanupBranches, clearPushUrl, deleteRemoteTag, editRemoteUrl, fastForward, fetchAll, fetchRemote, pushBranch, pushTags, pushTo, remoteNames, removeRemote, renameRemote, setUpstream,
+ addRemote, addSubmodule, addWorktree, removeSubmodule, syncSubmodules, updateSubmodules, lockWorktree, pruneWorktrees, removeWorktree, checkRemoteTags, cleanupBranches, clearPushUrl, deleteRemoteTag, editRemoteUrl, fastForward, fetchAll, fetchRemote, pushBranch, pushTags, pushTo, remoteNames, removeRemote, renameRemote, setUpstream,
  savePatches, stashToBranch, checkout, cherryPick, cherryPickMany, compare, compareSinceFork, copy, fixupInto, pop, reword, squashCommit, stashApply, stashDrop, copyCommits, dropCommits, moveCommits, currentBranchRef, deleteBranch, deleteRemoteBranch, deleteTag, dropOptions,
   merge, newBranch, newTag, push, rebase, renameBranch, reset, revert, shortRef,
 } from '../lib/actions'
@@ -151,8 +151,34 @@ export function GraphMenu({ repoId }: { repoId: string }) {
     )
   }
 
+  if (menu.kind === 'submodule') {
+    const m = view.submodules.find((x) => x.path === menu.path)
+    if (!m) return <CM.Content><CM.Label>That submodule is gone</CM.Label></CM.Content>
+    const abs = `${snap.path}/${m.path}`
+    return (
+      <CM.Content>
+        <CM.Label>{m.path} · {m.url}</CM.Label>
+        <CM.Item disabled={!m.checkedOut} onSelect={() => void openRepo(abs)}>Open in a new tab</CM.Item>
+        <CM.Item onSelect={() => void updateSubmodules(repoId, [m.path])}>{m.checkedOut ? 'Check out the recorded commit' : 'Clone and check out'}</CM.Item>
+        <CM.Item disabled={!m.checkedOut} onSelect={() => void api.revealPath(abs)}>Reveal in file manager</CM.Item>
+        <CM.Item onSelect={() => copy(m.url, 'Copied URL')}>Copy URL</CM.Item>
+        <CM.Separator />
+        <CM.Item danger onSelect={() => void removeSubmodule(repoId, m.path)}>Remove submodule</CM.Item>
+      </CM.Content>
+    )
+  }
+
   if (menu.kind === 'section') {
     const remotes = remoteNames(view)
+    if (menu.section === 'submodules') {
+      return (
+        <CM.Content>
+          <CM.Item onSelect={() => void updateSubmodules(repoId)}>Update all (clone missing, check out recorded commits)</CM.Item>
+          <CM.Item onSelect={() => void syncSubmodules(repoId)}>Sync URLs from .gitmodules</CM.Item>
+          <CM.Item onSelect={() => addSubmodule(repoId)}>Add submodule…</CM.Item>
+        </CM.Content>
+      )
+    }
     if (menu.section === 'worktrees') {
       return (
         <CM.Content>

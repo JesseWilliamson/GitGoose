@@ -133,3 +133,6 @@ changes.
 - [x] 21 worktrees: sidebar section, add on a new or existing branch (opens as a tab; undo
       removes it), remove (undoable when clean; changes need an explicit "delete"), lock,
       forget missing ones; branches checked out elsewhere are marked
+- [x] 22 submodules: sidebar section with state (not cloned, moved, changes), clone / update,
+      sync URLs, add (undo deletes it unless it changed since), remove (undo checks it out again
+      from the clone git keeps), open as a tab

@@ -166,6 +166,18 @@ export interface Worktree {
   prunable?: string
 }
 
+export interface Submodule {
+  name: string
+  path: string
+  url: string
+  /** The commit the superproject records for it (in the index). */
+  recorded?: string
+  /** The commit checked out in it; absent until it is initialized and cloned. */
+  checkedOut?: string
+  /** It has uncommitted changes of its own. */
+  dirty: boolean
+}
+
 /** One move of a ref, newest first (`git log -g`). */
 export interface ReflogEntry {
   /** The n in HEAD@{n}. */

@@ -48,6 +48,12 @@ export type UndoAction =
   /** Worktrees: remove one (git refuses if it has changes), or add one back with a branch or a detached commit. */
   | { kind: 'worktree-remove'; path: string }
   | { kind: 'worktree-add'; path: string; branch?: string; commit: string }
+  /**
+   * Submodules. forget: undo of add, deletes its checkout and clone, refusing if it moved from
+   * `commit` or has changes. restore: undo of remove, checks it out again from the clone git kept.
+   */
+  | { kind: 'submodule-forget'; path: string; name: string; commit: string }
+  | { kind: 'submodule-restore'; path: string }
   /** Write saved blobs back to the working tree. `blob: null` means the file did not exist. */
   | { kind: 'restore-files'; files: { path: string; blob: string | null; mode?: number }[] }
 

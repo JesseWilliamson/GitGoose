@@ -1,7 +1,7 @@
 import type {
   BlameLine, ChangedFile, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
   LogPage, Ref, Remote, RepoOperation, ReflogEntry, RepoSnapshot, ResetMode, Resolution, SearchField, SelectionRequest,
-  StashEntry, StatusEntry, UndoEntry, Worktree,
+  StashEntry, StatusEntry, Submodule, UndoEntry, Worktree,
 } from '@gitsquid/shared'
 import { countConflicts } from '@gitsquid/shared'
 import { existsSync } from 'node:fs'
@@ -758,6 +758,88 @@ export class Repo {
   pruneWorktrees(): Promise<void> {
     return this.exclusive(async () => {
       await this.git(['worktree', 'prune'])
+    })
+  }
+
+  // ---------------------------------------------------------------- submodules
+
+  async submodules(): Promise<Submodule[]> {
+    if (!existsSync(join(this.path, '.gitmodules'))) return []
+    const cfg = (await this.runner.run(['config', '-f', '.gitmodules', '-z', '--get-regexp', '^submodule\\..*\\.(path|url)$'], { readOnly: true, okCodes: [1] })).stdout
+    const byName = new Map<string, Submodule>()
+    for (const entry of cfg.split('\0').filter(Boolean)) {
+      const nl = entry.indexOf('\n')
+      const m = /^submodule\.(.+)\.(path|url)$/.exec(entry.slice(0, nl))
+      if (!m) continue
+      const sm = byName.get(m[1]!) ?? { name: m[1]!, path: '', url: '', dirty: false }
+      sm[m[2] as 'path' | 'url'] = entry.slice(nl + 1)
+      byName.set(m[1]!, sm)
+    }
+    const list = [...byName.values()].filter((s) => s.path)
+    if (!list.length) return []
+    // Gitlinks (mode 160000) in the index are the commits the superproject records.
+    const staged = await this.read(['ls-files', '-s', '-z', '--', ...list.map((s) => s.path)])
+    for (const rec of staged.split('\0').filter(Boolean)) {
+      const [meta, path] = rec.split('\t')
+      const [mode, sha] = meta!.split(' ')
+      const sm = list.find((s) => s.path === path)
+      if (sm && mode === '160000') sm.recorded = sha
+    }
+    await Promise.all(list.map(async (sm) => {
+      // Only look inside a real checkout: in an empty folder git would find the superproject.
+      if (!existsSync(join(this.path, sm.path, '.git'))) return
+      const head = await this.runner.run(['-C', sm.path, 'rev-parse', '--verify', '-q', 'HEAD'], { readOnly: true, okCodes: [1, 128] })
+      if (head.code === 0) sm.checkedOut = head.stdout.trim()
+      const st = await this.runner.run(['-C', sm.path, 'status', '--porcelain', '-z'], { readOnly: true, okCodes: [128] })
+      sm.dirty = st.code === 0 && st.stdout.length > 0
+    }))
+    return list
+  }
+
+  /** Clone (if needed) and check out the recorded commit of each submodule, or just `paths`. May fetch. */
+  updateSubmodules(paths?: string[]): Promise<void> {
+    return this.exclusive(async () => {
+      await this.progress(['submodule', 'update', '--init', '--recursive', '--progress', ...(paths?.length ? ['--', ...paths] : [])])
+    })
+  }
+
+  /** Copy URLs from .gitmodules into the configuration (after someone changed one). */
+  syncSubmodules(): Promise<void> {
+    return this.exclusive(async () => {
+      await this.git(['submodule', 'sync', '--recursive'])
+    })
+  }
+
+  /** Add a submodule (clones it). Undo deletes it again, unless it was changed since. */
+  addSubmodule(url: string, path: string): Promise<number> {
+    return this.exclusive(async () => {
+      const tree = (await this.git(['write-tree'])).stdout.trim()
+      const saved = await this.saveFiles(['.gitmodules'])
+      await this.progress(['submodule', 'add', '--progress', '--', url, path])
+      const sm = (await this.submodules()).find((s) => s.path === path.replace(/\/+$/, ''))
+      if (!sm?.checkedOut) throw new Error(`Could not read the new submodule at ${path}`)
+      return this.record(`Add submodule ${sm.path}`, [
+        { kind: 'submodule-forget', path: sm.path, name: sm.name, commit: sm.checkedOut },
+        { kind: 'read-tree', tree },
+        { kind: 'restore-files', files: saved },
+      ], (await this.currentHead()).hash)
+    })
+  }
+
+  /**
+   * Remove a submodule: `git rm` drops its checkout and its .gitmodules entry (staged, to commit)
+   * and refuses if it has changes. Git keeps its clone in .git/modules, so undo checks it out again.
+   */
+  removeSubmodule(path: string): Promise<number> {
+    return this.exclusive(async () => {
+      const tree = (await this.git(['write-tree'])).stdout.trim()
+      const saved = await this.saveFiles(['.gitmodules'])
+      await this.git(['rm', '-q', '--', path])
+      return this.record(`Remove submodule ${path}`, [
+        { kind: 'read-tree', tree },
+        { kind: 'restore-files', files: saved },
+        { kind: 'submodule-restore', path },
+      ], (await this.currentHead()).hash)
     })
   }
 
@@ -1650,6 +1732,21 @@ export class Repo {
         }
         break
       }
+      case 'submodule-forget': {
+        const inside = (args: string[]) => this.runner.run(['-C', a.path, ...args], { readOnly: true, okCodes: [128] })
+        const head = await inside(['rev-parse', 'HEAD'])
+        if (head.code === 0 && (head.stdout.trim() !== a.commit || (await inside(['status', '--porcelain'])).stdout.trim())) {
+          throw new Error(`${a.path} has new commits or changes since it was added: undo would delete them.`)
+        }
+        await this.git(['submodule', 'deinit', '-f', '--', a.path], { okCodes: [1, 128] })
+        await rm(join(this.path, a.path), { recursive: true, force: true })
+        await rm(join(this.gitDir, 'modules', a.name), { recursive: true, force: true })
+        await this.git(['config', '--remove-section', `submodule.${a.name}`], { okCodes: [128] })
+        break
+      }
+      case 'submodule-restore':
+        await this.git(['submodule', 'update', '--init', '--', a.path])
+        break
       case 'worktree-remove':
         await this.git(['worktree', 'remove', a.path])
         break

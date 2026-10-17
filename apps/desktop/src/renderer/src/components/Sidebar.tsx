@@ -1,6 +1,6 @@
 import type { Ref } from '@gitsquid/shared'
 import clsx from 'clsx'
-import { Archive, ChevronDown, ChevronRight, Cloud, FolderTree, GitBranch, History, Plus, Tag } from 'lucide-react'
+import { Archive, Boxes, ChevronDown, ChevronRight, Cloud, FolderTree, GitBranch, History, Plus, Tag } from 'lucide-react'
 import { ContextMenu } from 'radix-ui'
 import { useMemo, useState, type ReactNode } from 'react'
 import { addRemote, addWorktree, checkout, isStale, pop, remoteNames, stashApply, stashDrop, stashToBranch } from '../lib/actions'
@@ -32,7 +32,7 @@ export function Sidebar({ view }: { view: RepoView }) {
   const elsewhere = new Map(view.worktrees.filter((w) => !w.current && w.branch).map((w) => [w.branch!, w.path]))
   /** After "Check which tags are on <remote>": the tags it does not have. */
   const onRemote = view.remoteTags ? new Set(view.remoteTags.names) : null
-  const menuFor = (section: 'local' | 'remotes' | 'tags' | 'worktrees') => () => useStore.setState({ menu: { kind: 'section', section } })
+  const menuFor = (section: 'local' | 'remotes' | 'tags' | 'worktrees' | 'submodules') => () => useStore.setState({ menu: { kind: 'section', section } })
 
   const jump = async (hash: string) => {
     updateRepo(view.id, { selected: { kind: 'commit', hash }, center: { kind: 'graph' } })
@@ -109,6 +109,22 @@ export function Sidebar({ view }: { view: RepoView }) {
                 )
               })}
             </Section>
+            {view.submodules.length > 0 && (
+              <Section title="Submodules" count={view.submodules.length} icon={<Boxes size={13} />} onContextMenu={menuFor('submodules')}>
+                {view.submodules.map((m) => (
+                  <div key={m.path} data-testid="submodule-item" data-path={m.path}
+                    onDoubleClick={() => m.checkedOut && void openRepo(`${snap.path}/${m.path}`)}
+                    onContextMenu={() => useStore.setState({ menu: { kind: 'submodule', path: m.path } })}
+                    title={`${m.path}\n${m.url}${m.checkedOut ? '\nDouble-click to open it in a tab' : ''}`}
+                    className="flex h-6 cursor-default items-center gap-1.5 pr-3 pl-8 text-[13px] hover:bg-hover">
+                    <span className="min-w-0 flex-1 truncate">{m.path}</span>
+                    {!m.checkedOut && <Badge title="Not cloned yet: Update to check it out">not cloned</Badge>}
+                    {m.checkedOut && m.recorded && m.checkedOut !== m.recorded && <Badge title={`At ${m.checkedOut.slice(0, 7)}; this repository records ${m.recorded.slice(0, 7)}`}>moved</Badge>}
+                    {m.dirty && <Badge title="Has uncommitted changes inside">changes</Badge>}
+                  </div>
+                ))}
+              </Section>
+            )}
             <Section title="Stashes" count={view.stashes.length} icon={<Archive size={13} />}>
               {view.stashes.map((s) => (
                 <StashItem key={s.ref} repoId={view.id} index={s.index} message={s.message} date={s.date}

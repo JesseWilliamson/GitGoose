@@ -2,7 +2,7 @@ import { DEFAULT_LAYOUT, setCollapsed } from '@gitsquid/shared'
 import { Command } from 'cmdk'
 import { RDialogCompat } from './RDialogCompat'
 import {
-  addRemote, applyPatchFile, applyPatchFromClipboard, checkout, cleanupBranches, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, reopen, stash, undo,
+  addRemote, addSubmodule, applyPatchFile, updateSubmodules, addWorktree, applyPatchFromClipboard, checkout, cleanupBranches, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, reopen, stash, undo,
 } from '../lib/actions'
 import { saveSettings, useStore } from '../lib/store'
 
@@ -43,6 +43,9 @@ export function CommandPalette() {
     add('Repository', 'Show reflog (recover lost commits)', () => useStore.setState((s) => ({ repos: { ...s.repos, [id]: { ...s.repos[id]!, center: { kind: 'reflog' } } } })))
     add('Repository', 'Clean up branches…', () => cleanupBranches(id))
     add('Repository', 'Add remote…', () => addRemote(id))
+    add('Repository', 'Add worktree…', () => addWorktree(id))
+    add('Repository', 'Add submodule…', () => addSubmodule(id))
+    if (active.submodules.length) add('Repository', 'Update submodules', () => void updateSubmodules(id))
     add('Repository', 'Apply patch from a file…', () => void applyPatchFile(id))
     add('Repository', 'Apply patch from the clipboard', () => void applyPatchFromClipboard(id))
     add('Repository', 'Stash all changes', () => stash(id))
