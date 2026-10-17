@@ -1,11 +1,12 @@
 import clsx from 'clsx'
 import { KeyRound } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { parseGitHubRemote, type Identity, type LfsLock, type ReviewLearning } from '@gitsquid/shared'
+import { parseGitHubRemote, type Identity, type LfsLock, type PushCheck, type PushCheckResult, type ReviewLearning } from '@gitsquid/shared'
 import { cleanupCandidates, cloneRepo, confirmAction, deleteBranches, lfsLock, loadPulls, openPull, run, STALE_DAYS } from '../lib/actions'
 import { relativeTime } from '../lib/format'
 import { COMMANDS, FIXED_KEYS, formatCombo, keymap, modName } from '../lib/keys'
 import { api } from '../lib/api'
+import { withPushChecks } from '../lib/pushchecks'
 import { dismissToast, setting, toast, useStore } from '../lib/store'
 import { Button, Modal, TextField } from './ui'
 
@@ -44,6 +45,8 @@ export function Dialogs() {
   if (dialog.kind === 'text') return <TextDialog key={dialog.title} d={dialog} close={close} />
   if (dialog.kind === 'cleanup') return <CleanupDialog repoId={dialog.repoId} close={close} />
   if (dialog.kind === 'learnings') return <LearningsDialog repoId={dialog.repoId} close={close} />
+  if (dialog.kind === 'push-checks') return <PushChecksDialog d={dialog} close={close} />
+  if (dialog.kind === 'push-rules') return <PushRulesDialog repoId={dialog.repoId} close={close} />
   if (dialog.kind === 'create-pr') return <CreatePullDialog repoId={dialog.repoId} branch={dialog.branch} close={close} />
   if (dialog.kind === 'lfs-locks') return <LfsLocksDialog repoId={dialog.repoId} close={close} />
   if (dialog.kind === 'pick') return <PickDialog key={dialog.title} d={dialog} close={close} />
@@ -200,12 +203,15 @@ function CreatePullDialog({ repoId, branch, close }: { repoId: string; branch: s
     e.preventDefault()
     if (!title.trim() || !remote) return
     close()
-    void run(repoId, 'Create pull request', async () => {
+    const create = () => void run(repoId, 'Create pull request', async () => {
       if (needsPush) await api.push(repoId, { branch, remote })
       const pr = await api.createPullRequest(repoId, { branch, base, title: title.trim(), body: body.trim(), draft })
       toast({ kind: 'success', title: `Opened pull request #${pr.number}`, action: { label: 'Open', run: () => openPull(pr.url) } }, 8000)
       void loadPulls(repoId)
     }, { quiet: true })
+    // The push the pull request needs goes through the same pre-push checks as any other.
+    if (needsPush) void withPushChecks(repoId, branch, create)
+    else create()
   }
   return (
     <Modal open onClose={close} title={`Pull request for ${branch}`} width={520}>
@@ -258,6 +264,106 @@ function LearningsDialog({ repoId, close }: { repoId: string; close: () => void 
         ))}
       </div>
       <div className="flex justify-end"><Button onClick={close}>Close</Button></div>
+    </Modal>
+  )
+}
+
+const VERDICT: Record<PushCheckResult['verdict'], { icon: string; className: string; label: string }> = {
+  pass: { icon: '✓', className: 'text-add', label: 'passed' },
+  fail: { icon: '✗', className: 'text-del', label: 'failed' },
+  inconclusive: { icon: '?', className: 'text-warn', label: 'could not tell' },
+}
+const SOURCE: Record<PushCheckResult['source'], string> = { builtin: 'built in', repo: '.coderabbit.yaml', settings: 'yours' }
+
+/** Pre-push results that need a decision. Cancel is the default; pushing past a blocking failure says so. */
+function PushChecksDialog({ d, close }: { d: Extract<NonNullable<ReturnType<typeof useStore.getState>['dialog']>, { kind: 'push-checks' }>; close: () => void }) {
+  const failed = d.results.filter((r) => r.verdict === 'fail').length
+  return (
+    <Modal open onClose={close} title={d.outcome === 'block' ? 'A pre-push check failed' : 'Pre-push checks'} width={560}>
+      <p className="mb-3 text-[13px] text-muted">
+        {d.label}. {failed ? `${failed} of ${d.results.length} check${d.results.length === 1 ? '' : 's'} failed.` : 'A blocking check could not be judged.'}
+        {d.outcome === 'block' ? ' A blocking check failed, so nothing was pushed.' : ''}
+      </p>
+      <div className="mb-4 max-h-80 overflow-y-auto" data-testid="push-checks">
+        {d.results.map((r, i) => (
+          <div key={i} className="border-b border-line/60 py-2 text-[13px]" data-testid="push-check" data-verdict={r.verdict}>
+            <div className="flex items-center gap-2">
+              <span className={clsx('w-4 text-center font-bold', VERDICT[r.verdict].className)} aria-label={VERDICT[r.verdict].label}>{VERDICT[r.verdict].icon}</span>
+              <span className="min-w-0 flex-1 font-semibold">{r.name}</span>
+              <span className="text-[10px] text-faint">{SOURCE[r.source]}</span>
+              <span className={clsx('rounded px-1 text-[10px] uppercase', r.mode === 'block' ? 'bg-del/15 text-del' : 'bg-hover text-muted')}>{r.mode === 'block' ? 'blocks' : 'warns'}</span>
+            </div>
+            <p className="selectable mt-1 pl-6 text-muted">{r.reason}</p>
+            {r.evidence.length > 0 && <p className="selectable mt-0.5 pl-6 font-mono text-[11px] text-faint">{r.evidence.map((e) => `${e.path}:${e.line}`).join('  ')}</p>}
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" onClick={() => useStore.setState({ dialog: { kind: 'push-rules', repoId: d.repoId } })}>Edit checks…</Button>
+        <span className="flex-1" />
+        <Button autoFocus onClick={close}>Cancel</Button>
+        <Button variant={d.outcome === 'block' ? 'danger' : 'primary'} onClick={() => { close(); d.onPush() }} data-testid="push-anyway">
+          {d.outcome === 'block' ? 'Push anyway' : 'Push'}
+        </Button>
+      </div>
+    </Modal>
+  )
+}
+
+/** This repository's own pre-push checks (saved in settings), next to the ones its .coderabbit.yaml defines. */
+function PushRulesDialog({ repoId, close }: { repoId: string; close: () => void }) {
+  const [repo, setRepo] = useState<PushCheck[]>([])
+  const [mine, setMine] = useState<PushCheck[] | null>(null)
+  useEffect(() => {
+    void api.pushCheckRules(repoId).then((r) => {
+      setRepo(r.repo)
+      setMine(r.mine)
+    })
+  }, [repoId])
+  const edit = (i: number, patch: Partial<PushCheck>) => setMine((m) => m!.map((c, n) => (n === i ? { ...c, ...patch } : c)))
+  const save = async () => {
+    await api.setPushChecks(repoId, mine!.map((c) => ({ ...c, name: c.name.trim(), instructions: c.instructions.trim() })).filter((c) => c.name && c.instructions))
+    close()
+  }
+  return (
+    <Modal open onClose={close} title="Pre-push checks" width={600}>
+      <p className="mb-3 text-[13px] text-muted">
+        Rules in plain words, checked by the AI against the commits you push. A check that blocks stops the push when it fails (you can still push anyway); one that warns only tells you. The secret scan is separate (Settings → Git).
+      </p>
+      {repo.length > 0 && (
+        <div className="mb-3">
+          <div className="mb-1 text-xs text-faint">From .coderabbit.yaml (edit the file to change these)</div>
+          {repo.map((c, i) => (
+            <div key={i} className="mb-1 rounded border border-line/60 px-2 py-1 text-[12px]"><span className="font-semibold">{c.name}</span> · {c.mode === 'block' ? 'blocks' : 'warns'}<div className="text-muted">{c.instructions}</div></div>
+          ))}
+        </div>
+      )}
+      <div className="mb-1 text-xs text-faint">Yours, for this repository</div>
+      <div className="mb-3 max-h-72 space-y-2 overflow-y-auto" data-testid="push-rules">
+        {mine?.length === 0 && <p className="text-[13px] text-faint">None yet.</p>}
+        {mine?.map((c, i) => (
+          <div key={i} className="rounded-md border border-line p-2">
+            <div className="mb-1 flex gap-2">
+              <input value={c.name} onChange={(e) => edit(i, { name: e.target.value })} placeholder="Name (e.g. No debug logging)" aria-label="Check name"
+                className="h-7 min-w-0 flex-1 rounded-md border border-line bg-bg px-2 text-[13px] outline-none focus:border-accent" />
+              <select value={c.mode} onChange={(e) => edit(i, { mode: e.target.value as PushCheck['mode'] })} aria-label="When it fails" className="h-7 rounded-md border border-line bg-bg px-1 text-[13px]">
+                <option value="warn">Warn</option>
+                <option value="block">Block</option>
+              </select>
+              <Button size="sm" variant="ghost" onClick={() => setMine((m) => m!.filter((_, n) => n !== i))}>Remove</Button>
+            </div>
+            <textarea value={c.instructions} onChange={(e) => edit(i, { instructions: e.target.value })} rows={2} aria-label="What to check"
+              placeholder="What to check, in plain words (e.g. No console.log calls in src/; logging goes through logger.ts)"
+              className="w-full resize-y rounded-md border border-line bg-bg px-2 py-1 text-[13px] outline-none focus:border-accent" />
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <Button onClick={() => setMine((m) => [...(m ?? []), { name: '', instructions: '', mode: 'warn' }])} data-testid="push-rule-add">Add check</Button>
+        <span className="flex-1" />
+        <Button onClick={close}>Cancel</Button>
+        <Button variant="primary" disabled={!mine} onClick={() => void save()} data-testid="push-rules-save">Save</Button>
+      </div>
     </Modal>
   )
 }

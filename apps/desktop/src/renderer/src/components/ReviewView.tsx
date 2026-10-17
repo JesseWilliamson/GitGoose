@@ -74,7 +74,7 @@ export function ReviewView({ view }: { view: RepoView }) {
                   : l.status === 'failed' ? <span className="text-warn">failed{l.note ? `: ${l.note}` : ''}</span>
                   : `skipped (${l.note})`}
                 {l.status === 'skipped' && l.note?.startsWith('you chose') && (
-                  <> <button className="text-accent hover:underline" onClick={() => void api.decideLinter(view.id, l.command, null).then(() => toast(`The next review will ask about ${l.name} again.`))}>Ask again</button></>
+                  <> <button className="text-accent hover:underline" onClick={() => void api.decideLinter(view.id, l.command, null).then(() => toast({ kind: 'info', title: `The next review will ask about ${l.name} again.` }))}>Ask again</button></>
                 )}
               </span>
             ))}

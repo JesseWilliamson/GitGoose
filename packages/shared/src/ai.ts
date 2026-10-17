@@ -39,6 +39,8 @@ export type ReviewScope =
   | { kind: 'branch'; branch: string; base?: string }
   /** Selected commits (graph order): their combined change. */
   | { kind: 'commits'; hashes: string[] }
+  /** What a push of the branch (default: the current one) would send: commits its upstream, or no remote, has not got. */
+  | { kind: 'outgoing'; branch?: string }
 
 /** How much to say: quiet (only real problems), chill (no nits), assertive (everything). */
 export type ReviewProfile = 'quiet' | 'chill' | 'assertive'
@@ -68,6 +70,43 @@ export interface ReviewFinding {
   source?: 'scan' | 'lint'
   /** The linter's name (and rule, when it gives one), for source 'lint'. */
   tool?: string
+}
+
+/**
+ * A pre-push check: a rule in plain words ("No console.log calls left in src/"), judged by the AI
+ * against what a push would send. `block` stops the push when it fails (the user can still push
+ * anyway); `warn` only says so. From .coderabbit.yaml (reviews.pre_merge_checks.custom_checks) or
+ * the user's own list for the repository.
+ */
+export interface PushCheck {
+  name: string
+  instructions: string
+  mode: 'warn' | 'block'
+}
+
+export type PushCheckVerdict = 'pass' | 'fail' | 'inconclusive'
+
+export interface PushCheckResult {
+  name: string
+  mode: PushCheck['mode']
+  /** builtin: GitSquid's own (no AI); repo: .coderabbit.yaml; settings: the user's list. */
+  source: 'builtin' | 'repo' | 'settings'
+  verdict: PushCheckVerdict
+  /** One or two sentences on why, in plain words. */
+  reason: string
+  /** Lines in the outgoing change that show it (checked to be in the change). */
+  evidence: { path: string; line: number }[]
+}
+
+/** The checks for one push, before the AI has judged them. Local and cheap. */
+export interface PushCheckPlan {
+  /** "2 commits to origin/main"; empty when there is nothing to push. */
+  label: string
+  commits: number
+  /** Checks the AI judges, in order: the ids sent are C1, C2, …. */
+  checks: (PushCheck & { source: 'repo' | 'settings' })[]
+  /** Results that need no AI (the secret scan). */
+  local: PushCheckResult[]
 }
 
 /** A linter a review can run: detected from the repository's config, or a command from Settings. */
@@ -220,6 +259,7 @@ export type AiTask =
   /** Rebuild these commits (graph order) as a better-structured set. */
   | { kind: 'recompose'; hashes: string[] }
   /** Review a change: findings tied to lines, checked against the diff before they are shown. */
+  | { kind: 'push-checks'; branch?: string; checks: PushCheckPlan['checks'] }
   | { kind: 'review'; scope: ReviewScope; profile: ReviewProfile; previous?: { findings: ReviewFinding[]; hunkKeys: string[]; contextKey: string } }
   /** Explain a change: summary, grouped files, effort, reading order, a sequence diagram. */
   | { kind: 'walkthrough'; scope: ReviewScope }
@@ -303,6 +343,8 @@ export interface AiResult {
   walkthrough?: WalkthroughResult
   /** review: the verified findings. */
   review?: ReviewResult
+  /** push-checks: one checked verdict per check sent, in the same order. */
+  pushChecks?: PushCheckResult[]
   /** resolve-conflict: the file the agent wrote, captured instead of written, for review. */
   proposal?: { path: string; content: string }
 }

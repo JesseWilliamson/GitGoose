@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { AcpAgent } from './acp'
 import { anthropicComplete } from './anthropic'
 import type { SecretFile } from './keyStore'
-import { extractJson, locateSecret, redactSecrets, repairPlan, scanSecrets, verifyFindings, verifyWalkthrough } from '@gitsquid/git'
+import { extractJson, locateSecret, redactSecrets, repairPlan, scanSecrets, verifyFindings, verifyPushChecks, verifyWalkthrough } from '@gitsquid/git'
 import { lintForReview } from './linters'
 import { buildPrompt, cleanCommitMessage, type BuiltPrompt } from './prompts'
 
@@ -164,6 +164,8 @@ export class AiService {
         : task.kind === 'fix-finding' ? toFix(built, text, extra.proposal)
         : task.kind === 'walkthrough' ? { text: '', walkthrough: toWalkthrough(built, text) }
         : task.kind === 'assess-impact' ? { text: '', impact: toAssessment(built, text) }
+        // No answer at all still gives a verdict per check: inconclusive, which never passes.
+        : task.kind === 'push-checks' ? { text: '', pushChecks: verifyPushChecks(extractJson(text), task.checks, built.pushChecks!.lines) }
         : { text: finish(text), ...extra }
 
     try {

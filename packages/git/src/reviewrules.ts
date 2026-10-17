@@ -86,3 +86,43 @@ export function parsePathInstructions(yaml: string): PathInstruction[] {
   if (cur?.path && cur.instructions) out.push(cur as PathInstruction)
   return out
 }
+
+/**
+ * `reviews.pre_merge_checks.custom_checks` from a .coderabbit.yaml: `- name:` items with
+ * `instructions:` (quoted, plain, or a | / > block) and `mode:` (warning, error, off). CodeRabbit
+ * runs these before a merge; here they run before a push. error blocks, warning warns, off is
+ * left out. Like path_instructions, only this section is read.
+ */
+export function parseCustomChecks(yaml: string): { name: string; instructions: string; mode: 'warn' | 'block' }[] {
+  const lines = yaml.replace(/\r\n/g, '\n').split('\n')
+  const start = lines.findIndex((l) => /^\s*custom_checks:\s*$/.test(l))
+  if (start < 0) return []
+  const baseIndent = lines[start]!.search(/\S/)
+  const out: { name: string; instructions: string; mode: 'warn' | 'block' }[] = []
+  let cur: { name?: string; instructions?: string; mode?: string } | null = null
+  const unquote = (v: string) => v.trim().replace(/^(["'])([\s\S]*)\1$/, '$2')
+  const flush = () => {
+    if (cur?.name && cur.instructions && cur.mode !== 'off') out.push({ name: cur.name, instructions: cur.instructions, mode: cur.mode === 'error' ? 'block' : 'warn' })
+  }
+  for (let i = start + 1; i < lines.length; i++) {
+    const line = lines[i]!
+    if (line.trim() && line.search(/\S/) <= baseIndent) break
+    const item = /^\s*-\s+(name|instructions|mode):\s*(.*)$/.exec(line)
+    const key = item ?? /^\s*(name|instructions|mode):\s*(.*)$/.exec(line)
+    if (item) {
+      flush()
+      cur = {}
+    }
+    if (!key || !cur) continue
+    const value = key[2]!
+    if (key[1] === 'instructions' && /^[|>][-+]?\s*$/.test(value)) {
+      const indent = line.search(/\S/) + (item ? 2 : 0)
+      const block: string[] = []
+      while (i + 1 < lines.length && (!lines[i + 1]!.trim() || lines[i + 1]!.search(/\S/) > indent)) block.push(lines[++i]!.trim())
+      cur.instructions = (value.startsWith('>') ? block.join(' ') : block.join('\n')).trim()
+    } else if (key[1] === 'mode') cur.mode = unquote(value).toLowerCase()
+    else cur[key[1] as 'name' | 'instructions'] = unquote(value)
+  }
+  flush()
+  return out
+}

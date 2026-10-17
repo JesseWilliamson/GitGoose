@@ -209,3 +209,13 @@ Part B:
       a command from Settings; each exact command allowed once per repository; run without a
       shell, only on files whose disk text is the reviewed text; reports on added lines become
       findings and are listed to the model so it does not repeat them
+- [x] 38 pre-push checks: rules in plain words from .coderabbit.yaml (custom_checks; error
+      blocks, warning warns) and your own per repository, judged by the AI against exactly what
+      the push sends (commits and diff); every check gets one verdict, missing or garbled ones
+      are inconclusive (never pass), failures citing lines outside the push are not believed.
+      A built-in secret scan of the pushed lines runs without AI. Blocking failures stop the
+      push until Push anyway; other failures warn; all passing pushes straight away. Covers
+      Push, Push branch, Push to…, and the push before Create pull request. Also: "Review what
+      will be pushed" in the palette
+
+Part B is complete.

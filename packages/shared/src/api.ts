@@ -2,7 +2,7 @@ import type {
   BlameLine, ChangedFile, ChangeInsights, CodePeek, CommandRecord, GraphFilter, ImageSide, LfsInfo, LfsLock, Identity, Person, Commit, CommitDetails, ConflictFile, DiffTarget, FileDiff, RepoSnapshot,
   ReflogEntry, Remote, SearchField, Submodule, Worktree, StashEntry, UndoEntry,
 } from './index'
-import type { AgentInfo, AiPermissionRequest, AiResult, AiRunOptions, AiStatus, AiTask, AskThread, ImpactResult, LinterInfo, ReviewLearning, ReviewScope } from './ai'
+import type { AgentInfo, AiPermissionRequest, AiResult, AiRunOptions, AiStatus, AiTask, AskThread, ImpactResult, LinterInfo, PushCheck, PushCheckPlan, ReviewLearning, ReviewScope } from './ai'
 import type { DeviceCodeInfo, GitHubAccount, GitHubStatus, PullRequest, PullRequestList } from './github'
 import type { Settings } from './settings'
 
@@ -165,6 +165,11 @@ export interface GitSquidApi {
   /** Learnings sent with this repository's reviews. */
   reviewLearnings(repoId: string): Promise<ReviewLearning[]>
   setReviewLearnings(repoId: string, learnings: ReviewLearning[]): Promise<void>
+  /** What a push of the branch (default: current) would be checked against, and the checks that need no AI, already run. */
+  pushCheckPlan(repoId: string, branch?: string): Promise<PushCheckPlan>
+  /** The repository's checks (.coderabbit.yaml, read-only here) and the user's own. */
+  pushCheckRules(repoId: string): Promise<{ repo: PushCheck[]; mine: PushCheck[] }>
+  setPushChecks(repoId: string, checks: PushCheck[]): Promise<void>
   /** Linters a review of this repository can run, with the user's answer for each. */
   linters(repoId: string): Promise<LinterInfo[]>
   /** Allow (true) or refuse (false) one exact linter command for this repository; null forgets the answer. */
@@ -312,7 +317,7 @@ export const API_METHODS = [
   'aiStatus', 'aiConsent', 'aiRun', 'aiCancel', 'aiRespondPermission', 'aiAgentInfo', 'aiAuthenticate', 'aiSetApiKey',
   'snapshot', 'logPage', 'commitDetails', 'diff', 'fileHistory', 'blame', 'search', 'stashList', 'reflog', 'setGraphFilter', 'submodules', 'updateSubmodules', 'syncSubmodules', 'addSubmodule', 'removeSubmodule', 'worktrees', 'addWorktree', 'removeWorktree', 'lockWorktree', 'pruneWorktrees',
   'lastCommitMessage',
-  'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'codePeek', 'impact', 'askThreads', 'saveAskThread', 'deleteAskThread', 'reviewLearnings', 'setReviewLearnings', 'linters', 'decideLinter', 'changeInsights', 'applySuggestion', 'writeFileChecked', 'workingText', 'lfsInfo', 'lfsInstall', 'lfsTrack', 'lfsPull', 'lfsLocks', 'lfsLock', 'commandLog', 'bisectMark', 'bisectReset', 'identity', 'setIdentity', 'commitTemplate', 'recentAuthors',
+  'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'codePeek', 'impact', 'askThreads', 'saveAskThread', 'deleteAskThread', 'reviewLearnings', 'setReviewLearnings', 'linters', 'decideLinter', 'pushCheckPlan', 'pushCheckRules', 'setPushChecks', 'changeInsights', 'applySuggestion', 'writeFileChecked', 'workingText', 'lfsInfo', 'lfsInstall', 'lfsTrack', 'lfsPull', 'lfsLocks', 'lfsLock', 'commandLog', 'bisectMark', 'bisectReset', 'identity', 'setIdentity', 'commitTemplate', 'recentAuthors',
   'checkout', 'createBranch', 'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset',
   'cherryPick', 'cherryPickMany', 'commitsText', 'recomposeApply', 'compareFiles', 'mergeBase', 'restoreFile', 'diffTool', 'mergeTool', 'imagePair', 'savePatches', 'pickPatch', 'applyPatch', 'openFileAt', 'saveFileAt', 'editableCommits', 'dropCommits', 'moveCommits', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'preparedMessage', 'redo', 'redoList', 'revert', 'createTag', 'deleteTag',
   'fetch', 'pull', 'push', 'deleteRemoteBranch', 'remotes', 'addRemote', 'removeRemote', 'renameRemote', 'setRemoteUrl',

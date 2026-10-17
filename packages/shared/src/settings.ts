@@ -1,5 +1,5 @@
 import type { GraphFilter } from './index'
-import type { AskThread, ReviewLearning } from './ai'
+import type { AskThread, PushCheck, ReviewLearning } from './ai'
 import { DEFAULT_LAYOUT, normalizeLayout, type PaneLayout } from './layout'
 
 export type GraphColumn = 'refs' | 'graph' | 'author' | 'date' | 'sha'
@@ -90,6 +90,10 @@ export const SETTINGS = {
   gitPath: text('git', { label: 'Git executable', section: 'Git', placeholder: 'git', description: 'Applies to repositories opened after the change.' }),
   pullMode: choice('merge', [{ value: 'merge', label: 'Merge' }, { value: 'rebase', label: 'Rebase' }, { value: 'ff-only', label: 'Fast-forward only' }],
     { label: 'Pull', section: 'Git', description: 'What the Pull button does when your branch and its upstream have both moved.' }),
+  pushSecretCheck: bool(true, {
+    label: 'Scan pushes for secrets', section: 'Git', keywords: 'pre-push check credential token key',
+    description: 'Before a push, the commits being pushed are scanned for keys and tokens (on this computer; nothing is sent). A match stops the push until you choose to push anyway.',
+  }),
   fetchOnOpen: bool(false, { label: 'Fetch when a repository opens', section: 'Git', description: 'Off by default: it uses the network.' }),
   autoFetchMinutes: num(0, 0, 60, 5, { label: 'Fetch automatically every', section: 'Git', unit: 'min', description: '0 turns it off.' }),
   pruneOnFetch: bool(true, { label: 'Prune deleted remote branches on fetch', section: 'Git' }),
@@ -159,6 +163,8 @@ export const SETTINGS = {
     description: 'Runs on the changed files during an AI review, besides the linters GitSquid finds in the repository (ESLint, Ruff, ShellCheck). {files} is replaced by the files; output as path:line:col: message. Asked for once per repository.',
   }),
   aiConsent: internal([] as string[]),
+  /** The user's own pre-push checks, per repository path (besides those in .coderabbit.yaml). */
+  pushChecks: internal<Record<string, PushCheck[]>>({}),
   /** Linter commands the user allowed (true) or refused (false), keyed "<repo path>\n<command>". */
   linterDecisions: internal<Record<string, boolean>>({}),
 

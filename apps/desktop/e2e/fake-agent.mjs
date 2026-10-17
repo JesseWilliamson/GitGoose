@@ -92,6 +92,21 @@ async function prompt(params, cx) {
     await say(cx, id, 'Applied the suggested fix.')
     return { stopReason: 'end_turn' }
   }
+  if (text.includes('Judge whether this push')) {
+    // A rule mentioning console.log fails on the first added line that has one; a rule that says
+    // "elsewhere" fails citing a line that is not in the push (verification must not believe it);
+    // everything else passes. Plus an answer for a check that was never sent.
+    const rules = [...text.matchAll(/^\[(C\d+)\] ([^:]+): (.*)$/gm)].map((m) => ({ id: m[1], rule: m[3] }))
+    const hit = /^\s*(\d+)\+\| .*console\.log\(/m.exec(text)
+    const hitPath = hit && [...text.slice(0, hit.index).matchAll(/^=== (.+?) \(/gm)].at(-1)?.[1]
+    const results = rules.map(({ id, rule }) =>
+      rule.includes('console.log') && hit ? { id, verdict: 'fail', reason: 'A console.log call was added.', evidence: [{ path: hitPath, line: Number(hit[1]) }] }
+        : rule.includes('elsewhere') ? { id, verdict: 'fail', reason: 'Broken in another file.', evidence: [{ path: 'not/in/push.ts', line: 3 }] }
+        : { id, verdict: 'pass', reason: 'Nothing in this push breaks it.' })
+    results.push({ id: 'C99', verdict: 'fail', reason: 'Invented.' })
+    await say(cx, id, JSON.stringify({ results }))
+    return { stopReason: 'end_turn' }
+  }
   if (text.includes('Review this change')) {
     // One finding on the first added line (with a suggestion), and one about a file that is not
     // in the change: verification must drop that one.

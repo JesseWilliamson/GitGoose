@@ -42,6 +42,7 @@ export function CommandPalette() {
     add('Repository', 'Open terminal here', () => void openTerminal(id))
     add('Repository', 'Push', () => push(id))
     add('Repository', 'Force push (with lease)', () => push(id, true))
+    add('Repository', 'Edit pre-push checks', () => useStore.setState({ dialog: { kind: 'push-rules', repoId: id } }))
     add('Repository', 'New branch', () => newBranch(id))
     add('Repository', 'Show git command log', () => useStore.setState((s) => ({ repos: { ...s.repos, [id]: { ...s.repos[id]!, center: { kind: 'commands' } } } })))
     add('Repository', 'Show reflog (recover lost commits)', () => useStore.setState((s) => ({ repos: { ...s.repos, [id]: { ...s.repos[id]!, center: { kind: 'reflog' } } } })))
@@ -53,6 +54,7 @@ export function CommandPalette() {
     if ((useStore.getState().settings?.aiProvider ?? 'off') !== 'off') {
       add('AI', 'Review uncommitted changes', () => startReview(id, { kind: 'working' }))
       add('AI', 'Review staged changes', () => startReview(id, { kind: 'staged' }))
+      add('AI', 'Review what will be pushed', () => startReview(id, { kind: 'outgoing' }))
       add('AI', 'Walk me through the uncommitted changes', () => startWalkthrough(id, { kind: 'working' }))
       if (active.snapshot.head.branch) add('AI', `Walk me through ${active.snapshot.head.branch}`, () => startWalkthrough(id, { kind: 'branch', branch: active.snapshot.head.branch! }))
       if (active.snapshot.head.branch) add('AI', `Review ${active.snapshot.head.branch} since it branched`, () => startReview(id, { kind: 'branch', branch: active.snapshot.head.branch! }))

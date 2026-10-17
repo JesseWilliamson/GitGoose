@@ -37,6 +37,8 @@ export interface BuiltPrompt {
   walkthrough?: Omit<WalkthroughResult, 'summary' | 'effort' | 'effortWhy' | 'groups' | 'sequence'>
   /** For fix-finding: the file (relative) the proposal is for, and its text when asked. */
   fix?: { path: string; before: string }
+  /** For push-checks: where evidence may point. */
+  pushChecks?: { lines: ReviewableLines }
   /** For review: what the findings are checked against. */
   review?: {
     lines: ReviewableLines; texts: Map<string, string>; label: string; head: string; base?: string; skipped: string[]
@@ -247,6 +249,32 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: Pro
           ...(history.length ? ['Recent commits that touched these files, newest first:', ...history.map((h) => `- ${h.subject}`), ''] : []),
           'The pieces:',
           text,
+        ].join('\n'),
+      }
+    }
+    case 'push-checks': {
+      const out = await repo.outgoing(task.branch)
+      if (!out.commits.length) throw new Error('There is nothing to push.')
+      const input = await repo.reviewInput({ kind: 'outgoing', branch: task.branch })
+      return {
+        system: "You check code changes against a team's rules before they are pushed.",
+        pushChecks: { lines: reviewableLines(input.files) },
+        prompt: [
+          `Judge whether this push (${input.label}) follows each rule below.`,
+          'For each rule answer "pass" (the push follows it), "fail" (the push breaks it) or "inconclusive" (what is shown is not enough to tell). Judge only what this push changes, not the rest of the codebase. A rule about something the push does not touch passes.',
+          'For a failure, give the lines that show it as evidence, using the line numbers at the left of the diff. A rule about commit messages needs no evidence lines.',
+          'Answer with JSON only, no prose and no code fence, in exactly this shape:',
+          '{"results": [{"id": "C1", "verdict": "pass|fail|inconclusive", "reason": "one or two plain sentences", "evidence": [{"path": "src/a.ts", "line": 12}]}]}',
+          NO_TOOLS,
+          '',
+          'The rules:',
+          ...task.checks.map((c, i) => `[C${i + 1}] ${c.name}: ${c.instructions.replace(/\s*\n\s*/g, ' ')}`),
+          '',
+          'The commits, newest first:',
+          ...out.commits.map((c) => `- ${c.subject}${c.body ? `\n  ${truncate(c.body, 600).replace(/\n/g, '\n  ')}` : ''}`),
+          '',
+          numberedDiff(input.files, (p) => input.texts.get(p) ?? null),
+          ...(input.skipped.length ? [`(Not shown, over the size limit: ${input.skipped.join(', ')}. Say "inconclusive" for rules that depend on them.)`] : []),
         ].join('\n'),
       }
     }

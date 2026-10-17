@@ -12,7 +12,7 @@ import { enclosingDefinition, findDefinitions, NOT_NAMES, parseGrep, type Defini
 import { parseBlame } from './blame'
 import { coChanges, oldRanges, parseFilesPerCommit } from './insights'
 import { changedSymbols, isTestPath, testsByName } from './impact'
-import { globToRegExp, parsePathInstructions, relevantGuidelines } from './reviewrules'
+import { globToRegExp, parseCustomChecks, parsePathInstructions, relevantGuidelines } from './reviewrules'
 import { CatFile } from './catfile'
 import { parseChangedFiles, parseDiff, untrackedDiff } from './diff'
 import { graphRevs, LOG_FORMAT, LogStream, parseLog } from './log'
@@ -984,6 +984,42 @@ export class Repo {
    * the change. Lock files and minified files are left out; so are files past the size budget
    * (listed in `skipped`).
    */
+  /** Pre-push checks from .coderabbit.yaml as of a revision (the one being pushed). */
+  async customChecks(rev: string): Promise<{ name: string; instructions: string; mode: 'warn' | 'block' }[]> {
+    for (const name of ['.coderabbit.yaml', '.coderabbit.yml']) {
+      const text = await this.textAt(rev, name).catch(() => null)
+      if (text !== null) return parseCustomChecks(text)
+    }
+    return []
+  }
+
+  /**
+   * What pushing a branch would send. With an upstream: the commits it does not have, from where
+   * the two meet (commits the upstream has and we lack are not ours to check). Without one: the
+   * commits no remote branch has, from the parent of the oldest. Newest first.
+   */
+  async outgoing(branch?: string): Promise<{ head: string; base: string; label: string; commits: { hash: string; subject: string; body: string }[] }> {
+    const name = branch ?? (await this.currentHead()).branch
+    if (!name) throw new Error('Check out a branch to push')
+    const head = await this.revParse(`refs/heads/${name}`)
+    if (!head) throw new Error(`No branch named ${name}`)
+    const local = (await this.refs()).find((r) => r.name === `refs/heads/${name}`)
+    const upstream = local?.upstream && !local.upstreamGone ? local.upstream : null
+    const range = upstream ? [`${upstream}..${head}`] : [head, '--not', '--remotes']
+    const raw = await this.read(['log', '-z', '--format=%H%x00%P%x00%s%x00%b', ...range, '--'])
+    const fields = raw.split('\0')
+    const commits: { hash: string; subject: string; body: string; parents: string[] }[] = []
+    for (let i = 0; i + 3 < fields.length; i += 4) {
+      commits.push({ hash: fields[i]!.trim(), parents: fields[i + 1]!.split(' ').filter(Boolean), subject: fields[i + 2]!, body: fields[i + 3]!.trim() })
+    }
+    const base = upstream
+      ? (await this.read(['merge-base', upstream, head])).trim()
+      : commits.at(-1)?.parents[0] ?? (commits.length ? await this.emptyTreeHash() : head)
+    const to = upstream ? shortName(upstream) : 'a new remote branch'
+    const label = commits.length ? `${commits.length} commit${commits.length === 1 ? '' : 's'} to ${to}` : ''
+    return { head, base, label, commits: commits.map(({ hash, subject, body }) => ({ hash, subject, body })) }
+  }
+
   async reviewInput(scope: ReviewScope, budget = 60_000): Promise<{ files: FileDiff[]; label: string; head: string; base?: string; texts: Map<string, string>; skipped: string[] }> {
     const NOISE = [':(exclude,glob)**/pnpm-lock.yaml', ':(exclude,glob)**/package-lock.json', ':(exclude,glob)**/yarn.lock', ':(exclude,glob)**/*.lock', ':(exclude,glob)**/*.min.js']
     const diffOf = async (args: string[]) => parseDiff((await this.runner.run(['diff', '-M', '--no-color', '--no-ext-diff', '-U3', ...args, '--', '.', ...NOISE], { readOnly: true, env: { GIT_LITERAL_PATHSPECS: '0' } })).stdout)
@@ -1030,6 +1066,14 @@ export class Repo {
         files = await diffOf([base, newest])
         label = list.length === 1 ? `Commit ${newest.slice(0, 7)}` : `${list.length} commits`
         head = newest
+        break
+      }
+      case 'outgoing': {
+        const out = await this.outgoing(scope.branch)
+        files = out.commits.length ? await diffOf([out.base, out.head]) : []
+        label = out.label
+        head = out.head
+        base = out.base
         break
       }
     }

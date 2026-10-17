@@ -108,8 +108,9 @@ describe('secret scan before sending', () => {
     ai.setApiKey('sk-ant-test')
     ai.consent()
     const task = { kind: 'explain-error' as const, title: 'Push main', detail: `remote: https://${TOKEN}@github.com/o/r rejected` }
-    const err = await ai.run('s1', 'x', task).catch((e: unknown) => e as { code: string; message: string })
+    const err = await ai.run('s1', 'x', task).then(() => null, (e: unknown) => e as { code: string; message: string })
     expect(err).toMatchObject({ code: 'ai-secrets' })
+    if (!err) return
     expect(err.message).toContain('GitHub token ghp_…R8 (40 chars)')
     expect(err.message).not.toContain(TOKEN)
     expect(api.requests).toHaveLength(0)
@@ -125,7 +126,7 @@ describe('secret scan before sending', () => {
     ai.consent()
     r.write('config.ts', `export const a = 1\nexport const token = "${TOKEN}"\n`)
     r.git('add', 'config.ts')
-    await expect(ai.run('s3', 'x', { kind: 'review', scope: { kind: 'staged' } })).rejects.toMatchObject({
+    await expect(ai.run('s3', 'x', { kind: 'review', scope: { kind: 'staged' }, profile: 'chill' })).rejects.toMatchObject({
       code: 'ai-secrets',
       message: expect.stringContaining('in config.ts:2'),
     })
@@ -167,6 +168,29 @@ describe('secret scan before sending', () => {
     expect(built.prompt).toContain('- config.ts:1 Possible GitHub token in the code')
     expect(built.prompt).toContain('Linters already reported these')
     expect(built.review!.local).toHaveLength(1)
+  })
+})
+
+describe('pre-push checks', () => {
+  it('sends the outgoing commits and the rules, and keeps only verified verdicts', async () => {
+    const t = await setup()
+    t.ai.consent()
+    t.r.git('commit', '-qm', 'widgets')
+    t.r.write('src/log.ts', 'export function hello() {\n  console.log("hi")\n}\n')
+    t.r.git('add', '-A')
+    t.r.git('commit', '-qm', 'feat: say hello')
+    const checks = [
+      { name: 'No debug logging', instructions: 'No console.log calls.', mode: 'block' as const, source: 'repo' as const },
+      { name: 'Docs', instructions: 'Public functions are documented elsewhere.', mode: 'warn' as const, source: 'settings' as const },
+      { name: 'Small', instructions: 'Keep commits small.', mode: 'warn' as const, source: 'settings' as const },
+    ]
+    const res = await t.ai.run('p1', 'x', { kind: 'push-checks', checks })
+    expect(res.pushChecks!.map((r) => [r.name, r.verdict, r.source])).toEqual([
+      ['No debug logging', 'fail', 'repo'],
+      ['Docs', 'inconclusive', 'settings'],
+      ['Small', 'pass', 'settings'],
+    ])
+    expect(res.pushChecks![0]!.evidence).toEqual([{ path: 'src/log.ts', line: 2 }])
   })
 })
 

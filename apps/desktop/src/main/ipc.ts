@@ -1,7 +1,7 @@
-import { GitError, Repo } from '@gitsquid/git'
+import { GitError, Repo, secretPushCheck } from '@gitsquid/git'
 import {
   API_METHODS, IPC_EVENT, IPC_INVOKE,
-  type ApiMethod, type GitSquidApi, type GitSquidEvent, type IpcResult, type SerializedError,
+  type ApiMethod, type GitSquidApi, type GitSquidEvent, type IpcResult, type PushCheckPlan, type SerializedError,
 } from '@gitsquid/shared'
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises'
@@ -156,6 +156,30 @@ export function createHandlers(
       setSettings({ askThreads: { ...getSettings().askThreads, [path]: (getSettings().askThreads[path] ?? []).filter((t) => t.id !== threadId) } })
     },
     reviewLearnings: async (id) => getSettings().reviewLearnings[r(id).path] ?? [],
+    pushCheckPlan: async (id, branch) => {
+      const repo = r(id)
+      const out = await repo.outgoing(branch)
+      const empty: PushCheckPlan = { label: out.label, commits: out.commits.length, checks: [], local: [] }
+      if (!out.commits.length) return empty
+      const settings = getSettings()
+      const checks: PushCheckPlan['checks'] = [
+        ...(await repo.customChecks(out.head)).map((c) => ({ ...c, source: 'repo' as const })),
+        ...(settings.pushChecks[repo.path] ?? []).map((c) => ({ ...c, source: 'settings' as const })),
+      ]
+      // The secret scan reads every pushed line (a big budget): a key in the 40th file still counts.
+      const local = settings.pushSecretCheck ? [secretPushCheck((await repo.reviewInput({ kind: 'outgoing', branch }, 5_000_000)).files)] : []
+      return { ...empty, checks, local }
+    },
+    pushCheckRules: async (id) => {
+      const repo = r(id)
+      return { repo: await repo.customChecks('HEAD').catch(() => []), mine: getSettings().pushChecks[repo.path] ?? [] }
+    },
+    setPushChecks: async (id, checks) => {
+      const all = { ...getSettings().pushChecks }
+      if (checks.length) all[r(id).path] = checks
+      else delete all[r(id).path]
+      setSettings({ pushChecks: all })
+    },
     linters: async (id) => linters(r(id).path, getSettings()),
     decideLinter: async (id, command, allow) => {
       const all = { ...getSettings().linterDecisions }

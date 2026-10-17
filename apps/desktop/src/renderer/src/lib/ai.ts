@@ -53,6 +53,7 @@ const WHAT: Record<AiTask['kind'], string> = {
   ask: 'the selected lines, the function around them, definitions of names they use, and their commit history',
   walkthrough: 'the change, cut into pieces, and the subjects of recent commits to the same files',
   'fix-finding': 'the file the finding is in, and the finding; the agent may propose a new version of that one file',
+  'push-checks': "the commits you are pushing (their messages and diff) and the repository's pre-push rules",
 }
 
 function openSettings(): void {

@@ -1,5 +1,5 @@
 import { GraphLayout, type Row } from '@gitsquid/graph'
-import { SETTINGS, type PullRequestList, type Commit, type DiffTarget, type GitHubStatus, type GitSquidEvent, type AskThread, type LfsInfo, type Ref, type Remote, type RepoSnapshot, type Submodule, type Worktree, type SearchField, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitsquid/shared'
+import { SETTINGS, type PullRequestList, type Commit, type DiffTarget, type GitHubStatus, type GitSquidEvent, type AskThread, type LfsInfo, type PushCheckResult, type Ref, type Remote, type RepoSnapshot, type Submodule, type Worktree, type SearchField, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitsquid/shared'
 import { create } from 'zustand'
 import { api, toUiError, type UiError } from './api'
 import { onAiEvent } from './ai'
@@ -139,6 +139,10 @@ export type Dialog =
   | { kind: 'create-pr'; repoId: string; branch: string }
   /** The review learnings of a repository, to read and remove. */
   | { kind: 'learnings'; repoId: string }
+  /** Results of pre-push checks that need the user (a failure, or a blocking check not judged). */
+  | { kind: 'push-checks'; repoId: string; label: string; results: PushCheckResult[]; outcome: 'warn' | 'block'; onPush: () => void }
+  /** Editing this repository's own pre-push checks. */
+  | { kind: 'push-rules'; repoId: string }
   /** Git LFS locks on the server (fetched when the dialog opens). */
   | { kind: 'lfs-locks'; repoId: string }
   /** Branch cleanup: pick merged or stale branches to delete. */

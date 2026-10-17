@@ -1,5 +1,6 @@
 import { parseGitHubRemote, type DiffTarget, type GraphFilter, type PullMode, type Ref, type RepoSnapshot, type ResetMode } from '@gitsquid/shared'
 import { api, toUiError, type UiError } from './api'
+import { withPushChecks } from './pushchecks'
 import { activeRepo, addRepo, alertConflicts, ensureLoaded, choose, onSnapshot, openRepo, refreshAux, reportError, setting, toast, updateRepo, useStore } from './store'
 
 /** The undo entry ids an action produced: a single id, an array of them (multi-step actions), or none. */
@@ -508,8 +509,10 @@ export function push(id: string, force = false): void {
       return true
     },
   })
-  if (force && setting('confirmForcePush')) confirmAction('Force push?', 'Overwrites the remote branch with yours (with --force-with-lease, so it refuses if someone else pushed meanwhile).', 'Force push', go)
-  else go()
+  // The checks run before the force-push question: no point confirming a push they will stop.
+  const checked = () => void withPushChecks(id, undefined, go)
+  if (force && setting('confirmForcePush')) confirmAction('Force push?', 'Overwrites the remote branch with yours (with --force-with-lease, so it refuses if someone else pushed meanwhile).', 'Force push', checked)
+  else checked()
 }
 
 // ------------------------------------------------------------------ managing remotes, tags and tracking
@@ -605,13 +608,13 @@ export async function checkRemoteTags(id: string, remote: string): Promise<void>
 /** Push a branch to a remote branch that may have another name (and track it). */
 export function pushTo(id: string, branch: string, remote: string): void {
   ask(`Push ${branch} to ${remote}`, `Branch name on ${remote}`, 'Push', (remoteBranch) => {
-    void run(id, `Push ${branch}`, () => api.push(id, { branch, remote, remoteBranch: remoteBranch.trim() }), { success: `Pushed ${branch} to ${remote}/${remoteBranch.trim()}` })
+    void withPushChecks(id, branch, () => void run(id, `Push ${branch}`, () => api.push(id, { branch, remote, remoteBranch: remoteBranch.trim() }), { success: `Pushed ${branch} to ${remote}/${remoteBranch.trim()}` }))
   }, { initial: branch })
 }
 
 /** Push a branch that is not checked out to its upstream (or the default remote). */
 export const pushBranch = (id: string, branch: string) =>
-  run(id, `Push ${branch}`, () => api.push(id, { branch }), { success: `Pushed ${branch}` })
+  withPushChecks(id, branch, () => void run(id, `Push ${branch}`, () => api.push(id, { branch }), { success: `Pushed ${branch}` }))
 
 export const setUpstream = (id: string, branch: string, upstream: string | null) =>
   run(id, upstream ? `Track ${shortRef(upstream)}` : `Stop tracking for ${branch}`, () => api.setUpstream(id, branch, upstream))
