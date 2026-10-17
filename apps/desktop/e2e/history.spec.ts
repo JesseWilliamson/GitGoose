@@ -103,6 +103,15 @@ test('reword a commit; squash it into the one below; undo and redo', async () =>
   await page.getByTestId('graph-scroll').focus()
   await page.keyboard.press('Control+Shift+z')
   await expect.poll(() => r.head()).toBe(squashed)
+
+  // And from Edit → Redo in the menu bar.
+  await page.getByTestId('toolbar').getByRole('button', { name: 'Undo' }).click()
+  await expect.poll(() => subjects(r)).toEqual(['D', 'C', 'B, better', 'A', 'root'])
+  await app.evaluate(({ BrowserWindow, Menu }) => {
+    const edit = Menu.getApplicationMenu()!.items.find((i) => i.label === 'Edit')!.submenu!
+    edit.items.find((i) => i.label === 'Redo')!.click(undefined, BrowserWindow.getAllWindows()[0])
+  })
+  await expect.poll(() => r.head()).toBe(squashed)
   await app.close()
 })
 

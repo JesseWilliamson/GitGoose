@@ -1,5 +1,5 @@
 import type { Repo } from '@gitsquid/git'
-import { githubPromptKind, parseGitHubRemote, type DeviceCodeInfo, type GitHubAccount, type GitHubStatus, type PullRequest, type PullRequestList } from '@gitsquid/shared'
+import { githubPromptKind, pickGitHubRemote, type DeviceCodeInfo, type GitHubAccount, type GitHubStatus, type PullRequest, type PullRequestList } from '@gitsquid/shared'
 import { GitHubApi, GitHubAuthError } from './api'
 import { DeviceFlowError, pollForToken, requestDeviceCode, type DeviceCode, type FlowDeps, type GitHubEndpoints } from './deviceFlow'
 import type { TokenStore } from './tokenStore'
@@ -158,15 +158,11 @@ export class GitHubService {
   private async githubRemote(repo: Repo): Promise<{ owner: string; repo: string; remote: string } | null> {
     try {
       const r = await repo.runner.run(['config', '-z', '--get-regexp', '^remote\\..*\\.url$'], { readOnly: true, okCodes: [1] })
-      // -z: "remote.<name>.url\n<value>\0" per entry. origin first, then the others.
-      const found = r.stdout.split('\0').filter(Boolean).map((entry) => {
+      // -z: "remote.<name>.url\n<value>\0" per entry.
+      return pickGitHubRemote(r.stdout.split('\0').filter(Boolean).map((entry) => {
         const nl = entry.indexOf('\n')
-        const name = entry.slice('remote.'.length, nl - '.url'.length)
-        return { name, gh: parseGitHubRemote(entry.slice(nl + 1)) }
-      }).filter((x) => x.gh)
-      found.sort((a, b) => Number(b.name === 'origin') - Number(a.name === 'origin'))
-      const first = found[0]
-      return first ? { ...first.gh!, remote: first.name } : null
+        return { name: entry.slice('remote.'.length, nl - '.url'.length), url: entry.slice(nl + 1) }
+      }))
     } catch {
       return null
     }

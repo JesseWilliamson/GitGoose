@@ -1,4 +1,4 @@
-import { initRepo } from '@gitsquid/fixtures'
+import { FixtureRepo, initRepo, makeLargeRepo } from '@gitsquid/fixtures'
 import { expect, test } from '@playwright/test'
 import { launch } from './app'
 
@@ -73,5 +73,27 @@ test('Tab narrows to one kind and shows more of it', async () => {
   for (let i = 0; i < 4; i++) await page.keyboard.press('Tab')
   await expect(page.getByTestId('omni-scope-file')).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByTestId('omni-item')).toHaveCount(30)
+  await app.close()
+})
+
+test('a stash hidden from the graph opens without loading the whole history', async () => {
+  const dir = makeLargeRepo(8000)
+  const r = new FixtureRepo(dir)
+  r.write('main.txt', 'work in progress\n')
+  r.git('stash', 'push', '-m', 'half-done pricing')
+  const { app, page } = await launch(dir)
+  await page.evaluate(() => window.gitsquid.setSettings({ showStashes: false }))
+  const count = page.getByTestId('commit-count')
+  await expect(count).toContainText('+')
+
+  await page.getByTestId('omni-open').click()
+  await page.getByTestId('palette-input').fill('half-done')
+  const stash = page.getByTestId('omni-item').filter({ hasText: 'half-done pricing' })
+  await expect(stash).toHaveAttribute('data-kind', 'stash')
+  await stash.click()
+  await expect(page.getByTestId('detail-panel')).toContainText('half-done pricing')
+  // Looking for the stash in the log would keep loading pages until all 8,000 commits are in.
+  await page.waitForTimeout(1500)
+  await expect(count).toContainText('+')
   await app.close()
 })
