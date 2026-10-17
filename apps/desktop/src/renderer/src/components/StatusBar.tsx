@@ -1,5 +1,5 @@
 import { GitBranch } from 'lucide-react'
-import { sentence } from '../lib/format'
+import { opName, sentence } from '../lib/format'
 import { getLog, type RepoView } from '../lib/store'
 
 export function StatusBar({ view }: { view: RepoView }) {
@@ -13,9 +13,9 @@ export function StatusBar({ view }: { view: RepoView }) {
         {snap.head.branch ?? (snap.head.detached ? `detached at ${snap.head.hash?.slice(0, 7)}` : 'no branch')}
       </span>
       {head?.upstream && <span>{head.upstream.replace('refs/remotes/', '')} ↑{head.ahead ?? 0} ↓{head.behind ?? 0}</span>}
-      {snap.operation && <span className="font-semibold text-warn">{sentence(snap.operation)} in progress</span>}
+      {snap.operation && <span className="font-semibold text-warn">{sentence(opName(snap.operation))} in progress</span>}
       <span className="flex-1" />
-      <span data-testid="commit-count">{log.commits.length.toLocaleString()}{log.done ? '' : '+'} commits</span>
+      <span data-testid="commit-count">{log.commits.length.toLocaleString()}{log.done ? '' : '+'} {log.commits.length === 1 && log.done ? 'commit' : 'commits'}</span>
       <span className="max-w-96 truncate" title={snap.path}>{snap.path}</span>
     </div>
   )

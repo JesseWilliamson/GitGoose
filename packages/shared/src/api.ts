@@ -1,9 +1,9 @@
 import type {
-  BlameLine, Commit, CommitDetails, ConflictFile, DiffTarget, FileDiff, RepoSnapshot,
-  SearchField, StashEntry, UndoEntry,
+  BlameLine, ChangedFile, ChangeInsights, CodePeek, CommandRecord, GraphFilter, ImageSide, LfsInfo, LfsLock, Identity, Person, Commit, CommitDetails, CommitSummary, ConflictFile, DiffTarget, FileDiff, RepoSnapshot,
+  ReflogEntry, Remote, SearchField, Submodule, Worktree, StashEntry, UndoEntry,
 } from './index'
-import type { AgentInfo, AiPermissionRequest, AiResult, AiStatus, AiTask } from './ai'
-import type { DeviceCodeInfo, GitHubAccount, GitHubStatus } from './github'
+import type { AgentInfo, AiPermissionRequest, AiResult, AiRunOptions, AiStatus, AiTask, AskThread, ImpactResult, LinterInfo, PushCheck, PushCheckPlan, ReviewLearning, ReviewScope } from './ai'
+import type { DeviceCodeInfo, GitHubAccount, GitHubStatus, PullRequest, PullRequestList } from './github'
 import type { Settings } from './settings'
 
 export interface LogPage {
@@ -84,13 +84,20 @@ export interface GitSquidApi {
   /** Open a GitHub page in the browser: where to enter the code, or where to revoke access. */
   githubOpenPage(page: 'verification' | 'applications'): Promise<void>
   githubSignOut(): Promise<void>
+  /** Network: the GitHub remote's open pull requests (only when the user opens the list). */
+  pullRequests(repoId: string): Promise<PullRequestList>
+  createPullRequest(repoId: string, pr: { branch: string; base: string; title: string; body: string; draft: boolean }): Promise<PullRequest>
+  /** Fetch pull/N/head into pr/N (or `branch`) and check it out. Undoable. */
+  checkoutPullRequest(repoId: string, num: number, branch?: string): Promise<UndoId>
+  /** Open a pull request's page (GitHub URLs only). */
+  openPullRequest(url: string): Promise<void>
 
   // AI (see apps/desktop/src/main/ai/)
   aiStatus(): Promise<AiStatus>
   /** The user agreed to send content to the configured provider (asked once per provider/agent). */
   aiConsent(): Promise<AiStatus>
   /** Run a task. Text streams as 'ai-text' events with the same requestId; tool calls ask via 'ai-permission'. */
-  aiRun(requestId: string, repoId: string, task: AiTask): Promise<AiResult>
+  aiRun(requestId: string, repoId: string, task: AiTask, opts?: AiRunOptions): Promise<AiResult>
   aiCancel(requestId: string): Promise<void>
   aiRespondPermission(permissionId: number, optionId: string | null): Promise<void>
   /** Start the agent (if needed) and say who it is and how it logs in. */
@@ -116,7 +123,27 @@ export interface GitSquidApi {
   fileHistory(repoId: string, path: string): Promise<Commit[]>
   blame(repoId: string, path: string, rev?: string): Promise<BlameLine[]>
   search(repoId: string, field: SearchField, query: string): Promise<string[]>
+  /** search(), with the first `limit` hits described (for the omni search's results). */
+  searchCommits(repoId: string, field: SearchField, query: string, limit?: number): Promise<{ total: number; commits: CommitSummary[] }>
+  /** Every file in the working tree, tracked or not (not ignored), for finding a file by name. */
+  listFiles(repoId: string): Promise<string[]>
   stashList(repoId: string): Promise<StashEntry[]>
+  /** Hide or solo branches in this repository's graph (remembered per repository). */
+  setGraphFilter(repoId: string, filter: GraphFilter): Promise<void>
+  submodules(repoId: string): Promise<Submodule[]>
+  /** Init, clone if needed, and check out the recorded commits (all, or just `paths`). */
+  updateSubmodules(repoId: string, paths?: string[]): Promise<void>
+  syncSubmodules(repoId: string): Promise<void>
+  addSubmodule(repoId: string, url: string, path: string): Promise<UndoId>
+  removeSubmodule(repoId: string, path: string): Promise<UndoId>
+  worktrees(repoId: string): Promise<Worktree[]>
+  addWorktree(repoId: string, path: string, opts: { branch?: string; newBranch?: string; at?: string }): Promise<UndoId>
+  /** Without force, git refuses if the worktree has changes (and undo can check it out again). */
+  removeWorktree(repoId: string, path: string, opts?: { force?: boolean }): Promise<UndoId>
+  lockWorktree(repoId: string, path: string, lock: boolean, reason?: string): Promise<void>
+  pruneWorktrees(repoId: string): Promise<void>
+  /** A ref's reflog (default HEAD), newest first; commits nothing else reaches are marked lost. */
+  reflog(repoId: string, ref?: string): Promise<ReflogEntry[]>
   lastCommitMessage(repoId: string): Promise<string>
 
   // Working tree
@@ -126,29 +153,144 @@ export interface GitSquidApi {
   applySelection(repoId: string, req: SelectionRequest): Promise<UndoId>
   /** Append the paths to the repository's top-level .gitignore. */
   ignorePaths(repoId: string, paths: string[]): Promise<UndoId>
-  commit(repoId: string, message: string, opts?: { amend?: boolean; signOff?: boolean; gpgSign?: boolean }): Promise<UndoId>
+  /** `noVerify` skips the commit hooks. */
+  commit(repoId: string, message: string, opts?: { amend?: boolean; signOff?: boolean; gpgSign?: boolean; noVerify?: boolean }): Promise<UndoId>
+  /** Replace a finding's lines with its suggestion, if the working file still has them as reviewed. Undoable. */
+  applySuggestion(repoId: string, path: string, startLine: number, endLine: number, original: string[], replacement: string): Promise<UndoId>
+  /** Write an accepted AI fix, if the file still reads `expected`. Undoable. */
+  writeFileChecked(repoId: string, path: string, expected: string, content: string): Promise<UndoId>
+  workingText(repoId: string, path: string): Promise<string | null>
+  /** What a change could affect: touched definitions, their uses elsewhere, tests, usual companions. Local only. */
+  impact(repoId: string, scope: ReviewScope): Promise<ImpactResult>
+  /** Question threads about this repository's code (pinned to commits). */
+  askThreads(repoId: string): Promise<AskThread[]>
+  saveAskThread(repoId: string, thread: AskThread): Promise<void>
+  deleteAskThread(repoId: string, id: string): Promise<void>
+  /** Learnings sent with this repository's reviews. */
+  reviewLearnings(repoId: string): Promise<ReviewLearning[]>
+  setReviewLearnings(repoId: string, learnings: ReviewLearning[]): Promise<void>
+  /** What a push of the branch (default: current) would be checked against, and the checks that need no AI, already run. */
+  pushCheckPlan(repoId: string, branch?: string): Promise<PushCheckPlan>
+  /** The repository's checks (.coderabbit.yaml, read-only here) and the user's own. */
+  pushCheckRules(repoId: string): Promise<{ repo: PushCheck[]; mine: PushCheck[] }>
+  setPushChecks(repoId: string, checks: PushCheck[]): Promise<void>
+  /** Linters a review of this repository can run, with the user's answer for each. */
+  linters(repoId: string): Promise<LinterInfo[]>
+  /** Allow (true) or refuse (false) one exact linter command for this repository; null forgets the answer. */
+  decideLinter(repoId: string, command: string, allow: boolean | null): Promise<void>
+  /** History's hints for the uncommitted change: usual companions missing, and whose lines it changes. */
+  changeInsights(repoId: string): Promise<ChangeInsights>
+  /** Where an identifier is defined and used, at `rev` (null: the working tree). */
+  codePeek(repoId: string, name: string, rev: string | null): Promise<CodePeek>
+  lfsInfo(repoId: string): Promise<LfsInfo>
+  lfsInstall(repoId: string): Promise<void>
+  /** Track (or stop tracking) a pattern with LFS: edits .gitattributes, undoable. */
+  lfsTrack(repoId: string, pattern: string, track: boolean): Promise<UndoId>
+  lfsPull(repoId: string): Promise<void>
+  /** Network: asks the LFS server. */
+  lfsLocks(repoId: string): Promise<LfsLock[]>
+  lfsLock(repoId: string, path: string, lock: boolean, force?: boolean): Promise<void>
+  /** Git commands GitSquid ran for this repository, newest first (only newer than `afterId`). */
+  commandLog(repoId: string, afterId?: number): Promise<CommandRecord[]>
+  /** Mark a commit for bisect (starts one if needed); git checks out the next commit to test. */
+  bisectMark(repoId: string, rev: string, term: 'good' | 'bad' | 'skip'): Promise<void>
+  bisectReset(repoId: string): Promise<void>
+  identity(repoId: string): Promise<Identity>
+  /** null clears the value (for the repository: the global one applies again). */
+  setIdentity(repoId: string, scope: 'local' | 'global', name: string | null, email: string | null): Promise<UndoId>
+  commitTemplate(repoId: string): Promise<string | null>
+  recentAuthors(repoId: string): Promise<Person[]>
 
   // Branches and history
   checkout(repoId: string, ref: string): Promise<UndoId>
   createBranch(repoId: string, name: string, opts?: { at?: string; checkout?: boolean }): Promise<UndoId>
   renameBranch(repoId: string, from: string, to: string): Promise<UndoId>
   deleteBranch(repoId: string, name: string, opts?: { force?: boolean }): Promise<UndoId>
-  merge(repoId: string, ref: string, opts?: { noFf?: boolean; ffOnly?: boolean }): Promise<UndoId>
+  merge(repoId: string, ref: string, opts?: { noFf?: boolean; ffOnly?: boolean; squash?: boolean; noCommit?: boolean }): Promise<UndoId>
+  /** The message git prepared for the next commit (after a squash merge or a stopped merge), or ''. */
+  preparedMessage(repoId: string): Promise<string>
   rebase(repoId: string, onto: string): Promise<UndoId>
   reset(repoId: string, hash: string, mode: ResetMode): Promise<UndoId>
   cherryPick(repoId: string, hash: string): Promise<UndoId>
+  /** Several commits, given in graph order (newest first); applied oldest first, one undo entry. */
+  cherryPickMany(repoId: string, hashes: string[]): Promise<UndoId>
+  /**
+   * Replace a run of commits on the current branch with new ones (messages and unit ids from a
+   * RecomposeProposal, oldest first). The branch ends at the same tree; one undo entry.
+   */
+  recomposeApply(repoId: string, hashes: string[], commits: { message: string; units: string[] }[]): Promise<UndoId>
+  /** New message for a commit on the current branch. */
+  rewordCommit(repoId: string, hash: string, message: string): Promise<UndoId>
+  /** Fold a commit into the one below it: 'squash' keeps both messages, 'fixup' the lower one's. */
+  squashCommit(repoId: string, hash: string, mode: 'squash' | 'fixup'): Promise<UndoId>
+  /** Fold commits into `target` (drag onto), keeping all messages. */
+  squashOnto(repoId: string, hashes: string[], target: string): Promise<UndoId>
+  /** Commit the staged changes into an older commit on the current branch. */
+  fixupInto(repoId: string, target: string): Promise<UndoId>
+  /** Files that differ between two revisions, or a revision and the working tree (`to` null). */
+  compareFiles(repoId: string, from: string, to: string | null): Promise<ChangedFile[]>
+  /** Where two revisions forked from each other. */
+  mergeBase(repoId: string, a: string, b: string): Promise<string>
+  /** Put a working-tree file back to its content at `rev` (undoable). */
+  /** Open the diff in the external diff tool (Settings → Diff, else git's diff.tool); resolves when it closes. */
+  diffTool(repoId: string, target: DiffTarget): Promise<void>
+  /** Resolve a conflicted file in the external merge tool; resolves when it closes. */
+  mergeTool(repoId: string, path: string): Promise<void>
+  /** Both versions of an image file for a diff (null: not there on that side). */
+  imagePair(repoId: string, target: DiffTarget): Promise<{ old: ImageSide | null; new: ImageSide | null }>
+  /** Save commits as .patch files in a folder the user picks; the paths written, or null if cancelled. */
+  savePatches(repoId: string, hashes: string[]): Promise<string[] | null>
+  /** Ask for a .patch / .diff file and return its text (null if cancelled). */
+  pickPatch(): Promise<string | null>
+  /** Apply patch text: mailbox patches become commits (am), plain diffs change the working tree and index. */
+  applyPatch(repoId: string, text: string): Promise<UndoId>
+  /** `stash`: rev is a stash commit, whose untracked files live in its third parent. */
+  restoreFile(repoId: string, path: string, rev: string, opts?: { stash?: boolean }): Promise<UndoId>
+  /** Open a file as it was at `rev` in the default app (a read-only temporary copy). */
+  openFileAt(repoId: string, rev: string, path: string): Promise<void>
+  /** Save a file as it was at `rev` where the user chooses; false when they cancel. */
+  saveFileAt(repoId: string, rev: string, path: string): Promise<boolean>
+  /** Commits on the current branch that drop/move can edit (newest first; stops at a merge). */
+  editableCommits(repoId: string): Promise<string[]>
+  /** Remove commits from the current branch; later commits are replayed (may stop on conflicts). */
+  dropCommits(repoId: string, hashes: string[]): Promise<UndoId>
+  /** Move commits to just above (newer) or below (older) `target` on the current branch. */
+  moveCommits(repoId: string, hashes: string[], target: string, where: 'above' | 'below'): Promise<UndoId>
+  /** Several commits as a diff or as format-patch text (graph order in, oldest first out). */
+  commitsText(repoId: string, hashes: string[], format: 'diff' | 'patch'): Promise<string>
   revert(repoId: string, hash: string): Promise<UndoId>
-  createTag(repoId: string, name: string, hash: string, message?: string): Promise<UndoId>
+  createTag(repoId: string, name: string, hash: string, message?: string, opts?: { sign?: boolean }): Promise<UndoId>
   deleteTag(repoId: string, name: string): Promise<UndoId>
 
   // Remotes
   fetch(repoId: string, opts?: { remote?: string; prune?: boolean }): Promise<void>
   pull(repoId: string, opts?: { mode?: PullMode }): Promise<UndoId>
-  push(repoId: string, opts?: { force?: boolean; branch?: string; remote?: string }): Promise<void>
+  push(repoId: string, opts?: { force?: boolean; branch?: string; remote?: string; remoteBranch?: string }): Promise<void>
+  remotes(repoId: string): Promise<Remote[]>
+  addRemote(repoId: string, name: string, url: string): Promise<UndoId>
+  removeRemote(repoId: string, name: string): Promise<UndoId>
+  renameRemote(repoId: string, from: string, to: string): Promise<UndoId>
+  /** A remote's URL, or with `push` its separate push URL (null removes that). */
+  setRemoteUrl(repoId: string, name: string, url: string | null, push?: boolean): Promise<UndoId>
+  /** Push one tag, or all (name null). Changes the remote: not undoable. */
+  pushTags(repoId: string, remote: string, name: string | null): Promise<void>
+  deleteRemoteTag(repoId: string, remote: string, name: string): Promise<void>
+  /** Tag names on a remote (asks the remote). */
+  remoteTags(repoId: string, remote: string): Promise<string[]>
+  setUpstream(repoId: string, branch: string, upstream: string | null): Promise<UndoId>
+  /** Move a branch that is not checked out forward to its upstream. */
+  fastForward(repoId: string, branch: string): Promise<UndoId>
+  deleteBranches(repoId: string, names: string[], opts?: { force?: boolean }): Promise<UndoId>
+  /** Local branches already contained in HEAD (safe to delete). */
+  mergedBranches(repoId: string): Promise<string[]>
   deleteRemoteBranch(repoId: string, remoteRef: string): Promise<void>
 
   // Stash
-  stashPush(repoId: string, opts?: { message?: string; includeUntracked?: boolean }): Promise<UndoId>
+  stashPush(repoId: string, opts?: { message?: string; includeUntracked?: boolean; paths?: string[]; staged?: boolean; keepIndex?: boolean }): Promise<UndoId>
+  /** Save the working tree (untracked files too) as a stash entry, leaving it untouched. */
+  snapshotWorkTree(repoId: string, message?: string): Promise<UndoId>
+  /** A new branch at the stash's base with the stash applied (and dropped). */
+  stashBranch(repoId: string, index: number, name: string): Promise<UndoId>
   stashApply(repoId: string, index: number): Promise<void>
   stashPop(repoId: string, index: number): Promise<UndoId>
   stashDrop(repoId: string, index: number): Promise<UndoId>
@@ -164,6 +306,9 @@ export interface GitSquidApi {
   undoList(repoId: string): Promise<UndoEntry[]>
   /** Undo the latest operation; with `entryId`, only if that entry is still the latest. */
   undo(repoId: string, entryId?: number): Promise<string | null>
+  /** Redo the operation undone last, if nothing happened since. Returns its label, or null. */
+  redo(repoId: string): Promise<string | null>
+  redoList(repoId: string): Promise<UndoEntry[]>
 }
 
 export type ApiMethod = keyof GitSquidApi
@@ -172,15 +317,16 @@ export type ApiMethod = keyof GitSquidApi
 export const API_METHODS = [
   'getSettings', 'setSettings', 'pickDirectory', 'openRepo', 'closeRepo', 'initRepo', 'cloneRepo',
   'respondPrompt', 'openPath', 'openInEditor', 'openTerminal', 'revealPath', 'logError',
-  'githubStatus', 'githubSignIn', 'githubWaitForSignIn', 'githubCancelSignIn', 'githubOpenPage', 'githubSignOut',
+  'githubStatus', 'githubSignIn', 'githubWaitForSignIn', 'githubCancelSignIn', 'githubOpenPage', 'githubSignOut', 'pullRequests', 'createPullRequest', 'checkoutPullRequest', 'openPullRequest',
   'aiStatus', 'aiConsent', 'aiRun', 'aiCancel', 'aiRespondPermission', 'aiAgentInfo', 'aiAuthenticate', 'aiSetApiKey',
-  'snapshot', 'logPage', 'commitDetails', 'diff', 'fileHistory', 'blame', 'search', 'stashList',
+  'snapshot', 'logPage', 'commitDetails', 'diff', 'fileHistory', 'blame', 'search', 'searchCommits', 'listFiles', 'stashList', 'reflog', 'setGraphFilter', 'submodules', 'updateSubmodules', 'syncSubmodules', 'addSubmodule', 'removeSubmodule', 'worktrees', 'addWorktree', 'removeWorktree', 'lockWorktree', 'pruneWorktrees',
   'lastCommitMessage',
-  'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit',
+  'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'codePeek', 'impact', 'askThreads', 'saveAskThread', 'deleteAskThread', 'reviewLearnings', 'setReviewLearnings', 'linters', 'decideLinter', 'pushCheckPlan', 'pushCheckRules', 'setPushChecks', 'changeInsights', 'applySuggestion', 'writeFileChecked', 'workingText', 'lfsInfo', 'lfsInstall', 'lfsTrack', 'lfsPull', 'lfsLocks', 'lfsLock', 'commandLog', 'bisectMark', 'bisectReset', 'identity', 'setIdentity', 'commitTemplate', 'recentAuthors',
   'checkout', 'createBranch', 'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset',
-  'cherryPick', 'revert', 'createTag', 'deleteTag',
-  'fetch', 'pull', 'push', 'deleteRemoteBranch',
-  'stashPush', 'stashApply', 'stashPop', 'stashDrop',
+  'cherryPick', 'cherryPickMany', 'commitsText', 'recomposeApply', 'compareFiles', 'mergeBase', 'restoreFile', 'diffTool', 'mergeTool', 'imagePair', 'savePatches', 'pickPatch', 'applyPatch', 'openFileAt', 'saveFileAt', 'editableCommits', 'dropCommits', 'moveCommits', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'preparedMessage', 'redo', 'redoList', 'revert', 'createTag', 'deleteTag',
+  'fetch', 'pull', 'push', 'deleteRemoteBranch', 'remotes', 'addRemote', 'removeRemote', 'renameRemote', 'setRemoteUrl',
+  'pushTags', 'deleteRemoteTag', 'remoteTags', 'setUpstream', 'fastForward', 'deleteBranches', 'mergedBranches',
+  'stashPush', 'snapshotWorkTree', 'stashBranch', 'stashApply', 'stashPop', 'stashDrop',
   'conflicts', 'conflictVersions', 'resolveConflict', 'continueOperation', 'abortOperation',
   'undoList', 'undo',
 ] as const satisfies readonly ApiMethod[]

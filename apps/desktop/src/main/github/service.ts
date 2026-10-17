@@ -1,5 +1,5 @@
 import type { Repo } from '@gitsquid/git'
-import { githubPromptKind, parseGitHubRemote, type DeviceCodeInfo, type GitHubAccount, type GitHubStatus } from '@gitsquid/shared'
+import { githubPromptKind, parseGitHubRemote, type DeviceCodeInfo, type GitHubAccount, type GitHubStatus, type PullRequest, type PullRequestList } from '@gitsquid/shared'
 import { GitHubApi, GitHubAuthError } from './api'
 import { DeviceFlowError, pollForToken, requestDeviceCode, type DeviceCode, type FlowDeps, type GitHubEndpoints } from './deviceFlow'
 import type { TokenStore } from './tokenStore'
@@ -11,6 +11,7 @@ import type { TokenStore } from './tokenStore'
  * What the token is used for, and nothing else:
  *   - avatars: which GitHub account wrote a commit (GET /repos/:o/:r/commits/:sha)
  *   - HTTPS push/fetch to github.com, only with the "repo" scope and the setting on
+ *   - pull requests: list them when the user opens the list, create one when asked
  */
 export interface GitHubServiceDeps {
   endpoints: GitHubEndpoints
@@ -29,8 +30,6 @@ export class GitHubService {
   /** The last flow's outcome, for a wait that arrives after polling already finished. */
   private last: Promise<GitHubAccount> | null = null
   private persisted = true
-  /** owner/repo per repository path: remotes rarely change, and this runs per unknown author. */
-  private remotes = new Map<string, Promise<{ owner: string; repo: string; remote: string } | null>>()
 
   constructor(private deps: GitHubServiceDeps) {}
 
@@ -49,7 +48,6 @@ export class GitHubService {
       const user = await new GitHubApi(this.deps.endpoints.api, token, this.deps.fetch).user()
       const account: GitHubAccount = { ...user, scopes: granted }
       this.persisted = this.deps.store.save(account, token).persisted
-      this.remotes.clear()
       this.deps.onChange(this.status())
       return account
     }).finally(() => {
@@ -93,7 +91,6 @@ export class GitHubService {
     this.cancelSignIn()
     this.deps.store.clear()
     this.persisted = true
-    this.remotes.clear()
     this.deps.onChange(this.status())
   }
 
@@ -126,23 +123,53 @@ export class GitHubService {
     return null
   }
 
-  private githubRemote(repo: Repo) {
-    let p = this.remotes.get(repo.path)
-    if (!p) {
-      p = repo.runner.run(['config', '-z', '--get-regexp', '^remote\\..*\\.url$'], { readOnly: true, okCodes: [1] }).then((r) => {
-        // -z: "remote.<name>.url\n<value>\0" per entry. origin first, then the others.
-        const found = r.stdout.split('\0').filter(Boolean).map((entry) => {
-          const nl = entry.indexOf('\n')
-          const name = entry.slice('remote.'.length, nl - '.url'.length)
-          return { name, gh: parseGitHubRemote(entry.slice(nl + 1)) }
-        }).filter((x) => x.gh)
-        found.sort((a, b) => Number(b.name === 'origin') - Number(a.name === 'origin'))
-        const first = found[0]
-        return first ? { ...first.gh!, remote: first.name } : null
-      }, () => null)
-      this.remotes.set(repo.path, p)
+  /** Open pull requests of the repository's GitHub remote. Called only when the user asks. */
+  async pullRequests(repo: Repo): Promise<PullRequestList> {
+    const gh = await this.githubRemote(repo)
+    if (!gh) return { state: 'no-remote' }
+    const stored = this.deps.store.load()
+    if (!stored) return { state: 'signed-out' }
+    const pulls = await new GitHubApi(this.deps.endpoints.api, stored.token, this.deps.fetch).pulls(gh.owner, gh.repo)
+    return { state: 'ok', owner: gh.owner, repo: gh.repo, pulls }
+  }
+
+  async createPullRequest(repo: Repo, pr: { branch: string; base: string; title: string; body: string; draft: boolean }): Promise<PullRequest> {
+    const gh = await this.githubRemote(repo)
+    if (!gh) throw new Error('This repository has no GitHub remote.')
+    const stored = this.deps.store.load()
+    if (!stored) throw new Error('Sign in with GitHub first (Settings → Accounts).')
+    return new GitHubApi(this.deps.endpoints.api, stored.token, this.deps.fetch).createPull(gh.owner, gh.repo, { title: pr.title, body: pr.body, head: pr.branch, base: pr.base, draft: pr.draft })
+  }
+
+  /** The remote that points at GitHub (for fetching pull/N/head). */
+  async remoteName(repo: Repo): Promise<string | null> {
+    return (await this.githubRemote(repo))?.remote ?? null
+  }
+
+  /** A pull request's page, only on the configured GitHub host. */
+  isGitHubUrl(url: string): boolean {
+    return url.startsWith(this.deps.endpoints.web + '/')
+  }
+
+  /**
+   * The repository's GitHub remote (origin first). Read each time, not cached: it is one cheap
+   * config read, and remotes can be added, renamed or re-pointed from the app at any moment.
+   */
+  private async githubRemote(repo: Repo): Promise<{ owner: string; repo: string; remote: string } | null> {
+    try {
+      const r = await repo.runner.run(['config', '-z', '--get-regexp', '^remote\\..*\\.url$'], { readOnly: true, okCodes: [1] })
+      // -z: "remote.<name>.url\n<value>\0" per entry. origin first, then the others.
+      const found = r.stdout.split('\0').filter(Boolean).map((entry) => {
+        const nl = entry.indexOf('\n')
+        const name = entry.slice('remote.'.length, nl - '.url'.length)
+        return { name, gh: parseGitHubRemote(entry.slice(nl + 1)) }
+      }).filter((x) => x.gh)
+      found.sort((a, b) => Number(b.name === 'origin') - Number(a.name === 'origin'))
+      const first = found[0]
+      return first ? { ...first.gh!, remote: first.name } : null
+    } catch {
+      return null
     }
-    return p
   }
 
   /** Answer git's credential prompt for https://github.com, when the user turned that on. */

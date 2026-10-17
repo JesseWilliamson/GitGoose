@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import type { CommandRecord } from '@gitsquid/shared'
 
 /**
  * Every git invocation goes through here. The rules from ADR-001 live in this file:
@@ -54,10 +55,22 @@ export interface RunnerOptions {
   env?: Record<string, string>
 }
 
+/** How many commands the log keeps (oldest dropped first). */
+const LOG_SIZE = 500
+const STDERR_KEEP = 4000
+
+/** "https://user:token@host" → "https://***@host": the log is shown on screen and copied. */
+export function maskCredentials(arg: string): string {
+  return arg.replace(/(\w+:\/\/)[^/@\s]+@/g, '$1***@')
+}
+
 export class GitRunner {
   readonly cwd: string
   gitPath: string
   env: Record<string, string>
+  /** Every process this runner started, oldest first (the command log). */
+  readonly history: CommandRecord[] = []
+  private nextId = 1
 
   constructor(opts: RunnerOptions) {
     this.cwd = opts.cwd
@@ -93,10 +106,30 @@ export class GitRunner {
 
   /** Spawn git and return the process, for streaming output (see LogStream, CatFile). */
   spawn(args: string[], opts: { readOnly?: boolean; env?: Record<string, string> } = {}): ChildProcess {
-    return spawn(this.gitPath, this.buildArgs(args, opts.readOnly), {
+    const child = spawn(this.gitPath, this.buildArgs(args, opts.readOnly), {
       cwd: this.cwd,
       env: this.buildEnv(args, opts.env),
       windowsHide: true,
+    })
+    this.track(child, args, !!opts.readOnly)
+    return child
+  }
+
+  /** Add a process to the command log; its record completes when it exits. */
+  private track(child: ChildProcess, args: string[], readOnly: boolean): void {
+    const rec: CommandRecord = { id: this.nextId++, args: args.map(maskCredentials), start: Date.now(), durationMs: null, code: null, stderr: '', readOnly }
+    this.history.push(rec)
+    if (this.history.length > LOG_SIZE) this.history.splice(0, this.history.length - LOG_SIZE)
+    child.stderr?.on('data', (b: Buffer) => {
+      rec.stderr = (rec.stderr + b.toString('utf8')).slice(-STDERR_KEEP)
+    })
+    child.on('close', (code) => {
+      rec.durationMs = Date.now() - rec.start
+      rec.code = code ?? -1
+    })
+    child.on('error', (e) => {
+      rec.durationMs = Date.now() - rec.start
+      rec.stderr = e.message
     })
   }
 

@@ -1,21 +1,34 @@
-import type { CommitDetails, DiffTarget, StatusEntry } from '@gitsquid/shared'
-import { Check, Copy, Minus, Plus, Sparkles, Undo2, X } from 'lucide-react'
+import type { ChangedFile, CommitDetails, DiffTarget, StatusEntry } from '@gitsquid/shared'
+import type { Identity, Person, Signature } from '@gitsquid/shared'
+import { Archive, Check, ChevronDown, Copy, Minus, MoreHorizontal, Plus, ShieldAlert, ShieldCheck, Sparkles, Undo2, X } from 'lucide-react'
+import clsx from 'clsx'
+import { DropdownMenu } from 'radix-ui'
 import { useEffect, useRef, useState } from 'react'
-import { copy, discard as discardFiles, openInEditor, pop, run, stashApply, stashDrop } from '../lib/actions'
+import { cherryPickMany, compare, copy, copyCommits, discard as discardFiles, lfsLock, lfsPatternFor, lfsTrack, openDiffTool, openInEditor, pop, restoreFileFrom, run, snapshot, stashApply, stashDrop, stashToBranch, stashWith, stashWithMessage } from '../lib/actions'
 import { cancelAi, startAi, useAiEnabled } from '../lib/ai'
 import { api, toUiError } from '../lib/api'
-import { dateTime, sentence, shortHash } from '../lib/format'
+import { dateTime, opName, sentence, shortHash, stashLabel } from '../lib/format'
 import { avatarSrc, useAvatarVariant } from '../lib/avatar'
-import { ensureLoaded, reportError, setting, updateRepo, useSetting, type FileMode, type RepoView } from '../lib/store'
+import { addTrailer, isUntouched, splitTemplate } from '../lib/commitMessage'
+import { startReview } from '../lib/review'
+import { openAsk } from '../lib/ask'
+import { startWalkthrough } from '../lib/walkthrough'
+import { showImpact } from '../lib/impact'
+import { ensureLoaded, getLog, reportError, selectCommit, setting, toast, updateRepo, useSetting, useStore, type FileMode, type RepoView } from '../lib/store'
 import { Avatar } from './Avatar'
-import { FileRow, statusKind } from './FileList'
+import { ChangeHints } from './ChangeHints'
+import { recomposeWithAi } from './RecomposeDialog'
+import { FileListTools, FileListView, FileRow, statusKind } from './FileList'
 import { modName } from '../lib/keys'
-import { Button, CM, SectionHeader, Spinner } from './ui'
+import { Button, CM, DM, SectionHeader, Spinner } from './ui'
 
 export function DetailPanel({ view }: { view: RepoView }) {
   return (
     <aside className="flex h-full min-h-0 w-full flex-col bg-panel" data-testid="detail-panel">
-      {view.selected.kind === 'wip' ? <WipPanel view={view} /> : <CommitPanel view={view} hash={view.selected.hash} />}
+      {view.selected.kind === 'wip' ? <WipPanel view={view} />
+        : view.selected.kind === 'commits' ? <MultiPanel view={view} hashes={view.selected.hashes} />
+        : view.selected.kind === 'compare' ? <ComparePanel view={view} sel={view.selected} />
+        : <CommitPanel view={view} hash={view.selected.hash} />}
     </aside>
   )
 }
@@ -31,14 +44,37 @@ function openFile(view: RepoView, target: DiffTarget, mode: FileMode = 'diff') {
 /** Right-click menu for a file in any list. Extra items (stage, discard...) come from the caller. */
 function FileMenu({ view, target, children }: { view: RepoView; target: DiffTarget; children?: React.ReactNode }) {
   const abs = `${view.snapshot.path}/${target.path}`
+  /** The revision the listed file is at, when it is not the working copy. */
+  const rev = target.kind === 'commit' ? target.hash : target.kind === 'range' ? target.to : null
   return (
     <CM.Content>
       <CM.Label>{target.path}</CM.Label>
       {children}
       {children && <CM.Separator />}
       <CM.Item onSelect={() => openFile(view, target, 'diff')}>Show changes</CM.Item>
+      {target.kind !== 'untracked' && <CM.Item onSelect={() => void openDiffTool(view.id, target)}>Open in diff tool</CM.Item>}
+      {/* Flat, not a submenu: this menu sits at the window's right edge, where submenus open leftwards and are fiddly. */}
+      {view.lfs?.installed && (target.kind === 'unstaged' || target.kind === 'untracked' || target.kind === 'staged') && (
+        <>
+          <CM.Separator />
+          {!view.lfs.files.some((f) => f.path === target.path) && <CM.Item onSelect={() => lfsTrack(view.id, lfsPatternFor(target.path))}>Track {lfsPatternFor(target.path)} with Git LFS</CM.Item>}
+          {view.lfs.used && <CM.Item onSelect={() => void lfsLock(view.id, target.path, true)}>Lock with Git LFS</CM.Item>}
+          {view.lfs.used && <CM.Item onSelect={() => void lfsLock(view.id, target.path, false)}>Unlock (Git LFS)</CM.Item>}
+        </>
+      )}
       {target.kind !== 'untracked' && <CM.Item onSelect={() => openFile(view, target, 'history')}>File history</CM.Item>}
       {target.kind !== 'untracked' && <CM.Item onSelect={() => openFile(view, target, 'blame')}>Blame</CM.Item>}
+      {rev && (
+        <>
+          <CM.Separator />
+          <CM.Item onSelect={() => void api.openFileAt(view.id, rev, target.path).catch((e) => reportError('Could not open the file', e))}>Open this version</CM.Item>
+          <CM.Item onSelect={() => void api.saveFileAt(view.id, rev, target.path).catch((e) => reportError('Could not save the file', e))}>Save this version as…</CM.Item>
+          <CM.Item onSelect={() => void restoreFileFrom(view.id, target.path, rev)}>{view.stashes.some((s) => s.hash === rev) ? 'Take this file from the stash' : 'Restore the working copy to this version'}</CM.Item>
+          {target.kind === 'commit' && !view.stashes.some((s) => s.hash === rev) && (
+            <CM.Item onSelect={() => void run(view.id, `Restore ${target.path}`, () => api.restoreFile(view.id, target.path, `${target.hash}^`))}>Restore the working copy to before this commit</CM.Item>
+          )}
+        </>
+      )}
       <CM.Separator />
       {target.kind !== 'commit' && <CM.Item onSelect={() => void openInEditor(abs)}>Open in editor</CM.Item>}
       <CM.Item onSelect={() => void api.openPath(abs).catch((e) => reportError('Could not open the file', e))}>Open with default app</CM.Item>
@@ -51,6 +87,7 @@ function FileMenu({ view, target, children }: { view: RepoView; target: DiffTarg
 // ------------------------------------------------------------------ uncommitted changes
 
 function WipPanel({ view }: { view: RepoView }) {
+  const aiOn = useAiEnabled()
   const st = view.snapshot.status
   const unstaged = st.filter((e) => e.kind === 'untracked' || (e.kind !== 'unmerged' && e.worktree !== '.'))
   const staged = st.filter((e) => e.kind !== 'untracked' && e.kind !== 'unmerged' && e.index !== '.')
@@ -61,17 +98,54 @@ function WipPanel({ view }: { view: RepoView }) {
   const unstage = (paths: string[]) => run(id, 'Unstage', () => api.unstagePaths(id, paths), { quiet: true })
   const discard = (paths: string[]) => discardFiles(id, paths)
 
+  const [filter, setFilter] = useState('')
   const unstagedTarget = (e: StatusEntry): DiffTarget => (e.kind === 'untracked' ? { kind: 'untracked', path: e.path } : { kind: 'unstaged', path: e.path })
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="border-b border-line px-3 py-2 text-[13px]">
-        <span className="font-semibold">{st.length} file {st.length === 1 ? 'change' : 'changes'}</span>
-        <span className="text-muted"> on {view.snapshot.head.branch ?? (view.snapshot.head.detached ? 'detached HEAD' : 'a new branch')}</span>
+      <div className="flex items-center gap-2 border-b border-line px-3 py-2 text-[13px]">
+        <span className="min-w-0 flex-1 truncate">
+          <span className="font-semibold">{st.length} file {st.length === 1 ? 'change' : 'changes'}</span>
+          <span className="text-muted"> on {view.snapshot.head.branch ?? (view.snapshot.head.detached ? 'detached HEAD' : 'a new branch')}</span>
+        </span>
+        {st.length > 0 && (
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <Button size="sm" variant="ghost" data-testid="review-menu" title="Review, explain or assess these changes"><Sparkles size={12} /> Review</Button>
+            </DropdownMenu.Trigger>
+            <DM.Content align="end">
+              {aiOn && (
+                <>
+                  <DM.Item onSelect={() => startReview(id, { kind: 'working' })}>Review all uncommitted changes</DM.Item>
+                  <DM.Item disabled={!staged.length} onSelect={() => startReview(id, { kind: 'staged' })}>Review staged changes</DM.Item>
+                  <DM.Item onSelect={() => startWalkthrough(id, { kind: 'working' })}>Walk me through these changes</DM.Item>
+                  <DM.Separator />
+                </>
+              )}
+              <DM.Item onSelect={() => showImpact(id, { kind: 'working' })}>What could these changes affect?</DM.Item>
+            </DM.Content>
+          </DropdownMenu.Root>
+        )}
+        {st.length > 0 && (
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <Button size="sm" variant="ghost" data-testid="stash-menu"><Archive size={12} /> Stash <ChevronDown size={12} /></Button>
+            </DropdownMenu.Trigger>
+            <DM.Content align="end">
+              <DM.Item onSelect={() => void stashWith(id, {})}>Stash all changes</DM.Item>
+              <DM.Item onSelect={() => stashWithMessage(id)}>Stash with a message…</DM.Item>
+              <DM.Item onSelect={() => void snapshot(id)}>Save a snapshot (changes stay as they are)</DM.Item>
+              <DM.Separator />
+              <DM.Item disabled={!staged.length} onSelect={() => void stashWith(id, { staged: true })}>Stash only the staged changes</DM.Item>
+              <DM.Item disabled={!staged.length} onSelect={() => void stashWith(id, { keepIndex: true })}>Stash all, keep the staged changes in place</DM.Item>
+            </DM.Content>
+          </DropdownMenu.Root>
+        )}
       </div>
+      {st.length > 0 && <FileListTools filter={filter} onFilter={setFilter} />}
       {view.snapshot.operation && (
         <div className="flex items-center justify-between gap-2 border-b border-line bg-warn/10 px-3 py-2 text-[13px]">
-          <span><b>{sentence(view.snapshot.operation)}</b> in progress{conflicted.length ? `, ${conflicted.length} conflicted` : ''}</span>
+          <span><b>{sentence(opName(view.snapshot.operation))}</b> in progress{conflicted.length ? `, ${conflicted.length} conflicted` : ''}</span>
           <Button size="sm" onClick={() => updateRepo(id, { center: { kind: 'conflicts' } })}>Resolve…</Button>
         </div>
       )}
@@ -84,13 +158,19 @@ function WipPanel({ view }: { view: RepoView }) {
             </span>
           )}>Unstaged ({unstaged.length})</SectionHeader>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {unstaged.map((e) => {
+            <FileListView items={unstaged} pathOf={(e) => e.path} filter={filter} testId="unstaged"
+              folderActions={(paths) => <>
+                <IconAction title="Discard changes in this folder (undoable)" onClick={() => void discard(paths)}><Undo2 size={12} /></IconAction>
+                <IconAction title="Stage folder" onClick={() => void stage(paths)}><Plus size={12} /></IconAction>
+              </>}
+              renderFile={(e, layout) => {
               const t = unstagedTarget(e)
               return (
-                <FileRow key={e.path} path={e.path} kind={statusKind(e.worktree === '.' ? e.index : e.worktree)} testId="unstaged-file"
+                <FileRow key={e.path} {...layout} path={e.path} kind={statusKind(e.worktree === '.' ? e.index : e.worktree)} testId="unstaged-file"
                   selected={isOpen(view, t)} onClick={() => openFile(view, t)}
                   menu={<FileMenu view={view} target={t}>
                     <CM.Item onSelect={() => void stage([e.path])}>Stage</CM.Item>
+                    <CM.Item onSelect={() => void stashWith(id, { paths: [e.path] })}>Stash this file</CM.Item>
                     <CM.Item onSelect={() => void discard([e.path])}>{e.kind === 'untracked' ? 'Delete (undoable)' : 'Discard changes (undoable)'}</CM.Item>
                     {e.kind === 'untracked' && (
                       <CM.Item onSelect={() => void run(id, `Ignore ${e.path}`, () => api.ignorePaths(id, [e.path]))}>Add to .gitignore</CM.Item>
@@ -101,7 +181,7 @@ function WipPanel({ view }: { view: RepoView }) {
                     <IconAction title="Stage file" onClick={() => void stage([e.path])}><Plus size={12} /></IconAction>
                   </>} />
               )
-            })}
+            }} />
             {unstaged.length === 0 && <div className="px-3 py-2 text-xs text-faint">No unstaged changes</div>}
           </div>
         </div>
@@ -110,19 +190,25 @@ function WipPanel({ view }: { view: RepoView }) {
             Staged ({staged.length})
           </SectionHeader>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {staged.map((e) => {
+            <FileListView items={staged} pathOf={(e) => e.path} filter={filter} testId="staged"
+              folderActions={(paths) => <IconAction title="Unstage folder" onClick={() => void unstage(paths)}><Minus size={12} /></IconAction>}
+              renderFile={(e, layout) => {
               const t: DiffTarget = { kind: 'staged', path: e.path }
               return (
-                <FileRow key={e.path} path={e.path} oldPath={e.origPath} kind={statusKind(e.index)} testId="staged-file"
+                <FileRow key={e.path} {...layout} path={e.path} oldPath={e.origPath} kind={statusKind(e.index)} testId="staged-file"
                   selected={isOpen(view, t)} onClick={() => openFile(view, t)}
-                  menu={<FileMenu view={view} target={t}><CM.Item onSelect={() => void unstage([e.path])}>Unstage</CM.Item></FileMenu>}
+                  menu={<FileMenu view={view} target={t}>
+                    <CM.Item onSelect={() => void unstage([e.path])}>Unstage</CM.Item>
+                    <CM.Item onSelect={() => void stashWith(id, { paths: [e.path] })}>Stash this file</CM.Item>
+                  </FileMenu>}
                   actions={<IconAction title="Unstage file" onClick={() => void unstage([e.path])}><Minus size={12} /></IconAction>} />
               )
-            })}
+            }} />
             {staged.length === 0 && <div className="px-3 py-2 text-xs text-faint">Stage files or lines to commit them</div>}
           </div>
         </div>
       </div>
+      <ChangeHints view={view} />
       <CommitBox view={view} stagedCount={staged.length} />
     </div>
   )
@@ -141,9 +227,69 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
   const [summary, setSummary] = useState('')
   const [body, setBody] = useState('')
   const [amend, setAmend] = useState(false)
+  /** Skip the pre-commit and commit-msg hooks for the next commit (it resets after committing). */
+  const [noVerify, setNoVerify] = useState(false)
   const id = view.id
-  const canCommit = summary.trim().length > 0 && (stagedCount > 0 || amend) && !view.busy
+  const [identity, setIdentity] = useState<Identity | null>(null)
+  /** Co-authored-by trailers credit the people who wrote the change with you (GitHub shows them). */
+  const pickCoAuthor = async () => {
+    const people: Person[] = await api.recentAuthors(id).catch(() => [])
+    const others = people.filter((p) => p.email !== identity?.email)
+    if (!others.length) return toast({ kind: 'info', title: 'No other authors in this repository yet' })
+    useStore.setState({
+      dialog: {
+        kind: 'pick', title: 'Add a co-author', placeholder: 'Name or email',
+        items: others.map((p) => ({ label: p.name, detail: p.email, value: `${p.name} <${p.email}>` })),
+        onPick: (who) => setBody((b) => addTrailer(b, `Co-authored-by: ${who}`)),
+      },
+    })
+  }
+  // Who we commit as; re-read after undo / redo (they can change it) and after the dialog saves.
+  const [identityTick, setIdentityTick] = useState(0)
+  const undoKey = `${view.undo[0]?.id}|${view.redo.length}`
+  useEffect(() => {
+    let live = true
+    void api.identity(id).then((i) => live && setIdentity(i), () => {})
+    return () => {
+      live = false
+    }
+  }, [id, identityTick, undoKey])
+  // commit.template: prefill what is not a comment, show the comments as guidance.
+  const template = useRef<{ summary: string; body: string; hint: string } | null>(null)
+  const [hint, setHint] = useState('')
+  useEffect(() => {
+    let live = true
+    void api.commitTemplate(id).then((t) => {
+      if (!live || !t) return
+      const parts = splitTemplate(t)
+      template.current = parts
+      setHint(parts.hint)
+      setSummary((s) => s || parts.summary)
+      setBody((b) => b || parts.body)
+    }, () => {})
+    return () => {
+      live = false
+    }
+  }, [id])
+  // A message that is still exactly the template has not been written.
+  const canCommit = summary.trim().length > 0 && (stagedCount > 0 || amend) && !view.busy && !(template.current && isUntouched(summary, body, template.current))
   const aiOn = useAiEnabled()
+  // After a squash merge (or a merge stopped before its commit) git prepares a message: offer it.
+  const prepared = useRef('')
+  const opKey = `${view.snapshot.operation}|${stagedCount}`
+  useEffect(() => {
+    let live = true
+    void api.preparedMessage(id).then((m) => {
+      if (!live || !m || m === prepared.current) return
+      prepared.current = m
+      const [first, ...rest] = m.split('\n')
+      setSummary((s) => s || (first ?? ''))
+      setBody((b) => b || rest.join('\n').trim())
+    }, () => {})
+    return () => {
+      live = false
+    }
+  }, [id, opKey])
   /** The AI request writing the message, while it runs. */
   const [writing, setWriting] = useState<string | null>(null)
 
@@ -180,12 +326,13 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
   const commit = async () => {
     if (!canCommit) return
     const message = body.trim() ? `${summary.trim()}\n\n${body.trim()}\n` : `${summary.trim()}\n`
-    const opts = { amend, signOff: setting('signOff'), gpgSign: setting('gpgSign') }
+    const opts = { amend, signOff: setting('signOff'), gpgSign: setting('gpgSign'), noVerify }
     const ok = await run(id, amend ? 'Amend commit' : 'Commit', () => api.commit(id, message, opts), { success: amend ? 'Commit amended' : 'Committed' })
     if (ok) {
-      setSummary('')
-      setBody('')
+      setSummary(template.current?.summary ?? '')
+      setBody(template.current?.body ?? '')
       setAmend(false)
+      setNoVerify(false)
     }
   }
 
@@ -198,6 +345,11 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
 
   return (
     <div className="border-t border-line p-3" data-testid="commit-box">
+      <button onClick={() => useStore.setState({ dialog: { kind: 'identity', repoId: id, onSaved: () => setIdentityTick((t) => t + 1) } })}
+        title={identity?.scope === 'local' ? 'Set for this repository' : identity?.scope === 'global' ? 'Your global identity' : 'No identity set: git will refuse to commit'}
+        className={clsx('mb-2 block max-w-full truncate text-left text-[11px] hover:text-fg', identity && !identity.scope ? 'text-warn' : 'text-faint')} data-testid="commit-identity">
+        {identity ? (identity.name || identity.email ? `as ${identity.name ?? '?'} <${identity.email ?? '?'}>${identity.scope === 'local' ? ' · this repository' : ''}` : 'Set who you commit as…') : '\u00a0'}
+      </button>
       <div className="relative">
         <input
           value={summary}
@@ -214,17 +366,31 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
         value={body}
         onChange={(e) => setBody(e.target.value)}
         onKeyDown={onKey}
-        placeholder="Description"
+        placeholder={hint || 'Description'}
         style={{ fontFamily: 'var(--gs-code-font)', fontSize: 'var(--gs-code-size)' }}
         rows={3}
+        data-testid="commit-body"
         className="mt-2 w-full resize-none rounded-md border border-line bg-bg px-2 py-1.5 text-[13px] outline-none focus:border-accent"
       />
       <div className="mt-2 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
-          <label className="flex items-center gap-1.5 text-xs text-muted">
+          <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-muted" title="Amend the previous commit instead of making a new one">
             <input type="checkbox" checked={amend} onChange={(e) => void toggleAmend(e.target.checked)} disabled={!view.snapshot.head.hash} />
-            Amend previous commit
+            Amend
           </label>
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <Button size="sm" variant="ghost" title="Commit options" aria-label="Commit options" data-testid="commit-options">
+                <MoreHorizontal size={14} />{noVerify && <span className="text-[10px] text-warn">no hooks</span>}
+              </Button>
+            </DropdownMenu.Trigger>
+            <DM.Content>
+              <DM.Check checked={noVerify} onChange={setNoVerify} testId="skip-hooks">Skip hooks for this commit (--no-verify)</DM.Check>
+              <DM.Item onSelect={() => void pickCoAuthor()}>Add co-author…</DM.Item>
+              <DM.Separator />
+              <DM.Item onSelect={() => useStore.setState({ dialog: { kind: 'identity', repoId: id, onSaved: () => setIdentityTick((t) => t + 1) } })}>Change who you commit as…</DM.Item>
+            </DM.Content>
+          </DropdownMenu.Root>
           {aiOn && (
             <Button size="sm" variant="ghost" onClick={() => void writeMessage()} disabled={!writing && stagedCount === 0} data-testid="ai-commit-message"
               title={writing ? 'Stop' : 'Write the message with AI, from the staged changes'}>
@@ -241,6 +407,150 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
   )
 }
 
+/** Questions asked about this commit's code (Ask about lines), each reopening its thread. */
+function CommitQuestions({ view, hash }: { view: RepoView; hash: string }) {
+  const threads = view.askThreads.filter((t) => t.rev === hash)
+  if (!threads.length) return null
+  return (
+    <div className="border-b border-line px-3 py-2" data-testid="commit-questions">
+      <div className="mb-1 text-[11px] font-semibold text-muted uppercase">Questions ({threads.length})</div>
+      {threads.map((t) => (
+        <button key={t.id} className="flex w-full items-baseline gap-2 rounded px-1 py-0.5 text-left text-[12px] hover:bg-hover"
+          onClick={() => { updateRepo(view.id, { center: { kind: 'file', target: { kind: 'commit', hash, path: t.path }, mode: 'diff' } }); openAsk(view.id, t) }}>
+          <span className="shrink-0 font-mono text-[11px] text-faint">{t.path.split('/').pop()}:{t.startLine}</span>
+          <span className="min-w-0 flex-1 truncate">{t.messages.find((m) => m.role === 'user')?.text}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** What git said about a commit's signature, in words, with the signer and key on hover. */
+const SIGNATURE: Record<Signature['status'], { text: string; tone: string }> = {
+  G: { text: 'Verified signature', tone: 'text-add' },
+  U: { text: 'Good signature from a key you have not marked as trusted', tone: 'text-add' },
+  X: { text: 'Signature has expired', tone: 'text-warn' },
+  Y: { text: 'Signed with a key that has expired', tone: 'text-warn' },
+  R: { text: 'Signed with a revoked key', tone: 'text-del' },
+  B: { text: 'Bad signature: the commit changed after it was signed', tone: 'text-del' },
+  E: { text: 'Signed, but the signature cannot be checked (missing key or tool)', tone: 'text-muted' },
+}
+
+function SignatureBadge({ sig }: { sig: Signature }) {
+  const s = SIGNATURE[sig.status]
+  return (
+    <div className={clsx('mt-2 flex items-center gap-1.5 text-xs', s.tone)} data-testid="signature" data-status={sig.status}
+      title={[sig.signer && `Signer: ${sig.signer}`, sig.key && `Key: ${sig.key}`].filter(Boolean).join('\n') || undefined}>
+      {sig.status === 'B' || sig.status === 'R' ? <ShieldAlert size={13} /> : <ShieldCheck size={13} />}
+      <span>{s.text}{sig.signer && (sig.status === 'G' || sig.status === 'U') ? ` · ${sig.signer}` : ''}</span>
+    </div>
+  )
+}
+
+// ------------------------------------------------------------------ comparing
+
+function ComparePanel({ view, sel }: { view: RepoView; sel: Extract<RepoView['selected'], { kind: 'compare' }> }) {
+  const [files, setFiles] = useState<ChangedFile[] | null>(null)
+  const [fileFilter, setFileFilter] = useState('')
+  // The working tree side changes as files do; two revisions never change.
+  const reloadOn = sel.to ? 0 : view.worktreeTick
+  useEffect(() => {
+    let live = true
+    setFiles(null)
+    api.compareFiles(view.id, sel.from, sel.to).then((f) => live && setFiles(f), (e) => reportError('Could not compare', e))
+    return () => {
+      live = false
+    }
+  }, [view.id, sel.from, sel.to, reloadOn])
+  const adds = files?.reduce((n, f) => n + f.additions, 0) ?? 0
+  const dels = files?.reduce((n, f) => n + f.deletions, 0) ?? 0
+  return (
+    <div className="flex min-h-0 flex-1 flex-col" data-testid="compare-panel">
+      <div className="border-b border-line p-3">
+        <div className="text-[14px] font-semibold">Comparing</div>
+        <div className="mt-1 flex items-center gap-2 font-mono text-xs">
+          <span className="truncate rounded bg-hover px-1.5 py-0.5" title={sel.from}>{sel.fromLabel}</span>
+          <span className="text-faint">→</span>
+          <span className="truncate rounded bg-hover px-1.5 py-0.5" title={sel.to ?? 'working tree'}>{sel.toLabel}</span>
+        </div>
+        <div className="mt-2 flex gap-2">
+          {sel.to && (
+            <Button size="sm" onClick={() => updateRepo(view.id, { selected: { ...sel, from: sel.to!, to: sel.from, fromLabel: sel.toLabel, toLabel: sel.fromLabel } })}
+              data-testid="compare-swap">Swap</Button>
+          )}
+          <Button size="sm" variant="ghost" onClick={() => selectCommit(view.id, view.snapshot.head.hash ?? sel.from)}>Close</Button>
+        </div>
+      </div>
+      <SectionHeader right={<span className="font-mono normal-case"><span className="text-add">+{adds}</span> <span className="text-del">−{dels}</span></span>}>
+        {files ? `${files.length} ${files.length === 1 ? 'file' : 'files'} differ` : 'Comparing…'}
+      </SectionHeader>
+      {files && files.length > 1 && <FileListTools filter={fileFilter} onFilter={setFileFilter} />}
+      <div className="min-h-0 flex-1 overflow-y-auto pb-2">
+        {!files ? <div className="p-3"><Spinner /></div> : files.length === 0 ? <div className="p-3 text-sm text-faint">No differences.</div> : <FileListView items={files} pathOf={(f) => f.path} filter={fileFilter} testId="compare" renderFile={(f, layout) => {
+          const t: DiffTarget = { kind: 'range', from: sel.from, to: sel.to, path: f.path, oldPath: f.oldPath }
+          return (
+            <FileRow key={f.path} {...layout} path={f.path} oldPath={f.oldPath} kind={f.change} selected={isOpen(view, t)} testId="compare-file"
+              onClick={() => openFile(view, t)} menu={<FileMenu view={view} target={t} />}
+              stats={f.binary ? <span className="text-[11px] text-faint">bin</span> : (
+                <span className="shrink-0 font-mono text-[11px]"><span className="text-add">+{f.additions}</span> <span className="text-del">−{f.deletions}</span></span>
+              )} />
+          )
+        }} />}
+      </div>
+    </div>
+  )
+}
+
+// ------------------------------------------------------------------ several commits
+
+/** Shift- or Ctrl-click selected several commits: what can be done with all of them. */
+function MultiPanel({ view, hashes }: { view: RepoView; hashes: string[] }) {
+  const log = getLog(view.id)
+  const commits = hashes.map((h) => log.commits[log.index.get(h) ?? -1]).filter((c): c is NonNullable<typeof c> => !!c)
+  const headName = view.snapshot.head.branch ?? 'HEAD'
+  const aiOn = useAiEnabled()
+  // A chain (each commit's parent is the next one down): its combined change is one diff.
+  const isChain = commits.length === hashes.length && commits.every((c, i) => i === commits.length - 1 || c.parents[0] === commits[i + 1]!.hash)
+  const chainBase = isChain ? commits[commits.length - 1]!.parents[0] : undefined
+  return (
+    <div className="flex min-h-0 flex-1 flex-col" data-testid="multi-panel">
+      <div className="border-b border-line p-3">
+        <div className="text-[14px] font-semibold">{hashes.length} commits selected</div>
+        <div className="mt-0.5 text-xs text-muted">Shift-click selects a range, {modName()}-click adds or removes one.</div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button size="sm" variant="primary" onClick={() => void cherryPickMany(view.id, hashes)} disabled={!!view.busy} data-testid="multi-cherry-pick">
+            Cherry-pick onto {headName}
+          </Button>
+          <Button size="sm" onClick={() => void copyCommits(view.id, hashes, 'diff')} data-testid="multi-copy-diff">Copy as diff</Button>
+          <Button size="sm" onClick={() => void copyCommits(view.id, hashes, 'patch')} data-testid="multi-copy-patch">Copy as patch</Button>
+          {hashes.length === 2 && (
+            <Button size="sm" onClick={() => compare(view.id, hashes[1]!, hashes[0]!)} data-testid="multi-compare" title="What differs between the older and the newer commit">Compare the two</Button>
+          )}
+          {chainBase !== undefined && (
+            <Button size="sm" onClick={() => compare(view.id, chainBase, hashes[0]!, `before ${shortHash(hashes[hashes.length - 1]!)}`, shortHash(hashes[0]!))}
+              data-testid="multi-combined" title="Everything these commits changed together">Combined changes</Button>
+          )}
+          {aiOn && (
+            <Button size="sm" onClick={() => recomposeWithAi(view.id, hashes)} data-testid="multi-recompose" title="Let the AI propose a cleaner set of commits; you review before anything changes">
+              <Sparkles size={12} /> Recompose with AI
+            </Button>
+          )}
+        </div>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto py-1">
+        {commits.map((c) => (
+          <button key={c.hash} className="flex w-full items-center gap-2 px-3 py-1 text-left text-[13px] hover:bg-hover"
+            onClick={() => selectCommit(view.id, c.hash)} title="Select only this commit">
+            <span className="shrink-0 font-mono text-xs text-faint">{shortHash(c.hash)}</span>
+            <span className="min-w-0 flex-1 truncate">{c.subject}</span>
+            <span className="shrink-0 truncate text-xs text-muted">{c.authorName}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ------------------------------------------------------------------ a commit
 
 // Keyed by hash: a commit's details never change. (Stashes are commits with unique hashes too.)
@@ -250,6 +560,7 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
   const avatarSource = useSetting('avatars')
   const avatarVariant = useAvatarVariant()
   const [details, setDetails] = useState<CommitDetails | null>(() => detailsCache.get(hash) ?? null)
+  const [fileFilter, setFileFilter] = useState('')
   const latest = useRef(hash)
   const aiOn = useAiEnabled()
   const [explained, setExplained] = useState<{ hash: string; text: string; requestId: string | null; error: string | null } | null>(null)
@@ -303,10 +614,11 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
             updateRepo(view.id, { selected: { kind: 'wip' }, center: { kind: 'graph' } })
             void stashDrop(view.id, stash.index)
           }}>Drop</Button>
+          <Button size="sm" variant="ghost" title="A new branch where the stash was made, with the stash applied" onClick={() => stashToBranch(view.id, stash.index)}>Branch…</Button>
         </div>
       )}
       <div className="selectable border-b border-line p-3">
-        <div className="text-[14px] leading-snug font-semibold">{stash ? stash.message : d.subject}</div>
+        <div className="text-[14px] leading-snug font-semibold">{stash ? stashLabel(stash.message) : d.subject}</div>
         {d.body && <pre className="mt-2 max-h-40 overflow-y-auto font-sans text-[13px] whitespace-pre-wrap text-muted">{d.body}</pre>}
         {aiOn && !stash && (
           <div className="mt-2">
@@ -340,6 +652,7 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
             )}
           </div>
         </div>
+        {d.signature && <SignatureBadge sig={d.signature} />}
         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs text-muted">
           <button className="flex items-center gap-1 hover:text-fg" onClick={() => copy(d.hash, 'Copied SHA')} title="Copy SHA">
             {shortHash(d.hash)} <Copy size={11} />
@@ -355,18 +668,20 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
       <SectionHeader right={<span className="font-mono normal-case"><span className="text-add">+{adds}</span> <span className="text-del">−{dels}</span></span>}>
         {d.files.length} {d.files.length === 1 ? 'file' : 'files'} changed{d.parents.length > 1 && !stash ? ' (vs first parent)' : ''}
       </SectionHeader>
+      <CommitQuestions view={view} hash={d.hash} />
+      {d.files.length > 1 && <FileListTools filter={fileFilter} onFilter={setFileFilter} />}
       <div className="min-h-0 flex-1 overflow-y-auto pb-2" data-testid="commit-files">
-        {d.files.map((f) => {
+        <FileListView items={d.files} pathOf={(f) => f.path} filter={fileFilter} testId="commit" renderFile={(f, layout) => {
           const t: DiffTarget = { kind: 'commit', hash: d.hash, path: f.path }
           return (
-            <FileRow key={f.path} path={f.path} oldPath={f.oldPath} kind={f.change} selected={isOpen(view, t)} testId="commit-file"
+            <FileRow key={f.path} {...layout} path={f.path} oldPath={f.oldPath} kind={f.change} selected={isOpen(view, t)} testId="commit-file"
               onClick={() => openFile(view, t)}
               menu={<FileMenu view={view} target={t} />}
               stats={f.binary ? <span className="text-[11px] text-faint">bin</span> : (
                 <span className="shrink-0 font-mono text-[11px]"><span className="text-add">+{f.additions}</span> <span className="text-del">−{f.deletions}</span></span>
               )} />
           )
-        })}
+        }} />
       </div>
     </div>
   )

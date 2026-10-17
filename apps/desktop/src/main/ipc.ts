@@ -1,15 +1,19 @@
-import { GitError, Repo } from '@gitsquid/git'
+import { GitError, Repo, secretPushCheck } from '@gitsquid/git'
 import {
   API_METHODS, IPC_EVENT, IPC_INVOKE,
-  type ApiMethod, type GitSquidApi, type GitSquidEvent, type IpcResult, type SerializedError,
+  type ApiMethod, type GitSquidApi, type GitSquidEvent, type IpcResult, type PushCheckPlan, type SerializedError,
 } from '@gitsquid/shared'
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { basename, join } from 'node:path'
 import { logError } from './diagnostics'
 import { openInEditor, openTerminal } from './launch'
 import { GITHUB_SCOPES } from '@gitsquid/shared'
 import type { AiService } from './ai/service'
 import type { GitHubService } from './github/service'
 import type { RepoManager } from './repos'
+import { decisionKey, linters } from './ai/linters'
 import { forgetOpenRepo, getSettings, rememberRepo, setSettings } from './settings'
 
 export function broadcast(event: GitSquidEvent): void {
@@ -19,8 +23,9 @@ export function broadcast(event: GitSquidEvent): void {
 /** Methods that change the repository. After each one we refresh and push a snapshot right away. */
 const WRITES = new Set<ApiMethod>([
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'checkout', 'createBranch',
-  'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset', 'cherryPick', 'revert', 'createTag',
-  'deleteTag', 'fetch', 'pull', 'push', 'deleteRemoteBranch', 'stashPush', 'stashApply', 'stashPop',
+  'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset', 'cherryPick', 'cherryPickMany', 'recomposeApply', 'dropCommits', 'moveCommits', 'restoreFile', 'applySuggestion', 'writeFileChecked', 'checkoutPullRequest', 'mergeTool', 'lfsInstall', 'lfsTrack', 'lfsPull', 'lfsLock', 'applyPatch', 'setIdentity', 'bisectMark', 'bisectReset', 'setGraphFilter', 'updateSubmodules', 'syncSubmodules', 'addSubmodule', 'removeSubmodule', 'addWorktree', 'removeWorktree', 'lockWorktree', 'pruneWorktrees', 'addRemote', 'removeRemote', 'renameRemote', 'setRemoteUrl', 'pushTags',
+  'deleteRemoteTag', 'setUpstream', 'fastForward', 'deleteBranches', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'redo', 'revert', 'createTag',
+  'deleteTag', 'fetch', 'pull', 'push', 'deleteRemoteBranch', 'stashPush', 'snapshotWorkTree', 'stashBranch', 'stashApply', 'stashPop',
   'stashDrop', 'resolveConflict', 'continueOperation', 'abortOperation', 'undo',
 ])
 
@@ -73,10 +78,21 @@ export function createHandlers(
       if (url) await shell.openExternal(url)
     },
     githubSignOut: async () => github.signOut(),
+    pullRequests: (id) => github.pullRequests(r(id)),
+    createPullRequest: (id, pr) => github.createPullRequest(r(id), pr),
+    checkoutPullRequest: async (id, num, branch) => {
+      const remote = await github.remoteName(r(id))
+      if (!remote) throw new Error('This repository has no GitHub remote.')
+      return r(id).checkoutPullRequest(remote, num, branch)
+    },
+    openPullRequest: async (url) => {
+      if (!github.isGitHubUrl(url)) throw new Error('Not a GitHub page')
+      await shell.openExternal(url)
+    },
 
     aiStatus: async () => ai.status(),
     aiConsent: async () => ai.consent(),
-    aiRun: (requestId, repoId, task) => ai.run(requestId, repoId, task),
+    aiRun: (requestId, repoId, task, opts) => ai.run(requestId, repoId, task, opts),
     aiCancel: async (requestId) => ai.cancel(requestId),
     aiRespondPermission: async (id, optionId) => ai.respondPermission(id, optionId),
     aiAgentInfo: () => ai.agentInfo(),
@@ -98,7 +114,28 @@ export function createHandlers(
     fileHistory: (id, path) => r(id).fileHistory(path),
     blame: (id, path, rev) => r(id).blame(path, rev),
     search: (id, field, q) => r(id).search(field, q),
+    searchCommits: (id, field, q, limit) => r(id).searchCommits(field, q, limit),
+    listFiles: (id) => r(id).listFiles(),
     stashList: (id) => r(id).stashList(),
+    reflog: (id, ref) => r(id).reflog(ref),
+    setGraphFilter: async (id, filter) => {
+      const repo = r(id)
+      repo.setGraphFilter(filter)
+      const all = { ...getSettings().graphFilters }
+      if (filter.hidden.length || filter.solo.length) all[repo.path] = filter
+      else delete all[repo.path]
+      setSettings({ graphFilters: all })
+    },
+    submodules: (id) => r(id).submodules(),
+    updateSubmodules: (id, paths) => r(id).updateSubmodules(paths),
+    syncSubmodules: (id) => r(id).syncSubmodules(),
+    addSubmodule: (id, url, path) => r(id).addSubmodule(url, path),
+    removeSubmodule: (id, path) => r(id).removeSubmodule(path),
+    worktrees: (id) => r(id).worktrees(),
+    addWorktree: (id, path, opts) => r(id).addWorktree(path, opts),
+    removeWorktree: (id, path, opts) => r(id).removeWorktree(path, opts),
+    lockWorktree: (id, path, lock, reason) => r(id).lockWorktree(path, lock, reason),
+    pruneWorktrees: (id) => r(id).pruneWorktrees(),
     lastCommitMessage: (id) => r(id).lastCommitMessage(),
 
     stagePaths: (id, paths) => r(id).stagePaths(paths),
@@ -107,6 +144,74 @@ export function createHandlers(
     applySelection: (id, req) => r(id).applySelection(req),
     ignorePaths: (id, paths) => r(id).ignorePaths(paths),
     commit: (id, message, opts) => r(id).commit(message, opts),
+    codePeek: (id, name, rev) => r(id).codePeek(name, rev),
+    changeInsights: (id) => r(id).changeInsights(),
+    impact: (id, scope) => r(id).impact(scope),
+    askThreads: async (id) => getSettings().askThreads[r(id).path] ?? [],
+    saveAskThread: async (id, thread) => {
+      const path = r(id).path
+      const list = [thread, ...(getSettings().askThreads[path] ?? []).filter((t) => t.id !== thread.id)].slice(0, 100)
+      setSettings({ askThreads: { ...getSettings().askThreads, [path]: list } })
+    },
+    deleteAskThread: async (id, threadId) => {
+      const path = r(id).path
+      setSettings({ askThreads: { ...getSettings().askThreads, [path]: (getSettings().askThreads[path] ?? []).filter((t) => t.id !== threadId) } })
+    },
+    reviewLearnings: async (id) => getSettings().reviewLearnings[r(id).path] ?? [],
+    pushCheckPlan: async (id, branch) => {
+      const repo = r(id)
+      const out = await repo.outgoing(branch)
+      const empty: PushCheckPlan = { label: out.label, commits: out.commits.length, checks: [], local: [] }
+      if (!out.commits.length) return empty
+      const settings = getSettings()
+      const checks: PushCheckPlan['checks'] = [
+        ...(await repo.customChecks(out.head)).map((c) => ({ ...c, source: 'repo' as const })),
+        ...(settings.pushChecks[repo.path] ?? []).map((c) => ({ ...c, source: 'settings' as const })),
+      ]
+      // The secret scan reads every pushed line (a big budget): a key in the 40th file still counts.
+      const local = settings.pushSecretCheck ? [secretPushCheck((await repo.reviewInput({ kind: 'outgoing', branch }, 5_000_000)).files)] : []
+      return { ...empty, checks, local }
+    },
+    pushCheckRules: async (id) => {
+      const repo = r(id)
+      return { repo: await repo.customChecks('HEAD').catch(() => []), mine: getSettings().pushChecks[repo.path] ?? [] }
+    },
+    setPushChecks: async (id, checks) => {
+      const all = { ...getSettings().pushChecks }
+      if (checks.length) all[r(id).path] = checks
+      else delete all[r(id).path]
+      setSettings({ pushChecks: all })
+    },
+    linters: async (id) => linters(r(id).path, getSettings()),
+    decideLinter: async (id, command, allow) => {
+      const all = { ...getSettings().linterDecisions }
+      const key = decisionKey(r(id).path, command)
+      if (allow === null) delete all[key]
+      else all[key] = allow
+      setSettings({ linterDecisions: all })
+    },
+    setReviewLearnings: async (id, learnings) => {
+      const all = { ...getSettings().reviewLearnings }
+      if (learnings.length) all[r(id).path] = learnings
+      else delete all[r(id).path]
+      setSettings({ reviewLearnings: all })
+    },
+    applySuggestion: (id, path, start, end, original, replacement) => r(id).applySuggestion(path, start, end, original, replacement),
+    writeFileChecked: (id, path, expected, content) => r(id).writeFileChecked(path, expected, content, `Apply AI fix to ${path}`),
+    workingText: (id, path) => r(id).workingText(path),
+    lfsInfo: (id) => r(id).lfsInfo(),
+    lfsInstall: (id) => r(id).lfsInstall(),
+    lfsTrack: (id, pattern, track) => r(id).lfsTrack(pattern, track),
+    lfsPull: (id) => r(id).lfsPull(),
+    lfsLocks: (id) => r(id).lfsLocks(),
+    lfsLock: (id, path, lock, force) => r(id).lfsLock(path, lock, force),
+    commandLog: async (id, afterId) => r(id).commandLog(afterId),
+    bisectMark: (id, rev, term) => r(id).bisectMark(rev, term),
+    bisectReset: (id) => r(id).bisectReset(),
+    identity: (id) => r(id).identity(),
+    setIdentity: (id, scope, name, email) => r(id).setIdentity(scope, name, email),
+    commitTemplate: (id) => r(id).commitTemplate(),
+    recentAuthors: (id) => r(id).recentAuthors(),
 
     checkout: (id, ref) => r(id).checkout(ref),
     createBranch: (id, name, opts) => r(id).createBranch(name, opts),
@@ -116,8 +221,71 @@ export function createHandlers(
     rebase: (id, onto) => r(id).rebase(onto),
     reset: (id, hash, mode) => r(id).reset(hash, mode),
     cherryPick: (id, hash) => r(id).cherryPick(hash),
+    cherryPickMany: (id, hashes) => r(id).cherryPickMany(hashes),
+    commitsText: (id, hashes, format) => r(id).commitsText(hashes, format),
+    recomposeApply: (id, hashes, commits) => r(id).recompose(hashes, commits),
+    editableCommits: (id) => r(id).editableCommits(),
+    remotes: (id) => r(id).remotes(),
+    addRemote: (id, name, url) => r(id).addRemote(name, url),
+    removeRemote: (id, name) => r(id).removeRemote(name),
+    renameRemote: (id, from, to) => r(id).renameRemote(from, to),
+    setRemoteUrl: (id, name, url, push) => r(id).setRemoteUrl(name, url, push),
+    pushTags: (id, remote, name) => r(id).pushTags(remote, name),
+    deleteRemoteTag: (id, remote, name) => r(id).deleteRemoteTag(remote, name),
+    remoteTags: (id, remote) => r(id).remoteTags(remote),
+    setUpstream: (id, branch, upstream) => r(id).setUpstream(branch, upstream),
+    fastForward: (id, branch) => r(id).fastForward(branch),
+    deleteBranches: (id, names, opts) => r(id).deleteBranches(names, opts),
+    mergedBranches: (id) => r(id).mergedBranches(),
+    compareFiles: (id, from, to) => r(id).compareFiles(from, to),
+    mergeBase: (id, a, b) => r(id).mergeBase(a, b),
+    restoreFile: (id, path, rev, opts) => r(id).restoreFile(path, rev, opts),
+    openFileAt: async (id, rev, path) => {
+      // A read-only copy under the temp folder, named so the editor knows the language.
+      const dir = await mkdtemp(join(tmpdir(), `gitsquid-${rev.slice(0, 7)}-`))
+      const file = join(dir, basename(path))
+      await writeFile(file, await r(id).fileAt(rev, path))
+      await chmod(file, 0o444)
+      const err = await shell.openPath(file)
+      if (err) throw new Error(err)
+    },
+    diffTool: (id, target) => r(id).diffTool(target, getSettings().diffTool || undefined),
+    mergeTool: (id, path) => r(id).mergeTool(path, getSettings().mergeTool || undefined),
+    imagePair: (id, target) => r(id).imagePair(target),
+    savePatches: async (id, hashes) => {
+      const win = BrowserWindow.getFocusedWindow()
+      const opts = { title: 'Save patches into', properties: ['openDirectory', 'createDirectory'] as ('openDirectory' | 'createDirectory')[] }
+      const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+      if (res.canceled || !res.filePaths[0]) return null
+      return r(id).savePatches(hashes, res.filePaths[0])
+    },
+    pickPatch: async () => {
+      const win = BrowserWindow.getFocusedWindow()
+      const opts = { title: 'Apply patch', properties: ['openFile'] as 'openFile'[], filters: [{ name: 'Patches', extensions: ['patch', 'diff', 'mbox', 'eml'] }, { name: 'All files', extensions: ['*'] }] }
+      const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+      if (res.canceled || !res.filePaths[0]) return null
+      return readFile(res.filePaths[0], 'utf8')
+    },
+    applyPatch: (id, text) => r(id).applyPatch(text),
+    saveFileAt: async (id, rev, path) => {
+      const win = BrowserWindow.getFocusedWindow()
+      const opts = { defaultPath: basename(path) }
+      const res = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
+      if (res.canceled || !res.filePath) return false
+      await writeFile(res.filePath, await r(id).fileAt(rev, path))
+      return true
+    },
+    dropCommits: (id, hashes) => r(id).dropCommits(hashes),
+    moveCommits: (id, hashes, target, where) => r(id).moveCommits(hashes, target, where),
+    rewordCommit: (id, hash, message) => r(id).rewordCommit(hash, message),
+    squashCommit: (id, hash, mode) => r(id).squashCommit(hash, mode),
+    squashOnto: (id, hashes, target) => r(id).squashOnto(hashes, target),
+    fixupInto: (id, target) => r(id).fixupInto(target),
+    preparedMessage: (id) => r(id).preparedMessage(),
+    redo: (id) => r(id).redo(),
+    redoList: async (id) => r(id).redoList(),
     revert: (id, hash) => r(id).revert(hash),
-    createTag: (id, name, hash, message) => r(id).createTag(name, hash, message),
+    createTag: (id, name, hash, message, opts) => r(id).createTag(name, hash, message, opts),
     deleteTag: (id, name) => r(id).deleteTag(name),
 
     fetch: (id, opts) => r(id).fetch(opts),
@@ -126,6 +294,8 @@ export function createHandlers(
     deleteRemoteBranch: (id, ref) => r(id).deleteRemoteBranch(ref),
 
     stashPush: (id, opts) => r(id).stashPush(opts),
+    stashBranch: (id, i, name) => r(id).stashBranch(i, name),
+    snapshotWorkTree: (id, message) => r(id).snapshotWorkTree(message),
     stashApply: (id, i) => r(id).stashApply(i),
     stashPop: (id, i) => r(id).stashPop(i),
     stashDrop: (id, i) => r(id).stashDrop(i),
