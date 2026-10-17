@@ -1,0 +1,139 @@
+@import 'tailwindcss';
+
+/*
+ * Theme tokens. Components use these through Tailwind utilities like bg-panel, text-muted,
+ * border-line; switching theme only swaps the variables.
+ */
+@theme {
+  --color-bg: var(--gs-bg);
+  --color-panel: var(--gs-panel);
+  --color-raised: var(--gs-raised);
+  --color-hover: var(--gs-hover);
+  --color-line: var(--gs-line);
+  --color-fg: var(--gs-fg);
+  --color-muted: var(--gs-muted);
+  --color-faint: var(--gs-faint);
+  --color-accent: var(--gs-accent);
+  --color-accent-fg: var(--gs-accent-fg);
+  --color-add: var(--gs-add);
+  --color-add-bg: var(--gs-add-bg);
+  --color-del: var(--gs-del);
+  --color-del-bg: var(--gs-del-bg);
+  --color-warn: var(--gs-warn);
+  --color-select: var(--gs-select);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+}
+
+:root,
+:root[data-theme='dark'] {
+  --gs-bg: #16181d;
+  --gs-panel: #1c1f26;
+  --gs-raised: #252932;
+  --gs-hover: #2a2f3a;
+  --gs-line: #2e333d;
+  --gs-fg: #e3e6ec;
+  --gs-muted: #9aa3b2;
+  --gs-faint: #646d7c;
+  --gs-accent: #4c8dff;
+  --gs-accent-fg: #ffffff;
+  --gs-add: #5fd18b;
+  --gs-add-bg: rgba(46, 160, 67, 0.16);
+  --gs-del: #ff7b7b;
+  --gs-del-bg: rgba(248, 81, 73, 0.15);
+  --gs-warn: #e5b04a;
+  --gs-select: rgba(76, 141, 255, 0.22);
+  /* Graph lane colours, cycled by colour index. */
+  --lane-0: #4c8dff;
+  --lane-1: #e5534b;
+  --lane-2: #57ab5a;
+  --lane-3: #c69026;
+  --lane-4: #b083f0;
+  --lane-5: #39c5cf;
+  --lane-6: #f47067;
+  --lane-7: #dcbdfb;
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  --gs-bg: #ffffff;
+  --gs-panel: #f6f7f9;
+  --gs-raised: #ffffff;
+  --gs-hover: #eceef2;
+  --gs-line: #dfe2e8;
+  --gs-fg: #1f2329;
+  --gs-muted: #5b6472;
+  --gs-faint: #8c95a3;
+  --gs-accent: #2f6fe4;
+  --gs-accent-fg: #ffffff;
+  --gs-add: #1a7f37;
+  --gs-add-bg: rgba(46, 160, 67, 0.12);
+  --gs-del: #cf222e;
+  --gs-del-bg: rgba(248, 81, 73, 0.1);
+  --gs-warn: #9a6700;
+  --gs-select: rgba(47, 111, 228, 0.14);
+  --lane-0: #2f6fe4;
+  --lane-1: #d1242f;
+  --lane-2: #1a7f37;
+  --lane-3: #9a6700;
+  --lane-4: #8250df;
+  --lane-5: #0e8a96;
+  --lane-6: #e16f24;
+  --lane-7: #bf3989;
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--gs-bg);
+  color: var(--gs-fg);
+  font-family: var(--font-sans);
+  font-size: var(--gs-font-size, 13px);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  user-select: none;
+}
+
+input,
+textarea,
+.selectable {
+  user-select: text;
+}
+
+/* macOS: leave room for the traffic lights and let the tab bar drag the window. */
+.drag {
+  -webkit-app-region: drag;
+}
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--gs-line);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--gs-faint);
+}
+
+:focus-visible {
+  outline: 2px solid var(--gs-accent);
+  outline-offset: -2px;
+}
+
+/* cmdk */
+[cmdk-item][data-selected='true'] {
+  background: var(--gs-select);
+}
