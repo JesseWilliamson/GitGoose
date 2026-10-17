@@ -97,6 +97,79 @@ describe('AI service', () => {
   })
 })
 
+describe('secret scan before sending', () => {
+  // Built by concatenation so this file does not trip secret scanners itself.
+  const TOKEN = 'ghp_' + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8'
+
+  it('sends nothing that looks like a credential, and sends it redacted when asked', async () => {
+    const api = await fakeAnthropic(['Use a credential helper.'])
+    cleanup.push(() => api.close())
+    const { ai } = await setup({ aiProvider: 'anthropic' }, api)
+    ai.setApiKey('sk-ant-test')
+    ai.consent()
+    const task = { kind: 'explain-error' as const, title: 'Push main', detail: `remote: https://${TOKEN}@github.com/o/r rejected` }
+    const err = await ai.run('s1', 'x', task).catch((e: unknown) => e as { code: string; message: string })
+    expect(err).toMatchObject({ code: 'ai-secrets' })
+    expect(err.message).toContain('GitHub token ghp_…R8 (40 chars)')
+    expect(err.message).not.toContain(TOKEN)
+    expect(api.requests).toHaveLength(0)
+
+    await ai.run('s2', 'x', task, { redact: true })
+    const sent = JSON.stringify(api.requests[0])
+    expect(sent).toContain('[REDACTED GitHub token]')
+    expect(sent).not.toContain(TOKEN)
+  })
+
+  it('says which file and line a secret in a review diff is on', async () => {
+    const { ai, r } = await setup()
+    ai.consent()
+    r.write('config.ts', `export const a = 1\nexport const token = "${TOKEN}"\n`)
+    r.git('add', 'config.ts')
+    await expect(ai.run('s3', 'x', { kind: 'review', scope: { kind: 'staged' } })).rejects.toMatchObject({
+      code: 'ai-secrets',
+      message: expect.stringContaining('in config.ts:2'),
+    })
+    expect(ai.agent.starts).toBe(0)
+  })
+
+  it('merges the scan, an allowed linter and the model into one review', async () => {
+    const script = join(tempDir(), 'todo-lint.mjs')
+    writeFileSync(script, 'import { readFileSync } from "node:fs"\nfor (const f of process.argv.slice(2)) readFileSync(f, "utf8").split("\\n").forEach((l, i) => { if (l.includes("TODO")) console.log(`${f}:${i + 1}:1: unfinished [Warning/no-todo]`) })\n')
+    const linter = `"${process.execPath}" "${script}" {files}`
+    const t = await setup({ reviewLinter: linter })
+    t.ai.consent()
+    t.ai['deps'].setSettings({ linterDecisions: { [`${t.repo.path}\n${linter}`]: true } })
+    t.r.git('commit', '-qm', 'widgets')
+    t.r.write('config.ts', `export const a = 1 // TODO\nexport const token = "${TOKEN}"\n`)
+    const res = await t.ai.run('s4', 'x', { kind: 'review', scope: { kind: 'working' }, profile: 'quiet' }, { redact: true })
+    const findings = res.review!.findings
+    // The model's own "hard-coded credential" on the scanned line is dropped as a repeat; the
+    // linter's minor finding stays although the quiet profile would drop a minor from the model.
+    expect(findings.map((f) => [f.id, f.source ?? 'ai', f.startLine, f.severity])).toEqual([
+      ['F1', 'scan', 2, 'critical'],
+      ['F2', 'lint', 1, 'minor'],
+      ['F3', 'ai', 1, 'major'],
+    ])
+    expect(res.review!.context.linters).toMatchObject([{ name: 'todo-lint', status: 'ran', findings: 1 }])
+    // A re-review with nothing changed keeps the tools' findings open, not "addressed".
+    const again = await t.ai.run('s5', 'x', { kind: 'review', scope: { kind: 'working' }, profile: 'quiet', previous: { findings, hunkKeys: res.review!.hunkKeys, contextKey: res.review!.contextKey } })
+    expect(again.review!.findings.map((f) => [f.source ?? 'ai', f.status])).toEqual([['scan', 'open'], ['lint', 'open'], ['ai', 'open']])
+  })
+
+  it('tells the model what the tools already reported', async () => {
+    const r = makeFixture('linear')
+    r.write('config.ts', `export const token = "${TOKEN}"\n`)
+    const repo = await Repo.open(r.dir, {})
+    cleanup.push(() => repo.dispose())
+    const lint = async () => ({ findings: [], runs: [], report: ['- config.ts:1 todo-lint no-todo: unfinished'] })
+    const built = await buildPrompt(repo, { kind: 'review', scope: { kind: 'working' }, profile: 'chill' }, { lint })
+    expect(built.prompt).toContain('The built-in secret scan already reported these')
+    expect(built.prompt).toContain('- config.ts:1 Possible GitHub token in the code')
+    expect(built.prompt).toContain('Linters already reported these')
+    expect(built.review!.local).toHaveLength(1)
+  })
+})
+
 describe('prompts', () => {
   it('leaves lockfiles out of the diff and cuts huge diffs', async () => {
     const r = makeFixture('linear')

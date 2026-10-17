@@ -106,6 +106,10 @@ async function prompt(params, cx) {
         { path: 'invented/file.ts', startLine: 1, endLine: 1, type: 'bug', severity: 'critical', title: 'Hallucinated', message: 'Not real.' },
       ],
     }
+    // A model that sees a redacted secret flags the marker: the scan's own finding should win.
+    const redacted = /^\s*(\d+)\+\| .*\[REDACTED/m.exec(text)
+    const redactedPath = redacted && [...text.slice(0, redacted.index).matchAll(/^=== (.+?) \(/gm)].at(-1)?.[1]
+    if (redacted && !learned) answer.findings.push({ path: redactedPath, startLine: Number(redacted[1]), endLine: Number(redacted[1]), type: 'security', severity: 'critical', title: 'Hard-coded credential', message: 'A secret was removed from this line.' })
     const json = JSON.stringify(answer)
     for (let i = 0; i < json.length; i += 50) await say(cx, id, json.slice(i, i + 50))
     return { stopReason: 'end_turn' }

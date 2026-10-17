@@ -64,6 +64,35 @@ export interface ReviewFinding {
   original?: string[]
   /** On a re-review: new, or carried over from the last review because its lines are unchanged. */
   status?: 'new' | 'open'
+  /** Who found it: absent for the model, 'scan' for the built-in secret scan, 'lint' for a linter. */
+  source?: 'scan' | 'lint'
+  /** The linter's name (and rule, when it gives one), for source 'lint'. */
+  tool?: string
+}
+
+/** A linter a review can run: detected from the repository's config, or a command from Settings. */
+export interface LinterInfo {
+  name: string
+  /** Exactly what runs (argv joined); `{files}` stands for the changed files. Approval is per this text. */
+  command: string
+  /** File extensions it takes (".ts"); null for any file. */
+  extensions: string[] | null
+  source: 'detected' | 'settings'
+  /** The user's answer for this repository: run it, never run it, or not asked yet. */
+  decision: 'allow' | 'deny' | null
+}
+
+/** What happened to one linter during a review. */
+export interface LinterRun {
+  name: string
+  command: string
+  status: 'ran' | 'failed' | 'skipped'
+  /** Files it was given. */
+  files: number
+  /** Its reports on changed lines (the ones that became findings). */
+  findings: number
+  /** Why it failed or was skipped, or how many reports were outside the change. */
+  note?: string
 }
 
 export interface ReviewResult {
@@ -85,7 +114,7 @@ export interface ReviewResult {
   /** Files that were in the change but not sent (over the size budget). */
   skipped: string[]
   /** What the model was told besides the diff (shown, so a review is never a black box). */
-  context: { guidelines: string[]; pathInstructions: string[]; learnings: number }
+  context: { guidelines: string[]; pathInstructions: string[]; learnings: number; linters?: LinterRun[] }
   /** Keys of the hunks reviewed (and of unchanged ones carried over): what a re-review can skip. */
   hunkKeys: string[]
   /** A key of what the model was told besides the diff: a re-review with other guidance starts over. */
@@ -178,6 +207,11 @@ export interface ReviewLearning {
 }
 
 /** What the user asked the AI to do. Each builds its own prompt in main/ai/prompts.ts. */
+export interface AiRunOptions {
+  /** Send even though the secret scan found something, with each hit replaced by "[REDACTED kind]". */
+  redact?: boolean
+}
+
 export type AiTask =
   | { kind: 'commit-message' }
   | { kind: 'explain-commit'; hash: string }

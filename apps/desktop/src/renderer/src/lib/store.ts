@@ -126,7 +126,7 @@ export type Dialog =
     }
   | { kind: 'confirm'; title: string; message: string; confirm: string; danger?: boolean; onConfirm: () => void | Promise<void> }
   /** A question with several answers; the last choice is usually Cancel (a choice with no run). */
-  | { kind: 'choice'; title: string; message: string; detail?: string; choices: Choice[] }
+  | { kind: 'choice'; title: string; message: string; detail?: string; choices: Choice[]; onDismiss?: () => void }
   | { kind: 'clone' }
   | { kind: 'shortcuts' }
   /** Several lines of text (a commit message). */
@@ -626,6 +626,6 @@ export function dismissAttention(id: number): void {
 }
 
 /** Ask a question with several answers in a modal. */
-export function choose(title: string, message: string, choices: Choice[], detail?: string): void {
-  set({ dialog: { kind: 'choice', title, message, detail, choices } })
+export function choose(title: string, message: string, choices: Choice[], detail?: string, onDismiss?: () => void): void {
+  set({ dialog: { kind: 'choice', title, message, detail, choices, onDismiss } })
 }

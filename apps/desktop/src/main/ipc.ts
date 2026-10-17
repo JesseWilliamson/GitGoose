@@ -13,6 +13,7 @@ import { GITHUB_SCOPES } from '@gitsquid/shared'
 import type { AiService } from './ai/service'
 import type { GitHubService } from './github/service'
 import type { RepoManager } from './repos'
+import { decisionKey, linters } from './ai/linters'
 import { forgetOpenRepo, getSettings, rememberRepo, setSettings } from './settings'
 
 export function broadcast(event: GitSquidEvent): void {
@@ -91,7 +92,7 @@ export function createHandlers(
 
     aiStatus: async () => ai.status(),
     aiConsent: async () => ai.consent(),
-    aiRun: (requestId, repoId, task) => ai.run(requestId, repoId, task),
+    aiRun: (requestId, repoId, task, opts) => ai.run(requestId, repoId, task, opts),
     aiCancel: async (requestId) => ai.cancel(requestId),
     aiRespondPermission: async (id, optionId) => ai.respondPermission(id, optionId),
     aiAgentInfo: () => ai.agentInfo(),
@@ -155,6 +156,14 @@ export function createHandlers(
       setSettings({ askThreads: { ...getSettings().askThreads, [path]: (getSettings().askThreads[path] ?? []).filter((t) => t.id !== threadId) } })
     },
     reviewLearnings: async (id) => getSettings().reviewLearnings[r(id).path] ?? [],
+    linters: async (id) => linters(r(id).path, getSettings()),
+    decideLinter: async (id, command, allow) => {
+      const all = { ...getSettings().linterDecisions }
+      const key = decisionKey(r(id).path, command)
+      if (allow === null) delete all[key]
+      else all[key] = allow
+      setSettings({ linterDecisions: all })
+    },
     setReviewLearnings: async (id, learnings) => {
       const all = { ...getSettings().reviewLearnings }
       if (learnings.length) all[r(id).path] = learnings

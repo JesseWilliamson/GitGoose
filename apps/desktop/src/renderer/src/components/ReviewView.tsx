@@ -3,7 +3,8 @@ import clsx from 'clsx'
 import { Sparkles } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { applySuggestion, dismissFinding, fixWithAi, rememberDismissal, startReview, stopReview, targetFor } from '../lib/review'
-import { updateRepo, useStore, type RepoView } from '../lib/store'
+import { api } from '../lib/api'
+import { toast, updateRepo, useStore, type RepoView } from '../lib/store'
 import { Button, Spinner } from './ui'
 
 export const SEVERITY_STYLE: Record<FindingSeverity, string> = {
@@ -66,6 +67,17 @@ export function ReviewView({ view }: { view: RepoView }) {
             {result.context.pathInstructions.length ? ` · path instructions for ${result.context.pathInstructions.join(', ')}` : ''}
             {` · ${result.context.learnings} learning${result.context.learnings === 1 ? '' : 's'} · `}
             <button className="text-accent hover:underline" onClick={() => useStore.setState({ dialog: { kind: 'learnings', repoId: view.id } })}>Manage learnings</button>
+            {result.context.linters?.map((l) => (
+              <span key={l.command} data-testid="review-linter">
+                {` · ${l.name} `}
+                {l.status === 'ran' ? `on ${l.files} file${l.files === 1 ? '' : 's'}: ${l.findings} finding${l.findings === 1 ? '' : 's'}${l.note ? ` (${l.note})` : ''}`
+                  : l.status === 'failed' ? <span className="text-warn">failed{l.note ? `: ${l.note}` : ''}</span>
+                  : `skipped (${l.note})`}
+                {l.status === 'skipped' && l.note?.startsWith('you chose') && (
+                  <> <button className="text-accent hover:underline" onClick={() => void api.decideLinter(view.id, l.command, null).then(() => toast(`The next review will ask about ${l.name} again.`))}>Ask again</button></>
+                )}
+              </span>
+            ))}
           </p>
         )}
         {result && !findings.length && !r.error && <p className="mx-4 mt-4 text-[13px] text-faint">Nothing to report{result.findings.length ? ' (all dismissed)' : ''}.</p>}
@@ -78,6 +90,7 @@ export function ReviewView({ view }: { view: RepoView }) {
                 <div className="flex items-center gap-2">
                   <span className={clsx('rounded px-1.5 text-[10px] font-semibold uppercase', SEVERITY_STYLE[f.severity])}>{f.severity}</span>
                   <span className="text-[11px] text-faint">{f.type}</span>
+                  {f.source && <span className="rounded border border-line px-1 text-[10px] text-muted" data-testid="finding-source" title={f.source === 'scan' ? "Found by GitSquid's built-in secret scan, not the AI" : 'Reported by a linter, not the AI'}>{f.tool}</span>}
                   {f.status && <span className={clsx('text-[10px]', f.status === 'new' ? 'text-accent' : 'text-faint')} data-testid="finding-status">{f.status === 'new' ? 'new' : 'still open'}</span>}
                   <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">{f.title}</span>
                   <button className="font-mono text-[11px] text-accent hover:underline" onClick={() => open(f)} title="Show in the diff">
@@ -96,7 +109,7 @@ export function ReviewView({ view }: { view: RepoView }) {
                   <Button size="sm" onClick={() => fixWithAi(view.id, f)} data-testid="fix-with-ai"><Sparkles size={12} /> Fix with AI…</Button>
                   <Button size="sm" variant="ghost" onClick={() => open(f)}>Show in diff</Button>
                   <Button size="sm" variant="ghost" onClick={() => dismissFinding(view.id, f.id)}>Dismiss</Button>
-                  <Button size="sm" variant="ghost" onClick={() => rememberDismissal(view.id, f)} data-testid="remember-dismissal" title="Dismiss, and tell future reviews not to flag this">Don't flag again…</Button>
+                  {!f.source && <Button size="sm" variant="ghost" onClick={() => rememberDismissal(view.id, f)} data-testid="remember-dismissal" title="Dismiss, and tell future reviews not to flag this">Don't flag again…</Button>}
                 </div>
               </div>
             ))}

@@ -1,7 +1,7 @@
 import type { DiffTarget, ReviewFinding, ReviewProfile, ReviewResult, ReviewScope } from '@gitsquid/shared'
 import { api, toUiError } from './api'
 import { cancelAi, startAi, useAi } from './ai'
-import { setting, toast, updateRepo, useStore, type RepoView } from './store'
+import { choose, setting, toast, updateRepo, useStore, type RepoView } from './store'
 import { ask, run } from './actions'
 
 /** A review of one change in a repository: running, failed, or done (findings, minus dismissed ones). */
@@ -28,13 +28,35 @@ export function startReview(id: string, scope: ReviewScope, opts: { incremental?
   const profile = setting('reviewProfile') as ReviewProfile
   const same = old?.result && JSON.stringify(old.scope) === JSON.stringify(scope) && old.profile === profile
   const previous = opts.incremental && same ? { findings: old!.result!.findings.filter((f) => !old!.dismissed.includes(f.id)), hunkKeys: old!.result!.hunkKeys, contextKey: old!.result!.contextKey } : undefined
-  const run = startAi(id, { kind: 'review', scope, profile, previous })
+  const run = startAi(id, { kind: 'review', scope, profile, previous }, undefined, { before: () => askAboutLinters(id) })
   updateRepo(id, { review: { scope, profile, requestId: run.requestId, result: null, error: null, dismissed: [], focus: null }, center: { kind: 'review' } })
   const mine = (v: RepoView) => v.review?.requestId === run.requestId
   run.done.then(
     (res) => updateRepo(id, (v) => (mine(v) ? { review: res?.review ? { ...v.review!, requestId: null, result: res.review } : null, ...(res ? {} : { center: { kind: 'graph' } as const }) } : {})),
     (e) => updateRepo(id, (v) => (mine(v) ? { review: { ...v.review!, requestId: null, error: toUiError(e).message } } : {})),
   )
+}
+
+/**
+ * Linters found since the last review (or a new command in Settings) are asked about once per
+ * repository. Each runs the repository's own config, so this is a question about trusting the
+ * repository, like opening a project in an editor that runs its tasks. Closing the dialog skips
+ * it this time and asks again next time; the buttons are remembered.
+ */
+async function askAboutLinters(id: string): Promise<void> {
+  const list = await api.linters(id).catch(() => [])
+  for (const l of list.filter((x) => x.decision === null)) {
+    const answer = await new Promise<boolean | null>((resolve) => choose(
+      `Run ${l.name} during reviews?`,
+      l.source === 'detected'
+        ? `This repository is set up for ${l.name}. Reviews can run it on the changed files and show what it reports. It uses the repository's own configuration, which can run code from the repository. Allow this command for this repository?`
+        : 'Reviews of this repository can run the linter command from Settings on the changed files. Allow it here?',
+      [{ label: "Don't run", run: () => resolve(false) }, { label: 'Allow', variant: 'primary', run: () => resolve(true) }],
+      l.command,
+      () => resolve(null),
+    ))
+    if (answer !== null) await api.decideLinter(id, l.command, answer)
+  }
 }
 
 export function stopReview(id: string): void {

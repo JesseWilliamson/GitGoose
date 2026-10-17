@@ -1,7 +1,7 @@
 import { AI_AUTH_REQUIRED, type AgentAuthMethod, type AiPermissionRequest, type AiResult, type AiTask, type RecomposeProposal } from '@gitsquid/shared'
 import { create } from 'zustand'
 import { api, toUiError } from './api'
-import { attention, useStore } from './store'
+import { attention, choose, useStore } from './store'
 
 /**
  * Renderer side of the AI features. `startAi` does the asking (set up? agreed? logged in?) and
@@ -65,7 +65,11 @@ export interface AiRun {
   done: Promise<AiResult | null>
 }
 
-export function startAi(repoId: string | null, task: AiTask, onText?: (text: string) => void): AiRun {
+/**
+ * `before` runs once the provider is set up and agreed to, just before the request: for questions
+ * that only make sense when the request will really happen (which linters a review may run).
+ */
+export function startAi(repoId: string | null, task: AiTask, onText?: (text: string) => void, opts: { before?: () => Promise<void> } = {}): AiRun {
   const requestId = crypto.randomUUID()
   const done = (async (): Promise<AiResult | null> => {
     const status = await api.aiStatus()
@@ -82,14 +86,21 @@ export function startAi(repoId: string | null, task: AiTask, onText?: (text: str
       if (!ok) return null
       await api.aiConsent()
     }
+    await opts.before?.()
     if (onText) textListeners.set(requestId, onText)
     try {
+      let redact = false
       for (let attempt = 0; ; attempt++) {
         try {
-          return await api.aiRun(requestId, repoId ?? '', task)
+          return await api.aiRun(requestId, repoId ?? '', task, redact ? { redact } : undefined)
         } catch (e) {
-          const err = e as { code?: string }
+          const err = e as { code?: string; message?: string }
           if (err.code === 'ai-cancelled') return null
+          if (err.code === 'ai-secrets' && !redact) {
+            if (!(await askToRedact(err.message ?? ''))) return null
+            redact = true
+            continue
+          }
           if (err.code !== AI_AUTH_REQUIRED || attempt > 0) throw e
           const info = await api.aiAgentInfo()
           const ok = await new Promise<boolean>((resolve) => useAi.setState({ login: { agent: info.name, methods: info.authMethods, repoId, resolve } }))
@@ -101,6 +112,22 @@ export function startAi(repoId: string | null, task: AiTask, onText?: (text: str
     }
   })()
   return { requestId, done }
+}
+
+/**
+ * The secret scan in main stopped a request. Main's message is a sentence, a blank line, then the
+ * (masked) list; the list goes in the dialog's detail box. Cancel comes first so Enter is the safe
+ * answer, and closing the dialog counts as Cancel.
+ */
+function askToRedact(message: string): Promise<boolean> {
+  const cut = message.indexOf('\n\n')
+  return new Promise((resolve) => choose(
+    'Possible secrets in this request',
+    `${cut < 0 ? message : message.slice(0, cut)} Send it with each one replaced by "[REDACTED …]", or cancel and remove them first?`,
+    [{ label: 'Cancel', run: () => resolve(false) }, { label: 'Redact and send', variant: 'primary', run: () => resolve(true) }],
+    cut < 0 ? undefined : message.slice(cut + 2),
+    () => resolve(false),
+  ))
 }
 
 export function cancelAi(requestId: string): void {

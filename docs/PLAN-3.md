@@ -202,3 +202,10 @@ Part B:
       (no model call when nothing changed), carries findings whose exact lines are still there
       (relocated after shifts) and lists the rest as addressed; a change in guidance (a new
       learning, an edited CLAUDE.md) makes it a full review
+- [x] 37 secret scan (built in, always on) over the exact text of every AI request: a match
+      stops it with what was found, masked, and where (file:line for diffs); Redact and send
+      replaces each one with "[REDACTED kind]". Reviews also report secrets on added lines
+      themselves. Linters: ESLint, Ruff, ShellCheck when the repository is set up for them, plus
+      a command from Settings; each exact command allowed once per repository; run without a
+      shell, only on files whose disk text is the reviewed text; reports on added lines become
+      findings and are listed to the model so it does not repeat them

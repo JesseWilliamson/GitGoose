@@ -27,7 +27,7 @@ export function Dialogs() {
   }
   if (dialog.kind === 'choice') {
     return (
-      <Modal open onClose={close} title={dialog.title} width={500}>
+      <Modal open onClose={() => { close(); dialog.onDismiss?.() }} title={dialog.title} width={500}>
         <div data-testid="choice-dialog">
           <p className="mb-3 text-[13px] text-muted">{dialog.message}</p>
           {dialog.detail && <pre className="selectable mb-4 max-h-40 overflow-auto rounded bg-bg p-2 font-mono text-[11px] whitespace-pre-wrap text-muted">{dialog.detail}</pre>}

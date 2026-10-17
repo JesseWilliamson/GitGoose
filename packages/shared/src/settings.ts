@@ -154,7 +154,13 @@ export const SETTINGS = {
   /** Providers the user agreed to send content to, e.g. "agent:npx -y …" or "anthropic". */
   reviewProfile: choice('chill', [{ value: 'quiet', label: 'Quiet: only real problems' }, { value: 'chill', label: 'Chill: no nits or style' }, { value: 'assertive', label: 'Assertive: everything, nits too' }],
     { label: 'Review style', section: 'AI', keywords: 'code review findings nits coderabbit', description: 'How much AI review says. Findings are always checked against the diff before they are shown.' }),
+  reviewLinter: text('', {
+    label: 'Extra linter for reviews', section: 'AI', placeholder: 'npx stylelint --formatter unix {files}', keywords: 'lint eslint ruff shellcheck',
+    description: 'Runs on the changed files during an AI review, besides the linters GitSquid finds in the repository (ESLint, Ruff, ShellCheck). {files} is replaced by the files; output as path:line:col: message. Asked for once per repository.',
+  }),
   aiConsent: internal([] as string[]),
+  /** Linter commands the user allowed (true) or refused (false), keyed "<repo path>\n<command>". */
+  linterDecisions: internal<Record<string, boolean>>({}),
 
   // ---------------------------------------------------------------- Accounts
   githubHttps: bool(false, {

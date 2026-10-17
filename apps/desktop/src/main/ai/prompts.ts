@@ -1,6 +1,6 @@
 import type { Repo } from '@gitsquid/git'
-import { carryOver, textKey, describeHunks, globToRegExp, hunkKey, numberedDiff, onlyChanged, reviewableLines, walkthroughHunks, type ReviewableLines } from '@gitsquid/git'
-import type { AiTask, ImpactResult, ReviewFinding, ReviewLearning, ReviewProfile, WalkthroughResult } from '@gitsquid/shared'
+import { addedLines, carryOver, textKey, describeHunks, globToRegExp, hunkKey, numberedDiff, onlyChanged, reviewableLines, secretFindings, walkthroughHunks, type AddedLines, type ReviewableLines } from '@gitsquid/git'
+import type { AiTask, ImpactResult, LinterRun, ReviewFinding, ReviewLearning, ReviewProfile, WalkthroughResult } from '@gitsquid/shared'
 import { join } from 'node:path'
 
 /**
@@ -40,7 +40,9 @@ export interface BuiltPrompt {
   /** For review: what the findings are checked against. */
   review?: {
     lines: ReviewableLines; texts: Map<string, string>; label: string; head: string; base?: string; skipped: string[]
-    context: { guidelines: string[]; pathInstructions: string[]; learnings: number }
+    context: { guidelines: string[]; pathInstructions: string[]; learnings: number; linters?: LinterRun[] }
+    /** Findings from tools, not the model: the secret scan and linters (see lint.ts). */
+    local: ReviewFinding[]
     hunkKeys: string[]
     contextKey: string
     /** A re-review: what was carried over and what was sent. No model call when nothing changed. */
@@ -79,6 +81,8 @@ async function git(repo: Repo, args: string[], pathspecs = false): Promise<strin
 /** What the caller knows that the repository does not: the learnings saved for it. */
 export interface PromptContext {
   learnings?: ReviewLearning[]
+  /** The review's lint pass (main/ai/linters.ts): run what the user allowed on these files. */
+  lint?: (paths: string[], texts: Map<string, string>, lines: AddedLines) => Promise<{ findings: ReviewFinding[]; runs: LinterRun[]; report: string[] }>
 }
 
 export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: PromptContext = {}): Promise<BuiltPrompt> {
@@ -174,11 +178,27 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: Pro
       const carried = previous ? carryOver(previous.findings, (p) => input.texts.get(p) ?? null) : null
       const files = again ? again.files : input.files
       const incremental = again && carried ? { open: carried.open, addressed: carried.addressed, sent: allKeys.length - again.unchanged, unchanged: again.unchanged } : undefined
+      // The tools' half: secrets on added lines and linter reports, on the same pieces the model sees.
+      const lines = reviewableLines(files)
+      const secrets = secretFindings(files)
+      const linted = files.length && ctx.lint
+        ? await ctx.lint(files.filter((f) => !f.binary && f.change !== 'deleted').map((f) => f.path), input.texts, addedLines(files))
+        : { findings: [], runs: [], report: [] }
+      const already = [
+        ...(secrets.length ? ['The built-in secret scan already reported these (the values are redacted below); do not report them again:',
+          ...secrets.map((f) => `- ${f.path}:${f.startLine} ${f.title}`), ''] : []),
+        ...(linted.report.length ? ['Linters already reported these; do not repeat them, and do not comment on style the linters cover:', ...linted.report, ''] : []),
+      ]
       return {
         system: 'You are a careful senior engineer reviewing a code change.',
         review: {
-          lines: reviewableLines(files), texts: input.texts, label: input.label, head: input.head, base: input.base, skipped: input.skipped,
-          context: { guidelines: project.guidelines.map((g) => g.path), pathInstructions: project.pathInstructions.map((pi) => pi.path), learnings: learnings.length },
+          lines, texts: input.texts, label: input.label, head: input.head, base: input.base, skipped: input.skipped,
+          context: {
+            guidelines: project.guidelines.map((g) => g.path), pathInstructions: project.pathInstructions.map((pi) => pi.path), learnings: learnings.length,
+            ...(linted.runs.length ? { linters: linted.runs } : {}),
+          },
+          // With their lines as they are, like the model's findings: a re-review finds them again by those.
+          local: [...secrets, ...linted.findings].map((f) => ({ ...f, original: input.texts.get(f.path)?.split(/\r?\n/).slice(f.startLine - 1, f.endLine) })),
           hunkKeys: allKeys, contextKey, incremental, skipModel: !!again && !files.length,
         },
         prompt: [
@@ -192,6 +212,7 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: Pro
           NO_TOOLS,
           '',
           ...guidance,
+          ...already,
           ...(again ? [`This is a re-review: only the ${files.length === 1 ? 'piece' : 'pieces'} that changed since the last review ${files.length === 1 ? 'is' : 'are'} shown.`, ''] : []),
           numberedDiff(files, (p) => input.texts.get(p) ?? null),
           ...(input.skipped.length ? [`(Not shown, over the size limit: ${input.skipped.join(', ')})`] : []),

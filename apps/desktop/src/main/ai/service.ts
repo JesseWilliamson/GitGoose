@@ -1,13 +1,14 @@
 import type { Repo } from '@gitsquid/git'
 import {
   agentCommandLine, agentLabel, commandArgv,
-  type AgentInfo, type AgentPreset, type AiPermissionRequest, type AiResult, type AiStatus, type AiTask, type GitSquidEvent, type Settings,
+  type AgentInfo, type AgentPreset, type AiPermissionRequest, type AiResult, type AiRunOptions, type AiStatus, type AiTask, type GitSquidEvent, type Settings,
 } from '@gitsquid/shared'
 import { tmpdir } from 'node:os'
 import { AcpAgent } from './acp'
 import { anthropicComplete } from './anthropic'
 import type { SecretFile } from './keyStore'
-import { extractJson, repairPlan, verifyFindings, verifyWalkthrough } from '@gitsquid/git'
+import { extractJson, locateSecret, redactSecrets, repairPlan, scanSecrets, verifyFindings, verifyWalkthrough } from '@gitsquid/git'
+import { lintForReview } from './linters'
 import { buildPrompt, cleanCommitMessage, type BuiltPrompt } from './prompts'
 
 /**
@@ -17,6 +18,7 @@ import { buildPrompt, cleanCommitMessage, type BuiltPrompt } from './prompts'
  *   - nothing is sent, and no agent is started, until the user has agreed to this provider
  *   - every tool call the agent asks about goes to the user (see acp.ts for the one exception)
  *   - an agent's file write is only ever a proposal the user then accepts or not
+ *   - nothing that looks like a credential is sent unless the user chose to send it redacted
  */
 export interface AiServiceDeps {
   settings: () => Settings
@@ -26,6 +28,33 @@ export interface AiServiceDeps {
   emit: (event: GitSquidEvent) => void
   anthropicBaseURL?: string
   fetch?: typeof fetch
+}
+
+/**
+ * The last check before anything leaves: scan exactly the text that would be sent. With hits,
+ * either stop and say what was found (masked), or, when the user chose to, replace each one with
+ * a "[REDACTED kind]" marker. Scanning the final text rather than the inputs means no prompt
+ * builder can forget to call it.
+ */
+export function guardSecrets(built: BuiltPrompt, redact: boolean): void {
+  const outgoing = `${built.system}\n\n${built.prompt}`
+  const hits = scanSecrets(outgoing)
+  if (!hits.length) return
+  if (redact) {
+    built.system = redactSecrets(built.system).text
+    built.prompt = redactSecrets(built.prompt).text
+    return
+  }
+  const list = hits.slice(0, 5).map((h) => {
+    const at = locateSecret(outgoing, h.index)
+    const where = at.file ? ` in ${at.file}${at.line ? `:${at.line}` : ''}` : ''
+    return `• ${h.kind} ${h.masked}${where}${at.excerpt ? `\n    ${at.excerpt}` : ''}`
+  })
+  if (hits.length > 5) list.push(`• and ${hits.length - 5} more`)
+  throw new AiError(
+    `This request contains ${hits.length === 1 ? 'something that looks like a secret' : `${hits.length} things that look like secrets`}, so nothing was sent.\n\n${list.join('\n')}`,
+    'ai-secrets',
+  )
 }
 
 export class AiError extends Error {
@@ -108,7 +137,7 @@ export class AiService {
     await this.agent.authenticate(methodId)
   }
 
-  async run(requestId: string, repoId: string, task: AiTask): Promise<AiResult> {
+  async run(requestId: string, repoId: string, task: AiTask, opts: AiRunOptions = {}): Promise<AiResult> {
     const st = this.status()
     if (st.provider === 'off') throw new AiError('AI features are off. Turn them on in Settings → AI.', 'ai-off')
     if (!st.ready) {
@@ -118,9 +147,14 @@ export class AiService {
     // Explaining an error needs no repository (it may have happened with none open).
     const repo = task.kind === 'explain-error' && !repoId ? null : this.deps.repo(repoId)
     const cwd = repo?.path ?? tmpdir()
-    const built = await buildPrompt(repo, task, { learnings: repo ? this.deps.settings().reviewLearnings[repo.path] : undefined })
+    const settings = this.deps.settings()
+    const built = await buildPrompt(repo, task, {
+      learnings: repo ? settings.reviewLearnings[repo.path] : undefined,
+      lint: repo ? (paths, texts, lines) => lintForReview(repo.path, this.deps.settings(), paths, texts, lines) : undefined,
+    })
     // A re-review where nothing changed: the last review stands, no need to ask anyone.
     if (task.kind === 'review' && built.review?.skipModel) return { text: '', review: toReview(task, built, '{"summary": "", "findings": []}') }
+    guardSecrets(built, opts.redact === true)
     const emitText = (text: string) => this.deps.emit({ type: 'ai-text', requestId, text })
     const finish = (text: string) => (task.kind === 'commit-message' ? cleanCommitMessage(text) : text.trim())
     // A recompose answer becomes a proposal for the review dialog (nothing changes until Apply).
@@ -246,12 +280,17 @@ function toReview(task: Extract<AiTask, { kind: 'review' }>, built: BuiltPrompt,
   const raw = extractJson(text)
   if (!raw) throw new AiError('The AI did not answer with findings. Try again.', 'ai-bad-answer')
   const v = verifyFindings(raw, r.lines, (p) => r.texts.get(p) ?? null, task.profile)
+  // Tool findings first. The model saw the secrets redacted and may flag the marker itself: a
+  // security finding of its own on a line the scan already reported says nothing new.
+  const scanned = r.local.filter((f) => f.source === 'scan')
+  const model = v.findings.filter((f) => !(f.type === 'security' && scanned.some((s) => s.path === f.path && f.startLine <= s.endLine && f.endLine >= s.startLine)))
+  const fresh = [...r.local, ...model]
   const inc = r.incremental
   // On a re-review, new findings join the ones carried over (a new one on the same spot wins).
-  const findings = inc
-    ? [...v.findings.map((f) => ({ ...f, status: 'new' as const })), ...inc.open.filter((o) => !v.findings.some((f) => f.path === o.path && f.startLine === o.startLine && f.title === o.title))]
-        .map((f, i) => ({ ...f, id: `F${i + 1}` }))
-    : v.findings
+  const findings = (inc
+    ? [...fresh.map((f) => ({ ...f, status: 'new' as const })), ...inc.open.filter((o) => !fresh.some((f) => f.path === o.path && f.startLine === o.startLine && f.title === o.title))]
+    : fresh
+  ).map((f, i) => ({ ...f, id: `F${i + 1}` }))
   const summary = v.summary || (inc && !inc.sent ? 'Nothing changed in the reviewed code since the last review.' : '')
   return {
     scope: task.scope, profile: task.profile, label: r.label, head: r.head, base: r.base, summary, findings, dropped: v.dropped, skipped: r.skipped, context: r.context,
