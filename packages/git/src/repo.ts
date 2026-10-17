@@ -1,5 +1,5 @@
 import type {
-  BisectState, BlameLine, ChangedFile, CommandRecord, GraphFilter, Identity, Person, Signature, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
+  BisectState, BlameLine, ImageSide, ChangedFile, CommandRecord, GraphFilter, Identity, Person, Signature, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
   LogPage, Ref, Remote, RepoOperation, ReflogEntry, RepoSnapshot, ResetMode, Resolution, SearchField, SelectionRequest,
   StashEntry, StatusEntry, Submodule, UndoEntry, Worktree,
 } from '@gitsquid/shared'
@@ -358,6 +358,47 @@ export class Repo {
     const out = await this.read(args)
     const parsed = parseDiff(out, target.path)
     return parsed[0] ?? null
+  }
+
+  /**
+   * Both versions of an image for a diff target, read only when an image diff is shown. A side
+   * is null when the file does not exist there (added, deleted); over `cap` bytes, only its size
+   * comes back, so a huge asset never crosses IPC.
+   */
+  async imagePair(target: DiffTarget, cap = 25 * 1024 * 1024): Promise<{ old: ImageSide | null; new: ImageSide | null }> {
+    const fromRev = async (spec: string): Promise<ImageSide | null> => {
+      const sz = await this.runner.run(['cat-file', '-s', spec], { readOnly: true, okCodes: [128] })
+      if (sz.code !== 0) return null
+      const size = Number(sz.stdout.trim())
+      return size > cap ? { size } : { size, data: new Uint8Array(await this.fileAtSpec(spec)) }
+    }
+    const fromDisk = async (path: string): Promise<ImageSide | null> => {
+      const st = await lstat(join(this.path, path)).catch(() => null)
+      if (!st?.isFile()) return null
+      return st.size > cap ? { size: st.size } : { size: st.size, data: new Uint8Array(await readFile(join(this.path, path))) }
+    }
+    const p = target.path
+    switch (target.kind) {
+      case 'untracked': return { old: null, new: await fromDisk(p) }
+      case 'unstaged': return { old: await fromRev(`:${p}`), new: await fromDisk(p) }
+      case 'staged': {
+        const entry = (this.last ?? (await this.snapshot())).status.find((e) => e.path === p)
+        return { old: await fromRev(`HEAD:${entry?.origPath ?? p}`), new: await fromRev(`:${p}`) }
+      }
+      case 'range': return { old: await fromRev(`${target.from}:${target.oldPath ?? p}`), new: target.to ? await fromRev(`${target.to}:${p}`) : await fromDisk(p) }
+      case 'commit': {
+        const parents = (await this.read(['rev-list', '--parents', '-n', '1', target.hash])).trim().split(' ').slice(1)
+        const files = parents[0] ? parseChangedFiles(await this.read(['diff-tree', '-r', '-M', '-z', '--name-status', parents[0], target.hash]), '') : []
+        const f = files.find((x) => x.path === p)
+        // A file a stash saved as untracked lives in its third parent (see commitDetails).
+        if (!f && parents[2] && !(await fromRev(`${target.hash}:${p}`))) return { old: null, new: await fromRev(`${parents[2]}:${p}`) }
+        return { old: parents[0] ? await fromRev(`${parents[0]}:${f?.oldPath ?? p}`) : null, new: await fromRev(`${target.hash}:${p}`) }
+      }
+    }
+  }
+
+  private async fileAtSpec(spec: string): Promise<Buffer> {
+    return (await this.runner.runBuffer(['cat-file', 'blob', spec], { readOnly: true })).stdout
   }
 
   /**

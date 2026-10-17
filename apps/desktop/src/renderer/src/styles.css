@@ -141,3 +141,15 @@ textarea,
 [cmdk-item][data-selected='true'] {
   background: var(--gs-select);
 }
+
+/* Behind image diffs: shows where an image is transparent. */
+.checkerboard {
+  background-color: var(--color-bg);
+  background-image:
+    linear-gradient(45deg, var(--color-hover) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--color-hover) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--color-hover) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--color-hover) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}

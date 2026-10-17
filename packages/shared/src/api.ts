@@ -1,5 +1,5 @@
 import type {
-  BlameLine, ChangedFile, CommandRecord, GraphFilter, Identity, Person, Commit, CommitDetails, ConflictFile, DiffTarget, FileDiff, RepoSnapshot,
+  BlameLine, ChangedFile, CommandRecord, GraphFilter, ImageSide, Identity, Person, Commit, CommitDetails, ConflictFile, DiffTarget, FileDiff, RepoSnapshot,
   ReflogEntry, Remote, SearchField, Submodule, Worktree, StashEntry, UndoEntry,
 } from './index'
 import type { AgentInfo, AiPermissionRequest, AiResult, AiStatus, AiTask } from './ai'
@@ -186,6 +186,8 @@ export interface GitSquidApi {
   /** Where two revisions forked from each other. */
   mergeBase(repoId: string, a: string, b: string): Promise<string>
   /** Put a working-tree file back to its content at `rev` (undoable). */
+  /** Both versions of an image file for a diff (null: not there on that side). */
+  imagePair(repoId: string, target: DiffTarget): Promise<{ old: ImageSide | null; new: ImageSide | null }>
   /** Save commits as .patch files in a folder the user picks; the paths written, or null if cancelled. */
   savePatches(repoId: string, hashes: string[]): Promise<string[] | null>
   /** Ask for a .patch / .diff file and return its text (null if cancelled). */
@@ -269,7 +271,7 @@ export const API_METHODS = [
   'lastCommitMessage',
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'commandLog', 'bisectMark', 'bisectReset', 'identity', 'setIdentity', 'commitTemplate', 'recentAuthors',
   'checkout', 'createBranch', 'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset',
-  'cherryPick', 'cherryPickMany', 'commitsText', 'recomposeApply', 'compareFiles', 'mergeBase', 'restoreFile', 'savePatches', 'pickPatch', 'applyPatch', 'openFileAt', 'saveFileAt', 'editableCommits', 'dropCommits', 'moveCommits', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'preparedMessage', 'redo', 'redoList', 'revert', 'createTag', 'deleteTag',
+  'cherryPick', 'cherryPickMany', 'commitsText', 'recomposeApply', 'compareFiles', 'mergeBase', 'restoreFile', 'imagePair', 'savePatches', 'pickPatch', 'applyPatch', 'openFileAt', 'saveFileAt', 'editableCommits', 'dropCommits', 'moveCommits', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'preparedMessage', 'redo', 'redoList', 'revert', 'createTag', 'deleteTag',
   'fetch', 'pull', 'push', 'deleteRemoteBranch', 'remotes', 'addRemote', 'removeRemote', 'renameRemote', 'setRemoteUrl',
   'pushTags', 'deleteRemoteTag', 'remoteTags', 'setUpstream', 'fastForward', 'deleteBranches', 'mergedBranches',
   'stashPush', 'stashBranch', 'stashApply', 'stashPop', 'stashDrop',

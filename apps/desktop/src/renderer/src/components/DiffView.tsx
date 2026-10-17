@@ -4,6 +4,7 @@ import clsx from 'clsx'
 import { ChevronDown, X } from 'lucide-react'
 import { DropdownMenu } from 'radix-ui'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { ImageDiff, imageMime } from './ImageDiff'
 import { discard, openInEditor, restoreFileFrom, run } from '../lib/actions'
 import { api } from '../lib/api'
 import { formatDate, hashColor, laneColor, relativeTime, shortHash, splitPath } from '../lib/format'
@@ -247,7 +248,9 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
           {fileActions}
         </div>
       )}
-      {diff.binary ? (
+      {diff.binary && imageMime(target.path) ? (
+        <ImageDiff repoId={view.id} target={target} path={target.path} />
+      ) : diff.binary ? (
         <div className="flex flex-1 items-center justify-center text-sm text-faint">Binary file</div>
       ) : diff.hunks.length === 0 ? (
         <div className="flex flex-1 items-center justify-center text-sm text-faint">{diff.change === 'added' ? 'Empty file' : 'Only the file mode changed'}</div>

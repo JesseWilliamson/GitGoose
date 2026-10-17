@@ -174,6 +174,7 @@ export function createHandlers(
       const err = await shell.openPath(file)
       if (err) throw new Error(err)
     },
+    imagePair: (id, target) => r(id).imagePair(target),
     savePatches: async (id, hashes) => {
       const win = BrowserWindow.getFocusedWindow()
       const opts = { title: 'Save patches into', properties: ['openDirectory', 'createDirectory'] as ('openDirectory' | 'createDirectory')[] }

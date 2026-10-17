@@ -150,6 +150,12 @@ export interface FileDiff {
   hunks: Hunk[]
 }
 
+/** One side of an image diff: the bytes, unless the file is over the size cap. */
+export interface ImageSide {
+  size: number
+  data?: Uint8Array
+}
+
 /** Which diff to show. */
 export type DiffTarget =
   | { kind: 'unstaged'; path: string }

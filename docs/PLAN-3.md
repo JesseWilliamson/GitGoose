@@ -149,3 +149,5 @@ changes.
       Good / Bad / Skip / Stop, good / bad / first-bad marks on rows
 - [x] 27 git command log (View menu, palette): every git process per repository with duration,
       exit code and stderr; reads hidden by default; credentials in URLs masked
+- [x] 14 image diffs: side by side (sizes, dimensions), swipe, onion skin; loaded only when shown,
+      capped at 25 MB per side
