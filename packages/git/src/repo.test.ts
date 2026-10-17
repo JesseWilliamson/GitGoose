@@ -1,4 +1,4 @@
-import { initRepo, makeFixture, makeLargeRepo, type FixtureRepo } from '@gitsquid/fixtures'
+import { initRepo, makeFixture, makeLargeRepo, tempDir, type FixtureRepo } from '@gitsquid/fixtures'
 import { execFile, execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -465,6 +465,27 @@ describe('remotes', () => {
   it('reports a helpful error when there is no remote', async () => {
     const repo = await open(makeFixture('linear'))
     await expect(repo.push()).rejects.toThrow(/no remotes/)
+  })
+})
+
+describe('init and clone', () => {
+  it('initializes a new repository, creating the folder', async () => {
+    const dir = join(tempDir(), 'brand new')
+    const repo = await Repo.init(dir)
+    expect(repo.path).toBe(dir)
+    const s = await repo.snapshot()
+    expect(s.head.hash).toBeUndefined()
+    expect(await repo.logPage(0, 10)).toMatchObject({ commits: [], done: true })
+  })
+
+  it('clones into a subfolder named after the URL, reporting progress', async () => {
+    const src = makeFixture('linear')
+    const progress: (string | null)[] = []
+    const parent = tempDir()
+    const repo = await Repo.clone(src.dir + '/', parent, { onProgress: (t) => progress.push(t) })
+    expect(repo.path).toBe(join(parent, src.dir.split('/').pop()!))
+    expect((await repo.logPage(0, 10)).commits).toHaveLength(5)
+    expect(progress.at(-1)).toBeNull()
   })
 })
 
