@@ -1,7 +1,8 @@
 import * as acp from '@agentclientprotocol/sdk'
+import { realPathOf } from '@gitsquid/git'
 import { AI_AUTH_REQUIRED, type AgentAuthMethod, type AgentInfo } from '@gitsquid/shared'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { readFile, realpath } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { isAbsolute, relative, resolve } from 'node:path'
 import { Readable, Writable } from 'node:stream'
 
@@ -146,8 +147,15 @@ export class AcpAgent {
         clientInfo: { name: 'gitsquid', version: '0.1.0' },
       }), 60_000, 'The agent did not answer initialize within a minute.')
     } catch (e) {
+      // Exiting before initialize means it never started: through the Windows shell a missing
+      // command looks like this (the shell starts, prints an error and exits), not like a spawn error.
+      const exited = child.exitCode !== null || await new Promise<boolean>((ok) => {
+        child.once('exit', () => ok(true))
+        setTimeout(() => ok(false), 1000)
+      })
       child.kill()
-      throw new Error(`${(e as Error).message}${this.stderr ? `\n\n${this.stderr.trim()}` : ''}`)
+      const message = exited ? `Could not start the agent (${command}): it exited before answering.` : (e as Error).message
+      throw new Error(`${message}${this.stderr ? `\n\n${this.stderr.trim()}` : ''}`)
     }
     const running = { child, conn, init }
     this.current = running
@@ -267,12 +275,16 @@ export class AcpAgent {
   }
 }
 
-/** Every path is inside dir, after resolving symlinks (a link inside the repo can point out). */
+/**
+ * Every path is inside dir, after resolving symlinks (a link inside the repo can point out). A
+ * path that does not exist yet is judged by the folders it would be created in, so a new file
+ * under a linked folder counts as where the link goes.
+ */
 export async function allInside(dir: string, paths: string[]): Promise<boolean> {
-  const root = await realpath(dir).catch(() => resolve(dir))
+  const root = await realPathOf(dir)
   for (const p of paths) {
     if (!isAbsolute(p)) return false
-    const real = await realpath(p).catch(() => resolve(p))
+    const real = await realPathOf(p)
     const rel = relative(root, real)
     if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) return false
   }
@@ -296,7 +308,9 @@ function toInfo(init: acp.InitializeResponse, launch: AgentLaunch): AgentInfo {
   }
 }
 
+/** Quote for the shell the user will paste into: cmd and PowerShell take double quotes, not single. */
 function quoteArg(a: string): string {
+  if (process.platform === 'win32') return /^[\w@%+=:,./\\-]+$/.test(a) ? a : `"${a.replace(/"/g, '\\"')}"`
   return /^[\w@%+=:,./-]+$/.test(a) ? a : `'${a.replace(/'/g, `'\\''`)}'`
 }
 

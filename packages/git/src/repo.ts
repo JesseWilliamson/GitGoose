@@ -23,7 +23,7 @@ import { parseRefs, REFS_FORMAT } from './refs'
 import { GitRunner } from './runner'
 import { parseReflog, REFLOG_FORMAT } from './reflog'
 import { parseStashList, STASH_FORMAT } from './stash'
-import { parseWorktrees } from './worktree'
+import { parseWorktrees, realPathOf, samePath } from './worktree'
 import { parseStatus } from './status'
 import { UndoJournal, type UndoAction } from './undo'
 
@@ -876,7 +876,8 @@ export class Repo {
    */
   removeWorktree(path: string, opts: { force?: boolean } = {}): Promise<number | null> {
     return this.exclusive(async () => {
-      const w = (await this.worktrees()).find((x) => x.path === path)
+      const real = await realPathOf(path)
+      const w = (await this.worktrees()).find((x) => samePath(x.path, real))
       if (!w) throw new Error(`No worktree at ${path}`)
       if (w.main) throw new Error('The main working tree cannot be removed.')
       if (w.current) throw new Error('This tab shows that worktree: open another one to remove it.')
