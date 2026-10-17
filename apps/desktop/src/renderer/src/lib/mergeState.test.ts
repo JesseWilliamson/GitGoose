@@ -2,7 +2,7 @@ import { history, redo, undo } from '@codemirror/commands'
 import { EditorState, type Transaction, type TransactionSpec } from '@codemirror/state'
 import { merge3 } from '@gitsquid/shared'
 import { describe, expect, it } from 'vitest'
-import { applyNonConflicting, applySide, ignoreSide, initialResult, isResolved, mergeField } from './mergeState'
+import { applyNonConflicting, applySide, ignoreSide, initialResult, isResolved, mergeField, sourceClass } from './mergeState'
 
 const lines = Array.from({ length: 12 }, (_, i) => `line ${i + 1}`)
 const file = (edits: Record<number, string>) => lines.map((l, i) => edits[i + 1] ?? l).join('\n') + '\n'
@@ -94,5 +94,18 @@ describe('three-pane merge state', () => {
     t.run(ignoreSide(t.s, t.f.field, m, CONFLICT, 'theirs'))
     expect(isResolved(m.blocks[CONFLICT]!, t.status(CONFLICT))).toBe(true)
     expect(t.s.doc.toString()).toBe(file({ 2: 'ours 2', 5: 'theirs 5' }))
+  })
+
+  it('says where each block of the result came from, for colouring it', () => {
+    const t = setup()
+    const OURS = m.blocks.findIndex((b) => b.kind === 'ours')
+    const THEIRS = m.blocks.findIndex((b) => b.kind === 'theirs')
+    expect(sourceClass(m.blocks[OURS]!, t.status(OURS))).toBe('cm-m-from-ours')
+    expect(sourceClass(m.blocks[THEIRS]!, t.status(THEIRS))).toBe('cm-m-from-theirs')
+    expect(sourceClass(m.blocks[CONFLICT]!, t.status(CONFLICT))).toBe('')
+    t.run(applySide(t.s, t.f.field, m, CONFLICT, 'theirs'))
+    expect(sourceClass(m.blocks[CONFLICT]!, t.status(CONFLICT))).toBe('cm-m-from-theirs')
+    t.run(applySide(t.s, t.f.field, m, CONFLICT, 'ours'))
+    expect(sourceClass(m.blocks[CONFLICT]!, t.status(CONFLICT))).toBe('cm-m-from-both')
   })
 })

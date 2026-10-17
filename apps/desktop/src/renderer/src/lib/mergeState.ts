@@ -54,6 +54,19 @@ export function isResolved(b: MergeBlock, st: BlockState): boolean {
   return st.edited || st.ours === 'applied' || st.theirs === 'applied' || (st.ours === 'ignored' && st.theirs === 'ignored')
 }
 
+/**
+ * Where a block's text in the result came from, as a class, so the result can be coloured by
+ * source the way the panes are (yours blue, theirs amber). Empty for text nobody changed.
+ */
+export function sourceClass(b: MergeBlock, st: BlockState): string {
+  if (b.kind === 'same') return ''
+  if (st.edited) return 'cm-m-from-hand'
+  const ours = st.ours === 'applied'
+  const theirs = st.theirs === 'applied'
+  if (b.kind === 'both-same') return ours || theirs ? 'cm-m-from-both' : ''
+  return ours && theirs ? 'cm-m-from-both' : ours ? 'cm-m-from-ours' : theirs ? 'cm-m-from-theirs' : ''
+}
+
 /** The starting result document and its block map. */
 export function initialResult(m: Merge3, start: StartFrom, labels: { ours: string; theirs: string }): { doc: string; state: MergeState } {
   let doc = ''
@@ -142,7 +155,7 @@ export function mergeField(m: Merge3, init: MergeState) {
       const cls = blk.kind === 'conflict'
         ? (isResolved(blk, st) ? 'cm-m-resolved' : 'cm-m-conflict')
         : (st.ours === 'pending' || st.theirs === 'pending' ? 'cm-m-pending' : 'cm-m-applied')
-      addLines(b, state.doc, r.from, r.to, cls, i)
+      addLines(b, state.doc, r.from, r.to, `${cls} ${sourceClass(blk, st)}`.trim(), i)
     })
     return b.finish()
   })

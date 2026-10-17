@@ -13,10 +13,14 @@ import { choose } from '../lib/store'
 import { Button } from './ui'
 
 /**
- * IntelliJ-style three-pane merge: yours on the left, the result in the middle (editable),
- * theirs on the right. Both sides are diffed against the common ancestor (merge3 in
- * @gitsquid/shared), so every change knows whether the other side touched the same lines.
- * The bookkeeping (block positions, applied/ignored, undo) lives in lib/mergeState.ts.
+ * Three-pane merge, laid out like GitKraken's: yours and theirs side by side on top, the result
+ * across the whole width below (editable), with a divider to give either more room. Each side
+ * has one colour everywhere (yours blue, theirs amber): its pane header, its changed lines, its
+ * buttons, and the lines of the result that came from it.
+ *
+ * Both sides are diffed against the common ancestor (merge3 in @gitsquid/shared), so every
+ * change knows whether the other side touched the same lines. The bookkeeping (block positions,
+ * applied/ignored, undo) lives in lib/mergeState.ts.
  */
 
 // ---------------------------------------------------------------- side panes
@@ -47,7 +51,7 @@ class ActionMarker extends GutterMarker {
   }
   override toDOM() {
     const wrap = document.createElement('span')
-    wrap.className = 'cm-m-actions'
+    wrap.className = `cm-m-actions cm-m-actions-${this.side}`
     const button = (label: string, title: string, testId: string, act: () => void) => {
       const el = document.createElement('button')
       el.textContent = label
@@ -61,11 +65,11 @@ class ActionMarker extends GutterMarker {
       }
       return el
     }
-    const apply = button(this.side === 'ours' ? '»' : '«', 'Apply this change to the result', `apply-${this.side}`, () => this.actions.apply(this.block, this.side))
-    const ignore = button('×', 'Ignore this change', `ignore-${this.side}`, () => this.actions.ignore(this.block, this.side))
-    // The buttons sit next to the result: apply nearest to it.
-    if (this.side === 'ours') wrap.append(ignore, apply)
-    else wrap.append(apply, ignore)
+    // The result is below both panes: "take this" points down at it.
+    const apply = button('↓', 'Take this change into the result below', `apply-${this.side}`, () => this.actions.apply(this.block, this.side))
+    apply.className = 'cm-m-apply'
+    const ignore = button('×', 'Leave this change out', `ignore-${this.side}`, () => this.actions.ignore(this.block, this.side))
+    wrap.append(apply, ignore)
     return wrap
   }
 }
@@ -90,7 +94,7 @@ function buildSideMarks(view: EditorView, m: Merge3, side: Side, state: MergeSta
     const r = b[side]
     const from = lineStart(doc, r.start)
     const to = r.end > r.start ? lineStart(doc, r.end) : from
-    addLines(deco, doc, from, r.end > r.start ? Math.max(from + 1, to) : from, `${cls}${s === 'ignored' ? ' cm-m-ignored' : ''}`, i)
+    addLines(deco, doc, from, r.end > r.start ? Math.max(from + 1, to) : from, `${cls} cm-m-side-${side}${s === 'ignored' ? ' cm-m-ignored' : ''}`, i)
     if (s === 'pending') marks.add(from, from, new ActionMarker(i, side, actions))
   })
   return { deco: deco.finish(), gutter: marks.finish() }
@@ -144,27 +148,32 @@ const theme = EditorView.theme({
   '&.cm-focused': { outline: 'none' },
   '.cm-cursor': { borderLeftColor: 'var(--gs-fg)' },
   '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { backgroundColor: 'var(--gs-select) !important' },
-  '.cm-m-conflict': { backgroundColor: 'var(--gs-del-bg)' },
-  '.cm-m-resolved': { backgroundColor: 'var(--gs-add-bg)' },
+  // A stripe down the left edge says whose lines these are; the tint says how far along they are.
+  '.cm-m-conflict': { backgroundColor: 'var(--gs-del-bg)', boxShadow: 'inset 3px 0 0 var(--gs-del)' },
+  '.cm-m-resolved': { backgroundColor: 'var(--gs-add-bg)', boxShadow: 'inset 3px 0 0 var(--gs-add)' },
   '.cm-m-pending': { backgroundColor: 'color-mix(in srgb, var(--gs-accent) 16%, transparent)' },
   '.cm-m-applied': { backgroundColor: 'color-mix(in srgb, var(--gs-accent) 7%, transparent)' },
-  '.cm-m-ignored': { backgroundColor: 'transparent', opacity: '0.55' },
+  '.cm-m-side-ours.cm-m-pending': { backgroundColor: 'color-mix(in srgb, var(--gs-ours) 20%, transparent)', boxShadow: 'inset 3px 0 0 var(--gs-ours)' },
+  '.cm-m-side-ours.cm-m-applied': { backgroundColor: 'color-mix(in srgb, var(--gs-ours) 8%, transparent)', boxShadow: 'inset 3px 0 0 color-mix(in srgb, var(--gs-ours) 50%, transparent)' },
+  '.cm-m-side-theirs.cm-m-pending': { backgroundColor: 'color-mix(in srgb, var(--gs-theirs) 20%, transparent)', boxShadow: 'inset 3px 0 0 var(--gs-theirs)' },
+  '.cm-m-side-theirs.cm-m-applied': { backgroundColor: 'color-mix(in srgb, var(--gs-theirs) 8%, transparent)', boxShadow: 'inset 3px 0 0 color-mix(in srgb, var(--gs-theirs) 50%, transparent)' },
+  '.cm-m-from-ours': { backgroundColor: 'color-mix(in srgb, var(--gs-ours) 10%, transparent)', boxShadow: 'inset 3px 0 0 var(--gs-ours)' },
+  '.cm-m-from-theirs': { backgroundColor: 'color-mix(in srgb, var(--gs-theirs) 10%, transparent)', boxShadow: 'inset 3px 0 0 var(--gs-theirs)' },
+  '.cm-m-from-both': { backgroundColor: 'color-mix(in srgb, var(--gs-add) 8%, transparent)', boxShadow: 'inset 3px 0 0 var(--gs-ours), inset 6px 0 0 var(--gs-theirs)' },
+  '.cm-m-from-hand': { backgroundColor: 'var(--gs-add-bg)', boxShadow: 'inset 3px 0 0 var(--gs-add)' },
+  '.cm-m-ignored': { backgroundColor: 'transparent', opacity: '0.5', boxShadow: 'none' },
   '.cm-m-empty': { backgroundColor: 'transparent', boxShadow: 'inset 0 2px 0 var(--gs-m-edge, var(--gs-accent))' },
   '.cm-m-empty.cm-m-conflict': { '--gs-m-edge': 'var(--gs-del)' },
   '.cm-m-empty.cm-m-resolved': { '--gs-m-edge': 'var(--gs-add)' },
   '.cm-m-empty-end': { boxShadow: 'inset 0 -2px 0 var(--gs-m-edge, var(--gs-accent))' },
-  '.cm-m-actions': { display: 'inline-flex', width: '36px', justifyContent: 'center', gap: '2px' },
+  '.cm-m-actions': { display: 'inline-flex', width: '44px', justifyContent: 'center', gap: '3px' },
   '.cm-m-actions button': {
-    padding: '0 3px', lineHeight: '1.2', borderRadius: '3px', color: 'var(--gs-fg)', cursor: 'pointer',
-    backgroundColor: 'var(--gs-hover)', fontFamily: 'system-ui, sans-serif', fontSize: '12px',
+    minWidth: '16px', padding: '0 3px', lineHeight: '1.25', borderRadius: '3px', color: 'var(--gs-fg)', cursor: 'pointer',
+    backgroundColor: 'var(--gs-hover)', fontFamily: 'system-ui, sans-serif', fontSize: '12px', fontWeight: '600',
   },
-  '.cm-m-actions button:hover': { backgroundColor: 'var(--gs-accent)', color: 'white' },
-})
-
-/** The left pane keeps its gutter (line numbers + buttons) on the right, next to the result. */
-const gutterRight = EditorView.theme({
-  '.cm-gutters': { order: '2', left: 'auto', right: '0', insetInlineStart: 'auto', insetInlineEnd: '0' },
-  '.cm-content': { flexGrow: '1' },
+  '.cm-m-actions-ours .cm-m-apply': { backgroundColor: 'var(--gs-ours)', color: 'white' },
+  '.cm-m-actions-theirs .cm-m-apply': { backgroundColor: 'var(--gs-theirs)', color: 'white' },
+  '.cm-m-actions button:hover': { filter: 'brightness(1.15)', outline: '1px solid var(--gs-fg)' },
 })
 
 export interface MergePanesProps {
@@ -181,6 +190,9 @@ export default function MergePanes({ base, ours, theirs, labels, onSave }: Merge
   const views = useRef<Partial<Record<Pane, EditorView>>>({})
   const merge = useMemo(() => ({ current: null as MergeField | null }), [])
   const [start, setStart] = useState<StartFrom>('non-conflicting')
+  /** Share of the height the two sides get; the result takes the rest. */
+  const [split, setSplit] = useState(0.45)
+  const box = useRef<HTMLDivElement>(null)
   const [status, setStatus] = useState<{ state: MergeState; markers: number } | null>(null)
   const dirty = useRef(false)
 
@@ -200,8 +212,7 @@ export default function MergePanes({ base, ours, theirs, labels, onSave }: Merge
       state: EditorState.create({
         doc: side === 'ours' ? ours : theirs,
         extensions: [
-          side === 'ours' ? [lineNumbers(), gutter({ class: 'cm-m-gutter', markers: (v) => v.state.field(sideMarks).gutter, initialSpacer: () => new Spacer() }), gutterRight]
-            : [gutter({ class: 'cm-m-gutter', markers: (v) => v.state.field(sideMarks).gutter, initialSpacer: () => new Spacer() }), lineNumbers()],
+          [gutter({ class: 'cm-m-gutter', markers: (v) => v.state.field(sideMarks).gutter, initialSpacer: () => new Spacer() }), lineNumbers()],
           EditorState.readOnly.of(true),
           sideMarks,
           theme,
@@ -294,6 +305,15 @@ export default function MergePanes({ base, ours, theirs, labels, onSave }: Merge
   const conflicts = status ? m.blocks.map((b, i) => (b.kind === 'conflict' && !isResolved(b, status.state.blocks[i]!) ? i : -1)).filter((i) => i >= 0) : []
   const pendingChanges = status ? m.blocks.filter((b, i) => b.kind !== 'conflict' && b.kind !== 'same' && (['ours', 'theirs'] as const).some((s) => status.state.blocks[i]![s] === 'pending')).length : 0
   const totalConflicts = m.blocks.filter((b) => b.kind === 'conflict').length
+  /** One side's changes (conflicts included) that are neither taken nor left out yet. */
+  const pendingOf = (side: Side) => {
+    if (!status) return 0
+    return m.blocks.filter((b, i) => {
+      const st = status.state.blocks[i]!
+      // A conflict settled from the other side (or by hand) no longer waits on this one.
+      return changes(b, side) && st[side] === 'pending' && !(b.kind === 'conflict' && isResolved(b, st))
+    }).length
+  }
   const markers = status?.markers ?? 0
 
   const applyAll = () => {
@@ -357,16 +377,61 @@ export default function MergePanes({ base, ours, theirs, labels, onSave }: Merge
           Save resolution
         </Button>
       </div>
-      <div className="grid min-h-0 flex-1 grid-cols-3">
-        {(['ours', 'result', 'theirs'] as const).map((p) => (
-          <div key={p} className={clsx('flex min-h-0 min-w-0 flex-col', p !== 'ours' && 'border-l border-line')}>
-            <div className="shrink-0 truncate border-b border-line px-3 py-1 text-[11px] font-semibold text-muted">
-              {p === 'ours' ? `Yours (${labels.ours})` : p === 'theirs' ? `Theirs (${labels.theirs})` : 'Result'}
+      <div ref={box} className="flex min-h-0 flex-1 flex-col">
+        <div className="grid min-h-0 grid-cols-2" style={{ height: `${split * 100}%` }}>
+          {(['ours', 'theirs'] as const).map((p) => (
+            <div key={p} className={clsx('flex min-h-0 min-w-0 flex-col', p === 'theirs' && 'border-l border-line')}>
+              <PaneHeader side={p} label={p === 'ours' ? labels.ours : labels.theirs} pending={status ? pendingOf(p) : 0} />
+              <div ref={hosts[p]} className="min-h-0 flex-1 overflow-hidden" data-testid={`merge-${p}`} />
             </div>
-            <div ref={hosts[p]} className="min-h-0 flex-1 overflow-hidden" data-testid={`merge-${p}`} />
+          ))}
+        </div>
+        <SplitHandle box={box} split={split} onChange={setSplit} />
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex shrink-0 items-center gap-2 border-b border-line bg-panel px-3 py-1 text-[11px]">
+            <span className="font-semibold text-fg">Result</span>
+            <span className="text-faint">editable · lines show where they came from:</span>
+            <span className="flex items-center gap-1 text-muted"><i className="size-2 rounded-sm bg-ours" /> yours</span>
+            <span className="flex items-center gap-1 text-muted"><i className="size-2 rounded-sm bg-theirs" /> theirs</span>
+            <span className="flex items-center gap-1 text-muted"><i className="size-2 rounded-sm bg-add" /> by hand</span>
           </div>
-        ))}
+          <div ref={hosts.result} className="min-h-0 flex-1 overflow-hidden" data-testid="merge-result" />
+        </div>
       </div>
     </div>
+  )
+}
+
+/** "A · Yours (main)" in its side's colour, with how many of its changes still wait for a decision. */
+function PaneHeader({ side, label, pending }: { side: Side; label: string; pending: number }) {
+  return (
+    <div className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-1 text-[11px]" data-testid={`merge-${side}-header`}
+      style={{ background: `color-mix(in srgb, var(--gs-${side}) 12%, var(--gs-panel))` }}>
+      <span className={clsx('rounded px-1 font-bold text-white', side === 'ours' ? 'bg-ours' : 'bg-theirs')}>{side === 'ours' ? 'A' : 'B'}</span>
+      <span className="min-w-0 flex-1 truncate font-semibold">{side === 'ours' ? 'Yours' : 'Theirs'} <span className="font-normal text-muted">({label})</span></span>
+      {pending > 0 && <span className="shrink-0 text-muted">{pending} to decide</span>}
+    </div>
+  )
+}
+
+/** The divider between the two sides and the result: drag to share the height. */
+function SplitHandle({ box, split, onChange }: { box: React.RefObject<HTMLDivElement | null>; split: number; onChange: (v: number) => void }) {
+  const onPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault()
+    const el = e.currentTarget as HTMLElement
+    el.setPointerCapture(e.pointerId)
+    const rect = box.current!.getBoundingClientRect()
+    const move = (ev: PointerEvent) => onChange(Math.min(0.75, Math.max(0.2, (ev.clientY - rect.top) / rect.height)))
+    const up = () => {
+      el.removeEventListener('pointermove', move)
+      el.removeEventListener('pointerup', up)
+    }
+    el.addEventListener('pointermove', move)
+    el.addEventListener('pointerup', up)
+  }
+  return (
+    <div role="separator" aria-orientation="horizontal" aria-valuenow={Math.round(split * 100)} onPointerDown={onPointerDown}
+      onDoubleClick={() => onChange(0.45)} title="Drag to resize; double-click to reset" data-testid="merge-split"
+      className="h-1.5 shrink-0 cursor-row-resize border-y border-line bg-panel hover:bg-accent/40" />
   )
 }
