@@ -362,7 +362,9 @@ Flow, all in the main process (`apps/desktop/src/main/github/`):
    `authorization_pending`, `slow_down` (add 5 s), `expired_token` (offer a new code),
    `access_denied`.
 4. Store the token with Electron `safeStorage` (OS keychain), call `GET /user` for login and
-   `avatar_url`, show them in Settings → Accounts with Sign out (which also revokes).
+   `avatar_url`, show them in Settings → Accounts with Sign out. (Revoking needs the client
+   secret, which the device flow deliberately does not have, so Sign out forgets the token
+   locally and links to github.com's authorized-apps page; see spec 005.)
 
 Scopes: `read:user` always; `repo` only when the user turns on a feature that needs it (push
 over HTTPS, pull requests), requested with a second device-flow round so the first sign-in asks
