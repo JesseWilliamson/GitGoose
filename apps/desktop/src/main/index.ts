@@ -7,6 +7,7 @@ import { installMenu } from './menu'
 import { RepoManager } from './repos'
 import { getSettings, setSettings } from './settings'
 import { scheduleUpdateCheck } from './updater'
+import { loadWindowState, trackWindowState } from './windowState'
 
 // Tests and the benchmark point the app at a throwaway profile.
 if (process.env.GITSQUID_USER_DATA) app.setPath('userData', process.env.GITSQUID_USER_DATA)
@@ -53,9 +54,11 @@ const repos = new RepoManager(
 
 function createWindow(): BrowserWindow {
   const dark = nativeTheme.shouldUseDarkColors && getSettings().theme !== 'light'
+  const saved = loadWindowState()
   const win = new BrowserWindow({
-    width: 1440,
-    height: 900,
+    width: saved?.bounds.width ?? 1440,
+    height: saved?.bounds.height ?? 900,
+    ...(saved ? { x: saved.bounds.x, y: saved.bounds.y } : {}),
     minWidth: 900,
     minHeight: 560,
     show: false,
@@ -70,7 +73,11 @@ function createWindow(): BrowserWindow {
       spellcheck: true,
     },
   })
-  win.once('ready-to-show', () => win.show())
+  win.once('ready-to-show', () => {
+    if (saved?.maximized) win.maximize()
+    win.show()
+  })
+  trackWindowState(win)
   // Refresh on focus: catches changes made by other tools when the watcher is unavailable.
   win.on('focus', () => repos.refreshAll())
   // Links open in the browser, never inside the app.
