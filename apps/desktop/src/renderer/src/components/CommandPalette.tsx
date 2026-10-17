@@ -2,7 +2,7 @@ import { DEFAULT_LAYOUT, setCollapsed } from '@gitsquid/shared'
 import { Command } from 'cmdk'
 import { RDialogCompat } from './RDialogCompat'
 import {
-  snapshot, addRemote, addSubmodule, applyPatchFile, updateSubmodules, addWorktree, applyPatchFromClipboard, checkout, cleanupBranches, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, reopen, stash, undo,
+  lfsPull, lfsTrack, snapshot, addRemote, addSubmodule, applyPatchFile, updateSubmodules, addWorktree, applyPatchFromClipboard, checkout, cleanupBranches, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, reopen, stash, undo,
 } from '../lib/actions'
 import { saveSettings, useStore } from '../lib/store'
 
@@ -46,6 +46,8 @@ export function CommandPalette() {
     add('Repository', 'Add remote…', () => addRemote(id))
     add('Repository', 'Change who you commit as…', () => useStore.setState({ dialog: { kind: 'identity', repoId: id } }))
     add('Repository', 'Add worktree…', () => addWorktree(id))
+    if (active.lfs?.installed) add('Repository', 'Track files with Git LFS…', () => lfsTrack(id))
+    if (active.lfs?.used) add('Repository', 'Pull LFS files', () => void lfsPull(id))
     add('Repository', 'Add submodule…', () => addSubmodule(id))
     if (active.submodules.length) add('Repository', 'Update submodules', () => void updateSubmodules(id))
     add('Repository', 'Apply patch from a file…', () => void applyPatchFile(id))

@@ -1,6 +1,6 @@
 import { DropdownMenu } from 'radix-ui'
 import {
- bisectMark, hideInGraph, showInGraph, soloInGraph, unsoloInGraph, addRemote, addSubmodule, addWorktree, removeSubmodule, syncSubmodules, updateSubmodules, lockWorktree, pruneWorktrees, removeWorktree, checkRemoteTags, cleanupBranches, clearPushUrl, deleteRemoteTag, editRemoteUrl, fastForward, fetchAll, fetchRemote, pushBranch, pushTags, pushTo, remoteNames, removeRemote, renameRemote, setUpstream,
+ lfsPull, lfsTrack, lfsUntrack, bisectMark, hideInGraph, showInGraph, soloInGraph, unsoloInGraph, addRemote, addSubmodule, addWorktree, removeSubmodule, syncSubmodules, updateSubmodules, lockWorktree, pruneWorktrees, removeWorktree, checkRemoteTags, cleanupBranches, clearPushUrl, deleteRemoteTag, editRemoteUrl, fastForward, fetchAll, fetchRemote, pushBranch, pushTags, pushTo, remoteNames, removeRemote, renameRemote, setUpstream,
  savePatches, stashToBranch, checkout, cherryPick, cherryPickMany, compare, compareSinceFork, copy, fixupInto, pop, reword, squashCommit, stashApply, stashDrop, copyCommits, dropCommits, moveCommits, currentBranchRef, deleteBranch, deleteRemoteBranch, deleteTag, dropOptions,
   merge, newBranch, newTag, push, rebase, renameBranch, reset, revert, shortRef,
 } from '../lib/actions'
@@ -161,6 +161,16 @@ export function GraphMenu({ repoId }: { repoId: string }) {
     )
   }
 
+  if (menu.kind === 'lfs-pattern') {
+    return (
+      <CM.Content>
+        <CM.Label>{menu.pattern}</CM.Label>
+        <CM.Item onSelect={() => void lfsUntrack(repoId, menu.pattern)}>Stop tracking with LFS</CM.Item>
+        <CM.Item onSelect={() => copy(menu.pattern, 'Copied pattern')}>Copy pattern</CM.Item>
+      </CM.Content>
+    )
+  }
+
   if (menu.kind === 'submodule') {
     const m = view.submodules.find((x) => x.path === menu.path)
     if (!m) return <CM.Content><CM.Label>That submodule is gone</CM.Label></CM.Content>
@@ -180,6 +190,15 @@ export function GraphMenu({ repoId }: { repoId: string }) {
 
   if (menu.kind === 'section') {
     const remotes = remoteNames(view)
+    if (menu.section === 'lfs') {
+      return (
+        <CM.Content>
+          <CM.Item onSelect={() => lfsTrack(repoId)}>Track a pattern…</CM.Item>
+          <CM.Item onSelect={() => void lfsPull(repoId)}>Pull LFS files</CM.Item>
+          <CM.Item onSelect={() => useStore.setState({ dialog: { kind: 'lfs-locks', repoId } })}>Show locks…</CM.Item>
+        </CM.Content>
+      )
+    }
     if (menu.section === 'submodules') {
       return (
         <CM.Content>

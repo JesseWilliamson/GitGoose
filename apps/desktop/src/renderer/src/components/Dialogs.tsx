@@ -1,8 +1,8 @@
 import clsx from 'clsx'
 import { KeyRound } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import type { Identity } from '@gitsquid/shared'
-import { cleanupCandidates, cloneRepo, deleteBranches, run, STALE_DAYS } from '../lib/actions'
+import type { Identity, LfsLock } from '@gitsquid/shared'
+import { cleanupCandidates, cloneRepo, confirmAction, deleteBranches, lfsLock, run, STALE_DAYS } from '../lib/actions'
 import { relativeTime } from '../lib/format'
 import { COMMANDS, FIXED_KEYS, formatCombo, keymap, modName } from '../lib/keys'
 import { api } from '../lib/api'
@@ -43,6 +43,7 @@ export function Dialogs() {
   if (dialog.kind === 'shortcuts') return <ShortcutsDialog close={close} />
   if (dialog.kind === 'text') return <TextDialog key={dialog.title} d={dialog} close={close} />
   if (dialog.kind === 'cleanup') return <CleanupDialog repoId={dialog.repoId} close={close} />
+  if (dialog.kind === 'lfs-locks') return <LfsLocksDialog repoId={dialog.repoId} close={close} />
   if (dialog.kind === 'pick') return <PickDialog key={dialog.title} d={dialog} close={close} />
   if (dialog.kind === 'identity') return <IdentityDialog repoId={dialog.repoId} onSaved={dialog.onSaved} close={close} />
   return <CloneDialog close={close} />
@@ -168,6 +169,41 @@ function IdentityDialog({ repoId, onSaved, close }: { repoId: string; onSaved?: 
           <Button type="submit" variant="primary" disabled={!name.trim() || !email.trim()} data-testid="dialog-submit">Save</Button>
         </div>
       </form>
+    </Modal>
+  )
+}
+
+/** Locks on the LFS server: who holds what. Asking is a network call, made when this opens. */
+function LfsLocksDialog({ repoId, close }: { repoId: string; close: () => void }) {
+  const [locks, setLocks] = useState<LfsLock[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const load = () => api.lfsLocks(repoId).then(setLocks, (e) => setError(e instanceof Error ? e.message : String(e)))
+  useEffect(() => {
+    void load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repoId])
+  const unlock = (l: LfsLock) => {
+    const go = (force: boolean) => void lfsLock(repoId, l.path, false, force).then(() => load())
+    // Releasing someone else's lock needs --force; say so first.
+    confirmAction(`Unlock ${l.path}?`, `${l.owner || 'Someone'} holds this lock. If it is not yours, unlocking forces it and they may lose work.`, 'Unlock', () => go(true))
+  }
+  return (
+    <Modal open onClose={close} title="Git LFS locks" width={560}>
+      {error ? <p className="mb-3 text-[13px] text-del">{error}</p>
+        : locks === null ? <p className="mb-3 text-[13px] text-faint">Asking the server…</p>
+        : locks.length === 0 ? <p className="mb-3 text-[13px] text-faint">No files are locked.</p>
+        : (
+          <div className="mb-3 max-h-72 overflow-y-auto rounded-md border border-line" data-testid="lfs-locks">
+            {locks.map((l) => (
+              <div key={l.id} className="flex h-8 items-center gap-2 px-2 text-[13px]">
+                <span className="min-w-0 flex-1 truncate font-mono text-[12px]">{l.path}</span>
+                <span className="text-xs text-muted">{l.owner}</span>
+                <Button size="sm" variant="ghost" onClick={() => unlock(l)}>Unlock</Button>
+              </div>
+            ))}
+          </div>
+        )}
+      <div className="flex justify-end"><Button onClick={close}>Close</Button></div>
     </Modal>
   )
 }

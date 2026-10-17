@@ -1,5 +1,5 @@
 import { GraphLayout, type Row } from '@gitsquid/graph'
-import { SETTINGS, type Commit, type DiffTarget, type GitHubStatus, type GitSquidEvent, type Ref, type Remote, type RepoSnapshot, type Submodule, type Worktree, type SearchField, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitsquid/shared'
+import { SETTINGS, type Commit, type DiffTarget, type GitHubStatus, type GitSquidEvent, type LfsInfo, type Ref, type Remote, type RepoSnapshot, type Submodule, type Worktree, type SearchField, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitsquid/shared'
 import { create } from 'zustand'
 import { api, toUiError, type UiError } from './api'
 import { onAiEvent } from './ai'
@@ -55,6 +55,7 @@ export interface RepoView {
   remotes: Remote[]
   worktrees: Worktree[]
   submodules: Submodule[]
+  lfs: LfsInfo | null
   /** Local branches already in HEAD: safe to delete. */
   merged: string[]
   /** Tag names on a remote, after the user asked to check (the only way it is read: network). */
@@ -117,6 +118,8 @@ export type Dialog =
   | { kind: 'identity'; repoId: string; onSaved?: () => void }
   /** Pick one of many (filterable): co-authors, remote branches. */
   | { kind: 'pick'; title: string; placeholder?: string; items: { label: string; detail?: string; value: string }[]; onPick: (value: string) => void }
+  /** Git LFS locks on the server (fetched when the dialog opens). */
+  | { kind: 'lfs-locks'; repoId: string }
   /** Branch cleanup: pick merged or stale branches to delete. */
   | { kind: 'cleanup'; repoId: string }
 
@@ -136,8 +139,9 @@ export type MenuTarget =
   | { kind: 'remote'; remote: string }
   | { kind: 'worktree'; path: string }
   | { kind: 'submodule'; path: string }
+  | { kind: 'lfs-pattern'; pattern: string }
   /** A sidebar section header with its own actions. */
-  | { kind: 'section'; section: 'local' | 'remotes' | 'tags' | 'worktrees' | 'submodules' }
+  | { kind: 'section'; section: 'local' | 'remotes' | 'tags' | 'worktrees' | 'submodules' | 'lfs' }
   | null
 
 interface State {
@@ -349,7 +353,7 @@ function newView(snap: RepoSnapshot): RepoView {
     id: snap.id, snapshot: snap, logVersion: 0,
     selected: snap.status.length ? { kind: 'wip' } : snap.head.hash ? { kind: 'commit', hash: snap.head.hash } : { kind: 'wip' },
     center: snap.operation && snap.status.some((e) => e.kind === 'unmerged') ? { kind: 'conflicts' } : { kind: 'graph' },
-    search: null, searchOpen: false, searchFocus: 0, editable: [], redo: [], stashes: [], undo: [], remotes: [], merged: [], worktrees: [], submodules: [], remoteTags: null, progress: null, busy: null, worktreeTick: 0,
+    search: null, searchOpen: false, searchFocus: 0, editable: [], redo: [], stashes: [], undo: [], remotes: [], merged: [], worktrees: [], submodules: [], lfs: null, remoteTags: null, progress: null, busy: null, worktreeTick: 0,
   }
 }
 
@@ -427,10 +431,11 @@ export function onSnapshot(snap: RepoSnapshot): void {
 
 export async function refreshAux(id: string): Promise<void> {
   try {
-    const [stashes, undo, editable, redo, remotes, merged, worktrees, submodules] = await Promise.all([
+    const [stashes, undo, editable, redo, remotes, merged, worktrees, submodules, lfs] = await Promise.all([
       api.stashList(id), api.undoList(id), api.editableCommits(id), api.redoList(id), api.remotes(id), api.mergedBranches(id), api.worktrees(id), api.submodules(id),
+      api.lfsInfo(id).catch(() => null),
     ])
-    updateRepo(id, { stashes, undo, editable, redo, remotes, merged, worktrees, submodules })
+    updateRepo(id, { stashes, undo, editable, redo, remotes, merged, worktrees, submodules, lfs })
   } catch {
     // The tab was closed meanwhile.
   }

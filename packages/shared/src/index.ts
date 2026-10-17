@@ -210,6 +210,26 @@ export interface Worktree {
   prunable?: string
 }
 
+/** Git LFS in this repository. */
+export interface LfsInfo {
+  /** git-lfs is installed (`git lfs version` works). */
+  installed: boolean
+  version?: string
+  /** .gitattributes routes some files through LFS. */
+  used: boolean
+  /** The LFS filter is configured (git lfs install); without it LFS files stay pointers. */
+  ready: boolean
+  patterns: { pattern: string; source: string; lockable: boolean }[]
+  files: { path: string; size: number; downloaded: boolean }[]
+}
+
+export interface LfsLock {
+  id: string
+  path: string
+  owner: string
+  lockedAt: string
+}
+
 /** One git process GitSquid ran (the command log). */
 export interface CommandRecord {
   id: number

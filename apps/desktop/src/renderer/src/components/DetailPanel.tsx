@@ -4,7 +4,7 @@ import { Archive, Check, ChevronDown, Copy, Minus, MoreHorizontal, Plus, ShieldA
 import clsx from 'clsx'
 import { DropdownMenu } from 'radix-ui'
 import { useEffect, useRef, useState } from 'react'
-import { cherryPickMany, compare, copy, copyCommits, discard as discardFiles, openDiffTool, openInEditor, pop, restoreFileFrom, run, snapshot, stashApply, stashDrop, stashToBranch, stashWith, stashWithMessage } from '../lib/actions'
+import { cherryPickMany, compare, copy, copyCommits, discard as discardFiles, lfsLock, lfsPatternFor, lfsTrack, openDiffTool, openInEditor, pop, restoreFileFrom, run, snapshot, stashApply, stashDrop, stashToBranch, stashWith, stashWithMessage } from '../lib/actions'
 import { cancelAi, startAi, useAiEnabled } from '../lib/ai'
 import { api, toUiError } from '../lib/api'
 import { dateTime, opName, sentence, shortHash, stashLabel } from '../lib/format'
@@ -48,6 +48,15 @@ function FileMenu({ view, target, children }: { view: RepoView; target: DiffTarg
       {children && <CM.Separator />}
       <CM.Item onSelect={() => openFile(view, target, 'diff')}>Show changes</CM.Item>
       {target.kind !== 'untracked' && <CM.Item onSelect={() => void openDiffTool(view.id, target)}>Open in diff tool</CM.Item>}
+      {/* Flat, not a submenu: this menu sits at the window's right edge, where submenus open leftwards and are fiddly. */}
+      {view.lfs?.installed && (target.kind === 'unstaged' || target.kind === 'untracked' || target.kind === 'staged') && (
+        <>
+          <CM.Separator />
+          {!view.lfs.files.some((f) => f.path === target.path) && <CM.Item onSelect={() => lfsTrack(view.id, lfsPatternFor(target.path))}>Track {lfsPatternFor(target.path)} with Git LFS</CM.Item>}
+          {view.lfs.used && <CM.Item onSelect={() => void lfsLock(view.id, target.path, true)}>Lock with Git LFS</CM.Item>}
+          {view.lfs.used && <CM.Item onSelect={() => void lfsLock(view.id, target.path, false)}>Unlock (Git LFS)</CM.Item>}
+        </>
+      )}
       {target.kind !== 'untracked' && <CM.Item onSelect={() => openFile(view, target, 'history')}>File history</CM.Item>}
       {target.kind !== 'untracked' && <CM.Item onSelect={() => openFile(view, target, 'blame')}>Blame</CM.Item>}
       {rev && (

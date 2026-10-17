@@ -155,3 +155,7 @@ changes.
       difftool / mergetool, so git's own tool configuration applies; Settings → Diff can name one
 - [x] 19 snapshots: the working tree (untracked files included) saved as a stash entry without
       touching a file; undo drops the entry
+- [x] 23 Git LFS when installed: a sidebar section (patterns, set-up warning, files to pull), track
+      a file's type from its menu (undoable), pull, lock / unlock and a locks dialog (network,
+      on request), LFS images shown in image diffs from the local store. Not tested against a
+      lock server (none in CI); lock / unlock surface the server's error when it refuses.

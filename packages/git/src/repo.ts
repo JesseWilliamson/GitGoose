@@ -1,5 +1,5 @@
 import type {
-  BisectState, BlameLine, ImageSide, ChangedFile, CommandRecord, GraphFilter, Identity, Person, Signature, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
+  BisectState, BlameLine, ImageSide, LfsInfo, LfsLock, ChangedFile, CommandRecord, GraphFilter, Identity, Person, Signature, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
   LogPage, Ref, Remote, RepoOperation, ReflogEntry, RepoSnapshot, ResetMode, Resolution, SearchField, SelectionRequest,
   StashEntry, StatusEntry, Submodule, UndoEntry, Worktree,
 } from '@gitsquid/shared'
@@ -370,7 +370,12 @@ export class Repo {
       const sz = await this.runner.run(['cat-file', '-s', spec], { readOnly: true, okCodes: [128] })
       if (sz.code !== 0) return null
       const size = Number(sz.stdout.trim())
-      return size > cap ? { size } : { size, data: new Uint8Array(await this.fileAtSpec(spec)) }
+      if (size > cap) return { size }
+      const blob = await this.fileAtSpec(spec)
+      // An LFS-tracked image is stored as a small pointer: show the real file when it is local.
+      const real = size < 400 ? await this.lfsContent(blob) : null
+      if (real) return real.length > cap ? { size: real.length } : { size: real.length, data: new Uint8Array(real) }
+      return { size, data: new Uint8Array(blob) }
     }
     const fromDisk = async (path: string): Promise<ImageSide | null> => {
       const st = await lstat(join(this.path, path)).catch(() => null)
@@ -868,6 +873,81 @@ export class Repo {
     return this.exclusive(async () => {
       await this.git(['worktree', 'prune'])
     })
+  }
+
+  // ---------------------------------------------------------------- Git LFS
+
+  private lfsVersion: string | null | undefined
+
+  /**
+   * LFS state, at no cost for repositories that do not use it: the version check runs once, and
+   * the LFS commands only when .gitattributes mentions filter=lfs.
+   */
+  async lfsInfo(): Promise<LfsInfo> {
+    if (this.lfsVersion === undefined) {
+      const v = await this.runner.run(['lfs', 'version'], { readOnly: true, okCodes: [1, 128] }).catch(() => null)
+      this.lfsVersion = v?.code === 0 ? (/git-lfs\/(\S+)/.exec(v.stdout)?.[1] ?? v.stdout.trim()) : null
+    }
+    const attrs = await readFile(join(this.path, '.gitattributes'), 'utf8').catch(() => '')
+    const info: LfsInfo = { installed: this.lfsVersion !== null, version: this.lfsVersion ?? undefined, used: /filter=lfs/.test(attrs), ready: false, patterns: [], files: [] }
+    if (!info.installed || !info.used) return info
+    const [track, files, filter] = await Promise.all([
+      this.read(['lfs', 'track', '--json']),
+      this.read(['lfs', 'ls-files', '--json']),
+      this.configGet(null, 'filter.lfs.process'),
+    ])
+    info.ready = !!filter
+    info.patterns = (JSON.parse(track).patterns ?? []).map((p: { pattern: string; source: string; lockable?: boolean }) => ({ pattern: p.pattern, source: p.source, lockable: !!p.lockable }))
+    info.files = (JSON.parse(files).files ?? []).map((f: { name: string; size: number; downloaded?: boolean }) => ({ path: f.name, size: f.size, downloaded: f.downloaded !== false }))
+    return info
+  }
+
+  /** `git lfs install --local`: the filter and hooks, for this repository only. */
+  lfsInstall(): Promise<void> {
+    return this.exclusive(async () => {
+      await this.git(['lfs', 'install', '--local'])
+    })
+  }
+
+  /** Route files matching `pattern` through LFS (or stop). Only .gitattributes changes: undoable. */
+  lfsTrack(pattern: string, track = true): Promise<number> {
+    return this.exclusive(async () => {
+      const saved = await this.saveFiles(['.gitattributes'])
+      await this.git(['lfs', track ? 'track' : 'untrack', '--', pattern])
+      return this.record(`${track ? 'Track' : 'Stop tracking'} ${pattern} with LFS`, [{ kind: 'restore-files', files: saved }], (await this.currentHead()).hash)
+    })
+  }
+
+  /** Download the LFS files the checked-out commit needs (network). */
+  lfsPull(): Promise<void> {
+    return this.exclusive(async () => {
+      await this.progress(['lfs', 'pull'])
+    })
+  }
+
+  /** Locks on the LFS server (network, so only when asked). */
+  async lfsLocks(): Promise<LfsLock[]> {
+    const out = await this.read(['lfs', 'locks', '--json'])
+    return (JSON.parse(out || '[]') as { id: string; path: string; owner?: { name?: string }; locked_at?: string }[])
+      .map((l) => ({ id: String(l.id), path: l.path, owner: l.owner?.name ?? '', lockedAt: l.locked_at ?? '' }))
+  }
+
+  /** Lock or unlock a file on the LFS server (network; `force` unlocks someone else's lock). */
+  lfsLock(path: string, lock: boolean, force = false): Promise<void> {
+    return this.exclusive(async () => {
+      await this.git(['lfs', lock ? 'lock' : 'unlock', ...(force ? ['--force'] : []), '--', path])
+    })
+  }
+
+  /**
+   * The real content of an LFS pointer blob, from the local LFS store only (never the network);
+   * null when it was not downloaded. Lets image diffs show LFS images.
+   */
+  private async lfsContent(pointer: Buffer): Promise<Buffer | null> {
+    const text = pointer.subarray(0, 300).toString('utf8')
+    const oid = /^version https:\/\/git-lfs\.github\.com\/spec\/v1\noid sha256:([0-9a-f]{64})/.exec(text)?.[1]
+    if (!oid) return null
+    return readFile(join(this.commonDir, 'lfs', 'objects', oid.slice(0, 2), oid.slice(2, 4), oid)).catch(() => null)
   }
 
   // ---------------------------------------------------------------- command log

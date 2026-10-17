@@ -320,6 +320,33 @@ export async function compareSinceFork(id: string, base: string, branch: string)
   }
 }
 
+// ------------------------------------------------------------------ Git LFS
+
+export const lfsSetUp = (id: string) => run(id, 'Set up Git LFS', () => api.lfsInstall(id), { success: 'Git LFS is set up in this repository' })
+
+export function lfsTrack(id: string, pattern?: string): void {
+  if (pattern) {
+    void run(id, `Track ${pattern} with LFS`, () => api.lfsTrack(id, pattern, true), { success: `${pattern} goes through LFS now (commit .gitattributes)` })
+    return
+  }
+  ask('Track with Git LFS', 'Pattern', 'Track', (p) => lfsTrack(id, p.trim()), { placeholder: '*.psd' })
+}
+
+export const lfsUntrack = (id: string, pattern: string) =>
+  run(id, `Stop tracking ${pattern} with LFS`, () => api.lfsTrack(id, pattern, false))
+
+export const lfsPull = (id: string) => run(id, 'Pull LFS files', () => api.lfsPull(id), { success: 'LFS files downloaded' })
+
+export const lfsLock = (id: string, path: string, lock: boolean, force = false) =>
+  run(id, `${lock ? 'Lock' : 'Unlock'} ${path}`, () => api.lfsLock(id, path, lock, force), { success: `${lock ? 'Locked' : 'Unlocked'} ${path}` })
+
+/** The LFS pattern a file would be tracked under: its extension, or the file itself. */
+export function lfsPatternFor(path: string): string {
+  const name = path.slice(path.lastIndexOf('/') + 1)
+  const dot = name.lastIndexOf('.')
+  return dot > 0 ? `*${name.slice(dot)}` : path
+}
+
 // ------------------------------------------------------------------ external tools
 
 /**

@@ -1,9 +1,9 @@
 import type { Ref } from '@gitsquid/shared'
 import clsx from 'clsx'
-import { Archive, Boxes, ChevronDown, ChevronRight, Cloud, Eye, EyeOff, Focus, FolderTree, GitBranch, History, Plus, Tag } from 'lucide-react'
+import { Archive, Boxes, ChevronDown, ChevronRight, Cloud, Eye, EyeOff, Focus, FolderTree, GitBranch, HardDrive, History, Plus, Tag } from 'lucide-react'
 import { ContextMenu } from 'radix-ui'
 import { useMemo, useState, type ReactNode } from 'react'
-import { addRemote, addWorktree, checkout, hideInGraph, showInGraph, isStale, pop, remoteNames, stashApply, stashDrop, stashToBranch } from '../lib/actions'
+import { addRemote, addWorktree, lfsPull, lfsSetUp, checkout, hideInGraph, showInGraph, isStale, pop, remoteNames, stashApply, stashDrop, stashToBranch } from '../lib/actions'
 import { relativeTime, stashLabel } from '../lib/format'
 import { ensureLoaded, openRepo, updateRepo, useStore, type RepoView } from '../lib/store'
 import { REF_MIME } from './Graph'
@@ -32,7 +32,7 @@ export function Sidebar({ view }: { view: RepoView }) {
   const elsewhere = new Map(view.worktrees.filter((w) => !w.current && w.branch).map((w) => [w.branch!, w.path]))
   /** After "Check which tags are on <remote>": the tags it does not have. */
   const onRemote = view.remoteTags ? new Set(view.remoteTags.names) : null
-  const menuFor = (section: 'local' | 'remotes' | 'tags' | 'worktrees' | 'submodules') => () => useStore.setState({ menu: { kind: 'section', section } })
+  const menuFor = (section: 'local' | 'remotes' | 'tags' | 'worktrees' | 'submodules' | 'lfs') => () => useStore.setState({ menu: { kind: 'section', section } })
 
   const jump = async (hash: string) => {
     updateRepo(view.id, { selected: { kind: 'commit', hash }, center: { kind: 'graph' } })
@@ -123,6 +123,29 @@ export function Sidebar({ view }: { view: RepoView }) {
                     {m.dirty && <Badge title="Has uncommitted changes inside">changes</Badge>}
                   </div>
                 ))}
+              </Section>
+            )}
+            {view.lfs?.used && (
+              <Section title="Git LFS" count={view.lfs.files.length} icon={<HardDrive size={13} />} defaultOpen={false} onContextMenu={menuFor('lfs')}>
+                {!view.lfs.ready && (
+                  <div className="flex items-center gap-2 py-1 pr-3 pl-8 text-xs text-warn" data-testid="lfs-setup">
+                    <span className="min-w-0 flex-1">Not set up here: LFS files stay pointers.</span>
+                    <button className="font-medium text-accent hover:underline" onClick={() => void lfsSetUp(view.id)}>Set up</button>
+                  </div>
+                )}
+                {view.lfs.patterns.map((p) => (
+                  <div key={p.pattern} data-testid="lfs-pattern" onContextMenu={() => useStore.setState({ menu: { kind: 'lfs-pattern', pattern: p.pattern } })}
+                    title={`From ${p.source}`} className="flex h-6 cursor-default items-center gap-1.5 pr-3 pl-8 font-mono text-[12px] hover:bg-hover">
+                    <span className="min-w-0 flex-1 truncate">{p.pattern}</span>
+                    {p.lockable && <Badge title="Lockable: checked out read-only until you lock it">lockable</Badge>}
+                  </div>
+                ))}
+                {view.lfs.files.some((f) => !f.downloaded) && (
+                  <div className="flex items-center gap-2 py-1 pr-3 pl-8 text-xs text-muted">
+                    <span className="min-w-0 flex-1">{view.lfs.files.filter((f) => !f.downloaded).length} not downloaded</span>
+                    <button className="font-medium text-accent hover:underline" onClick={() => void lfsPull(view.id)}>Pull</button>
+                  </div>
+                )}
               </Section>
             )}
             <Section title="Stashes" count={view.stashes.length} icon={<Archive size={13} />}>
