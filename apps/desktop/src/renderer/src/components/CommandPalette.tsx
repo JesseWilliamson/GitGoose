@@ -55,6 +55,7 @@ export function CommandPalette() {
   add('App', 'Clone repository…', () => useStore.setState({ dialog: { kind: 'clone' } }))
   add('App', 'New repository…', () => void initRepo())
   add('App', 'Settings…', () => useStore.setState({ dialog: { kind: 'settings' } }))
+  add('App', 'Keyboard shortcuts', () => useStore.setState({ dialog: { kind: 'shortcuts' } }), '?')
   if (settings) {
     add('App', `Theme: ${settings.theme === 'light' ? 'dark' : 'light'}`, () => void saveSettings({ theme: settings.theme === 'light' ? 'dark' : 'light' }))
     for (const p of settings.recentRepos) add('Recent', p.split(/[\\/]/).pop() ?? p, () => reopen(p), p)

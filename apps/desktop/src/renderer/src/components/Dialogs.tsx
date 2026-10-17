@@ -1,6 +1,7 @@
 import { KeyRound } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { cloneRepo } from '../lib/actions'
+import { modName, SHORTCUT_HELP } from '../lib/keys'
 import { api } from '../lib/api'
 import { dismissToast, saveSettings, useStore } from '../lib/store'
 import { Button, Modal, TextField } from './ui'
@@ -22,6 +23,7 @@ export function Dialogs() {
     )
   }
   if (dialog.kind === 'settings') return <SettingsDialog close={close} />
+  if (dialog.kind === 'shortcuts') return <ShortcutsDialog close={close} />
   return <CloneDialog close={close} />
 }
 
@@ -101,6 +103,24 @@ function CloneDialog({ close }: { close: () => void }) {
           <Button type="submit" variant="primary" disabled={!url.trim() || !dir || !!progress}>Clone</Button>
         </div>
       </form>
+    </Modal>
+  )
+}
+
+function ShortcutsDialog({ close }: { close: () => void }) {
+  const mod = modName()
+  return (
+    <Modal open onClose={close} title="Keyboard shortcuts" width={520}>
+      <table className="w-full text-[13px]" data-testid="shortcuts">
+        <tbody>
+          {SHORTCUT_HELP.map((s) => (
+            <tr key={s.what} className="border-b border-line/50 last:border-0">
+              <td className="py-1.5 pr-4 font-mono text-xs whitespace-nowrap text-muted">{s.keys.replaceAll('mod', mod)}</td>
+              <td className="py-1.5">{s.what}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </Modal>
   )
 }

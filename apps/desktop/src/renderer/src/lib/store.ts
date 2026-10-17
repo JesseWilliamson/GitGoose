@@ -59,6 +59,7 @@ export type Dialog =
   | { kind: 'confirm'; title: string; message: string; confirm: string; danger?: boolean; onConfirm: () => void | Promise<void> }
   | { kind: 'settings' }
   | { kind: 'clone' }
+  | { kind: 'shortcuts' }
 
 export interface DropRequest {
   x: number

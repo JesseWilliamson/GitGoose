@@ -52,6 +52,11 @@ function useCommands() {
     }
     const off = onCommand(handle)
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === '?' && !isTyping() && !useStore.getState().dialog) {
+        e.preventDefault()
+        useStore.setState({ dialog: { kind: 'shortcuts' } })
+        return
+      }
       const combo = shortcutOf(e)
       if (!combo) return
       const tab = /^mod\+([1-9])$/.exec(combo)

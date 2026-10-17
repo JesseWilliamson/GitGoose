@@ -70,6 +70,17 @@ test('runs commands from the palette', async () => {
   await app.close()
 })
 
+test('lists keyboard shortcuts with ?', async () => {
+  const r = makeFixture('linear')
+  const { app, page } = await launch(r.dir)
+  await page.getByTestId('commit-row').first().click()
+  await page.keyboard.press('?')
+  await expect(page.getByTestId('shortcuts')).toContainText('Command palette')
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('shortcuts')).toHaveCount(0)
+  await app.close()
+})
+
 test('opens several repositories as tabs', async () => {
   const a = makeFixture('linear')
   const b = makeFixture('branches')
