@@ -1,0 +1,13 @@
+packages:
+  - apps/*
+  - packages/*
+  - tools/*
+
+# pnpm 10 does not run dependency install scripts unless allowed.
+# @parcel/watcher and esbuild set up native binaries. Electron 44+ has no install script at all:
+# the root postinstall runs its `install-electron` command to download the binary.
+onlyBuiltDependencies:
+  - esbuild
+  - '@parcel/watcher'
+ignoredBuiltDependencies:
+  - electron-winstaller

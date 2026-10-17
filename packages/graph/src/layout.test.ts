@@ -1,0 +1,143 @@
+import { makeFixture, makeLargeRepo, SHAPES, type Shape } from '@gitsquid/fixtures'
+import { execFileSync } from 'node:child_process'
+import { describe, expect, it } from 'vitest'
+import { GraphLayout, layout, type LayoutCommit, type Row } from './layout'
+
+const c = (hash: string, ...parents: string[]): LayoutCommit => ({ hash, parents })
+
+/** Render rows as ASCII so layouts read like `git log --graph` in failures. */
+function ascii(rows: Row[]): string[] {
+  return rows.map((r) => {
+    const w = r.width
+    const cells = Array.from({ length: w }, () => ' ')
+    for (const e of r.edges) if (e.part === 'pass') cells[e.from] = '|'
+    cells[r.lane] = r.merge ? 'M' : '*'
+    return cells.join('').trimEnd() + ' ' + r.hash
+  })
+}
+
+function logOf(dir: string): LayoutCommit[] {
+  // Same revisions and order as the app's LogStream.
+  const out = execFileSync('git', ['log', '--topo-order', '--format=%H %P', '--branches', '--remotes', '--tags', 'HEAD', '--'],
+    { cwd: dir, encoding: 'utf8', maxBuffer: 1 << 30 })
+  return out.split('\n').filter(Boolean).map((l) => {
+    const [hash, ...parents] = l.split(' ')
+    return { hash: hash!, parents }
+  })
+}
+
+/**
+ * Invariants every layout must satisfy, whatever the history:
+ * - every parent link is drawn: a 'bottom' edge from the child's lane to some lane L, then that
+ *   lane passes straight down until a 'top' edge brings it into the parent's node
+ * - lines never jump: a 'pass' edge stays in its column, and two lines never share a column
+ */
+function checkInvariants(commits: LayoutCommit[], rows: Row[]): void {
+  const index = new Map(commits.map((c, i) => [c.hash, i]))
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]!
+    const cols = row.edges.filter((e) => e.part === 'pass').map((e) => e.from)
+    expect(new Set(cols).size, `row ${i}: two lines share a column`).toBe(cols.length)
+    expect(cols, `row ${i}: a line passes through the node`).not.toContain(row.lane)
+    for (const p of commits[i]!.parents) {
+      const j = index.get(p)
+      if (j === undefined) continue // parent outside the loaded range
+      const out = row.edges.filter((e) => e.part === 'bottom').map((e) => e.to)
+      // Follow the line down: it must arrive at the parent through a 'top' edge.
+      let reached = false
+      for (const col of out) {
+        let ok = true
+        for (let k = i + 1; k < j; k++) {
+          if (!rows[k]!.edges.some((e) => e.part === 'pass' && e.from === col)) { ok = false; break }
+        }
+        if (ok && rows[j]!.edges.some((e) => e.part === 'top' && e.from === col)) { reached = true; break }
+      }
+      expect(reached, `row ${i}: no line from ${commits[i]!.hash.slice(0, 7)} to its parent ${p.slice(0, 7)}`).toBe(true)
+    }
+  }
+}
+
+describe('layout', () => {
+  it('puts a linear history in one lane', () => {
+    const rows = layout([c('c', 'b'), c('b', 'a'), c('a')])
+    expect(ascii(rows)).toEqual(['* c', '* b', '* a'])
+    expect(rows.every((r) => r.lane === 0 && r.color === 0)).toBe(true)
+  })
+
+  it('opens a lane for a merge and closes it at the branch point', () => {
+    //   M        M merges F into B's line
+    //   | F
+    //   B |
+    //   |/
+    //   A
+    const rows = layout([c('M', 'B', 'F'), c('F', 'A'), c('B', 'A'), c('A')])
+    expect(ascii(rows)).toEqual(['M M', '|* F', '*| B', '* A'])
+    expect(rows[0]!.edges).toEqual([
+      { part: 'bottom', from: 0, to: 0, color: 0 },
+      { part: 'bottom', from: 0, to: 1, color: 1 },
+    ])
+    // A: lane 0 comes straight in, lane 1 curves in from the right.
+    expect(rows[3]!.edges.filter((e) => e.part === 'top')).toEqual([
+      { part: 'top', from: 0, to: 0, color: 0 },
+      { part: 'top', from: 1, to: 0, color: 1 },
+    ])
+  })
+
+  it('reserves lane 0 for HEAD, even when newer commits on other branches come first', () => {
+    // other (newer) -> X ; HEAD = B -> A ; X -> A
+    const commits = [c('other', 'X'), c('X', 'A'), c('B', 'A'), c('A')]
+    const rows = layout(commits, { head: 'B' })
+    expect(rows.map((r) => [r.hash, r.lane])).toEqual([['other', 1], ['X', 1], ['B', 0], ['A', 0]])
+    // Above HEAD, lane 0 is the dashed line from "uncommitted changes" down to HEAD.
+    expect(rows[0]!.edges).toContainEqual({ part: 'pass', from: 0, to: 0, color: 0, pending: true })
+    expect(rows[2]!.edges).toContainEqual({ part: 'top', from: 0, to: 0, color: 0, pending: true })
+  })
+
+  it('handles octopus merges and multiple roots', () => {
+    const rows = layout([c('O', 'a', 'b', 'c'), c('c', 'r'), c('b', 'r'), c('a', 'r'), c('r'), c('orphan')])
+    expect(rows[0]!.edges.filter((e) => e.part === 'bottom').map((e) => e.to)).toEqual([0, 1, 2])
+    expect(rows[4]!.edges.filter((e) => e.part === 'top').map((e) => e.from).sort()).toEqual([0, 1, 2])
+    expect(rows[5]!.lane).toBe(0) // all lanes closed, the orphan root starts again at the left
+  })
+
+  it('gives the same result when fed page by page', () => {
+    const commits = logOf(makeLargeRepo(600))
+    const whole = layout(commits)
+    const g = new GraphLayout()
+    const paged = [...g.push(commits.slice(0, 101)), ...g.push(commits.slice(101, 333)), ...g.push(commits.slice(333))]
+    expect(paged).toEqual(whole)
+  })
+
+  it.each(SHAPES.filter((s) => s !== 'empty'))('satisfies invariants on the %s fixture', (shape: Shape) => {
+    const r = makeFixture(shape)
+    const commits = logOf(r.dir)
+    const head = r.head()
+    checkInvariants(commits, layout(commits, { head }))
+    const rows = layout(commits, { head })
+    expect(rows.find((x) => x.hash === head)!.lane).toBe(0)
+  })
+
+  it('satisfies invariants on a large generated history', () => {
+    const commits = logOf(makeLargeRepo(2000))
+    checkInvariants(commits, layout(commits, { head: commits[0]!.hash }))
+  })
+
+  it('lays out 100k commits quickly', () => {
+    // Synthetic: a main line with a merged side branch every 50 commits.
+    const commits: LayoutCommit[] = []
+    const n = 100_000
+    for (let i = 0; i < n; i++) {
+      const parents = i + 1 < n ? [`m${i + 1}`] : []
+      if (i % 50 === 0 && i + 6 < n) parents.push(`s${i}-0`)
+      commits.push({ hash: `m${i}`, parents })
+      if (i % 50 === 0 && i + 6 < n) {
+        for (let k = 0; k < 5; k++) commits.push({ hash: `s${i}-${k}`, parents: [k < 4 ? `s${i}-${k + 1}` : `m${i + 6}`] })
+      }
+    }
+    const t = performance.now()
+    const rows = layout(commits)
+    const ms = performance.now() - t
+    expect(rows).toHaveLength(commits.length)
+    expect(ms).toBeLessThan(1000)
+  })
+})

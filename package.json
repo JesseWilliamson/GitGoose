@@ -1,0 +1,22 @@
+{
+  "name": "gitsquid",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.28.0",
+  "scripts": {
+    "postinstall": "pnpm --filter @gitsquid/desktop exec install-electron",
+    "dev": "pnpm --filter @gitsquid/desktop dev",
+    "build": "pnpm --filter @gitsquid/desktop build",
+    "typecheck": "pnpm -r --parallel typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "e2e": "pnpm --filter @gitsquid/desktop e2e",
+    "bench": "pnpm --filter @gitsquid/bench bench",
+    "dist": "pnpm --filter @gitsquid/desktop dist"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}
