@@ -7,23 +7,16 @@ import { contextBridge, ipcRenderer } from 'electron'
  *
  * The client is built from API_METHODS, so it always matches the GitSquidApi interface.
  */
-class GitSquidError extends Error {
-  stderr?: string
-  command?: string
-  constructor(e: SerializedError) {
-    super(e.message)
-    this.stderr = e.stderr
-    this.command = e.command
-  }
-}
 
 const api = {} as Record<string, (...args: unknown[]) => Promise<unknown>>
 for (const method of API_METHODS) {
   api[method] = async (...args: unknown[]) => {
     const res = (await ipcRenderer.invoke(IPC_INVOKE, method, args)) as IpcResult<unknown>
     if (res.ok) return res.value
-    // contextBridge copies errors as plain objects; keep the fields the UI shows.
-    throw new GitSquidError(res.error)
+    // Reject with a plain object, not an Error: contextBridge copies only `message` from Error
+    // instances, which would drop git's stderr. Plain objects are copied whole.
+    const error: SerializedError & { name: string } = { name: 'GitSquidError', ...res.error }
+    throw error
   }
 }
 

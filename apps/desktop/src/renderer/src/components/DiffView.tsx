@@ -133,7 +133,7 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
     if (target.kind === 'commit') return
     const label = { stage: 'Stage', unstage: 'Unstage', discard: 'Discard' }[action]
     void run(view.id, `${label} ${hunks.some((h) => h.lines) ? 'lines' : 'hunk'}`, () => api.applySelection(view.id, { target, action, hunks }), {
-      quiet: action !== 'discard', undoable: action === 'discard',
+      quiet: action !== 'discard',
     })
   }
   const selectionHunks = (): HunkSelection[] => [...sel.entries()].filter(([, s]) => s.size).map(([hunk, s]) => ({ hunk, lines: [...s] }))
@@ -171,7 +171,7 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
       {target.kind !== 'staged' ? (
         <>
           <Button size="sm" onClick={() => void run(view.id, 'Stage', () => api.stagePaths(view.id, [target.path]), { quiet: true })}>Stage file</Button>
-          <Button size="sm" variant="ghost" onClick={() => void run(view.id, `Discard ${target.path}`, () => api.discardPaths(view.id, [target.path]), { undoable: true })}>
+          <Button size="sm" variant="ghost" onClick={() => void run(view.id, `Discard ${target.path}`, () => api.discardPaths(view.id, [target.path]))}>
             {target.kind === 'untracked' ? 'Delete file' : 'Discard file'}
           </Button>
         </>

@@ -5,6 +5,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
  * - force machine-stable output (no colour, no pager, no path quoting, C locale)
  * - never let git open a terminal prompt or an editor (we provide askpass and messages)
  * - read-only commands skip optional locks so a background refresh never blocks the user's own git
+ * - paths given after `--` are literal (GIT_LITERAL_PATHSPECS), never glob patterns
  */
 
 export class GitError extends Error {
@@ -68,7 +69,13 @@ export class GitRunner {
     return [...(readOnly ? ['--no-optional-locks'] : []), ...STABLE_CONFIG, ...args]
   }
 
-  private buildEnv(extra?: Record<string, string>): NodeJS.ProcessEnv {
+  private buildEnv(args: string[], extra?: Record<string, string>): NodeJS.ProcessEnv {
+    // File names are data, not patterns: without this, discarding "a[1].txt" also matches
+    // "a1.txt". It applies only to commands that pass paths after `--`; setting it globally
+    // breaks git internals (`stash push -u` then stops removing untracked files).
+    // A caller that wants pathspec magic (path search) passes GIT_LITERAL_PATHSPECS=0.
+    const dashdash = args.indexOf('--')
+    const literal = dashdash >= 0 && dashdash < args.length - 1 ? { GIT_LITERAL_PATHSPECS: '1' } : {}
     return {
       ...process.env,
       LC_ALL: 'C',
@@ -78,6 +85,7 @@ export class GitRunner {
       GIT_EDITOR: 'true',
       GIT_SEQUENCE_EDITOR: 'true',
       GIT_MERGE_AUTOEDIT: 'no',
+      ...literal,
       ...this.env,
       ...extra,
     }
@@ -87,7 +95,7 @@ export class GitRunner {
   spawn(args: string[], opts: { readOnly?: boolean; env?: Record<string, string> } = {}): ChildProcess {
     return spawn(this.gitPath, this.buildArgs(args, opts.readOnly), {
       cwd: this.cwd,
-      env: this.buildEnv(opts.env),
+      env: this.buildEnv(args, opts.env),
       windowsHide: true,
     })
   }

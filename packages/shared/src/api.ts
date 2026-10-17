@@ -24,6 +24,12 @@ export interface SelectionRequest {
   hunks: HunkSelection[]
 }
 
+/**
+ * What an undoable write returns: the id of the undo entry it recorded, or null when nothing
+ * changed (a merge that was already up to date, a stash with nothing to stash).
+ */
+export type UndoId = number | null
+
 export type ResetMode = 'soft' | 'mixed' | 'hard' | 'keep'
 
 export type Resolution = 'ours' | 'theirs' | { content: string }
@@ -73,36 +79,36 @@ export interface GitSquidApi {
   // Working tree
   stagePaths(repoId: string, paths: string[]): Promise<void>
   unstagePaths(repoId: string, paths: string[]): Promise<void>
-  discardPaths(repoId: string, paths: string[]): Promise<void>
-  applySelection(repoId: string, req: SelectionRequest): Promise<void>
+  discardPaths(repoId: string, paths: string[]): Promise<UndoId>
+  applySelection(repoId: string, req: SelectionRequest): Promise<UndoId>
   /** Append the paths to the repository's top-level .gitignore. */
-  ignorePaths(repoId: string, paths: string[]): Promise<void>
-  commit(repoId: string, message: string, opts?: { amend?: boolean }): Promise<void>
+  ignorePaths(repoId: string, paths: string[]): Promise<UndoId>
+  commit(repoId: string, message: string, opts?: { amend?: boolean }): Promise<UndoId>
 
   // Branches and history
-  checkout(repoId: string, ref: string): Promise<void>
-  createBranch(repoId: string, name: string, opts?: { at?: string; checkout?: boolean }): Promise<void>
-  renameBranch(repoId: string, from: string, to: string): Promise<void>
-  deleteBranch(repoId: string, name: string, opts?: { force?: boolean }): Promise<void>
-  merge(repoId: string, ref: string, opts?: { noFf?: boolean; ffOnly?: boolean }): Promise<void>
-  rebase(repoId: string, onto: string): Promise<void>
-  reset(repoId: string, hash: string, mode: ResetMode): Promise<void>
-  cherryPick(repoId: string, hash: string): Promise<void>
-  revert(repoId: string, hash: string): Promise<void>
-  createTag(repoId: string, name: string, hash: string, message?: string): Promise<void>
-  deleteTag(repoId: string, name: string): Promise<void>
+  checkout(repoId: string, ref: string): Promise<UndoId>
+  createBranch(repoId: string, name: string, opts?: { at?: string; checkout?: boolean }): Promise<UndoId>
+  renameBranch(repoId: string, from: string, to: string): Promise<UndoId>
+  deleteBranch(repoId: string, name: string, opts?: { force?: boolean }): Promise<UndoId>
+  merge(repoId: string, ref: string, opts?: { noFf?: boolean; ffOnly?: boolean }): Promise<UndoId>
+  rebase(repoId: string, onto: string): Promise<UndoId>
+  reset(repoId: string, hash: string, mode: ResetMode): Promise<UndoId>
+  cherryPick(repoId: string, hash: string): Promise<UndoId>
+  revert(repoId: string, hash: string): Promise<UndoId>
+  createTag(repoId: string, name: string, hash: string, message?: string): Promise<UndoId>
+  deleteTag(repoId: string, name: string): Promise<UndoId>
 
   // Remotes
   fetch(repoId: string, opts?: { remote?: string; prune?: boolean }): Promise<void>
-  pull(repoId: string, opts?: { rebase?: boolean }): Promise<void>
+  pull(repoId: string, opts?: { rebase?: boolean }): Promise<UndoId>
   push(repoId: string, opts?: { force?: boolean; branch?: string; remote?: string }): Promise<void>
   deleteRemoteBranch(repoId: string, remoteRef: string): Promise<void>
 
   // Stash
-  stashPush(repoId: string, opts?: { message?: string; includeUntracked?: boolean }): Promise<void>
+  stashPush(repoId: string, opts?: { message?: string; includeUntracked?: boolean }): Promise<UndoId>
   stashApply(repoId: string, index: number): Promise<void>
-  stashPop(repoId: string, index: number): Promise<void>
-  stashDrop(repoId: string, index: number): Promise<void>
+  stashPop(repoId: string, index: number): Promise<UndoId>
+  stashDrop(repoId: string, index: number): Promise<UndoId>
 
   // Conflicts
   conflicts(repoId: string): Promise<ConflictFile[]>
@@ -113,7 +119,8 @@ export interface GitSquidApi {
 
   // Undo
   undoList(repoId: string): Promise<UndoEntry[]>
-  undo(repoId: string): Promise<string | null>
+  /** Undo the latest operation; with `entryId`, only if that entry is still the latest. */
+  undo(repoId: string, entryId?: number): Promise<string | null>
 }
 
 export type ApiMethod = keyof GitSquidApi

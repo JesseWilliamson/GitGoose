@@ -106,7 +106,7 @@ export function createHandlers(repos: RepoManager, prompts: PromptBroker, gitOpt
     abortOperation: (id) => r(id).abortOperation(),
 
     undoList: async (id) => r(id).undoList(),
-    undo: (id) => r(id).undo(),
+    undo: (id, entryId) => r(id).undo(entryId),
   }
 }
 

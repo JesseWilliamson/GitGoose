@@ -54,7 +54,7 @@ function WipPanel({ view }: { view: RepoView }) {
 
   const stage = (paths: string[]) => run(id, 'Stage', () => api.stagePaths(id, paths), { quiet: true })
   const unstage = (paths: string[]) => run(id, 'Unstage', () => api.unstagePaths(id, paths), { quiet: true })
-  const discard = (paths: string[]) => run(id, `Discard ${paths.length === 1 ? paths[0] : `${paths.length} files`}`, () => api.discardPaths(id, paths), { undoable: true })
+  const discard = (paths: string[]) => run(id, `Discard ${paths.length === 1 ? paths[0] : `${paths.length} files`}`, () => api.discardPaths(id, paths))
 
   const unstagedTarget = (e: StatusEntry): DiffTarget => (e.kind === 'untracked' ? { kind: 'untracked', path: e.path } : { kind: 'unstaged', path: e.path })
 
@@ -88,7 +88,7 @@ function WipPanel({ view }: { view: RepoView }) {
                     <CM.Item onSelect={() => void stage([e.path])}>Stage</CM.Item>
                     <CM.Item onSelect={() => void discard([e.path])}>{e.kind === 'untracked' ? 'Delete (undoable)' : 'Discard changes (undoable)'}</CM.Item>
                     {e.kind === 'untracked' && (
-                      <CM.Item onSelect={() => void run(id, `Ignore ${e.path}`, () => api.ignorePaths(id, [e.path]), { undoable: true })}>Add to .gitignore</CM.Item>
+                      <CM.Item onSelect={() => void run(id, `Ignore ${e.path}`, () => api.ignorePaths(id, [e.path]))}>Add to .gitignore</CM.Item>
                     )}
                   </FileMenu>}
                   actions={<>
@@ -152,7 +152,7 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
   const commit = async () => {
     if (!canCommit) return
     const message = body.trim() ? `${summary.trim()}\n\n${body.trim()}\n` : `${summary.trim()}\n`
-    const ok = await run(id, amend ? 'Amend commit' : 'Commit', () => api.commit(id, message, { amend }), { undoable: true, success: amend ? 'Commit amended' : 'Committed' })
+    const ok = await run(id, amend ? 'Amend commit' : 'Commit', () => api.commit(id, message, { amend }), { success: amend ? 'Commit amended' : 'Committed' })
     if (ok) {
       setSummary('')
       setBody('')
