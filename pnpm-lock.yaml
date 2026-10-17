@@ -27,6 +27,9 @@ importers:
         specifier: ^6.8.9
         version: 6.8.9
     devDependencies:
+      '@codemirror/commands':
+        specifier: ^6.11.1
+        version: 6.11.1
       '@codemirror/state':
         specifier: ^6.7.6
         version: 6.7.6
