@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { fetchAll, initRepo, newBranch, openRepoDialog, pop, pull, push, stash, undo } from '../lib/actions'
+import { SHORTCUTS, shortcutOf } from '../lib/keys'
 import { closeTab, onCommand, useActiveRepo, useStore } from '../lib/store'
 import { CommandPalette } from './CommandPalette'
 import { ConflictWizard } from './ConflictWizard'
@@ -35,7 +36,7 @@ function useCommands() {
       if (!id) return
       switch (name) {
         case 'undo':
-          // Cmd+Z in a text field undoes typing; anywhere else it undoes the last git operation.
+          // From the menu: in a text field undo typing; anywhere else undo the last git operation.
           if (isTyping()) document.execCommand('undo')
           else void undo(id)
           return
@@ -51,17 +52,23 @@ function useCommands() {
     }
     const off = onCommand(handle)
     const onKey = (e: KeyboardEvent) => {
-      const mod = e.metaKey || e.ctrlKey
-      if (mod && e.key.toLowerCase() === 'k') {
-        e.preventDefault()
-        handle('palette')
-      } else if (mod && /^[1-9]$/.test(e.key)) {
-        const t = useStore.getState().tabs[Number(e.key) - 1]
+      const combo = shortcutOf(e)
+      if (!combo) return
+      const tab = /^mod\+([1-9])$/.exec(combo)
+      if (tab) {
+        const t = useStore.getState().tabs[Number(tab[1]) - 1]
         if (t) {
           e.preventDefault()
           useStore.setState({ active: t })
         }
+        return
       }
+      const name = SHORTCUTS[combo]
+      if (!name) return
+      // In a text field, Cmd/Ctrl+Z belongs to the text field.
+      if (name === 'undo' && isTyping()) return
+      e.preventDefault()
+      handle(name)
     }
     window.addEventListener('keydown', onKey)
     return () => {

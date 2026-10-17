@@ -1,6 +1,6 @@
 import { AskpassServer } from '@gitsquid/git'
 import { app, BrowserWindow, nativeTheme } from 'electron'
-import { join } from 'node:path'
+import { delimiter, join, resolve } from 'node:path'
 import { installCrashHandlers } from './diagnostics'
 import { broadcast, createHandlers, registerIpc } from './ipc'
 import { installMenu } from './menu'
@@ -90,9 +90,12 @@ app.whenReady().then(async () => {
   } catch {
     // Without askpass, git falls back to the user's credential helpers.
   }
-  // `GITSQUID_OPEN=/path` or a path argument opens that repository (tests, the benchmark, shell use).
-  const argPath = process.env.GITSQUID_OPEN ?? process.argv.slice(app.isPackaged ? 1 : 2).find((a) => !a.startsWith('-'))
-  if (argPath) setSettings({ openRepos: [argPath] })
+  // `gitsquid repo1 repo2` or GITSQUID_OPEN=repo1:repo2 (; on Windows) opens those repositories
+  // as tabs instead of restoring the last session. Used from a shell, by tests and by the benchmark.
+  const paths = process.env.GITSQUID_OPEN
+    ? process.env.GITSQUID_OPEN.split(delimiter).filter(Boolean)
+    : process.argv.slice(app.isPackaged ? 1 : 2).filter((a) => !a.startsWith('-'))
+  if (paths.length) setSettings({ openRepos: paths.map((p) => resolve(p)) })
   registerIpc(createHandlers(repos, prompts, gitOpts), repos)
   installMenu()
   createWindow()

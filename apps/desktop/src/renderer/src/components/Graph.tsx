@@ -107,8 +107,12 @@ export function Graph({ view }: { view: RepoView }) {
     }
   }, [selectedIndex, virt])
 
-  const select = (i: number) => {
-    if (i < 0 || i >= count) return
+  // The last row may be the "Loading…" placeholder; keyboard selection stops at the last commit.
+  // Landing there scrolls near the end, which loads the next page, so End can be pressed again.
+  const lastSelectable = offset + log.commits.length - 1
+  const select = (wanted: number) => {
+    const i = Math.min(Math.max(wanted, 0), lastSelectable)
+    if (i < 0) return
     if (showWip && i === 0) updateRepo(view.id, { selected: { kind: 'wip' } })
     else {
       const c = log.commits[i - offset]
@@ -120,10 +124,10 @@ export function Graph({ view }: { view: RepoView }) {
     const cur = selectedIndex < 0 ? -1 : selectedIndex
     if (e.key === 'ArrowDown' || e.key === 'j') { e.preventDefault(); select(cur + 1) }
     else if (e.key === 'ArrowUp' || e.key === 'k') { e.preventDefault(); select(Math.max(0, cur - 1)) }
-    else if (e.key === 'PageDown') { e.preventDefault(); select(Math.min(count - 1, cur + 20)) }
-    else if (e.key === 'PageUp') { e.preventDefault(); select(Math.max(0, cur - 20)) }
+    else if (e.key === 'PageDown') { e.preventDefault(); select(cur + 20) }
+    else if (e.key === 'PageUp') { e.preventDefault(); select(cur - 20) }
     else if (e.key === 'Home') { e.preventDefault(); select(0) }
-    else if (e.key === 'End') { e.preventDefault(); select(count - 1) }
+    else if (e.key === 'End') { e.preventDefault(); select(lastSelectable) }
   }
 
   return (

@@ -14,7 +14,7 @@ export function Toolbar({ view }: { view: RepoView }) {
   const head = snap.head.branch ? snap.refs.find((r) => r.name === `refs/heads/${snap.head.branch}`) : undefined
   const lastUndo = view.undo[0]
   return (
-    <div className="drag flex h-14 shrink-0 items-center gap-1 border-b border-line bg-panel px-2">
+    <div className="drag flex h-14 shrink-0 items-center gap-1 border-b border-line bg-panel px-2" data-testid="toolbar">
       <ToolbarButton icon={<Undo2 size={17} />} label="Undo" disabled={!lastUndo || !!view.busy}
         title={lastUndo ? `Undo: ${lastUndo.label} (Ctrl/Cmd+Z)` : 'Nothing to undo'} onClick={() => void undo(id)} />
       <span className="mx-1 h-8 w-px bg-line" />

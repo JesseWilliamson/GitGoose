@@ -1,0 +1,89 @@
+import { makeFixture } from '@gitsquid/fixtures'
+import { expect, test } from '@playwright/test'
+import { delimiter } from 'node:path'
+import { launch } from './app'
+
+test('resolves a merge conflict in the wizard and continues', async () => {
+  const r = makeFixture('conflict')
+  const { app, page } = await launch(r.dir)
+  await page.locator('[data-testid="ref-pill"][data-ref="refs/heads/other"]').dragTo(page.locator('[data-testid="ref-pill"][data-ref="refs/heads/main"]'))
+  await page.getByRole('menuitem', { name: 'Merge other into main' }).click()
+  await expect(page.getByTestId('conflicts')).toBeVisible()
+  await expect(page.getByTestId('conflict-file')).toHaveCount(1)
+  await expect(page.getByTestId('conflict-block')).toHaveCount(1)
+  await page.getByTestId('use-theirs').click()
+  await page.getByTestId('save-resolution').click()
+  await expect(page.getByTestId('conflict-file')).toHaveCount(0)
+  await page.getByTestId('continue-op').click()
+  await expect(page.getByTestId('commit-row').first()).toContainText('Merge')
+  expect(r.git('show', 'HEAD:story.txt')).toBe('one\nTWO (theirs)\nthree\n')
+  await app.close()
+})
+
+test('aborts a conflicted merge', async () => {
+  const r = makeFixture('conflict')
+  const before = r.head()
+  r.tryGit('merge', 'other')
+  const { app, page } = await launch(r.dir)
+  await expect(page.getByTestId('conflicts')).toBeVisible()
+  await page.getByRole('button', { name: 'Abort merge' }).click()
+  await expect(page.getByTestId('conflicts')).toHaveCount(0)
+  expect(r.head()).toBe(before)
+  await app.close()
+})
+
+test('undoes a hard reset from the toolbar', async () => {
+  const r = makeFixture('linear')
+  const before = r.head()
+  const { app, page } = await launch(r.dir)
+  await page.getByTestId('commit-row').nth(3).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: /Reset main to here/ }).hover()
+  await page.getByRole('menuitem', { name: /^Hard/ }).click()
+  await expect(page.getByTestId('commit-row')).toHaveCount(2)
+  await page.getByTestId('toolbar').getByRole('button', { name: 'Undo' }).click()
+  await expect(page.getByTestId('commit-row')).toHaveCount(5)
+  expect(r.head()).toBe(before)
+  await app.close()
+})
+
+test('shows file history and blame', async () => {
+  const r = makeFixture('linear')
+  const { app, page } = await launch(r.dir)
+  await page.getByTestId('commit-row').first().click()
+  await page.getByTestId('commit-file').first().click()
+  await page.getByRole('button', { name: 'history' }).click()
+  await expect(page.getByTestId('file-history').locator('button')).toHaveCount(5)
+  await page.getByRole('button', { name: 'blame' }).click()
+  await expect(page.getByTestId('blame')).toContainText('Commit 5')
+  await app.close()
+})
+
+test('runs commands from the palette', async () => {
+  const r = makeFixture('branches')
+  const { app, page } = await launch(r.dir)
+  await expect(page.getByTestId('commit-row').first()).toBeVisible()
+  await page.keyboard.press('Control+k')
+  await page.getByTestId('palette-input').fill('feature')
+  await page.keyboard.press('Enter')
+  await expect(page.getByTestId('status-bar')).toContainText('feature')
+  expect(r.git('branch', '--show-current').trim()).toBe('feature')
+  await app.close()
+})
+
+test('opens several repositories as tabs', async () => {
+  const a = makeFixture('linear')
+  const b = makeFixture('branches')
+  const { app, page } = await launch([a.dir, b.dir].join(delimiter))
+  const tabs = page.getByTestId('tabs').locator('[title*="gitsquid-"]')
+  await expect(tabs).toHaveCount(2)
+  // The last one opened is active.
+  await expect(page.getByTestId('commit-row')).toHaveCount(7)
+  await page.keyboard.press('Control+1')
+  await expect(page.getByTestId('commit-row')).toHaveCount(5)
+  await tabs.nth(1).click()
+  await expect(page.getByTestId('commit-row')).toHaveCount(7)
+  await page.keyboard.press('Control+w')
+  await expect(tabs).toHaveCount(1)
+  await expect(page.getByTestId('commit-row')).toHaveCount(5)
+  await app.close()
+})
