@@ -1,5 +1,5 @@
 import { GraphLayout, type Row } from '@gitsquid/graph'
-import type { Commit, DiffTarget, GitSquidEvent, Ref, RepoSnapshot, SearchField, Settings, StashEntry, UndoEntry } from '@gitsquid/shared'
+import { SETTINGS, type Commit, type DiffTarget, type GitSquidEvent, type Ref, type RepoSnapshot, type SearchField, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitsquid/shared'
 import { create } from 'zustand'
 import { api, toUiError, type UiError } from './api'
 
@@ -36,12 +36,31 @@ export interface RepoView {
   worktreeTick: number
 }
 
+/** Toasts are for outcomes that need nothing from the user: successes and notes. */
 export interface Toast {
   id: number
-  kind: 'error' | 'info' | 'success'
+  kind: 'info' | 'success'
   title: string
   detail?: string
   action?: { label: string; run: () => void }
+}
+
+export interface Choice {
+  label: string
+  variant?: 'primary' | 'danger' | 'default'
+  run?: () => void | Promise<void>
+}
+
+/**
+ * A failure the user must notice: shown in the attention bar under the tab bar until dismissed.
+ * Failures that are really a question ("delete anyway?") use a choice dialog instead.
+ */
+export interface Attention {
+  id: number
+  title: string
+  detail?: string
+  actions?: Choice[]
+  time: number
 }
 
 export type Dialog =
@@ -57,7 +76,8 @@ export type Dialog =
       onSubmit: (value: string, extra: string) => void | Promise<void>
     }
   | { kind: 'confirm'; title: string; message: string; confirm: string; danger?: boolean; onConfirm: () => void | Promise<void> }
-  | { kind: 'settings' }
+  /** A question with several answers; the last choice is usually Cancel (a choice with no run). */
+  | { kind: 'choice'; title: string; message: string; detail?: string; choices: Choice[] }
   | { kind: 'clone' }
   | { kind: 'shortcuts' }
 
@@ -79,11 +99,14 @@ interface State {
   prompt: { promptId: number; message: string; secret: boolean } | null
   dialog: Dialog | null
   toasts: Toast[]
+  attentions: Attention[]
   palette: boolean
   drop: DropRequest | null
   menu: MenuTarget
   /** Progress text for a clone in flight. */
   cloneProgress: string | null
+  /** A full-window page shown instead of the repository (or welcome) view. */
+  page: 'settings' | null
 }
 
 export const useStore = create<State>(() => ({
@@ -94,10 +117,12 @@ export const useStore = create<State>(() => ({
   prompt: null,
   dialog: null,
   toasts: [],
+  attentions: [],
   palette: false,
   drop: null,
   menu: null,
   cloneProgress: null,
+  page: null,
 }))
 
 const set = useStore.setState
@@ -115,6 +140,16 @@ export function updateRepo(id: string, patch: Partial<RepoView> | ((v: RepoView)
 export function activeRepo(): RepoView | null {
   const s = get()
   return s.active ? (s.repos[s.active] ?? null) : null
+}
+
+/** One setting, falling back to its default before settings have loaded. */
+export function useSetting<K extends SettingKey>(key: K): Settings[K] {
+  return useStore((s) => (s.settings ? s.settings[key] : (SETTINGS[key].default as Settings[K])))
+}
+
+export function setting<K extends SettingKey>(key: K): Settings[K] {
+  const s = get().settings
+  return s ? s[key] : (SETTINGS[key].default as Settings[K])
 }
 
 export function useActiveRepo(): RepoView | null {
@@ -199,7 +234,7 @@ export function loadMore(id: string): Promise<void> {
     (e) => {
       log.loading = null
       log.done = true
-      toastError('Could not read history', e)
+      reportError('Could not read history', e)
     },
   )
   return log.loading
@@ -236,14 +271,32 @@ export function addRepo(snap: RepoSnapshot): void {
   resetLog(snap.id, snap)
   void loadMore(snap.id)
   void refreshAux(snap.id)
+  if (setting('fetchOnOpen')) void import('./actions').then((a) => a.fetchAll(snap.id, { quiet: true }))
 }
+
+/**
+ * Settings → Git → fetch every N minutes. One timer checks every minute; each open repo is fetched
+ * when its last fetch is older than the interval. Quiet on success; failures go to the attention
+ * bar like any other.
+ */
+const lastFetch = new Map<string, number>()
+setInterval(() => {
+  const minutes = setting('autoFetchMinutes')
+  if (!minutes) return
+  for (const id of get().tabs) {
+    const last = lastFetch.get(id) ?? 0
+    if (Date.now() - last < minutes * 60_000 || get().repos[id]?.busy) continue
+    lastFetch.set(id, Date.now())
+    void import('./actions').then((a) => a.fetchAll(id, { quiet: true }))
+  }
+}, 60_000)
 
 export async function openRepo(path: string): Promise<void> {
   try {
     addRepo(await api.openRepo(path))
     set({ settings: await api.getSettings() })
   } catch (e) {
-    toastError(`Could not open ${path}`, e)
+    reportError(`Could not open ${path}`, e)
   }
 }
 
@@ -304,6 +357,10 @@ function onEvent(e: GitSquidEvent): void {
     case 'command':
       commandListeners.forEach((l) => l(e.name))
       break
+    case 'settings':
+      set({ settings: e.settings })
+      applyTheme(e.settings)
+      break
   }
 }
 
@@ -317,8 +374,17 @@ export function onCommand(l: (name: string) => void): () => void {
 
 export function applyTheme(settings: Settings): void {
   const dark = settings.theme === 'dark' || (settings.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)
-  document.documentElement.dataset.theme = dark ? 'dark' : 'light'
-  document.documentElement.style.setProperty('--gs-font-size', `${settings.fontSize}px`)
+  const root = document.documentElement
+  root.dataset.theme = dark ? 'dark' : 'light'
+  // UI scale is applied by the main process as the window zoom; only code panes read these.
+  root.style.setProperty('--gs-code-size', `${settings.codeFontSize}px`)
+  root.style.setProperty('--gs-code-font', settings.codeFontFamily.trim() || 'var(--font-mono)')
+  root.style.setProperty('--gs-tab-size', String(settings.tabSize))
+}
+
+/** Row height for code panes (diff, blame), derived from the code font size so rows never overlap. */
+export function codeLineHeight(fontSize: number): number {
+  return Math.round(fontSize * 1.6)
 }
 
 export async function saveSettings(patch: Partial<Settings>): Promise<void> {
@@ -354,7 +420,7 @@ export async function boot(): Promise<void> {
 
 let nextToast = 1
 
-export function toast(t: Omit<Toast, 'id'>, ms = t.kind === 'error' ? 0 : 5000): number {
+export function toast(t: Omit<Toast, 'id'>, ms = 5000): number {
   const id = nextToast++
   set((s) => ({ toasts: [...s.toasts.slice(-4), { ...t, id }] }))
   if (ms > 0) setTimeout(() => dismissToast(id), ms)
@@ -365,7 +431,27 @@ export function dismissToast(id: number): void {
   set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }))
 }
 
-export function toastError(title: string, e: unknown): void {
+let nextAttention = 1
+
+/** Report a failure in the attention bar, with git's stderr under "Details". Stays until dismissed. */
+export function reportError(title: string, e: unknown, actions?: Choice[]): number {
   const err: UiError = toUiError(e)
-  toast({ kind: 'error', title, detail: [err.message, err.stderr && err.stderr.trim() !== err.message ? err.stderr.trim() : ''].filter(Boolean).join('\n\n') })
+  const detail = [err.message, err.stderr && err.stderr.trim() !== err.message ? err.stderr.trim() : ''].filter(Boolean).join('\n\n')
+  return attention({ title, detail, actions })
+}
+
+export function attention(a: Omit<Attention, 'id' | 'time'>): number {
+  const id = nextAttention++
+  // Newest first; keep the last few so a burst of failures cannot fill the screen.
+  set((s) => ({ attentions: [{ ...a, id, time: Date.now() }, ...s.attentions].slice(0, 5) }))
+  return id
+}
+
+export function dismissAttention(id: number): void {
+  set((s) => ({ attentions: s.attentions.filter((a) => a.id !== id) }))
+}
+
+/** Ask a question with several answers in a modal. */
+export function choose(title: string, message: string, choices: Choice[], detail?: string): void {
+  set({ dialog: { kind: 'choice', title, message, detail, choices } })
 }

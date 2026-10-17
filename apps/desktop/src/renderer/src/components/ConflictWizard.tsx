@@ -2,10 +2,10 @@ import { countConflicts, parseConflicts, resolveBlocks, type ConflictChoice, typ
 import clsx from 'clsx'
 import { CheckCircle2, CircleAlert, ExternalLink } from 'lucide-react'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
-import { run } from '../lib/actions'
+import { openInEditor, run } from '../lib/actions'
 import { api } from '../lib/api'
 import { sentence } from '../lib/format'
-import { toastError, updateRepo, type RepoView } from '../lib/store'
+import { reportError, updateRepo, type RepoView } from '../lib/store'
 import { Button, Spinner } from './ui'
 
 const ResultEditor = lazy(() => import('./ResultEditor'))
@@ -25,7 +25,7 @@ export function ConflictWizard({ view }: { view: RepoView }) {
     api.conflicts(view.id).then((f) => {
       setFiles(f)
       setCurrent((c) => (c && f.some((x) => x.path === c) ? c : (f[0]?.path ?? null)))
-    }, (e) => toastError('Could not list conflicts', e))
+    }, (e) => reportError('Could not list conflicts', e))
   }, [view.id, unmergedKey, view.worktreeTick])
 
   const resolved = view.snapshot.status.filter((e) => e.kind !== 'unmerged' && e.index !== '.' && e.kind !== 'untracked')
@@ -89,7 +89,7 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
   /** Text being edited by hand, or null when picking sides block by block. */
   const [edited, setEdited] = useState<string | null>(null)
   useEffect(() => {
-    api.conflictVersions(view.id, file.path).then(setVersions, (e) => toastError('Could not read conflict', e))
+    api.conflictVersions(view.id, file.path).then(setVersions, (e) => reportError('Could not read conflict', e))
   }, [view.id, file.path])
 
   const segments = useMemo(() => (versions?.merged ? parseConflicts(versions.merged) : []), [versions])
@@ -117,7 +117,7 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
           {versions.ours === null ? 'Keep deleted (ours)' : 'Take ours'}
         </Button>
         <Button size="sm" onClick={() => resolveWith('theirs')}>{versions.theirs === null ? 'Keep deleted (theirs)' : 'Take theirs'}</Button>
-        <Button size="sm" variant="ghost" title="Open in your default editor" onClick={() => void api.openPath(`${view.snapshot.path}/${file.path}`)}>
+        <Button size="sm" variant="ghost" title="Open in your editor (Settings → Integrations)" onClick={() => void openInEditor(`${view.snapshot.path}/${file.path}`)}>
           <ExternalLink size={12} /> Open
         </Button>
         {versions.merged !== null && (

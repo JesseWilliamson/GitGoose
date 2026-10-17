@@ -1,7 +1,8 @@
 import { useEffect } from 'react'
-import { fetchAll, initRepo, newBranch, openRepoDialog, pop, pull, push, stash, undo } from '../lib/actions'
-import { SHORTCUTS, shortcutOf } from '../lib/keys'
-import { closeTab, onCommand, useActiveRepo, useStore } from '../lib/store'
+import { fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, stash, undo } from '../lib/actions'
+import { comboOf, keymap } from '../lib/keys'
+import { closeTab, onCommand, saveSettings, setting, useActiveRepo, useStore } from '../lib/store'
+import { AttentionBar } from './AttentionBar'
 import { CommandPalette } from './CommandPalette'
 import { ConflictWizard } from './ConflictWizard'
 import { DetailPanel } from './DetailPanel'
@@ -9,6 +10,7 @@ import { Dialogs, PromptDialog, Toasts } from './Dialogs'
 import { FileView } from './DiffView'
 import { Graph } from './Graph'
 import { DropMenu } from './menus'
+import { SettingsPage } from './SettingsPage'
 import { Sidebar } from './Sidebar'
 import { StatusBar } from './StatusBar'
 import { TabBar } from './TabBar'
@@ -30,8 +32,11 @@ function useCommands() {
         case 'open-repo': return void openRepoDialog()
         case 'clone-repo': return useStore.setState({ dialog: { kind: 'clone' } })
         case 'init-repo': return void initRepo()
-        case 'settings': return useStore.setState({ dialog: { kind: 'settings' } })
+        case 'settings': return useStore.setState({ page: s.page === 'settings' ? null : 'settings' })
         case 'palette': return useStore.setState({ palette: !s.palette })
+        case 'zoom-in': return void saveSettings({ uiScale: setting('uiScale') + 0.1 })
+        case 'zoom-out': return void saveSettings({ uiScale: setting('uiScale') - 0.1 })
+        case 'zoom-reset': return void saveSettings({ uiScale: 1 })
       }
       if (!id) return
       switch (name) {
@@ -48,16 +53,21 @@ function useCommands() {
         case 'stash': return stash(id)
         case 'pop': return pop(id)
         case 'reveal': return void window.gitsquid.revealPath(s.repos[id]!.snapshot.path)
+        case 'terminal': return void openTerminal(id)
       }
     }
     const off = onCommand(handle)
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && useStore.getState().page && !useStore.getState().dialog && !useStore.getState().palette) {
+        useStore.setState({ page: null })
+        return
+      }
       if (e.key === '?' && !isTyping() && !useStore.getState().dialog) {
         e.preventDefault()
         useStore.setState({ dialog: { kind: 'shortcuts' } })
         return
       }
-      const combo = shortcutOf(e)
+      const combo = comboOf(e)
       if (!combo) return
       const tab = /^mod\+([1-9])$/.exec(combo)
       if (tab) {
@@ -68,7 +78,7 @@ function useCommands() {
         }
         return
       }
-      const name = SHORTCUTS[combo]
+      const name = keymap(setting('keybindings')).get(combo)
       if (!name) return
       // In a text field, Cmd/Ctrl+Z belongs to the text field.
       if (name === 'undo' && isTyping()) return
@@ -87,10 +97,14 @@ export function App() {
   useCommands()
   const view = useActiveRepo()
   const ready = useStore((s) => s.settings !== null)
+  const page = useStore((s) => s.page)
   return (
     <div className="flex h-full flex-col">
       <TabBar />
-      {!ready ? null : !view ? (
+      <AttentionBar />
+      {!ready ? null : page === 'settings' ? (
+        <SettingsPage />
+      ) : !view ? (
         <Welcome />
       ) : (
         <>

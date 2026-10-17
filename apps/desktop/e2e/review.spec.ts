@@ -2,15 +2,13 @@ import { makeFixture } from '@gitsquid/fixtures'
 import { expect, test } from '@playwright/test'
 import { launch } from './app'
 
-test('error toasts carry git stderr, not just the first line (review #14)', async () => {
+test('errors carry git stderr, not just the first line (review #14)', async () => {
   const r = makeFixture('branches')
   r.write('f.txt', 'an untracked file in the way\n') // wip has a tracked f.txt
   const { app, page } = await launch(r.dir)
   await page.locator('[data-testid="sidebar-ref"][data-ref="refs/heads/wip"]').dblclick()
-  const toast = page.locator('[role=status][data-kind=error]')
-  await expect(toast).toContainText('Check out wip failed')
   // The list of files is on later stderr lines, which only survive if stderr crosses the bridge.
-  await expect(toast).toContainText('f.txt')
+  await expect(page.getByTestId('choice-dialog')).toContainText('f.txt')
   await app.close()
 })
 
@@ -39,7 +37,8 @@ test('Undo buttons only undo their own operation (review #6)', async () => {
   await page.getByTestId('dialog-submit').click()
   await expect(page.locator('[data-testid="ref-pill"][data-ref="refs/tags/v9"]')).toBeVisible()
   await commitToast.getByTestId('toast-action').click()
-  await expect(page.locator('[role=status][data-kind=error]')).toContainText('Something else happened since')
+  await page.getByTestId('attention-details').first().click()
+  await expect(page.getByTestId('attention')).toContainText('Something else happened since')
   expect(r.git('log', '-1', '--format=%s').trim()).toBe('My commit')
   await app.close()
 })

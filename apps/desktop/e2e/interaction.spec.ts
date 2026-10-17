@@ -103,7 +103,7 @@ test('asks for credentials when a remote needs them', async () => {
   await expect(input).toHaveAttribute('type', 'password')
   await input.fill('wrong')
   await input.press('Enter')
-  await expect(page.locator('[role=status][data-kind=error]')).toContainText('Fetch failed')
+  await expect(page.getByTestId('attention')).toContainText('Fetch failed')
   await app.close()
   server.close()
 })
