@@ -208,6 +208,31 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: Pro
         ].join('\n'),
       }
     }
+    case 'ask': {
+      if (task.path.includes('\0') || task.path.startsWith('/') || task.path.split(/[\\/]/).includes('..')) throw new Error('Bad path')
+      const c = await repo.askContext(task.rev, task.path, task.startLine, task.endLine)
+      const where = `${task.path}, lines ${task.startLine}-${task.endLine}${task.rev ? ` at commit ${task.rev.slice(0, 7)}` : ' (working tree)'}`
+      return {
+        system: 'You explain code to a teammate, plainly and precisely.',
+        prompt: [
+          'Answer the question about the selected lines below. Use the context given: the enclosing definition, the definitions of names the lines use, and their history. Say so when the context does not settle something, rather than guessing.',
+          'Plain text, short paragraphs; quote code in backticks. No headings.',
+          NO_TOOLS,
+          '',
+          `Selected (${where}):`,
+          '```',
+          c.lines.join('\n'),
+          '```',
+          ...(c.within ? ['', `They are inside ${c.within.kind} ${c.within.name} (from line ${c.within.line}):`, '```', truncate(c.within.text, 12_000), '```'] : []),
+          ...(c.used.length ? ['', 'Definitions of names they use:', ...c.used.map((u) => `${u.name}, ${u.path}:${u.line}:\n\`\`\`\n${u.preview.join('\n')}\n\`\`\``)] : []),
+          ...(c.history.length ? ['', 'Commits that changed these lines, newest first:', ...c.history] : []),
+          ...(c.blame.length ? ['', 'Who wrote them:', ...c.blame.map((b) => `- ${b.author} (${b.lines} line${b.lines === 1 ? '' : 's'}): ${b.summary}`)] : []),
+          ...(task.earlier.length ? ['', 'The conversation so far:', ...task.earlier.map((m) => `${m.role === 'user' ? 'Question' : 'Answer'}: ${m.text}`)] : []),
+          '',
+          `Question: ${task.question}`,
+        ].join('\n'),
+      }
+    }
     case 'fix-finding': {
       const f = task.finding
       if (f.path.includes('\0') || f.path.startsWith('/') || f.path.split(/[\\/]/).includes('..')) throw new Error('Bad path')

@@ -1,9 +1,10 @@
 import type { BlameLine, Commit, DiffTarget, FileDiff, HunkSelection, ReviewFinding } from '@gitsquid/shared'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import clsx from 'clsx'
-import { ChevronDown, ExternalLink, X } from 'lucide-react'
+import { ChevronDown, ExternalLink, MessageCircleQuestion, X } from 'lucide-react'
 import { DropdownMenu } from 'radix-ui'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { AskPanel } from './AskPanel'
 import { CodePeekPanel, identifierFromClick } from './CodePeek'
 import { ImageDiff, imageMime } from './ImageDiff'
 import { discard, openDiffTool, openInEditor, restoreFileFrom, run } from '../lib/actions'
@@ -15,6 +16,8 @@ import { codeLineHeight, ensureLoaded, reportError, saveSettings, updateRepo, us
 import { Button, DM, Spinner } from './ui'
 import { modName } from '../lib/keys'
 import { findingsFor } from '../lib/review'
+import { newThread, openAsk } from '../lib/ask'
+import { useAiEnabled } from '../lib/ai'
 
 
 export function FileView({ view, target, mode }: { view: RepoView; target: DiffTarget; mode: FileMode }) {
@@ -195,6 +198,30 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
   /** The name Code Peek shows (Ctrl/Cmd+click in the diff), or null. */
   const [peek, setPeek] = useState<string | null>(null)
   const peekRev = target.kind === 'commit' ? target.hash : target.kind === 'range' ? target.to : null
+  // Text selected in the diff, as a range of new-side lines: what "Ask about these lines" covers.
+  const aiOn = useAiEnabled()
+  const [selLines, setSelLines] = useState<{ start: number; end: number } | null>(null)
+  useEffect(() => {
+    if (!aiOn) return
+    const onSel = () => {
+      const s = window.getSelection()
+      const root = scrollRef.current
+      if (!s || s.isCollapsed || !root || !s.anchorNode || !root.contains(s.anchorNode) || !s.focusNode || !root.contains(s.focusNode)) return setSelLines(null)
+      const lineOf = (n: Node) => Number((n instanceof Element ? n : n.parentElement)?.closest('[data-new]')?.getAttribute('data-new') ?? NaN)
+      const a = lineOf(s.anchorNode)
+      const b = lineOf(s.focusNode)
+      setSelLines(Number.isFinite(a) && Number.isFinite(b) ? { start: Math.min(a, b), end: Math.max(a, b) } : null)
+    }
+    document.addEventListener('selectionchange', onSel)
+    return () => document.removeEventListener('selectionchange', onSel)
+  }, [aiOn])
+  const askAboutSelection = () => {
+    if (!selLines || !diff) return
+    const code = diff.hunks.flatMap((h) => h.lines).filter((l) => l.newNo !== undefined && l.newNo >= selLines.start && l.newNo <= selLines.end && l.kind !== '-').map((l) => l.text).join('\n')
+    openAsk(view.id, newThread(peekRev, target.path, selLines.start, selLines.end, code))
+    window.getSelection()?.removeAllRanges()
+    setSelLines(null)
+  }
   // Wrapped lines have different heights, so the virtualizer measures each row; otherwise rows
   // are a fixed height derived from the code font size (no measuring, cheaper scrolling).
   const virt = useVirtualizer({
@@ -264,7 +291,7 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
   )
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="relative flex min-h-0 flex-1 flex-col">
       {(fileActions || diff.oldPath) && (
         <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-line px-3 text-xs">
           <span className="truncate text-muted" data-testid="diff-hint">
@@ -323,7 +350,7 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
                   const l = hunk.lines[li]!
                   const selected = sel.get(it.hunk)?.has(li) ?? false
                   return (
-                    <div data-testid="diff-cell" data-kind={l.kind} data-side={side}
+                    <div data-testid="diff-cell" data-kind={l.kind} data-side={side} data-new={side === 'right' ? l.newNo : undefined}
                       onMouseDown={(e) => { if (l.kind !== ' ' && e.button === 0 && e.detail === 1) { e.preventDefault(); toggle(it.hunk, li, e.shiftKey) } }}
                       className={clsx('flex w-1/2 min-w-0 whitespace-pre-wrap break-all', side === 'right' && 'border-l border-line',
                         l.kind === '+' && 'bg-add-bg', l.kind === '-' && 'bg-del-bg', l.kind !== ' ' && editable && 'cursor-pointer',
@@ -347,7 +374,7 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
               const selected = sel.get(it.hunk)?.has(it.line) ?? false
               return (
                 <div key={vi.key} style={style} ref={wrap ? virt.measureElement : undefined} data-index={vi.index}
-                  data-testid="diff-line" data-kind={line.kind}
+                  data-testid="diff-line" data-kind={line.kind} data-new={line.newNo}
                   onMouseDown={(e) => { if (line.kind !== ' ' && e.button === 0 && e.detail === 1) { e.preventDefault(); toggle(it.hunk, it.line, e.shiftKey) } }}
                   onDoubleClick={() => { if (target.kind !== 'commit') void openInEditor(`${view.snapshot.path}/${target.path}`, line.newNo ?? line.oldNo ?? 1) }}
                   title={target.kind !== 'commit' ? 'Double-click to open in your editor at this line' : undefined}
@@ -366,7 +393,14 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
           </div>
         </div>
       )}
+      {selLines && (
+        <button onMouseDown={(e) => e.preventDefault()} onClick={askAboutSelection} data-testid="ask-selection"
+          className="absolute top-12 right-5 z-10 flex items-center gap-1.5 rounded-full border border-accent/40 bg-raised px-3 py-1 text-xs font-medium text-accent shadow-lg">
+          <MessageCircleQuestion size={13} /> Ask about line{selLines.end > selLines.start ? `s ${selLines.start}-${selLines.end}` : ` ${selLines.start}`}
+        </button>
+      )}
       {peek && <CodePeekPanel repoId={view.id} repoPath={view.snapshot.path} name={peek} rev={peekRev} onClose={() => setPeek(null)} />}
+      {view.ask && view.ask.path === target.path && <AskPanel repoId={view.id} thread={view.ask} />}
     </div>
   )
 }

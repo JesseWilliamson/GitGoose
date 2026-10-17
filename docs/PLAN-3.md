@@ -191,3 +191,7 @@ Part B:
       history of the same files (local)
 - [x] 40 reading order: every hunk placed in a layer (contracts, implementation, tests, config,
       docs) by path and codegraph, imports / comments / whitespace folded, a one-line summary each
+- [x] 41 ask about selected lines in any diff: the context is the lines, the definition around
+      them, definitions of names they use (codegraph), the commits that changed them (log -L) and
+      who wrote them (blame -L); follow-ups keep the thread; threads are saved per repository,
+      pinned to their commit, and listed in its details

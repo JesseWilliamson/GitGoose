@@ -46,6 +46,15 @@ async function prompt(params, cx) {
     await say(cx, id, 'Thinking')
     process.exit(3)
   }
+  if (text.includes('Answer the question about the selected lines')) {
+    // Echo what it was given, so tests can see the context arrived.
+    const within = /They are inside (\w+ \w+)/.exec(text)?.[1] ?? 'no definition'
+    const used = [...text.matchAll(/^(\w+), ([^:\n]+):(\d+):$/gm)].map((m) => `${m[1]} (${m[2]})`).join(', ') || 'nothing'
+    const q = /^Question: (.+)$/m.exec(text)?.[1]
+    const earlier = text.includes('The conversation so far') ? ' Following up.' : ''
+    for (const chunk of [`You asked "${q}".`, ` The lines are in ${within}; they use ${used}.`, earlier]) await say(cx, id, chunk)
+    return { stopReason: 'end_turn' }
+  }
   if (text.includes('Write a walkthrough')) {
     const pieces = [...text.matchAll(/^\[(H\d+)\] ([^:\s]+):/gm)].map((m) => ({ id: m[1], path: m[2] }))
     const files = [...new Set(pieces.map((p) => p.path))]

@@ -143,6 +143,16 @@ export function createHandlers(
     commit: (id, message, opts) => r(id).commit(message, opts),
     codePeek: (id, name, rev) => r(id).codePeek(name, rev),
     changeInsights: (id) => r(id).changeInsights(),
+    askThreads: async (id) => getSettings().askThreads[r(id).path] ?? [],
+    saveAskThread: async (id, thread) => {
+      const path = r(id).path
+      const list = [thread, ...(getSettings().askThreads[path] ?? []).filter((t) => t.id !== thread.id)].slice(0, 100)
+      setSettings({ askThreads: { ...getSettings().askThreads, [path]: list } })
+    },
+    deleteAskThread: async (id, threadId) => {
+      const path = r(id).path
+      setSettings({ askThreads: { ...getSettings().askThreads, [path]: (getSettings().askThreads[path] ?? []).filter((t) => t.id !== threadId) } })
+    },
     reviewLearnings: async (id) => getSettings().reviewLearnings[r(id).path] ?? [],
     setReviewLearnings: async (id, learnings) => {
       const all = { ...getSettings().reviewLearnings }

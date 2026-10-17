@@ -129,6 +129,20 @@ export interface WalkthroughResult {
   skipped: string[]
 }
 
+/** A question-and-answer thread about some lines, pinned to the commit they were asked at. */
+export interface AskThread {
+  id: string
+  /** The commit the lines were read at, or 'worktree'. */
+  rev: string
+  path: string
+  startLine: number
+  endLine: number
+  /** The lines asked about, as they were. */
+  code: string
+  messages: { role: 'user' | 'ai'; text: string }[]
+  updated: number
+}
+
 /** A team preference learned from a dismissed finding, sent with later reviews. */
 export interface ReviewLearning {
   text: string
@@ -149,6 +163,8 @@ export type AiTask =
   | { kind: 'review'; scope: ReviewScope; profile: ReviewProfile }
   /** Explain a change: summary, grouped files, effort, reading order, a sequence diagram. */
   | { kind: 'walkthrough'; scope: ReviewScope }
+  /** A question about lines of a file, with their function, definitions and history as context. */
+  | { kind: 'ask'; rev: string | null; path: string; startLine: number; endLine: number; question: string; earlier: { role: 'user' | 'ai'; text: string }[] }
   /** Fix one review finding: the agent proposes the whole file (nothing is written until accepted). */
   | { kind: 'fix-finding'; finding: ReviewFinding }
 

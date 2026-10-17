@@ -1,5 +1,5 @@
 import type { GraphFilter } from './index'
-import type { ReviewLearning } from './ai'
+import type { AskThread, ReviewLearning } from './ai'
 import { DEFAULT_LAYOUT, normalizeLayout, type PaneLayout } from './layout'
 
 export type GraphColumn = 'refs' | 'graph' | 'author' | 'date' | 'sha'
@@ -177,6 +177,8 @@ export const SETTINGS = {
   graphWidth: internal<number | null>(null),
   /** Which optional graph columns show (the commit message always does). From the gear in the graph header. */
   graphColumns: internal<GraphColumns>({ ...DEFAULT_GRAPH_COLUMNS }),
+  /** Questions asked about code, per repository path, newest first (kept to 100). */
+  askThreads: internal<Record<string, AskThread[]>>({}),
   /** Review learnings per repository path ("do not flag X"), from dismissed findings. */
   reviewLearnings: internal<Record<string, ReviewLearning[]>>({}),
   /** Hidden and soloed branches, per repository path (empty filters are not stored). */

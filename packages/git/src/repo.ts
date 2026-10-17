@@ -8,7 +8,7 @@ import { existsSync } from 'node:fs'
 import { lstat, readFile, realpath, rm, writeFile, chmod, mkdir } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
-import { findDefinitions, parseGrep, type Definition } from '@gitsquid/codegraph'
+import { enclosingDefinition, findDefinitions, NOT_NAMES, parseGrep, type Definition } from '@gitsquid/codegraph'
 import { parseBlame } from './blame'
 import { coChanges, oldRanges, parseFilesPerCommit } from './insights'
 import { globToRegExp, parsePathInstructions, relevantGuidelines } from './reviewrules'
@@ -1075,6 +1075,47 @@ export class Repo {
     const yaml = all.includes('.coderabbit.yaml') ? await this.textAt(rev, '.coderabbit.yaml') : all.includes('.coderabbit.yml') ? await this.textAt(rev, '.coderabbit.yml') : null
     const pathInstructions = yaml ? parsePathInstructions(yaml).filter((pi) => paths.some((p) => globToRegExp(pi.path).test(p))) : []
     return { guidelines, pathInstructions }
+  }
+
+  /**
+   * Everything worth knowing about lines start..end of a file at `rev` (null: the working tree):
+   * the lines, the definition they are in, definitions of names they use, the commits that
+   * changed them (log -L) and who wrote them (blame -L). Bounded at every step.
+   */
+  async askContext(rev: string | null, path: string, start: number, end: number): Promise<{
+    lines: string[]; within?: { name: string; kind: string; line: number; text: string }
+    used: { name: string; path: string; line: number; preview: string[] }[]
+    history: string[]; blame: { author: string; summary: string; lines: number }[]
+  }> {
+    const text = await this.textAt(rev, path)
+    if (text === null) throw new Error(`${path} is not there${rev ? ` at ${rev.slice(0, 7)}` : ''}.`)
+    const all = text.split(/\r?\n/)
+    const lines = all.slice(start - 1, end)
+    const defs = findDefinitions(path, text)
+    const d = enclosingDefinition(defs, start)
+    const within = d && d.endLine - d.line < 200 ? { name: d.name, kind: d.kind, line: d.line, text: all.slice(d.line - 1, d.endLine).join('\n') } : undefined
+    // Names used in the lines, most frequent first, minus keywords and the function itself.
+    const counts = new Map<string, number>()
+    for (const m of lines.join('\n').matchAll(/[A-Za-z_$][\w$]{2,}/g)) if (!NOT_NAMES.has(m[0]) && !KEYWORDS.has(m[0]) && m[0] !== d?.name) counts.set(m[0], (counts.get(m[0]) ?? 0) + 1)
+    const used: { name: string; path: string; line: number; preview: string[] }[] = []
+    for (const [name] of [...counts].sort((a, b) => b[1] - a[1]).slice(0, 8)) {
+      if (used.length >= 5) break
+      const peek = await this.codePeek(name, rev).catch(() => null)
+      const def = peek?.definitions[0]
+      if (def) used.push({ name, path: def.path, line: def.line, preview: def.preview.slice(0, 10) })
+    }
+    // log -L needs a commit: the working tree's lines are traced from HEAD.
+    const at = rev ?? 'HEAD'
+    const history = (await this.runner.run(['log', '-s', '-n', '6', `--format=%h %as %an: %s`, `-L${start},${end}:${path}`, at], { readOnly: true, okCodes: [128] })).stdout
+      .split('\n').filter((l) => /^[0-9a-f]{7,} /.test(l))
+    const blameOut = await this.runner.run(['blame', '--porcelain', `-L${start},${end}`, at, '--', path], { readOnly: true, okCodes: [128] })
+    const byCommit = new Map<string, { author: string; summary: string; lines: number }>()
+    for (const b of parseBlame(blameOut.stdout)) {
+      const e = byCommit.get(b.hash) ?? { author: b.author, summary: b.summary, lines: 0 }
+      e.lines++
+      byCommit.set(b.hash, e)
+    }
+    return { lines, within, used, history, blame: [...byCommit.values()].sort((a, b) => b.lines - a.lines) }
   }
 
   /** Recent commits up to `base` that touched these files: the history a reader of the change needs. */
@@ -2446,6 +2487,12 @@ export function parseNumstatPaths(out: string): string[] {
   }
   return [...new Set(paths.filter(Boolean))]
 }
+
+/** Common words in code that are not worth looking up as definitions. */
+const KEYWORDS = new Set(['const', 'let', 'var', 'true', 'false', 'null', 'undefined', 'void', 'number', 'string', 'boolean', 'any', 'unknown', 'never',
+  'async', 'export', 'import', 'from', 'default', 'class', 'interface', 'type', 'extends', 'implements', 'public', 'private', 'protected', 'static',
+  'self', 'None', 'True', 'False', 'def', 'pass', 'lambda', 'yield', 'func', 'struct', 'impl', 'pub', 'mut', 'let', 'nil', 'end', 'then', 'elif',
+  'console', 'log', 'length', 'push', 'map', 'filter', 'Math', 'Object', 'Array', 'String', 'Number', 'Promise', 'Error', 'JSON', 'throw', 'break', 'continue', 'case', 'in', 'of', 'and', 'not'])
 
 function describePaths(paths: string[]): string {
   return paths.length === 1 ? paths[0]! : `${paths.length} files`

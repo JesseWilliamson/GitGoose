@@ -11,6 +11,7 @@ import { dateTime, opName, sentence, shortHash, stashLabel } from '../lib/format
 import { avatarSrc, useAvatarVariant } from '../lib/avatar'
 import { addTrailer, isUntouched, splitTemplate } from '../lib/commitMessage'
 import { startReview } from '../lib/review'
+import { openAsk } from '../lib/ask'
 import { startWalkthrough } from '../lib/walkthrough'
 import { ensureLoaded, getLog, reportError, selectCommit, setting, toast, updateRepo, useSetting, useStore, type FileMode, type RepoView } from '../lib/store'
 import { Avatar } from './Avatar'
@@ -400,6 +401,24 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
   )
 }
 
+/** Questions asked about this commit's code (Ask about lines), each reopening its thread. */
+function CommitQuestions({ view, hash }: { view: RepoView; hash: string }) {
+  const threads = view.askThreads.filter((t) => t.rev === hash)
+  if (!threads.length) return null
+  return (
+    <div className="border-b border-line px-3 py-2" data-testid="commit-questions">
+      <div className="mb-1 text-[11px] font-semibold text-muted uppercase">Questions ({threads.length})</div>
+      {threads.map((t) => (
+        <button key={t.id} className="flex w-full items-baseline gap-2 rounded px-1 py-0.5 text-left text-[12px] hover:bg-hover"
+          onClick={() => { updateRepo(view.id, { center: { kind: 'file', target: { kind: 'commit', hash, path: t.path }, mode: 'diff' } }); openAsk(view.id, t) }}>
+          <span className="shrink-0 font-mono text-[11px] text-faint">{t.path.split('/').pop()}:{t.startLine}</span>
+          <span className="min-w-0 flex-1 truncate">{t.messages.find((m) => m.role === 'user')?.text}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
 /** What git said about a commit's signature, in words, with the signer and key on hover. */
 const SIGNATURE: Record<Signature['status'], { text: string; tone: string }> = {
   G: { text: 'Verified signature', tone: 'text-add' },
@@ -643,6 +662,7 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
       <SectionHeader right={<span className="font-mono normal-case"><span className="text-add">+{adds}</span> <span className="text-del">−{dels}</span></span>}>
         {d.files.length} {d.files.length === 1 ? 'file' : 'files'} changed{d.parents.length > 1 && !stash ? ' (vs first parent)' : ''}
       </SectionHeader>
+      <CommitQuestions view={view} hash={d.hash} />
       {d.files.length > 1 && <FileListTools filter={fileFilter} onFilter={setFileFilter} />}
       <div className="min-h-0 flex-1 overflow-y-auto pb-2" data-testid="commit-files">
         <FileListView items={d.files} pathOf={(f) => f.path} filter={fileFilter} testId="commit" renderFile={(f, layout) => {
