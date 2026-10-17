@@ -46,6 +46,7 @@ const WHAT: Record<AiTask['kind'], string> = {
   'explain-error': "the failed action and git's error output",
   'resolve-conflict': 'the conflicted file (the agent reads it), and it may propose an edit to that one file',
   recompose: "the selected commits' messages and their combined diff",
+  review: 'the diff being reviewed, with line numbers and the names of the functions it touches',
 }
 
 function openSettings(): void {

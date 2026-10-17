@@ -1,5 +1,6 @@
 import type { Repo } from '@gitsquid/git'
-import type { AiTask } from '@gitsquid/shared'
+import { numberedDiff, reviewableLines, type ReviewableLines } from '@gitsquid/git'
+import type { AiTask, ReviewProfile } from '@gitsquid/shared'
 import { join } from 'node:path'
 
 /**
@@ -16,6 +17,13 @@ export const MAX_DIFF_CHARS = 60_000
 /** Generated files that would fill the budget and tell the model nothing. */
 const NOISE = [':(exclude,glob)**/pnpm-lock.yaml', ':(exclude,glob)**/package-lock.json', ':(exclude,glob)**/yarn.lock', ':(exclude,glob)**/*.lock', ':(exclude,glob)**/*.min.js']
 
+/** What each review profile asks for (the answer is filtered the same way afterwards). */
+const PROFILE_ASK: Record<ReviewProfile, string> = {
+  quiet: 'Report only real problems: bugs, security holes, data loss, serious performance issues (severity critical or major). If there are none, return no findings. Silence is a fine answer.',
+  chill: 'Report bugs, risks and clear maintainability problems. Skip style preferences and nits.',
+  assertive: 'Report everything worth a comment, nits included, but never invent problems to have something to say.',
+}
+
 export interface BuiltPrompt {
   system: string
   prompt: string
@@ -23,6 +31,8 @@ export interface BuiltPrompt {
   writable?: string
   /** For recompose: the range and its units, to turn the answer into a proposal. */
   recompose?: RecomposeInfo
+  /** For review: what the findings are checked against. */
+  review?: { lines: ReviewableLines; texts: Map<string, string>; label: string; head: string; base?: string; skipped: string[] }
 }
 
 export type RecomposeInfo = Awaited<ReturnType<Repo['recomposeInfo']>>
@@ -120,6 +130,27 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask): Promise
           '',
           'The pieces:',
           units,
+        ].join('\n'),
+      }
+    }
+    case 'review': {
+      const input = await repo.reviewInput(task.scope)
+      if (!input.files.length) throw new Error('There is nothing to review in that change.')
+      return {
+        system: 'You are a careful senior engineer reviewing a code change.',
+        review: { lines: reviewableLines(input.files), texts: input.texts, label: input.label, head: input.head, base: input.base, skipped: input.skipped },
+        prompt: [
+          `Review this change (${input.label}).`,
+          PROFILE_ASK[task.profile],
+          'Each finding must point at lines that exist after the change: use the line numbers shown at the left of the diff (lines marked + are new; lines marked - are gone and have no number). Only comment on the files and lines shown.',
+          'For a local fix, give "suggestion": the exact replacement text for lines startLine..endLine (complete lines, no diff markers). Leave it out when the fix is not local.',
+          'Severity: critical (breaks things or leaks data), major (a real bug or risk), minor (worth fixing), nit (taste).',
+          'Answer with JSON only, no prose and no code fence, in exactly this shape:',
+          '{"summary": "two or three sentences on what the change does and its overall quality", "findings": [{"path": "src/a.ts", "startLine": 12, "endLine": 14, "type": "bug|security|performance|maintainability|style|docs|tests", "severity": "critical|major|minor|nit", "title": "short", "message": "what is wrong and why, in plain words", "suggestion": "optional replacement lines"}]}',
+          NO_TOOLS,
+          '',
+          numberedDiff(input.files, (p) => input.texts.get(p) ?? null),
+          ...(input.skipped.length ? [`(Not shown, over the size limit: ${input.skipped.join(', ')})`] : []),
         ].join('\n'),
       }
     }

@@ -4,6 +4,7 @@ import { RDialogCompat } from './RDialogCompat'
 import {
   lfsPull, lfsTrack, snapshot, addRemote, addSubmodule, applyPatchFile, updateSubmodules, addWorktree, applyPatchFromClipboard, checkout, cleanupBranches, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, reopen, stash, undo,
 } from '../lib/actions'
+import { startReview } from '../lib/review'
 import { saveSettings, useStore } from '../lib/store'
 
 interface Entry {
@@ -46,6 +47,12 @@ export function CommandPalette() {
     add('Repository', 'Add remote…', () => addRemote(id))
     add('Repository', 'Change who you commit as…', () => useStore.setState({ dialog: { kind: 'identity', repoId: id } }))
     add('Repository', 'Add worktree…', () => addWorktree(id))
+    if ((useStore.getState().settings?.aiProvider ?? 'off') !== 'off') {
+      add('AI', 'Review uncommitted changes', () => startReview(id, { kind: 'working' }))
+      add('AI', 'Review staged changes', () => startReview(id, { kind: 'staged' }))
+      if (active.snapshot.head.branch) add('AI', `Review ${active.snapshot.head.branch} since it branched`, () => startReview(id, { kind: 'branch', branch: active.snapshot.head.branch! }))
+      if (active.review) add('AI', 'Show the last review', () => useStore.setState((s) => ({ repos: { ...s.repos, [id]: { ...s.repos[id]!, center: { kind: 'review' } } } })))
+    }
     if (active.lfs?.installed) add('Repository', 'Track files with Git LFS…', () => lfsTrack(id))
     if (active.lfs?.used) add('Repository', 'Pull LFS files', () => void lfsPull(id))
     add('Repository', 'Add submodule…', () => addSubmodule(id))

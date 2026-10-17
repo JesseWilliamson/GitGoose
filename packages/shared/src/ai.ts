@@ -30,6 +30,60 @@ export function agentLabel(preset: AgentPreset, custom: string): string {
   return (prog && /^(node|bun|deno|python3?|npx)$/i.test(prog) ? base(argv.find((a, i) => i > 0 && !a.startsWith('-'))) : prog) || 'Custom agent'
 }
 
+/** Which changes a review covers. */
+export type ReviewScope =
+  | { kind: 'staged' }
+  /** Everything uncommitted (staged and unstaged, against HEAD). */
+  | { kind: 'working' }
+  /** A branch since it forked from its base (upstream's default branch, or `base`). */
+  | { kind: 'branch'; branch: string; base?: string }
+  /** Selected commits (graph order): their combined change. */
+  | { kind: 'commits'; hashes: string[] }
+
+/** How much to say: quiet (only real problems), chill (no nits), assertive (everything). */
+export type ReviewProfile = 'quiet' | 'chill' | 'assertive'
+export type FindingSeverity = 'critical' | 'major' | 'minor' | 'nit'
+export type FindingType = 'bug' | 'security' | 'performance' | 'maintainability' | 'style' | 'docs' | 'tests'
+
+export const SEVERITIES: FindingSeverity[] = ['critical', 'major', 'minor', 'nit']
+export const FINDING_TYPES: FindingType[] = ['bug', 'security', 'performance', 'maintainability', 'style', 'docs', 'tests']
+
+export interface ReviewFinding {
+  id: string
+  path: string
+  /** New-side line numbers (as the file is after the change), inclusive. */
+  startLine: number
+  endLine: number
+  type: FindingType
+  severity: FindingSeverity
+  title: string
+  message: string
+  /** Replacement text for startLine..endLine, when the fix is local. */
+  suggestion?: string
+  /** Those lines as they are now (to show the suggestion as a change). */
+  original?: string[]
+}
+
+export interface ReviewResult {
+  scope: ReviewScope
+  profile: ReviewProfile
+  /** "Uncommitted changes", "feature since main", "3 commits". */
+  label: string
+  /**
+   * The revision the line numbers refer to: 'worktree', 'index', or a commit. Diffs whose new side
+   * is this revision show the findings in their gutter.
+   */
+  head: string
+  /** What it is compared with ('HEAD', a fork point, a parent); absent for staged (HEAD → index). */
+  base?: string
+  summary: string
+  findings: ReviewFinding[]
+  /** What verification threw out, and why (a path not in the change, lines outside it, …). */
+  dropped: { title: string; reason: string }[]
+  /** Files that were in the change but not sent (over the size budget). */
+  skipped: string[]
+}
+
 /** What the user asked the AI to do. Each builds its own prompt in main/ai/prompts.ts. */
 export type AiTask =
   | { kind: 'commit-message' }
@@ -38,6 +92,8 @@ export type AiTask =
   | { kind: 'resolve-conflict'; path: string }
   /** Rebuild these commits (graph order) as a better-structured set. */
   | { kind: 'recompose'; hashes: string[] }
+  /** Review a change: findings tied to lines, checked against the diff before they are shown. */
+  | { kind: 'review'; scope: ReviewScope; profile: ReviewProfile }
 
 export interface AiStatus {
   provider: AiProvider
@@ -106,6 +162,8 @@ export interface AiResult {
   text: string
   /** recompose: the proposed commits, for review before anything changes. */
   recompose?: RecomposeProposal
+  /** review: the verified findings. */
+  review?: ReviewResult
   /** resolve-conflict: the file the agent wrote, captured instead of written, for review. */
   proposal?: { path: string; content: string }
 }

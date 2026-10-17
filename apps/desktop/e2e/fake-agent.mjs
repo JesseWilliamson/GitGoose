@@ -46,6 +46,22 @@ async function prompt(params, cx) {
     await say(cx, id, 'Thinking')
     process.exit(3)
   }
+  if (text.includes('Review this change')) {
+    // One finding on the first added line (with a suggestion), and one about a file that is not
+    // in the change: verification must drop that one.
+    const path = /^=== (.+?) \(/m.exec(text)?.[1]
+    const m = /^\s*(\d+)\+\| (.*)$/m.exec(text)
+    const answer = {
+      summary: 'Adds a small change; one thing to fix.',
+      findings: [
+        { path, startLine: Number(m?.[1] ?? 1), endLine: Number(m?.[1] ?? 1), type: 'bug', severity: 'major', title: 'Possible bug here', message: `This line looks wrong: ${m?.[2] ?? ''}`, suggestion: 'fixed line' },
+        { path: 'invented/file.ts', startLine: 1, endLine: 1, type: 'bug', severity: 'critical', title: 'Hallucinated', message: 'Not real.' },
+      ],
+    }
+    const json = JSON.stringify(answer)
+    for (let i = 0; i < json.length; i += 50) await say(cx, id, json.slice(i, i + 50))
+    return { stopReason: 'end_turn' }
+  }
   if (text.includes('Reorganise')) {
     // A plan in JSON, streamed in pieces: the last piece listed becomes its own first commit.
     const ids = [...text.matchAll(/^\[(U\d+)\] (\S+)/gm)].map((m) => ({ id: m[1], path: m[2] }))

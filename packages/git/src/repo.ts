@@ -1,5 +1,5 @@
 import type {
-  BisectState, BlameLine, ChangeInsights, CodePeek, ImageSide, LfsInfo, LfsLock, ChangedFile, CommandRecord, GraphFilter, Identity, Person, Signature, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
+  BisectState, BlameLine, ChangeInsights, CodePeek, ReviewScope, ImageSide, LfsInfo, LfsLock, ChangedFile, CommandRecord, GraphFilter, Identity, Person, Signature, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
   LogPage, Ref, Remote, RepoOperation, ReflogEntry, RepoSnapshot, ResetMode, Resolution, SearchField, SelectionRequest,
   StashEntry, StatusEntry, Submodule, UndoEntry, Worktree,
 } from '@gitsquid/shared'
@@ -885,6 +885,7 @@ export class Repo {
   /** A file's text at a revision, or in the working tree (rev null). */
   private async textAt(rev: string | null, path: string): Promise<string | null> {
     if (rev === null) return readFile(join(this.path, path), 'utf8').catch(() => null)
+    // rev '' reads the index (":path").
     const r = await this.runner.run(['cat-file', 'blob', `${rev}:${path}`], { readOnly: true, okCodes: [128] })
     return r.code === 0 ? r.stdout : null
   }
@@ -934,6 +935,91 @@ export class Repo {
       references: hits.filter((h) => !defLines.has(`${h.path}:${h.line}`)).map((h) => ({ path: h.path, line: h.line, column: h.column, text: h.text.trim().slice(0, 300) })),
       truncated: all.length > MAX_HITS,
     }
+  }
+
+  /**
+   * The change a review covers, ready for the model: parsed file diffs, the label to show, the
+   * revision line numbers refer to ('index', 'worktree' or a commit), and each file's text after
+   * the change. Lock files and minified files are left out; so are files past the size budget
+   * (listed in `skipped`).
+   */
+  async reviewInput(scope: ReviewScope, budget = 60_000): Promise<{ files: FileDiff[]; label: string; head: string; base?: string; texts: Map<string, string>; skipped: string[] }> {
+    const NOISE = [':(exclude,glob)**/pnpm-lock.yaml', ':(exclude,glob)**/package-lock.json', ':(exclude,glob)**/yarn.lock', ':(exclude,glob)**/*.lock', ':(exclude,glob)**/*.min.js']
+    const diffOf = async (args: string[]) => parseDiff((await this.runner.run(['diff', '-M', '--no-color', '--no-ext-diff', '-U3', ...args, '--', '.', ...NOISE], { readOnly: true, env: { GIT_LITERAL_PATHSPECS: '0' } })).stdout)
+    let files: FileDiff[]
+    let label: string
+    let head: string
+    let base: string | undefined
+    switch (scope.kind) {
+      case 'staged':
+        files = await diffOf(['--cached'])
+        label = 'Staged changes'
+        head = 'index'
+        break
+      case 'working': {
+        files = (await this.currentHead()).hash ? await diffOf(['HEAD']) : []
+        const snap = this.last ?? (await this.snapshot())
+        for (const e of snap.status.filter((x) => x.kind === 'untracked').slice(0, 50)) {
+          const content = await readFile(join(this.path, e.path)).catch(() => null)
+          if (content && content.length < 200_000) files.push(untrackedDiff(e.path, content))
+        }
+        label = 'Uncommitted changes'
+        head = 'worktree'
+        base = 'HEAD'
+        break
+      }
+      case 'branch': {
+        const tip = await this.revParse(`refs/heads/${scope.branch}`)
+        if (!tip) throw new Error(`No branch named ${scope.branch}`)
+        const from = scope.base ?? (await this.defaultBase(scope.branch))
+        if (!from) throw new Error(`Cannot tell what ${scope.branch} branched from: no main, master or remote default branch.`)
+        const fork = (await this.read(['merge-base', from, tip])).trim()
+        files = await diffOf([fork, tip])
+        label = `${scope.branch} since ${shortName(from)}`
+        head = tip
+        base = fork
+        break
+      }
+      case 'commits': {
+        const list = [...scope.hashes].reverse()
+        const parents = await Promise.all(list.map(async (h) => (await this.read(['rev-list', '--parents', '-n', '1', h])).trim().split(' ').slice(1)))
+        if (!list.every((h, i) => i === 0 || parents[i]![0] === list[i - 1])) throw new Error('Select commits that follow each other to review them together.')
+        const newest = list[list.length - 1]!
+        base = parents[0]![0] ?? (await this.emptyTreeHash())
+        files = await diffOf([base, newest])
+        label = list.length === 1 ? `Commit ${newest.slice(0, 7)}` : `${list.length} commits`
+        head = newest
+        break
+      }
+    }
+    const texts = new Map<string, string>()
+    const kept: FileDiff[] = []
+    const skipped: string[] = []
+    let used = 0
+    for (const f of files) {
+      const size = f.hunks.reduce((n, h) => n + h.lines.reduce((m, l) => m + l.text.length + 8, 0), 0)
+      if (used + size > budget && kept.length) {
+        skipped.push(f.path)
+        continue
+      }
+      used += size
+      kept.push(f)
+      if (f.binary || f.change === 'deleted') continue
+      const text = head === 'worktree' ? await readFile(join(this.path, f.path), 'utf8').catch(() => null) : await this.textAt(head === 'index' ? '' : head, f.path)
+      if (text !== null) texts.set(f.path, text)
+    }
+    return { files: kept, label, head, base, texts, skipped }
+  }
+
+  /** What a branch is measured against: its upstream's remote default branch, else main or master. */
+  private async defaultBase(branch: string): Promise<string | null> {
+    const refs = await this.refs()
+    const names = new Set(refs.map((r) => r.name))
+    const remoteHead = (await this.runner.run(['symbolic-ref', '-q', 'refs/remotes/origin/HEAD'], { readOnly: true, okCodes: [1, 128] })).stdout.trim()
+    for (const c of [remoteHead, 'refs/remotes/origin/main', 'refs/remotes/origin/master', 'refs/heads/main', 'refs/heads/master']) {
+      if (c && names.has(c) && c !== `refs/heads/${branch}`) return c
+    }
+    return null
   }
 
   /**

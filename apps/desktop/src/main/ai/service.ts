@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { AcpAgent } from './acp'
 import { anthropicComplete } from './anthropic'
 import type { SecretFile } from './keyStore'
-import { extractJson, repairPlan } from '@gitsquid/git'
+import { extractJson, repairPlan, verifyFindings } from '@gitsquid/git'
 import { buildPrompt, cleanCommitMessage, type BuiltPrompt } from './prompts'
 
 /**
@@ -123,7 +123,9 @@ export class AiService {
     const finish = (text: string) => (task.kind === 'commit-message' ? cleanCommitMessage(text) : text.trim())
     // A recompose answer becomes a proposal for the review dialog (nothing changes until Apply).
     const result = (text: string, extra: Partial<AiResult> = {}): AiResult =>
-      task.kind === 'recompose' ? { text: '', recompose: toProposal(task.hashes, built, text) } : { text: finish(text), ...extra }
+      task.kind === 'recompose' ? { text: '', recompose: toProposal(task.hashes, built, text) }
+        : task.kind === 'review' ? { text: '', review: toReview(task, built, text) }
+        : { text: finish(text), ...extra }
 
     try {
       if (st.provider === 'anthropic') {
@@ -192,6 +194,15 @@ export class AiService {
   stop(): void {
     this.agent.stop()
   }
+}
+
+/** The model's review, checked against the change before anything is shown (see verifyFindings). */
+function toReview(task: Extract<AiTask, { kind: 'review' }>, built: BuiltPrompt, text: string): NonNullable<AiResult['review']> {
+  const r = built.review!
+  const raw = extractJson(text)
+  if (!raw) throw new AiError('The AI did not answer with findings. Try again.', 'ai-bad-answer')
+  const v = verifyFindings(raw, r.lines, (p) => r.texts.get(p) ?? null, task.profile)
+  return { scope: task.scope, profile: task.profile, label: r.label, head: r.head, base: r.base, summary: v.summary, findings: v.findings, dropped: v.dropped, skipped: r.skipped }
 }
 
 function toProposal(hashes: string[], built: BuiltPrompt, text: string): NonNullable<AiResult['recompose']> {

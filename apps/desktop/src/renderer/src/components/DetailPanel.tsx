@@ -10,6 +10,7 @@ import { api, toUiError } from '../lib/api'
 import { dateTime, opName, sentence, shortHash, stashLabel } from '../lib/format'
 import { avatarSrc, useAvatarVariant } from '../lib/avatar'
 import { addTrailer, isUntouched, splitTemplate } from '../lib/commitMessage'
+import { startReview } from '../lib/review'
 import { ensureLoaded, getLog, reportError, selectCommit, setting, toast, updateRepo, useSetting, useStore, type FileMode, type RepoView } from '../lib/store'
 import { Avatar } from './Avatar'
 import { ChangeHints } from './ChangeHints'
@@ -83,6 +84,7 @@ function FileMenu({ view, target, children }: { view: RepoView; target: DiffTarg
 // ------------------------------------------------------------------ uncommitted changes
 
 function WipPanel({ view }: { view: RepoView }) {
+  const aiOn = useAiEnabled()
   const st = view.snapshot.status
   const unstaged = st.filter((e) => e.kind === 'untracked' || (e.kind !== 'unmerged' && e.worktree !== '.'))
   const staged = st.filter((e) => e.kind !== 'untracked' && e.kind !== 'unmerged' && e.index !== '.')
@@ -103,6 +105,17 @@ function WipPanel({ view }: { view: RepoView }) {
           <span className="font-semibold">{st.length} file {st.length === 1 ? 'change' : 'changes'}</span>
           <span className="text-muted"> on {view.snapshot.head.branch ?? (view.snapshot.head.detached ? 'detached HEAD' : 'a new branch')}</span>
         </span>
+        {st.length > 0 && aiOn && (
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <Button size="sm" variant="ghost" data-testid="review-menu" title="Review these changes with AI"><Sparkles size={12} /> Review</Button>
+            </DropdownMenu.Trigger>
+            <DM.Content align="end">
+              <DM.Item onSelect={() => startReview(id, { kind: 'working' })}>Review all uncommitted changes</DM.Item>
+              <DM.Item disabled={!staged.length} onSelect={() => startReview(id, { kind: 'staged' })}>Review staged changes</DM.Item>
+            </DM.Content>
+          </DropdownMenu.Root>
+        )}
         {st.length > 0 && (
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>

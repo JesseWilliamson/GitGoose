@@ -1,4 +1,4 @@
-import type { BlameLine, Commit, DiffTarget, FileDiff, HunkSelection } from '@gitsquid/shared'
+import type { BlameLine, Commit, DiffTarget, FileDiff, HunkSelection, ReviewFinding } from '@gitsquid/shared'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import clsx from 'clsx'
 import { ChevronDown, ExternalLink, X } from 'lucide-react'
@@ -14,6 +14,7 @@ import { tokenize, type Tokens } from '../lib/highlight'
 import { codeLineHeight, ensureLoaded, reportError, saveSettings, updateRepo, useSetting, type FileMode, type RepoView } from '../lib/store'
 import { Button, DM, Spinner } from './ui'
 import { modName } from '../lib/keys'
+import { findingsFor } from '../lib/review'
 
 
 export function FileView({ view, target, mode }: { view: RepoView; target: DiffTarget; mode: FileMode }) {
@@ -176,6 +177,21 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
   }, [diff, split])
 
   const scrollRef = useRef<HTMLDivElement>(null)
+  // AI review findings on this diff's lines (when its new side is what was reviewed).
+  const findings = findingsFor(view, target)
+  const findingAt = (newNo?: number) => (newNo === undefined ? undefined : findings.find((f) => newNo >= f.startLine && newNo <= f.endLine))
+  const marker = (f: ReviewFinding | undefined) => f && (
+    <span role="button" data-testid="finding-marker" title={`${f.severity}: ${f.title} (click for the review)`}
+      // pointerdown, not mousedown: cancelling it also stops the mousedown that would select the
+      // line (browsers skip mouse events after a cancelled pointerdown), and a pointerdown
+      // cancelled further up would otherwise swallow our mousedown the same way.
+      onPointerDown={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        updateRepo(view.id, (v) => (v.review ? { review: { ...v.review, focus: f.id }, center: { kind: 'review' } } : {}))
+      }}
+      className={clsx('absolute inset-y-0 left-0 w-1 cursor-pointer', f.severity === 'critical' || f.severity === 'major' ? 'bg-del' : f.severity === 'minor' ? 'bg-warn' : 'bg-faint')} />
+  )
   /** The name Code Peek shows (Ctrl/Cmd+click in the diff), or null. */
   const [peek, setPeek] = useState<string | null>(null)
   const peekRev = target.kind === 'commit' ? target.hash : target.kind === 'range' ? target.to : null
@@ -312,7 +328,10 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
                       className={clsx('flex w-1/2 min-w-0 whitespace-pre-wrap break-all', side === 'right' && 'border-l border-line',
                         l.kind === '+' && 'bg-add-bg', l.kind === '-' && 'bg-del-bg', l.kind !== ' ' && editable && 'cursor-pointer',
                         selected && 'ring-1 ring-accent ring-inset brightness-125')}>
-                      <span className={clsx('w-10 shrink-0 pr-1 text-right text-faint', selected && 'bg-select')}>{side === 'left' ? (l.oldNo ?? '') : (l.newNo ?? '')}</span>
+                      <span className={clsx('relative w-10 shrink-0 pr-1 text-right text-faint', selected && 'bg-select')}>
+                        {side === 'right' && marker(findingAt(l.newNo))}
+                        {side === 'left' ? (l.oldNo ?? '') : (l.newNo ?? '')}
+                      </span>
                       <span className="min-w-0 flex-1 pr-2 pl-2">{textOf(li)}</span>
                     </div>
                   )
@@ -335,6 +354,7 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
                   className={clsx('flex', wrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre', line.kind === '+' && 'bg-add-bg', line.kind === '-' && 'bg-del-bg',
                     line.kind !== ' ' && editable && 'cursor-pointer', selected && 'ring-1 ring-accent ring-inset brightness-125')}>
                   <span className={clsx('sticky left-0 flex w-[84px] shrink-0 self-stretch bg-bg text-right text-faint', selected && 'bg-select')}>
+                    {line.kind !== '-' && marker(findingAt(line.newNo))}
                     <span className="w-9 pr-1">{line.oldNo ?? ''}</span>
                     <span className="w-9 pr-1">{line.newNo ?? ''}</span>
                     <span className={clsx('w-3 text-center', line.kind === '+' && 'text-add', line.kind === '-' && 'text-del')}>{line.kind === ' ' ? '' : line.kind}</span>

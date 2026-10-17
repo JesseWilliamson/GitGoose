@@ -123,4 +123,29 @@ describe('prompts', () => {
     expect(cleanCommitMessage('```\nfix: thing\n\nbody\n```')).toBe('fix: thing\n\nbody')
     expect(cleanCommitMessage('  fix: thing  ')).toBe('fix: thing')
   })
+
+  it('reviews over the Anthropic API: the answer is checked against the diff before it is returned', async () => {
+    const answer = JSON.stringify({
+      summary: 'Adds a widget registry.',
+      findings: [
+        { path: 'widgets.ts', startLine: 1, endLine: 1, type: 'maintainability', severity: 'minor', title: 'Export a type', message: 'Type the map.', suggestion: 'export const widgets = new Map<string, Widget>()' },
+        { path: 'nope.ts', startLine: 1, endLine: 1, type: 'bug', severity: 'critical', title: 'Invented', message: 'x' },
+      ],
+    })
+    const fake = await fakeAnthropic(['```json\n', answer, '\n```'])
+    cleanup.push(() => fake.close())
+    const t = await setup({ aiProvider: 'anthropic' }, fake)
+    t.ai.setApiKey('sk-test')
+    t.ai.consent()
+    const res = await t.ai.run('r1', 'x', { kind: 'review', scope: { kind: 'staged' }, profile: 'chill' })
+    expect(res.review).toMatchObject({
+      label: 'Staged changes', head: 'index', summary: 'Adds a widget registry.',
+      findings: [{ path: 'widgets.ts', startLine: 1, title: 'Export a type', original: ['export const widgets = new Map()'] }],
+      dropped: [{ title: 'Invented', reason: 'nope.ts is not in this change' }],
+    })
+    // What was sent: the numbered diff, with the review instructions.
+    const sent = JSON.stringify(fake.requests[0])
+    expect(sent).toContain('Review this change (Staged changes)')
+    expect(sent).toContain('    1+| export const widgets = new Map()')
+  })
 })

@@ -8,6 +8,7 @@ import { FileView } from './DiffView'
 import { Graph } from './Graph'
 import { CommandLogView } from './CommandLogView'
 import { ReflogView } from './ReflogView'
+import { ReviewView } from './ReviewView'
 import { Sidebar } from './Sidebar'
 
 /**
@@ -28,6 +29,7 @@ export function Workspace({ view }: { view: RepoView }) {
   const center = view.center.kind === 'conflicts' ? <ConflictWizard view={view} />
     : view.center.kind === 'reflog' ? <ReflogView view={view} />
     : view.center.kind === 'commands' ? <CommandLogView view={view} />
+    : view.center.kind === 'review' ? <ReviewView view={view} />
     : view.center.kind === 'file' ? <FileView view={view} target={view.center.target} mode={view.center.mode} />
     : <Graph view={view} />
 

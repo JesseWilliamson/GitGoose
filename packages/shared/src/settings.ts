@@ -151,6 +151,8 @@ export const SETTINGS = {
   }),
   anthropicModel: text('claude-opus-5-5', { label: 'Model (API key only)', section: 'AI', placeholder: 'claude-opus-5-5' }),
   /** Providers the user agreed to send content to, e.g. "agent:npx -y …" or "anthropic". */
+  reviewProfile: choice('chill', [{ value: 'quiet', label: 'Quiet: only real problems' }, { value: 'chill', label: 'Chill: no nits or style' }, { value: 'assertive', label: 'Assertive: everything, nits too' }],
+    { label: 'Review style', section: 'AI', keywords: 'code review findings nits coderabbit', description: 'How much AI review says. Findings are always checked against the diff before they are shown.' }),
   aiConsent: internal([] as string[]),
 
   // ---------------------------------------------------------------- Accounts

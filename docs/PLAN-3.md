@@ -173,3 +173,8 @@ Part B:
 - [x] 31 hints from history above the commit box: a file that usually changes with yours but is
       missing (co-change over the last 300 commits per file, mass commits ignored), and whose
       lines you are changing (blame of each hunk's old side); Settings → Git can turn it off
+- [x] 33 AI review of staged or uncommitted changes, a branch since it forked, or selected commits:
+      a numbered diff with enclosing definitions goes out; JSON findings come back and are
+      verified (file in the change, lines inside its hunks, known type and severity, no
+      duplicates, profile quiet / chill / assertive) before the Review view and diff gutters show
+      them; what verification drops is listed with the reason

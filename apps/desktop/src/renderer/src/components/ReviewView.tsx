@@ -1,0 +1,105 @@
+import type { FindingSeverity, ReviewFinding } from '@gitsquid/shared'
+import clsx from 'clsx'
+import { Sparkles } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { dismissFinding, startReview, stopReview, targetFor } from '../lib/review'
+import { updateRepo, type RepoView } from '../lib/store'
+import { Button, Spinner } from './ui'
+
+export const SEVERITY_STYLE: Record<FindingSeverity, string> = {
+  critical: 'bg-del text-white',
+  major: 'bg-del/15 text-del',
+  minor: 'bg-warn/15 text-warn',
+  nit: 'bg-hover text-muted',
+}
+
+/**
+ * The findings of the last AI review, grouped by file, most severe first. Every finding here
+ * passed verification (it points at lines that are in the change); the ones that did not are
+ * listed at the bottom, so nothing is hidden silently.
+ */
+export function ReviewView({ view }: { view: RepoView }) {
+  const r = view.review
+  const [showDropped, setShowDropped] = useState(false)
+  const focused = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    focused.current?.scrollIntoView({ block: 'center' })
+  }, [r?.focus])
+  if (!r) return null
+  const result = r.result
+  const findings = result?.findings.filter((f) => !r.dismissed.includes(f.id)) ?? []
+  const byFile = new Map<string, ReviewFinding[]>()
+  for (const f of findings) byFile.set(f.path, [...(byFile.get(f.path) ?? []), f])
+  const counts = (['critical', 'major', 'minor', 'nit'] as FindingSeverity[]).map((s) => [s, findings.filter((f) => f.severity === s).length] as const).filter(([, n]) => n)
+  const open = (f: ReviewFinding) => updateRepo(view.id, { center: { kind: 'file', target: targetFor(result!, f.path), mode: 'diff' } })
+
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col" data-testid="review">
+      <div className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-panel px-4">
+        <Sparkles size={18} className="text-accent" />
+        <div className="min-w-0 flex-1">
+          <div className="text-[14px] font-semibold">Review: {result?.label ?? 'running…'}</div>
+          <div className="truncate text-xs text-muted">
+            {r.requestId ? 'Reading the change…' : r.error ? 'The review failed.'
+              : findings.length ? counts.map(([s, n]) => `${n} ${s}`).join(' · ') : 'No findings.'}
+            {` · ${r.profile} profile`}
+          </div>
+        </div>
+        {r.requestId ? <Button onClick={() => stopReview(view.id)}><Spinner /> Stop</Button>
+          : <Button onClick={() => startReview(view.id, r.scope)}>Review again</Button>}
+        <Button variant="ghost" onClick={() => updateRepo(view.id, { center: { kind: 'graph' } })}>Back to graph</Button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {r.error && <div className="m-4 rounded-md border border-del/40 bg-del/10 p-3 text-[13px] text-del">{r.error}</div>}
+        {result?.summary && <p className="selectable mx-4 mt-4 text-[13px] text-muted" data-testid="review-summary">{result.summary}</p>}
+        {result && !findings.length && !r.error && <p className="mx-4 mt-4 text-[13px] text-faint">Nothing to report{result.findings.length ? ' (all dismissed)' : ''}.</p>}
+        {[...byFile].map(([path, list]) => (
+          <section key={path} className="mx-4 mt-4">
+            <h3 className="mb-2 font-mono text-[12px] text-muted">{path}</h3>
+            {list.map((f) => (
+              <div key={f.id} ref={r.focus === f.id ? focused : undefined} data-testid="finding" data-severity={f.severity}
+                className={clsx('mb-2 rounded-md border bg-panel p-3', r.focus === f.id ? 'border-accent' : 'border-line')}>
+                <div className="flex items-center gap-2">
+                  <span className={clsx('rounded px-1.5 text-[10px] font-semibold uppercase', SEVERITY_STYLE[f.severity])}>{f.severity}</span>
+                  <span className="text-[11px] text-faint">{f.type}</span>
+                  <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">{f.title}</span>
+                  <button className="font-mono text-[11px] text-accent hover:underline" onClick={() => open(f)} title="Show in the diff">
+                    lines {f.startLine}{f.endLine !== f.startLine ? `-${f.endLine}` : ''}
+                  </button>
+                </div>
+                <p className="selectable mt-1.5 text-[13px] whitespace-pre-wrap">{f.message}</p>
+                {f.suggestion !== undefined && (
+                  <pre className="selectable mt-2 overflow-x-auto rounded border border-line bg-bg p-2 font-mono text-[12px]" data-testid="suggestion">
+                    {(f.original ?? []).map((l, i) => <div key={`o${i}`} className="text-del">- {l}</div>)}
+                    {f.suggestion.split('\n').map((l, i) => <div key={`n${i}`} className="text-add">+ {l}</div>)}
+                  </pre>
+                )}
+                <div className="mt-2 flex gap-2">
+                  <Button size="sm" variant="ghost" onClick={() => open(f)}>Show in diff</Button>
+                  <Button size="sm" variant="ghost" onClick={() => dismissFinding(view.id, f.id)}>Dismiss</Button>
+                </div>
+              </div>
+            ))}
+          </section>
+        ))}
+        {result && (result.dropped.length > 0 || result.skipped.length > 0) && (
+          <div className="mx-4 my-4 text-xs text-faint">
+            {result.skipped.length > 0 && <p>Not reviewed (over the size limit): {result.skipped.join(', ')}.</p>}
+            {result.dropped.length > 0 && (
+              <>
+                <button className="hover:text-fg" onClick={() => setShowDropped(!showDropped)} data-testid="dropped-toggle">
+                  {result.dropped.length} finding{result.dropped.length === 1 ? ' was' : 's were'} thrown out by verification {showDropped ? '▾' : '▸'}
+                </button>
+                {showDropped && (
+                  <ul className="mt-1 list-disc pl-5" data-testid="dropped">
+                    {result.dropped.map((d, i) => <li key={i}>{d.title}: {d.reason}</li>)}
+                  </ul>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
