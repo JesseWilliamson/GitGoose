@@ -468,6 +468,33 @@ describe('remotes', () => {
   })
 })
 
+describe('commit-graph maintenance', () => {
+  it('writes a commit-graph when missing, and respects core.commitGraph=false', async () => {
+    const r = makeFixture('branches')
+    const repo = await open(r)
+    expect(repo.hasCommitGraph()).toBe(false)
+    expect(await repo.maintainCommitGraph()).toBe(true)
+    expect(repo.hasCommitGraph()).toBe(true)
+    expect(await repo.maintainCommitGraph()).toBe(false)
+
+    const off = makeFixture('linear')
+    off.git('config', 'core.commitGraph', 'false')
+    const repoOff = await open(off)
+    expect(await repoOff.maintainCommitGraph()).toBe(false)
+    expect(repoOff.hasCommitGraph()).toBe(false)
+  })
+
+  it('finds the shared objects directory from a linked worktree', async () => {
+    const r = makeFixture('branches')
+    const wt = r.dir + '-wt'
+    r.git('worktree', 'add', '-q', wt, 'feature')
+    const repo = await Repo.open(wt)
+    expect(repo.path).toBe(wt)
+    expect(repo.commonDir).toBe(join(r.dir, '.git'))
+    expect((await repo.snapshot()).head.branch).toBe('feature')
+  })
+})
+
 describe('reading', () => {
   it('searches by message, author, path, content and hash', async () => {
     const r = makeFixture('branches')
@@ -513,7 +540,8 @@ describe('askpass', () => {
     // Must be async: the server lives in this process, so a sync child would block the event
     // loop and the server could never answer (a deadlock).
     const run = (prompt: string) => new Promise<string>((resolve) => {
-      execFile(env.GIT_ASKPASS!, [prompt], { env: { ...process.env, ...env }, encoding: 'utf8' }, (err, stdout) => {
+      // Windows only runs .cmd scripts through a shell (git itself does the same when it calls askpass).
+      execFile(env.GIT_ASKPASS!, [process.platform === 'win32' ? JSON.stringify(prompt) : prompt], { env: { ...process.env, ...env }, encoding: 'utf8', shell: process.platform === 'win32' }, (err, stdout) => {
         resolve(err ? `exit ${(err as { code?: number }).code}` : stdout)
       })
     })

@@ -61,6 +61,8 @@ export class RepoManager {
     } catch {
       // No watcher (e.g. a network drive): the window-focus refresh still keeps us current.
     }
+    // After the first screen is up, make sure later log walks are fast (ADR-004).
+    setTimeout(() => void repo.maintainCommitGraph(), 1500)
     return snapshot
   }
 

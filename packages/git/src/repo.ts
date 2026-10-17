@@ -48,6 +48,8 @@ export class Repo {
   private constructor(
     readonly path: string,
     readonly gitDir: string,
+    /** Shared by all worktrees of a repository; holds objects/ and refs/. */
+    readonly commonDir: string,
     private opts: RepoOptions,
   ) {
     this.id = `repo-${nextRepoId++}`
@@ -58,10 +60,11 @@ export class Repo {
   /** Open the repository containing `dir` (any subdirectory works). */
   static async open(dir: string, opts: RepoOptions = {}): Promise<Repo> {
     const probe = new GitRunner({ cwd: dir, gitPath: opts.gitPath, env: opts.env })
-    const { stdout } = await probe.run(['rev-parse', '--show-toplevel', '--absolute-git-dir'], { readOnly: true })
-    const [top, gitDir] = stdout.trim().split('\n')
-    if (!top || !gitDir) throw new Error(`${dir} is not inside a git working tree`)
-    return new Repo(resolve(top), resolve(gitDir), opts)
+    const { stdout } = await probe.run(['rev-parse', '--show-toplevel', '--absolute-git-dir', '--git-common-dir'], { readOnly: true })
+    const [top, gitDir, commonDir] = stdout.trim().split('\n')
+    if (!top || !gitDir || !commonDir) throw new Error(`${dir} is not inside a git working tree`)
+    // --git-common-dir may be relative to the directory we ran in.
+    return new Repo(resolve(top), resolve(gitDir), resolve(dir, commonDir), opts)
   }
 
   static async init(dir: string, opts: RepoOptions = {}): Promise<Repo> {
@@ -145,6 +148,37 @@ export class Repo {
   private async currentHead(): Promise<Head> {
     const out = await this.read(['status', '--porcelain=v2', '-z', '--branch', '--untracked-files=no'])
     return parseStatus(out).head
+  }
+
+  // ---------------------------------------------------------------- maintenance
+
+  hasCommitGraph(): boolean {
+    const info = join(this.commonDir, 'objects', 'info')
+    return existsSync(join(info, 'commit-graph')) || existsSync(join(info, 'commit-graphs', 'commit-graph-chain'))
+  }
+
+  /**
+   * Write git's commit-graph file if the repository lacks one (see ADR-004).
+   *
+   * `git log --topo-order` must emit children before parents. Without generation numbers it
+   * can only prove that by walking the entire history first, so the first page of a 100k-commit
+   * log waits ~500 ms for the whole walk. The commit-graph stores generation numbers, letting git
+   * stream topological order incrementally: the same first page takes ~10 ms. It is the same
+   * cache `git gc` and `git maintenance` write; `--split` makes later writes incremental.
+   *
+   * Returns true if it wrote one. Respects core.commitGraph=false.
+   */
+  async maintainCommitGraph(opts: { force?: boolean } = {}): Promise<boolean> {
+    if (!opts.force && this.hasCommitGraph()) return false
+    const setting = await this.runner.run(['config', '--get', 'core.commitGraph'], { okCodes: [1], readOnly: true })
+    if (setting.stdout.trim() === 'false') return false
+    try {
+      await this.runner.run(['commit-graph', 'write', '--reachable', '--split'])
+      return true
+    } catch {
+      // Another git process holds the lock, or the repo is empty. It is only a cache.
+      return false
+    }
   }
 
   // ---------------------------------------------------------------- reading
@@ -485,11 +519,16 @@ export class Repo {
   fetch(opts: { remote?: string; prune?: boolean } = {}): Promise<void> {
     return this.exclusive(async () => {
       await this.progress(['fetch', '--progress', ...(opts.prune ? ['--prune'] : []), ...(opts.remote ? [opts.remote] : ['--all'])])
+      // New commits arrived: extend the commit-graph in the background (incremental with --split).
+      void this.maintainCommitGraph({ force: true })
     })
   }
 
   pull(opts: { rebase?: boolean } = {}): Promise<void> {
-    return this.moving('Pull', () => this.progress(['pull', '--progress', '--no-edit', opts.rebase ? '--rebase' : '--no-rebase']))
+    return this.moving('Pull', async () => {
+      await this.progress(['pull', '--progress', '--no-edit', opts.rebase ? '--rebase' : '--no-rebase'])
+      void this.maintainCommitGraph({ force: true })
+    })
   }
 
   push(opts: { force?: boolean; branch?: string; remote?: string } = {}): Promise<void> {

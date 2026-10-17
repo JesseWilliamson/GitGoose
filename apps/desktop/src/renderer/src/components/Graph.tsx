@@ -168,7 +168,7 @@ export function Graph({ view }: { view: RepoView }) {
                 return (
                   <CommitRow
                     key={commit.hash}
-                    style={style}
+                    top={item.start}
                     repoId={view.id}
                     commit={commit}
                     row={row}
@@ -214,8 +214,12 @@ function WipRow({ style, view, graphW, selected }: { style: React.CSSProperties;
   )
 }
 
+/**
+ * Memoized: while scrolling, the list re-renders every frame, but each row's props stay equal
+ * (its offset `top` is a number, not a fresh style object), so React skips the rows themselves.
+ */
 const CommitRow = memo(function CommitRow(props: {
-  style: React.CSSProperties
+  top: number
   repoId: string
   commit: Commit
   row: Row
@@ -248,7 +252,7 @@ const CommitRow = memo(function CommitRow(props: {
 
   return (
     <div
-      style={props.style}
+      style={{ position: 'absolute', top: 0, left: 0, right: 0, height: ROW_H, transform: `translateY(${props.top}px)` }}
       data-testid="commit-row"
       data-hash={commit.hash}
       onClick={() => updateRepo(repoId, { selected: { kind: 'commit', hash: commit.hash } })}
