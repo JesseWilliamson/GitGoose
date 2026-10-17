@@ -1,5 +1,6 @@
 import type { ChangeKind } from '@gitsquid/shared'
 import clsx from 'clsx'
+import { ContextMenu } from 'radix-ui'
 import type { ReactNode } from 'react'
 import { splitPath } from '../lib/format'
 
@@ -28,7 +29,7 @@ export function statusKind(code: string): ChangeKind | 'untracked' {
   }
 }
 
-export function FileRow({ path, oldPath, kind, selected, onClick, actions, stats, testId }: {
+export function FileRow({ path, oldPath, kind, selected, onClick, actions, stats, testId, menu }: {
   path: string
   oldPath?: string
   kind: ChangeKind | 'untracked'
@@ -37,10 +38,12 @@ export function FileRow({ path, oldPath, kind, selected, onClick, actions, stats
   actions?: ReactNode
   stats?: ReactNode
   testId?: string
+  /** Right-click menu content (CM.Content). */
+  menu?: ReactNode
 }) {
   const b = BADGE[kind] ?? BADGE.modified!
   const { dir, name } = splitPath(path)
-  return (
+  const row = (
     <div
       onClick={onClick}
       data-testid={testId}
@@ -56,5 +59,12 @@ export function FileRow({ path, oldPath, kind, selected, onClick, actions, stats
       {stats}
       {actions && <span className="hidden shrink-0 items-center gap-1 group-hover:flex">{actions}</span>}
     </div>
+  )
+  if (!menu) return row
+  return (
+    <ContextMenu.Root>
+      <ContextMenu.Trigger asChild>{row}</ContextMenu.Trigger>
+      {menu}
+    </ContextMenu.Root>
   )
 }
