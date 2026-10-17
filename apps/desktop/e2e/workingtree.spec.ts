@@ -99,3 +99,16 @@ test('notices changes made outside the app', async () => {
   await expect(page.getByTestId('wip-row')).toHaveCount(0)
   await app.close()
 })
+
+test('ignores an untracked file from its context menu, undoably', async () => {
+  const r = makeFixture('linear')
+  r.write('debug.log', 'noise\n')
+  const { app, page } = await launch(r.dir)
+  await page.getByTestId('wip-row').click()
+  await page.getByTestId('unstaged-file').filter({ hasText: 'debug.log' }).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Add to .gitignore' }).click()
+  await expect(page.getByTestId('unstaged-file')).toHaveText([/\.gitignore/])
+  await page.getByTestId('toast-action').filter({ hasText: 'Undo' }).first().click()
+  await expect(page.getByTestId('unstaged-file')).toHaveText([/debug\.log/])
+  await app.close()
+})

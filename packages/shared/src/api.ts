@@ -75,6 +75,8 @@ export interface GitSquidApi {
   unstagePaths(repoId: string, paths: string[]): Promise<void>
   discardPaths(repoId: string, paths: string[]): Promise<void>
   applySelection(repoId: string, req: SelectionRequest): Promise<void>
+  /** Append the paths to the repository's top-level .gitignore. */
+  ignorePaths(repoId: string, paths: string[]): Promise<void>
   commit(repoId: string, message: string, opts?: { amend?: boolean }): Promise<void>
 
   // Branches and history
@@ -122,7 +124,7 @@ export const API_METHODS = [
   'respondPrompt', 'openPath', 'revealPath', 'logError',
   'snapshot', 'logPage', 'commitDetails', 'diff', 'fileHistory', 'blame', 'search', 'stashList',
   'lastCommitMessage',
-  'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'commit',
+  'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit',
   'checkout', 'createBranch', 'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset',
   'cherryPick', 'revert', 'createTag', 'deleteTag',
   'fetch', 'pull', 'push', 'deleteRemoteBranch',

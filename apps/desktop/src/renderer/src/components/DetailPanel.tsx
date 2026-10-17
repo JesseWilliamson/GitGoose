@@ -4,9 +4,9 @@ import { useEffect, useRef, useState } from 'react'
 import { copy, pop, run, stashApply, stashDrop } from '../lib/actions'
 import { api } from '../lib/api'
 import { dateTime, hashColor, initials, laneColor, sentence, shortHash } from '../lib/format'
-import { ensureLoaded, toastError, updateRepo, type RepoView } from '../lib/store'
+import { ensureLoaded, toastError, updateRepo, type FileMode, type RepoView } from '../lib/store'
 import { FileRow, statusKind } from './FileList'
-import { Button, SectionHeader, Spinner } from './ui'
+import { Button, CM, SectionHeader, Spinner } from './ui'
 
 export function DetailPanel({ view }: { view: RepoView }) {
   return (
@@ -20,8 +20,27 @@ const isOpen = (view: RepoView, t: DiffTarget) =>
   view.center.kind === 'file' && view.center.target.kind === t.kind && view.center.target.path === t.path &&
   (t.kind !== 'commit' || (view.center.target.kind === 'commit' && view.center.target.hash === t.hash))
 
-function openFile(view: RepoView, target: DiffTarget) {
-  updateRepo(view.id, { center: { kind: 'file', target, mode: 'diff' } })
+function openFile(view: RepoView, target: DiffTarget, mode: FileMode = 'diff') {
+  updateRepo(view.id, { center: { kind: 'file', target, mode } })
+}
+
+/** Right-click menu for a file in any list. Extra items (stage, discard...) come from the caller. */
+function FileMenu({ view, target, children }: { view: RepoView; target: DiffTarget; children?: React.ReactNode }) {
+  const abs = `${view.snapshot.path}/${target.path}`
+  return (
+    <CM.Content>
+      <CM.Label>{target.path}</CM.Label>
+      {children}
+      {children && <CM.Separator />}
+      <CM.Item onSelect={() => openFile(view, target, 'diff')}>Show changes</CM.Item>
+      {target.kind !== 'untracked' && <CM.Item onSelect={() => openFile(view, target, 'history')}>File history</CM.Item>}
+      {target.kind !== 'untracked' && <CM.Item onSelect={() => openFile(view, target, 'blame')}>Blame</CM.Item>}
+      <CM.Separator />
+      <CM.Item onSelect={() => void api.openPath(abs).catch((e) => toastError('Could not open the file', e))}>Open in default app</CM.Item>
+      <CM.Item onSelect={() => void api.revealPath(abs)}>Reveal in file manager</CM.Item>
+      <CM.Item onSelect={() => copy(target.path, 'Copied path')}>Copy path</CM.Item>
+    </CM.Content>
+  )
 }
 
 // ------------------------------------------------------------------ uncommitted changes
@@ -65,6 +84,13 @@ function WipPanel({ view }: { view: RepoView }) {
               return (
                 <FileRow key={e.path} path={e.path} kind={statusKind(e.worktree === '.' ? e.index : e.worktree)} testId="unstaged-file"
                   selected={isOpen(view, t)} onClick={() => openFile(view, t)}
+                  menu={<FileMenu view={view} target={t}>
+                    <CM.Item onSelect={() => void stage([e.path])}>Stage</CM.Item>
+                    <CM.Item onSelect={() => void discard([e.path])}>{e.kind === 'untracked' ? 'Delete (undoable)' : 'Discard changes (undoable)'}</CM.Item>
+                    {e.kind === 'untracked' && (
+                      <CM.Item onSelect={() => void run(id, `Ignore ${e.path}`, () => api.ignorePaths(id, [e.path]), { undoable: true })}>Add to .gitignore</CM.Item>
+                    )}
+                  </FileMenu>}
                   actions={<>
                     <IconAction title="Discard changes (undoable)" onClick={() => void discard([e.path])}><Undo2 size={12} /></IconAction>
                     <IconAction title="Stage file" onClick={() => void stage([e.path])}><Plus size={12} /></IconAction>
@@ -84,6 +110,7 @@ function WipPanel({ view }: { view: RepoView }) {
               return (
                 <FileRow key={e.path} path={e.path} oldPath={e.origPath} kind={statusKind(e.index)} testId="staged-file"
                   selected={isOpen(view, t)} onClick={() => openFile(view, t)}
+                  menu={<FileMenu view={view} target={t}><CM.Item onSelect={() => void unstage([e.path])}>Unstage</CM.Item></FileMenu>}
                   actions={<IconAction title="Unstage file" onClick={() => void unstage([e.path])}><Minus size={12} /></IconAction>} />
               )
             })}
@@ -258,6 +285,7 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
           return (
             <FileRow key={f.path} path={f.path} oldPath={f.oldPath} kind={f.change} selected={isOpen(view, t)} testId="commit-file"
               onClick={() => openFile(view, t)}
+              menu={<FileMenu view={view} target={t} />}
               stats={f.binary ? <span className="text-[11px] text-faint">bin</span> : (
                 <span className="shrink-0 font-mono text-[11px]"><span className="text-add">+{f.additions}</span> <span className="text-del">−{f.deletions}</span></span>
               )} />
