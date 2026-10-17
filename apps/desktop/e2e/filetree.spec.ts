@@ -8,6 +8,7 @@ test('changed files as a tree: stage a whole folder; filter the list', async () 
   r.write('src/app/main.ts', 'm\n').write('src/app/util.ts', 'u\n').write('docs/guide.md', 'g\n').write('README.md', 'changed\n')
   const { app, page } = await launch(r.dir)
   await expect(page.getByTestId('unstaged-file')).toHaveCount(4)
+  await expect(page.getByTestId('commit-count')).toHaveText('1 commit')
 
   await page.getByTestId('file-tree-toggle').click()
   const folder = page.locator('[data-testid="unstaged-folder"][data-path="src/app"]')

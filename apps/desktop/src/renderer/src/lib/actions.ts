@@ -1,4 +1,4 @@
-import { parseGitHubRemote, type DiffTarget, type GraphFilter, type PullMode, type Ref, type RepoSnapshot, type ResetMode } from '@gitsquid/shared'
+import { parseGitHubRemote, type DiffTarget, type GraphFilter, type PullMode, type Ref, type RepoSnapshot, type ResetMode, type Worktree } from '@gitsquid/shared'
 import { api, toUiError, type UiError } from './api'
 import { withPushChecks } from './pushchecks'
 import { activeRepo, addRepo, alertConflicts, ensureLoaded, choose, onSnapshot, openRepo, refreshAux, reportError, setting, toast, updateRepo, useStore } from './store'
@@ -629,10 +629,14 @@ export function isStale(r: Ref, now = Date.now()): boolean {
   return r.date !== undefined && now / 1000 - r.date > STALE_DAYS * 86_400
 }
 
-/** Branches the cleanup dialog offers: merged into HEAD or stale, never the checked-out one. */
-export function cleanupCandidates(view: { snapshot: RepoSnapshot; merged: string[] }, now = Date.now()) {
+/**
+ * Branches the cleanup dialog offers: merged into HEAD or stale. Never one that is checked out,
+ * here or in another worktree: git refuses to delete those, and the cleanup would stop half-way.
+ */
+export function cleanupCandidates(view: { snapshot: RepoSnapshot; merged: string[]; worktrees: Worktree[] }, now = Date.now()) {
+  const checkedOut = new Set(view.worktrees.map((w) => w.branch).filter(Boolean))
   return view.snapshot.refs
-    .filter((r) => r.kind === 'local' && r.shortName !== view.snapshot.head.branch)
+    .filter((r) => r.kind === 'local' && r.shortName !== view.snapshot.head.branch && !checkedOut.has(r.shortName))
     .map((r) => ({ name: r.shortName, date: r.date, merged: view.merged.includes(r.shortName), stale: isStale(r, now) }))
     .filter((c) => c.merged || c.stale)
 }

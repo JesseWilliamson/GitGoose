@@ -15,7 +15,7 @@ export function StatusBar({ view }: { view: RepoView }) {
       {head?.upstream && <span>{head.upstream.replace('refs/remotes/', '')} ↑{head.ahead ?? 0} ↓{head.behind ?? 0}</span>}
       {snap.operation && <span className="font-semibold text-warn">{sentence(opName(snap.operation))} in progress</span>}
       <span className="flex-1" />
-      <span data-testid="commit-count">{log.commits.length.toLocaleString()}{log.done ? '' : '+'} commits</span>
+      <span data-testid="commit-count">{log.commits.length.toLocaleString()}{log.done ? '' : '+'} {log.commits.length === 1 && log.done ? 'commit' : 'commits'}</span>
       <span className="max-w-96 truncate" title={snap.path}>{snap.path}</span>
     </div>
   )

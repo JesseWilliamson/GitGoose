@@ -374,9 +374,9 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
       />
       <div className="mt-2 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
-          <label className="flex items-center gap-1.5 text-xs text-muted">
+          <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-muted" title="Amend the previous commit instead of making a new one">
             <input type="checkbox" checked={amend} onChange={(e) => void toggleAmend(e.target.checked)} disabled={!view.snapshot.head.hash} />
-            Amend previous commit
+            Amend
           </label>
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>

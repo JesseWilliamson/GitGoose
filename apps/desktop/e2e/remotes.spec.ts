@@ -121,6 +121,8 @@ test('clean up merged and stale branches in one undoable step', async () => {
   r.commit('abandoned idea', { 'idea.txt': 'maybe\n' })
   r.checkout('main')
   r.commit('main moves on', { 'b.txt': 'b\n' })
+  // Merged too, but checked out in another worktree: git would refuse to delete it.
+  r.git('worktree', 'add', '-q', '-b', 'hotfix', `${r.dir}-hotfix`)
   const { app, page } = await launch(r.dir)
   await expect(ref(page, 'refs/heads/done')).toContainText('merged')
   // Fixture commits are from 2023: older than 90 days, so stale.
@@ -133,6 +135,7 @@ test('clean up merged and stale branches in one undoable step', async () => {
   await expect(list.getByRole('checkbox', { name: 'done' })).toBeChecked()
   await expect(list.getByRole('checkbox', { name: 'old-work' })).not.toBeChecked()
   await expect(list.getByRole('checkbox', { name: 'main' })).toHaveCount(0)
+  await expect(list.getByRole('checkbox', { name: 'hotfix' })).toHaveCount(0)
   await list.getByRole('checkbox', { name: 'old-work' }).check()
   await expect(page.getByRole('dialog')).toContainText('1 of these is not merged')
   await page.getByTestId('dialog-submit').click()

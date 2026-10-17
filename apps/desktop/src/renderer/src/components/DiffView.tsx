@@ -295,7 +295,7 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
       {(fileActions || diff.oldPath) && (
         <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-line px-3 text-xs">
           <span className="truncate text-muted" data-testid="diff-hint">
-            {diff.oldPath ? `Renamed from ${diff.oldPath}` : editable ? `Click lines to select them; shift-click for a range; ${modName()}+click a name to peek.`
+            {diff.oldPath ? `Renamed from ${diff.oldPath}` : diff.binary ? '' : editable ? `Click lines to select them; shift-click for a range; ${modName()}+click a name to peek.`
               : editable === false && ignoreWhitespace && target.kind !== 'commit' && target.kind !== 'range' ? 'Whitespace changes are hidden, so line and hunk staging are off (Settings → Diff).' : ''}
           </span>
           {fileActions}

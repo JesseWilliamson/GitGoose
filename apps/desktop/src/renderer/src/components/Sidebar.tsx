@@ -261,8 +261,9 @@ function RefItem({ r, label, view, onJump, head, depth = 0, children }: {
       className={clsx('group flex h-6 cursor-default items-center gap-1.5 pr-3 text-[13px]', selected ? 'bg-select' : 'hover:bg-hover', head && 'font-semibold')}
     >
       {head && <span className="-ml-4 w-3 text-[10px] text-accent">✓</span>}
-      <span className={clsx('min-w-0 flex-1 truncate', out && 'text-faint line-through decoration-faint/50')} data-testid="ref-label">{label}</span>
-      {children}
+      <span className={clsx('min-w-[4.5rem] flex-1 truncate', out && 'text-faint line-through decoration-faint/50')} data-testid="ref-label">{label}</span>
+      {/* Badges are clipped before the branch name is: the name is what you are looking for. */}
+      {children && <span className="flex min-w-0 shrink items-center gap-1 overflow-hidden">{children}</span>}
       {soloed && <span title="Soloed: the graph shows only soloed branches"><Focus size={12} className="text-accent" /></span>}
       {!head && (
         <button
