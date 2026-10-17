@@ -6,14 +6,15 @@ import type {
 import { countConflicts } from '@gitsquid/shared'
 import { existsSync } from 'node:fs'
 import { lstat, readFile, rm, writeFile, chmod, mkdir } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { parseBlame } from './blame'
 import { CatFile } from './catfile'
 import { parseChangedFiles, parseDiff, untrackedDiff } from './diff'
-import { GRAPH_REVS, LOG_FORMAT, LogStream, parseLog } from './log'
+import { graphRevs, LOG_FORMAT, LogStream, parseLog } from './log'
 import { buildPatch } from './patch'
 import { parseRefs, REFS_FORMAT } from './refs'
-import { GitError, GitRunner } from './runner'
+import { GitRunner } from './runner'
 import { parseStashList, STASH_FORMAT } from './stash'
 import { parseStatus } from './status'
 import { UndoJournal, type UndoAction } from './undo'
@@ -106,7 +107,30 @@ export class Repo {
 
   // ---------------------------------------------------------------- snapshot
 
-  async snapshot(): Promise<RepoSnapshot> {
+  private snapRunning: Promise<RepoSnapshot> | null = null
+  private snapQueued: Promise<RepoSnapshot> | null = null
+
+  /**
+   * Read status and refs. Calls never overlap: if one is running, the caller gets the *next* run,
+   * which starts after it. Overlapping runs could finish out of order, letting an old result
+   * overwrite a newer one (and reset the log twice). Several callers waiting at once share one
+   * queued run, so a burst of refreshes still costs at most two.
+   */
+  snapshot(): Promise<RepoSnapshot> {
+    if (!this.snapRunning) {
+      this.snapRunning = this.readSnapshot().finally(() => {
+        this.snapRunning = null
+      })
+      return this.snapRunning
+    }
+    this.snapQueued ??= this.snapRunning.catch(() => {}).then(() => {
+      this.snapQueued = null
+      return this.snapshot()
+    })
+    return this.snapQueued
+  }
+
+  private async readSnapshot(): Promise<RepoSnapshot> {
     const [statusOut, refsOut] = await Promise.all([
       this.read(['status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all']),
       this.read(['for-each-ref', `--format=${REFS_FORMAT}`]),
@@ -185,7 +209,7 @@ export class Repo {
 
   async logPage(offset: number, count: number): Promise<LogPage> {
     if (!this.last) await this.snapshot()
-    if (!this.log) this.log = new LogStream(this.runner)
+    if (!this.log) this.log = new LogStream(this.runner, graphRevs(this.last!.head.hash))
     const generation = this.refsVersion
     const log = this.log
     const { commits, done } = await log.page(offset, count)
@@ -268,7 +292,8 @@ export class Repo {
   async search(field: SearchField, query: string): Promise<string[]> {
     const q = query.trim()
     if (!q) return []
-    const base = ['log', '--format=%H', '-n', '2000', ...GRAPH_REVS]
+    const head = (this.last ?? (await this.snapshot())).head
+    const base = ['log', '--format=%H', '-n', '2000', ...graphRevs(head.hash)]
     let args: string[]
     switch (field) {
       case 'message': args = [...base, '-i', '-F', `--grep=${q}`, '--']; break
@@ -284,13 +309,9 @@ export class Repo {
         }
       }
     }
-    try {
-      return (await this.read(args)).split('\n').filter(Boolean)
-    } catch (e) {
-      // An unborn repo has no HEAD to search.
-      if (e instanceof GitError) return []
-      throw e
-    }
+    // Path search is the one place that wants pathspec magic (glob, icase); everything else is literal.
+    const env = field === 'path' ? { GIT_LITERAL_PATHSPECS: '0' } : undefined
+    return (await this.runner.run(args, { readOnly: true, env })).stdout.split('\n').filter(Boolean)
   }
 
   async stashList(): Promise<StashEntry[]> {
@@ -306,6 +327,18 @@ export class Repo {
   }
 
   // ---------------------------------------------------------------- working tree
+  //
+  // Methods that can be undone return the id of the undo entry they recorded, or null when
+  // nothing changed (a merge that was already up to date, say). The UI offers Undo only for an
+  // id, and undo(id) refuses unless that entry is still the most recent one.
+
+  private async freshStatus() {
+    return parseStatus(await this.read(['status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all']))
+  }
+
+  private record(label: string, actions: UndoAction[], expectHead: string | undefined): number {
+    return this.journal.record(label, actions, expectHead).id
+  }
 
   stagePaths(paths: string[]): Promise<void> {
     return this.exclusive(async () => {
@@ -315,25 +348,30 @@ export class Repo {
 
   unstagePaths(paths: string[]): Promise<void> {
     return this.exclusive(async () => {
-      const head = await this.currentHead()
-      if (head.hash) await this.git(['reset', '-q', 'HEAD', '--', ...paths])
-      else await this.git(['rm', '--cached', '-r', '-q', '--', ...paths])
+      const status = await this.freshStatus()
+      // A staged rename is two index entries: unstaging the new name alone would leave the old
+      // name staged as deleted. Unstage both halves.
+      const all = new Set(paths)
+      for (const e of status.entries) if (e.origPath && all.has(e.path)) all.add(e.origPath)
+      const list = [...all]
+      if (status.head.hash) await this.git(['reset', '-q', 'HEAD', '--', ...list])
+      else await this.git(['rm', '--cached', '-r', '-q', '--', ...list])
     })
   }
 
-  discardPaths(paths: string[]): Promise<void> {
+  discardPaths(paths: string[]): Promise<number> {
     return this.exclusive(async () => {
-      const snap = await this.snapshot()
+      const status = await this.freshStatus()
       const saved = await this.saveFiles(paths)
-      const untracked = new Set(snap.status.filter((e) => e.kind === 'untracked').map((e) => e.path))
+      const untracked = new Set(status.entries.filter((e) => e.kind === 'untracked').map((e) => e.path))
       const tracked = paths.filter((p) => !untracked.has(p))
       for (const p of paths.filter((p) => untracked.has(p))) await rm(join(this.path, p), { force: true })
       if (tracked.length) await this.git(['checkout', '--', ...tracked])
-      this.journal.record(`Discard changes in ${describePaths(paths)}`, [{ kind: 'restore-files', files: saved }], snap.head.hash)
+      return this.record(`Discard changes in ${describePaths(paths)}`, [{ kind: 'restore-files', files: saved }], status.head.hash)
     })
   }
 
-  ignorePaths(paths: string[]): Promise<void> {
+  ignorePaths(paths: string[]): Promise<number> {
     return this.exclusive(async () => {
       const file = join(this.path, '.gitignore')
       const saved = await this.saveFiles(['.gitignore'])
@@ -349,11 +387,15 @@ export class Repo {
       const lines = paths.map((p) => '/' + p.replace(/([\\*?[\]!# ])/g, '\\$1'))
       const sep = current && !current.endsWith('\n') ? '\n' : ''
       await writeFile(file, current + sep + lines.join('\n') + '\n')
-      this.journal.record(`Ignore ${describePaths(paths)}`, [{ kind: 'restore-files', files: saved }], (await this.currentHead()).hash)
+      return this.record(`Ignore ${describePaths(paths)}`, [{ kind: 'restore-files', files: saved }], (await this.currentHead()).hash)
     })
   }
 
-  /** Copy working-tree files into the object database so a discard can be undone. */
+  /**
+   * Copy working-tree files into the object database so a discard can be undone.
+   * --no-filters stores the bytes exactly as they are on disk: no CRLF conversion and no LFS
+   * clean filter, because undo writes them straight back.
+   */
   private async saveFiles(paths: string[]): Promise<{ path: string; blob: string | null; mode?: number }[]> {
     const out: { path: string; blob: string | null; mode?: number }[] = []
     for (const p of paths) {
@@ -361,7 +403,7 @@ export class Repo {
       try {
         const st = await lstat(abs)
         if (!st.isFile()) continue
-        const { stdout } = await this.git(['hash-object', '-w', '--', p])
+        const { stdout } = await this.git(['hash-object', '-w', '--no-filters', '--', p])
         out.push({ path: p, blob: stdout.trim(), mode: st.mode & 0o777 })
       } catch {
         out.push({ path: p, blob: null })
@@ -370,7 +412,7 @@ export class Repo {
     return out
   }
 
-  applySelection(req: SelectionRequest): Promise<void> {
+  applySelection(req: SelectionRequest): Promise<number | null> {
     return this.exclusive(async () => {
       let target = req.target
       if (target.kind === 'untracked') {
@@ -383,31 +425,31 @@ export class Repo {
       if (target.kind === 'staged' && req.action !== 'unstage') throw new Error('Staged changes can only be unstaged')
       if (target.kind === 'unstaged' && req.action === 'unstage') throw new Error('Unstaged changes cannot be unstaged')
       const diff = await this.diff(target)
-      if (!diff) return
+      if (!diff) return null
       const reverse = req.action !== 'stage'
       const patch = buildPatch(diff, req.hunks, reverse)
-      if (!patch) return
+      if (!patch) return null
       const args = ['apply', '--whitespace=nowarn', ...(req.action === 'discard' ? [] : ['--cached']), ...(reverse ? ['--reverse'] : []), '-']
       if (req.action === 'discard') {
         const head = await this.currentHead()
         const saved = await this.saveFiles([target.path])
         await this.git(args, { input: patch })
-        this.journal.record(`Discard lines in ${target.path}`, [{ kind: 'restore-files', files: saved }], head.hash)
-      } else {
-        await this.git(args, { input: patch })
+        return this.record(`Discard lines in ${target.path}`, [{ kind: 'restore-files', files: saved }], head.hash)
       }
+      await this.git(args, { input: patch })
+      return null
     })
   }
 
-  commit(message: string, opts: { amend?: boolean } = {}): Promise<void> {
+  commit(message: string, opts: { amend?: boolean } = {}): Promise<number> {
     return this.exclusive(async () => {
       const before = await this.currentHead()
       await this.git(['commit', '-F', '-', ...(opts.amend ? ['--amend'] : [])], { input: message })
       const after = await this.currentHead()
       const actions: UndoAction[] = before.hash
         ? [{ kind: 'reset', to: before.hash, mode: 'soft' }]
-        : [{ kind: 'update-ref', ref: `refs/heads/${after.branch}`, to: null }]
-      this.journal.record(opts.amend ? 'Amend commit' : `Commit "${firstLine(message)}"`, actions, after.hash)
+        : [{ kind: 'update-ref', ref: `refs/heads/${after.branch}`, to: null, from: after.hash! }]
+      return this.record(opts.amend ? 'Amend commit' : `Commit "${firstLine(message)}"`, actions, after.hash)
     })
   }
 
@@ -415,6 +457,10 @@ export class Repo {
 
   private async refs(): Promise<Ref[]> {
     return parseRefs(await this.read(['for-each-ref', `--format=${REFS_FORMAT}`]))
+  }
+
+  private async revParse(rev: string): Promise<string> {
+    return (await this.read(['rev-parse', '--verify', '--quiet', rev])).trim()
   }
 
   /** Undo action that returns HEAD to where it is now. */
@@ -425,7 +471,7 @@ export class Repo {
   }
 
   /** Check out a ref: a full ref name (refs/heads/x, refs/remotes/o/x, refs/tags/t) or a commit. */
-  checkout(ref: string): Promise<void> {
+  checkout(ref: string): Promise<number> {
     return this.exclusive(async () => {
       const before = await this.currentHead()
       const actions: UndoAction[] = [this.returnTo(before)]
@@ -439,78 +485,115 @@ export class Repo {
         if (refs.some((r) => r.name === `refs/heads/${local}`)) await this.git(['checkout', local])
         else {
           await this.git(['checkout', '--track', '-b', local, remoteShort])
-          actions.push({ kind: 'update-ref', ref: `refs/heads/${local}`, to: null })
+          actions.push({ kind: 'update-ref', ref: `refs/heads/${local}`, to: null, from: await this.revParse(`refs/heads/${local}`) })
         }
       } else {
         await this.git(['checkout', '--detach', ref.startsWith('refs/tags/') ? ref.slice(10) : ref])
       }
       const after = await this.currentHead()
-      this.journal.record(`Check out ${shortName(ref)}`, actions, after.hash)
+      return this.record(`Check out ${shortName(ref)}`, actions, after.hash)
     })
   }
 
-  createBranch(name: string, opts: { at?: string; checkout?: boolean } = {}): Promise<void> {
+  createBranch(name: string, opts: { at?: string; checkout?: boolean } = {}): Promise<number> {
     return this.exclusive(async () => {
       const before = await this.currentHead()
       const at = opts.at ? [opts.at] : []
       if (opts.checkout) await this.git(['checkout', '-b', name, ...at])
       else await this.git(['branch', name, ...at])
       const actions: UndoAction[] = opts.checkout ? [this.returnTo(before)] : []
-      actions.push({ kind: 'update-ref', ref: `refs/heads/${name}`, to: null })
-      this.journal.record(`Create branch ${name}`, actions, (await this.currentHead()).hash)
+      actions.push({ kind: 'update-ref', ref: `refs/heads/${name}`, to: null, from: await this.revParse(`refs/heads/${name}`) })
+      return this.record(`Create branch ${name}`, actions, (await this.currentHead()).hash)
     })
   }
 
-  renameBranch(from: string, to: string): Promise<void> {
+  renameBranch(from: string, to: string): Promise<number> {
     return this.exclusive(async () => {
       await this.git(['branch', '-m', from, to])
-      this.journal.record(`Rename ${from} to ${to}`, [{ kind: 'rename-branch', from: to, to: from }], (await this.currentHead()).hash)
+      return this.record(`Rename ${from} to ${to}`, [{ kind: 'rename-branch', from: to, to: from }], (await this.currentHead()).hash)
     })
   }
 
-  deleteBranch(name: string, opts: { force?: boolean } = {}): Promise<void> {
+  deleteBranch(name: string, opts: { force?: boolean } = {}): Promise<number> {
     return this.exclusive(async () => {
       const ref = (await this.refs()).find((r) => r.name === `refs/heads/${name}`)
       if (!ref) throw new Error(`No branch named ${name}`)
       await this.git(['branch', opts.force ? '-D' : '-d', name])
-      const actions: UndoAction[] = [{ kind: 'update-ref', ref: ref.name, to: ref.hash }]
+      const actions: UndoAction[] = [{ kind: 'update-ref', ref: ref.name, to: ref.hash, from: null }]
       if (ref.upstream) actions.push({ kind: 'set-upstream', branch: name, upstream: ref.upstream })
-      this.journal.record(`Delete branch ${name}`, actions, (await this.currentHead()).hash)
+      return this.record(`Delete branch ${name}`, actions, (await this.currentHead()).hash)
     })
   }
 
   /** Run an operation that moves the current branch; its undo moves it back with reset --keep. */
-  private moving(label: string, run: () => Promise<unknown>): Promise<void> {
+  private moving(label: string, run: () => Promise<unknown>): Promise<number | null> {
     return this.exclusive(async () => {
       const before = await this.currentHead()
       await run()
       const after = await this.currentHead()
       if (before.hash && after.hash !== before.hash) {
-        this.journal.record(label, [{ kind: 'reset', to: before.hash, mode: 'keep' }], after.hash)
+        return this.record(label, [{ kind: 'reset', to: before.hash, mode: 'keep' }], after.hash)
       }
+      return null
     })
   }
 
-  merge(ref: string, opts: { noFf?: boolean; ffOnly?: boolean } = {}): Promise<void> {
+  merge(ref: string, opts: { noFf?: boolean; ffOnly?: boolean } = {}): Promise<number | null> {
     const flags = opts.ffOnly ? ['--ff-only'] : opts.noFf ? ['--no-ff'] : []
     return this.moving(`Merge ${shortName(ref)}`, () => this.git(['merge', '--no-edit', ...flags, shortName(ref)]))
   }
 
-  rebase(onto: string): Promise<void> {
+  rebase(onto: string): Promise<number | null> {
     return this.moving(`Rebase onto ${shortName(onto)}`, () => this.git(['rebase', shortName(onto)]))
   }
 
-  reset(hash: string, mode: ResetMode): Promise<void> {
+  /**
+   * A snapshot of every file in the working tree as a tree object, built in a throwaway index so
+   * the real index (which may hold conflicts) is untouched. Fallback backup for `reset --hard`
+   * when `git stash create` refuses (it cannot handle an index with unmerged entries).
+   */
+  private async worktreeTree(): Promise<string> {
+    const tmp = join(tmpdir(), `gitsquid-index-${process.pid}-${Date.now()}`)
+    try {
+      await this.git(['add', '-A'], { env: { GIT_INDEX_FILE: tmp } })
+      return (await this.git(['write-tree'], { env: { GIT_INDEX_FILE: tmp } })).stdout.trim()
+    } finally {
+      await rm(tmp, { force: true })
+    }
+  }
+
+  reset(hash: string, mode: ResetMode): Promise<number> {
     return this.exclusive(async () => {
       const before = await this.currentHead()
       if (!before.hash) throw new Error('Nothing to reset: the branch has no commits')
-      // `git stash create` builds a stash commit of the current changes without touching the
-      // working tree or the stash list. If the reset is hard, that commit is our backup.
-      const backup = mode === 'hard' ? (await this.git(['stash', 'create'])).stdout.trim() : ''
+      const actions: UndoAction[] = []
+      if (mode === 'hard') {
+        // `git stash create` builds a stash commit of the current changes without touching the
+        // working tree or the stash list. If the reset is hard, that commit is our backup.
+        actions.push({ kind: 'reset', to: before.hash, mode: 'keep' })
+        let backup = ''
+        try {
+          backup = (await this.git(['stash', 'create'])).stdout.trim()
+          if (backup) actions.push({ kind: 'stash-apply', hash: backup })
+        } catch {
+          // Unmerged entries (a conflicted merge): save the files as a plain tree instead.
+          actions.push({ kind: 'restore-tree', tree: await this.worktreeTree() })
+        }
+      } else if (mode === 'keep') {
+        actions.push({ kind: 'reset', to: before.hash, mode: 'keep' })
+      } else {
+        // Soft and mixed only move HEAD (and, for mixed, rewrite the index). Undo moves HEAD back
+        // softly and then restores the index exactly as it was, so nothing ends up staged that
+        // was not staged before.
+        actions.push({ kind: 'reset', to: before.hash, mode: 'soft' })
+        try {
+          actions.push({ kind: 'read-tree', tree: (await this.git(['write-tree'])).stdout.trim() })
+        } catch {
+          // An index with conflicts has no tree; HEAD still goes back.
+        }
+      }
       await this.git(['reset', `--${mode}`, hash])
-      const actions: UndoAction[] = [{ kind: 'reset', to: before.hash, mode: mode === 'hard' || mode === 'keep' ? 'keep' : 'soft' }]
-      if (backup) actions.push({ kind: 'stash-apply', hash: backup })
-      this.journal.record(`Reset (${mode}) to ${hash.slice(0, 7)}`, actions, (await this.currentHead()).hash)
+      return this.record(`Reset (${mode}) to ${hash.slice(0, 7)}`, actions, (await this.currentHead()).hash)
     })
   }
 
@@ -519,29 +602,30 @@ export class Repo {
     return line.split(' ').length > 2
   }
 
-  async cherryPick(hash: string): Promise<void> {
+  async cherryPick(hash: string): Promise<number | null> {
     const mainline = (await this.isMerge(hash)) ? ['-m', '1'] : []
     return this.moving(`Cherry-pick ${hash.slice(0, 7)}`, () => this.git(['cherry-pick', ...mainline, hash]))
   }
 
-  async revert(hash: string): Promise<void> {
+  async revert(hash: string): Promise<number | null> {
     const mainline = (await this.isMerge(hash)) ? ['-m', '1'] : []
     return this.moving(`Revert ${hash.slice(0, 7)}`, () => this.git(['revert', '--no-edit', ...mainline, hash]))
   }
 
-  createTag(name: string, hash: string, message?: string): Promise<void> {
+  createTag(name: string, hash: string, message?: string): Promise<number> {
     return this.exclusive(async () => {
       await this.git(['tag', ...(message ? ['-a', '-m', message] : []), name, hash])
-      this.journal.record(`Create tag ${name}`, [{ kind: 'update-ref', ref: `refs/tags/${name}`, to: null }], (await this.currentHead()).hash)
+      const obj = await this.revParse(`refs/tags/${name}`)
+      return this.record(`Create tag ${name}`, [{ kind: 'update-ref', ref: `refs/tags/${name}`, to: null, from: obj }], (await this.currentHead()).hash)
     })
   }
 
-  deleteTag(name: string): Promise<void> {
+  deleteTag(name: string): Promise<number> {
     return this.exclusive(async () => {
       // rev-parse without ^{} gives the tag object itself for annotated tags, so undo restores it intact.
-      const obj = (await this.read(['rev-parse', `refs/tags/${name}`])).trim()
+      const obj = await this.revParse(`refs/tags/${name}`)
       await this.git(['tag', '-d', name])
-      this.journal.record(`Delete tag ${name}`, [{ kind: 'update-ref', ref: `refs/tags/${name}`, to: obj }], (await this.currentHead()).hash)
+      return this.record(`Delete tag ${name}`, [{ kind: 'update-ref', ref: `refs/tags/${name}`, to: obj, from: null }], (await this.currentHead()).hash)
     })
   }
 
@@ -560,7 +644,7 @@ export class Repo {
     })
   }
 
-  pull(opts: { rebase?: boolean } = {}): Promise<void> {
+  pull(opts: { rebase?: boolean } = {}): Promise<number | null> {
     return this.moving('Pull', async () => {
       await this.progress(['pull', '--progress', '--no-edit', opts.rebase ? '--rebase' : '--no-rebase'])
       void this.maintainCommitGraph({ force: true })
@@ -601,19 +685,19 @@ export class Repo {
 
   private async topStash(): Promise<string | null> {
     try {
-      return (await this.read(['rev-parse', '--verify', '--quiet', 'refs/stash'])).trim() || null
+      return (await this.revParse('refs/stash')) || null
     } catch {
       return null
     }
   }
 
-  stashPush(opts: { message?: string; includeUntracked?: boolean } = {}): Promise<void> {
+  stashPush(opts: { message?: string; includeUntracked?: boolean } = {}): Promise<number | null> {
     return this.exclusive(async () => {
       const before = await this.topStash()
       await this.git(['stash', 'push', ...(opts.includeUntracked ? ['-u'] : []), ...(opts.message ? ['-m', opts.message] : [])])
-      if ((await this.topStash()) !== before) {
-        this.journal.record('Stash changes', [{ kind: 'stash-pop' }], (await this.currentHead()).hash)
-      }
+      const after = await this.topStash()
+      if (!after || after === before) return null
+      return this.record('Stash changes', [{ kind: 'stash-pop', hash: after }], (await this.currentHead()).hash)
     })
   }
 
@@ -623,32 +707,30 @@ export class Repo {
     })
   }
 
-  stashPop(index: number): Promise<void> {
+  stashPop(index: number): Promise<number | null> {
     return this.exclusive(async () => {
       const entry = (await this.stashList()).find((s) => s.index === index)
       await this.git(['stash', 'pop', `stash@{${index}}`])
-      if (entry) {
-        this.journal.record('Pop stash (restores the stash entry; changes stay)', [{ kind: 'stash-store', hash: entry.hash, message: entry.message }], (await this.currentHead()).hash)
-      }
+      if (!entry) return null
+      return this.record('Pop stash (restores the stash entry; changes stay)', [{ kind: 'stash-store', hash: entry.hash, message: entry.message }], (await this.currentHead()).hash)
     })
   }
 
-  stashDrop(index: number): Promise<void> {
+  stashDrop(index: number): Promise<number | null> {
     return this.exclusive(async () => {
       const entry = (await this.stashList()).find((s) => s.index === index)
       await this.git(['stash', 'drop', `stash@{${index}}`])
-      if (entry) {
-        this.journal.record(`Drop stash "${entry.message}"`, [{ kind: 'stash-store', hash: entry.hash, message: entry.message }], (await this.currentHead()).hash)
-      }
+      if (!entry) return null
+      return this.record(`Drop stash "${entry.message}"`, [{ kind: 'stash-store', hash: entry.hash, message: entry.message }], (await this.currentHead()).hash)
     })
   }
 
   // ---------------------------------------------------------------- conflicts
 
   async conflicts(): Promise<ConflictFile[]> {
-    const snap = await this.snapshot()
+    const status = await this.freshStatus()
     const out: ConflictFile[] = []
-    for (const e of snap.status.filter((s: StatusEntry) => s.kind === 'unmerged')) {
+    for (const e of status.entries.filter((s: StatusEntry) => s.kind === 'unmerged')) {
       let blocks = 0
       try {
         blocks = countConflicts(await readFile(join(this.path, e.path), 'utf8'))
@@ -717,11 +799,18 @@ export class Repo {
     return this.journal.list()
   }
 
-  /** Undo the most recent operation. Returns its label, or null when there is nothing to undo. */
-  undo(): Promise<string | null> {
+  /**
+   * Undo the most recent operation and return its label (null when there is nothing to undo).
+   * With `entryId` (from a toast's Undo button), refuse unless that entry is still the most recent:
+   * otherwise an old toast would undo some newer, unrelated operation.
+   */
+  undo(entryId?: number): Promise<string | null> {
     return this.exclusive(async () => {
       const entry = this.journal.peek()
       if (!entry) return null
+      if (entryId !== undefined && entry.id !== entryId) {
+        throw new Error(`Something else happened since, so this cannot be undone from here. Use Undo in the toolbar to step back one operation at a time (next: "${entry.label}").`)
+      }
       const head = await this.currentHead()
       if (head.hash !== entry.expectHead) {
         throw new Error(`Cannot undo "${entry.label}": HEAD has moved since (another tool changed the repository)`)
@@ -738,8 +827,13 @@ export class Repo {
         await this.git(['reset', `--${a.mode}`, a.to])
         break
       case 'update-ref':
-        if (a.to === null) await this.git(['update-ref', '-d', a.ref])
-        else await this.git(['update-ref', a.ref, a.to])
+        // The old value makes git refuse if the ref has moved since: undo never clobbers
+        // commits someone added to a branch in the meantime.
+        if (a.to === null) await this.git(['update-ref', '-d', a.ref, ...(a.from ? [a.from] : [])])
+        else await this.git(['update-ref', a.ref, a.to, a.from ?? ''])
+        break
+      case 'read-tree':
+        await this.git(['read-tree', a.tree])
         break
       case 'checkout':
         await this.git(a.detach ? ['checkout', '--detach', a.target] : ['checkout', a.target])
@@ -750,15 +844,30 @@ export class Repo {
       case 'set-upstream':
         await this.git(['branch', `--set-upstream-to=${shortName(a.upstream)}`, a.branch], { okCodes: [128] })
         break
-      case 'stash-pop':
-        await this.git(['stash', 'pop', '--index'])
+      case 'stash-pop': {
+        // Find the entry by its commit: other stash operations may have moved it from stash@{0}.
+        const entry = (await this.stashList()).find((s) => s.hash === a.hash)
+        if (!entry) throw new Error('The stash this would restore no longer exists')
+        await this.git(['stash', 'pop', '--index', entry.ref])
         break
+      }
       case 'stash-store':
         await this.git(['stash', 'store', '-m', a.message, a.hash])
         break
       case 'stash-apply':
         await this.git(['stash', 'apply', a.hash])
         break
+      case 'restore-tree': {
+        // Check the tree out into the working tree through a throwaway index.
+        const tmp = join(tmpdir(), `gitsquid-index-${process.pid}-${Date.now()}`)
+        try {
+          await this.git(['read-tree', a.tree], { env: { GIT_INDEX_FILE: tmp } })
+          await this.git(['checkout-index', '-a', '-f'], { env: { GIT_INDEX_FILE: tmp } })
+        } finally {
+          await rm(tmp, { force: true })
+        }
+        break
+      }
       case 'restore-files':
         for (const f of a.files) {
           const abs = join(this.path, f.path)

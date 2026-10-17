@@ -16,15 +16,23 @@ import type { UndoEntry } from '@gitsquid/shared'
 export type UndoAction =
   /** Move the checked-out branch (or detached HEAD) back. 'keep' refuses to clobber local edits. */
   | { kind: 'reset'; to: string; mode: 'soft' | 'keep' }
-  /** Point a ref somewhere, or delete it when `to` is null. Used for refs that are not checked out. */
-  | { kind: 'update-ref'; ref: string; to: string | null }
+  /**
+   * Point a ref somewhere, or delete it when `to` is null. `from` is the value the ref must still
+   * have (null: it must not exist), so undo refuses rather than clobber a ref someone moved.
+   */
+  | { kind: 'update-ref'; ref: string; to: string | null; from: string | null }
+  /** Put the index back to a tree saved with `git write-tree` (undoing a mixed reset). */
+  | { kind: 'read-tree'; tree: string }
   | { kind: 'checkout'; target: string; detach: boolean }
   | { kind: 'rename-branch'; from: string; to: string }
   | { kind: 'set-upstream'; branch: string; upstream: string }
-  | { kind: 'stash-pop' }
+  /** Pop the stash entry whose commit is `hash`, wherever it now sits in the list. */
+  | { kind: 'stash-pop'; hash: string }
   | { kind: 'stash-store'; hash: string; message: string }
   /** Apply a stash commit made with `git stash create` (no ref, just the object). */
   | { kind: 'stash-apply'; hash: string }
+  /** Write every file of a saved tree into the working tree (backup taken during conflicts). */
+  | { kind: 'restore-tree'; tree: string }
   /** Write saved blobs back to the working tree. `blob: null` means the file did not exist. */
   | { kind: 'restore-files'; files: { path: string; blob: string | null; mode?: number }[] }
 
