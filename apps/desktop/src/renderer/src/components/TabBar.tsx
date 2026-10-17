@@ -1,6 +1,7 @@
 import clsx from 'clsx'
 import { Plus, X } from 'lucide-react'
 import { openRepoDialog } from '../lib/actions'
+import { modName } from '../lib/keys'
 import { closeTab, useStore } from '../lib/store'
 
 export function TabBar() {
@@ -26,7 +27,7 @@ export function TabBar() {
           </div>
         )
       })}
-      <button onClick={() => void openRepoDialog()} title="Open repository (Ctrl/Cmd+O)" className="no-drag mb-1 ml-1 rounded p-1 text-muted hover:bg-hover hover:text-fg">
+      <button onClick={() => void openRepoDialog()} title={`Open repository (${modName()}+O)`} className="no-drag mb-1 ml-1 rounded p-1 text-muted hover:bg-hover hover:text-fg">
         <Plus size={15} />
       </button>
     </div>

@@ -7,7 +7,7 @@ import { run } from '../lib/actions'
 import { api } from '../lib/api'
 import { hashColor, laneColor, relativeTime, shortHash, splitPath } from '../lib/format'
 import { tokenize, type Tokens } from '../lib/highlight'
-import { ensureLoaded, toastError, updateRepo, type FileMode, type RepoView } from '../lib/store'
+import { ensureLoaded, reportError, updateRepo, type FileMode, type RepoView } from '../lib/store'
 import { Button, Spinner } from './ui'
 
 const LINE_H = 20
@@ -77,7 +77,7 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
     }, (e) => {
       if (!live) return
       setDiff(null)
-      toastError('Could not load diff', e)
+      reportError('Could not load diff', e)
     })
     return () => { live = false }
   }, [view.id, key, reloadOn])
@@ -249,7 +249,7 @@ function HistoryPane({ view, path }: { view: RepoView; path: string }) {
   const [commits, setCommits] = useState<Commit[] | null>(null)
   useEffect(() => {
     setCommits(null)
-    api.fileHistory(view.id, path).then(setCommits, (e) => toastError('Could not load history', e))
+    api.fileHistory(view.id, path).then(setCommits, (e) => reportError('Could not load history', e))
   }, [view.id, path])
   if (!commits) return <div className="flex flex-1 items-center justify-center text-faint"><Spinner /></div>
   return (
@@ -280,7 +280,7 @@ function BlamePane({ view, path, rev }: { view: RepoView; path: string; rev?: st
     setLines(null)
     api.blame(view.id, path, rev).then(setLines, (e) => {
       setLines([])
-      toastError('Could not blame this file', e)
+      reportError('Could not blame this file', e)
     })
   }, [view.id, path, rev])
   const scrollRef = useRef<HTMLDivElement>(null)

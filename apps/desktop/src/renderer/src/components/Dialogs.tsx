@@ -22,6 +22,21 @@ export function Dialogs() {
       </Modal>
     )
   }
+  if (dialog.kind === 'choice') {
+    return (
+      <Modal open onClose={close} title={dialog.title} width={500}>
+        <div data-testid="choice-dialog">
+          <p className="mb-3 text-[13px] text-muted">{dialog.message}</p>
+          {dialog.detail && <pre className="selectable mb-4 max-h-40 overflow-auto rounded bg-bg p-2 font-mono text-[11px] whitespace-pre-wrap text-muted">{dialog.detail}</pre>}
+          <div className="flex flex-wrap justify-end gap-2">
+            {dialog.choices.map((c, i) => (
+              <Button key={c.label} autoFocus={i === 0} variant={c.variant ?? 'default'} onClick={() => { close(); void c.run?.() }}>{c.label}</Button>
+            ))}
+          </div>
+        </div>
+      </Modal>
+    )
+  }
   if (dialog.kind === 'settings') return <SettingsDialog close={close} />
   if (dialog.kind === 'shortcuts') return <ShortcutsDialog close={close} />
   return <CloneDialog close={close} />
@@ -156,9 +171,9 @@ export function Toasts() {
     <div className="pointer-events-none fixed right-4 bottom-8 z-50 flex w-96 flex-col gap-2" data-testid="toasts">
       {toasts.map((t) => (
         <div key={t.id} role="status" data-kind={t.kind}
-          className={`pointer-events-auto rounded-lg border bg-raised p-3 text-[13px] shadow-xl shadow-black/30 ${t.kind === 'error' ? 'border-del/60' : 'border-line'}`}>
+          className="pointer-events-auto rounded-lg border border-line bg-raised p-3 text-[13px] shadow-xl shadow-black/30">
           <div className="flex items-start gap-2">
-            <span className={`mt-1 size-2 shrink-0 rounded-full ${t.kind === 'error' ? 'bg-del' : t.kind === 'success' ? 'bg-add' : 'bg-accent'}`} />
+            <span className={`mt-1 size-2 shrink-0 rounded-full ${t.kind === 'success' ? 'bg-add' : 'bg-accent'}`} />
             <div className="min-w-0 flex-1">
               <div className="font-medium">{t.title}</div>
               {t.detail && (

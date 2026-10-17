@@ -36,12 +36,31 @@ export interface RepoView {
   worktreeTick: number
 }
 
+/** Toasts are for outcomes that need nothing from the user: successes and notes. */
 export interface Toast {
   id: number
-  kind: 'error' | 'info' | 'success'
+  kind: 'info' | 'success'
   title: string
   detail?: string
   action?: { label: string; run: () => void }
+}
+
+export interface Choice {
+  label: string
+  variant?: 'primary' | 'danger' | 'default'
+  run?: () => void | Promise<void>
+}
+
+/**
+ * A failure the user must notice: shown in the attention bar under the tab bar until dismissed.
+ * Failures that are really a question ("delete anyway?") use a choice dialog instead.
+ */
+export interface Attention {
+  id: number
+  title: string
+  detail?: string
+  actions?: Choice[]
+  time: number
 }
 
 export type Dialog =
@@ -57,6 +76,8 @@ export type Dialog =
       onSubmit: (value: string, extra: string) => void | Promise<void>
     }
   | { kind: 'confirm'; title: string; message: string; confirm: string; danger?: boolean; onConfirm: () => void | Promise<void> }
+  /** A question with several answers; the last choice is usually Cancel (a choice with no run). */
+  | { kind: 'choice'; title: string; message: string; detail?: string; choices: Choice[] }
   | { kind: 'settings' }
   | { kind: 'clone' }
   | { kind: 'shortcuts' }
@@ -79,6 +100,7 @@ interface State {
   prompt: { promptId: number; message: string; secret: boolean } | null
   dialog: Dialog | null
   toasts: Toast[]
+  attentions: Attention[]
   palette: boolean
   drop: DropRequest | null
   menu: MenuTarget
@@ -94,6 +116,7 @@ export const useStore = create<State>(() => ({
   prompt: null,
   dialog: null,
   toasts: [],
+  attentions: [],
   palette: false,
   drop: null,
   menu: null,
@@ -199,7 +222,7 @@ export function loadMore(id: string): Promise<void> {
     (e) => {
       log.loading = null
       log.done = true
-      toastError('Could not read history', e)
+      reportError('Could not read history', e)
     },
   )
   return log.loading
@@ -243,7 +266,7 @@ export async function openRepo(path: string): Promise<void> {
     addRepo(await api.openRepo(path))
     set({ settings: await api.getSettings() })
   } catch (e) {
-    toastError(`Could not open ${path}`, e)
+    reportError(`Could not open ${path}`, e)
   }
 }
 
@@ -354,7 +377,7 @@ export async function boot(): Promise<void> {
 
 let nextToast = 1
 
-export function toast(t: Omit<Toast, 'id'>, ms = t.kind === 'error' ? 0 : 5000): number {
+export function toast(t: Omit<Toast, 'id'>, ms = 5000): number {
   const id = nextToast++
   set((s) => ({ toasts: [...s.toasts.slice(-4), { ...t, id }] }))
   if (ms > 0) setTimeout(() => dismissToast(id), ms)
@@ -365,7 +388,27 @@ export function dismissToast(id: number): void {
   set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }))
 }
 
-export function toastError(title: string, e: unknown): void {
+let nextAttention = 1
+
+/** Report a failure in the attention bar, with git's stderr under "Details". Stays until dismissed. */
+export function reportError(title: string, e: unknown, actions?: Choice[]): number {
   const err: UiError = toUiError(e)
-  toast({ kind: 'error', title, detail: [err.message, err.stderr && err.stderr.trim() !== err.message ? err.stderr.trim() : ''].filter(Boolean).join('\n\n') })
+  const detail = [err.message, err.stderr && err.stderr.trim() !== err.message ? err.stderr.trim() : ''].filter(Boolean).join('\n\n')
+  return attention({ title, detail, actions })
+}
+
+export function attention(a: Omit<Attention, 'id' | 'time'>): number {
+  const id = nextAttention++
+  // Newest first; keep the last few so a burst of failures cannot fill the screen.
+  set((s) => ({ attentions: [{ ...a, id, time: Date.now() }, ...s.attentions].slice(0, 5) }))
+  return id
+}
+
+export function dismissAttention(id: number): void {
+  set((s) => ({ attentions: s.attentions.filter((a) => a.id !== id) }))
+}
+
+/** Ask a question with several answers in a modal. */
+export function choose(title: string, message: string, choices: Choice[], detail?: string): void {
+  set({ dialog: { kind: 'choice', title, message, detail, choices } })
 }

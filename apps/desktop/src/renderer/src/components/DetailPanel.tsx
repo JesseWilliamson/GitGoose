@@ -4,8 +4,9 @@ import { useEffect, useRef, useState } from 'react'
 import { copy, pop, run, stashApply, stashDrop } from '../lib/actions'
 import { api } from '../lib/api'
 import { dateTime, hashColor, initials, laneColor, sentence, shortHash } from '../lib/format'
-import { ensureLoaded, toastError, updateRepo, type FileMode, type RepoView } from '../lib/store'
+import { ensureLoaded, reportError, updateRepo, type FileMode, type RepoView } from '../lib/store'
 import { FileRow, statusKind } from './FileList'
+import { modName } from '../lib/keys'
 import { Button, CM, SectionHeader, Spinner } from './ui'
 
 export function DetailPanel({ view }: { view: RepoView }) {
@@ -36,7 +37,7 @@ function FileMenu({ view, target, children }: { view: RepoView; target: DiffTarg
       {target.kind !== 'untracked' && <CM.Item onSelect={() => openFile(view, target, 'history')}>File history</CM.Item>}
       {target.kind !== 'untracked' && <CM.Item onSelect={() => openFile(view, target, 'blame')}>Blame</CM.Item>}
       <CM.Separator />
-      <CM.Item onSelect={() => void api.openPath(abs).catch((e) => toastError('Could not open the file', e))}>Open in default app</CM.Item>
+      <CM.Item onSelect={() => void api.openPath(abs).catch((e) => reportError('Could not open the file', e))}>Open in default app</CM.Item>
       <CM.Item onSelect={() => void api.revealPath(abs)}>Reveal in file manager</CM.Item>
       <CM.Item onSelect={() => copy(target.path, 'Copied path')}>Copy path</CM.Item>
     </CM.Content>
@@ -193,7 +194,7 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
           <input type="checkbox" checked={amend} onChange={(e) => void toggleAmend(e.target.checked)} disabled={!view.snapshot.head.hash} />
           Amend previous commit
         </label>
-        <Button variant="primary" disabled={!canCommit} onClick={() => void commit()} data-testid="commit-button" title="Commit (Ctrl/Cmd+Enter)">
+        <Button variant="primary" disabled={!canCommit} onClick={() => void commit()} data-testid="commit-button" title={`Commit (${modName()}+Enter)`}>
           {view.busy === 'Commit' ? <Spinner /> : <Check size={14} />}
           {amend ? 'Amend' : stagedCount ? `Commit ${stagedCount} ${stagedCount === 1 ? 'file' : 'files'}` : 'Commit'}
         </Button>
@@ -223,7 +224,7 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
       if (detailsCache.size > 500) detailsCache.clear()
       detailsCache.set(hash, d)
       if (latest.current === hash) setDetails(d)
-    }, (e) => toastError('Could not load commit', e))
+    }, (e) => reportError('Could not load commit', e))
   }, [hash, view.id])
 
   if (!details) return <div className="flex flex-1 items-center justify-center text-faint"><Spinner /></div>

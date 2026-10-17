@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { fetchAll, initRepo, newBranch, openRepoDialog, pop, pull, push, stash, undo } from '../lib/actions'
 import { SHORTCUTS, shortcutOf } from '../lib/keys'
 import { closeTab, onCommand, useActiveRepo, useStore } from '../lib/store'
+import { AttentionBar } from './AttentionBar'
 import { CommandPalette } from './CommandPalette'
 import { ConflictWizard } from './ConflictWizard'
 import { DetailPanel } from './DetailPanel'
@@ -90,6 +91,7 @@ export function App() {
   return (
     <div className="flex h-full flex-col">
       <TabBar />
+      <AttentionBar />
       {!ready ? null : !view ? (
         <Welcome />
       ) : (
