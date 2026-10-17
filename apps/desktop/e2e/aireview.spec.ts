@@ -99,3 +99,27 @@ test('the review follows the project: guideline files shown; a remembered dismis
   await expect(page.getByTestId('learnings')).not.toContainText('possible bug')
   await app.close()
 })
+
+test('review again: unchanged findings stay open, changed code counts as addressed and is re-reviewed', async () => {
+  const r = initRepo()
+  r.commit('root', { 'src/calc.ts': 'export function total(a: number, b: number) {\n  return a + b\n}\n' })
+  r.write('src/calc.ts', 'export function total(a: number, b: number) {\n  return a - b\n}\n')
+  const { app, page } = await launch(r.dir)
+  await page.evaluate((p) => window.gitsquid.setSettings(p as never), AGENT)
+  await reviewed(page)
+  const review = page.getByTestId('review')
+
+  // Nothing changed: the finding is carried over without asking again.
+  await review.getByRole('button', { name: 'Review again' }).click()
+  await expect(review.getByTestId('review-incremental')).toContainText('Re-review: 0 changed pieces sent, 1 unchanged.')
+  await expect(review.getByTestId('finding-status')).toHaveText('still open')
+
+  // Change the flagged line: the old finding is addressed, the new code is reviewed.
+  r.write('src/calc.ts', 'export function total(a: number, b: number) {\n  return a * b\n}\n')
+  await review.getByRole('button', { name: 'Review again' }).click()
+  await expect(review.getByTestId('review-incremental')).toContainText('1 changed piece sent, 0 unchanged.')
+  await expect(review.getByTestId('review-addressed')).toContainText('Possible bug here (src/calc.ts)')
+  await expect(review.getByTestId('finding-status')).toHaveText('new')
+  await expect(review.getByTestId('finding')).toContainText('return a * b')
+  await app.close()
+})

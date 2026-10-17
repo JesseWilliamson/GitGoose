@@ -46,12 +46,20 @@ export function ReviewView({ view }: { view: RepoView }) {
           </div>
         </div>
         {r.requestId ? <Button onClick={() => stopReview(view.id)}><Spinner /> Stop</Button>
-          : <Button onClick={() => startReview(view.id, r.scope)}>Review again</Button>}
+          : <Button onClick={() => startReview(view.id, r.scope, { incremental: true })} title="Only what changed since this review is sent again">Review again</Button>}
         <Button variant="ghost" onClick={() => updateRepo(view.id, { center: { kind: 'graph' } })}>Back to graph</Button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {r.error && <div className="m-4 rounded-md border border-del/40 bg-del/10 p-3 text-[13px] text-del">{r.error}</div>}
         {result?.summary && <p className="selectable mx-4 mt-4 text-[13px] text-muted" data-testid="review-summary">{result.summary}</p>}
+        {result?.incremental && (
+          <div className="mx-4 mt-2 text-xs text-muted" data-testid="review-incremental">
+            Re-review: {result.incremental.sent} changed piece{result.incremental.sent === 1 ? '' : 's'} sent, {result.incremental.unchanged} unchanged.
+            {result.incremental.addressed.length > 0 && (
+              <span data-testid="review-addressed"> Addressed since last time: {result.incremental.addressed.map((a) => `${a.title} (${a.path})`).join('; ')}.</span>
+            )}
+          </div>
+        )}
         {result && (
           <p className="mx-4 mt-2 text-xs text-faint" data-testid="review-context">
             {result.context.guidelines.length ? `Followed ${result.context.guidelines.join(', ')}` : 'No guideline files (CLAUDE.md, AGENTS.md, …) cover these files'}
@@ -70,6 +78,7 @@ export function ReviewView({ view }: { view: RepoView }) {
                 <div className="flex items-center gap-2">
                   <span className={clsx('rounded px-1.5 text-[10px] font-semibold uppercase', SEVERITY_STYLE[f.severity])}>{f.severity}</span>
                   <span className="text-[11px] text-faint">{f.type}</span>
+                  {f.status && <span className={clsx('text-[10px]', f.status === 'new' ? 'text-accent' : 'text-faint')} data-testid="finding-status">{f.status === 'new' ? 'new' : 'still open'}</span>}
                   <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">{f.title}</span>
                   <button className="font-mono text-[11px] text-accent hover:underline" onClick={() => open(f)} title="Show in the diff">
                     lines {f.startLine}{f.endLine !== f.startLine ? `-${f.endLine}` : ''}

@@ -1,6 +1,6 @@
 import type { Repo } from '@gitsquid/git'
-import { describeHunks, globToRegExp, numberedDiff, reviewableLines, walkthroughHunks, type ReviewableLines } from '@gitsquid/git'
-import type { AiTask, ImpactResult, ReviewLearning, ReviewProfile, WalkthroughResult } from '@gitsquid/shared'
+import { carryOver, textKey, describeHunks, globToRegExp, hunkKey, numberedDiff, onlyChanged, reviewableLines, walkthroughHunks, type ReviewableLines } from '@gitsquid/git'
+import type { AiTask, ImpactResult, ReviewFinding, ReviewLearning, ReviewProfile, WalkthroughResult } from '@gitsquid/shared'
 import { join } from 'node:path'
 
 /**
@@ -38,7 +38,15 @@ export interface BuiltPrompt {
   /** For fix-finding: the file (relative) the proposal is for, and its text when asked. */
   fix?: { path: string; before: string }
   /** For review: what the findings are checked against. */
-  review?: { lines: ReviewableLines; texts: Map<string, string>; label: string; head: string; base?: string; skipped: string[]; context: { guidelines: string[]; pathInstructions: string[]; learnings: number } }
+  review?: {
+    lines: ReviewableLines; texts: Map<string, string>; label: string; head: string; base?: string; skipped: string[]
+    context: { guidelines: string[]; pathInstructions: string[]; learnings: number }
+    hunkKeys: string[]
+    contextKey: string
+    /** A re-review: what was carried over and what was sent. No model call when nothing changed. */
+    incremental?: { open: ReviewFinding[]; addressed: ReviewFinding[]; sent: number; unchanged: number }
+    skipModel?: boolean
+  }
 }
 
 export type RecomposeInfo = Awaited<ReturnType<Repo['recomposeInfo']>>
@@ -147,9 +155,10 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: Pro
     case 'review': {
       const input = await repo.reviewInput(task.scope)
       if (!input.files.length) throw new Error('There is nothing to review in that change.')
-      const paths = input.files.map((f) => f.path)
-      const project = await repo.reviewContext(paths, input.head)
-      const learnings = (ctx.learnings ?? []).filter((l) => !l.path || paths.some((p) => globToRegExp(l.path!).test(p)))
+      const allKeys = input.files.flatMap((f) => f.hunks.map((h) => hunkKey(f.path, h)))
+      const allPaths = input.files.map((f) => f.path)
+      const project = await repo.reviewContext(allPaths, input.head)
+      const learnings = (ctx.learnings ?? []).filter((l) => !l.path || allPaths.some((p) => globToRegExp(l.path!).test(p)))
       const guidance = [
         ...(project.guidelines.length ? ['Project guidelines from the repository. Follow them where they apply (each covers its directory and below):',
           ...project.guidelines.map((g) => `--- ${g.path} (applies to ${g.scope ? `${g.scope}/` : 'every file'}) ---\n${g.text.trim()}`), ''] : []),
@@ -157,11 +166,20 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: Pro
         ...(learnings.length ? ['Learnings: this team told earlier reviews these things are fine or preferred. Do not flag what they allow:',
           ...learnings.map((l) => `- ${l.text}${l.path ? ` (for ${l.path})` : ''}`), ''] : []),
       ]
+      const contextKey = textKey(guidance.join('\n'))
+      // A re-review sends only the hunks that changed, and carries the rest of the last review
+      // over; unless the guidance changed (a new learning, an edited CLAUDE.md): then all of it.
+      const previous = task.previous?.contextKey === contextKey ? task.previous : undefined
+      const again = previous ? onlyChanged(input.files, new Set(previous.hunkKeys)) : null
+      const carried = previous ? carryOver(previous.findings, (p) => input.texts.get(p) ?? null) : null
+      const files = again ? again.files : input.files
+      const incremental = again && carried ? { open: carried.open, addressed: carried.addressed, sent: allKeys.length - again.unchanged, unchanged: again.unchanged } : undefined
       return {
         system: 'You are a careful senior engineer reviewing a code change.',
         review: {
-          lines: reviewableLines(input.files), texts: input.texts, label: input.label, head: input.head, base: input.base, skipped: input.skipped,
+          lines: reviewableLines(files), texts: input.texts, label: input.label, head: input.head, base: input.base, skipped: input.skipped,
           context: { guidelines: project.guidelines.map((g) => g.path), pathInstructions: project.pathInstructions.map((pi) => pi.path), learnings: learnings.length },
+          hunkKeys: allKeys, contextKey, incremental, skipModel: !!again && !files.length,
         },
         prompt: [
           `Review this change (${input.label}).`,
@@ -174,7 +192,8 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: Pro
           NO_TOOLS,
           '',
           ...guidance,
-          numberedDiff(input.files, (p) => input.texts.get(p) ?? null),
+          ...(again ? [`This is a re-review: only the ${files.length === 1 ? 'piece' : 'pieces'} that changed since the last review ${files.length === 1 ? 'is' : 'are'} shown.`, ''] : []),
+          numberedDiff(files, (p) => input.texts.get(p) ?? null),
           ...(input.skipped.length ? [`(Not shown, over the size limit: ${input.skipped.join(', ')})`] : []),
         ].join('\n'),
       }

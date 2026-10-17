@@ -1,5 +1,5 @@
 import { enclosingDefinition, findDefinitions } from '@gitsquid/codegraph'
-import { FINDING_TYPES, SEVERITIES, type FileDiff, type FindingSeverity, type ReviewFinding, type ReviewProfile } from '@gitsquid/shared'
+import { FINDING_TYPES, SEVERITIES, type FileDiff, type FindingSeverity, type Hunk, type ReviewFinding, type ReviewProfile } from '@gitsquid/shared'
 
 /**
  * The deterministic half of AI review: what the model is shown, and what is done with its
@@ -102,4 +102,71 @@ export function verifyFindings(
   const order = (s: FindingSeverity) => SEVERITIES.indexOf(s)
   findings.sort((a, b) => order(a.severity) - order(b.severity) || a.path.localeCompare(b.path) || a.startLine - b.startLine)
   return { summary: typeof obj.summary === 'string' ? obj.summary.trim().slice(0, 2000) : '', findings, dropped }
+}
+
+// ---------------------------------------------------------------- re-reviews
+
+/** A short key for a text (FNV-1a, plus its length): equal texts, equal keys. */
+export function textKey(text: string): string {
+  let x = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) x = Math.imul(x ^ text.charCodeAt(i), 0x01000193) >>> 0
+  return `${x.toString(16)}:${text.length}`
+}
+
+/** A hunk's identity for re-reviews: its file and its changed lines (not where it sits). */
+export function hunkKey(path: string, h: Hunk): string {
+  return textKey(`${path}\n${h.lines.filter((l) => l.kind !== ' ').map((l) => l.kind + l.text).join('\n')}`)
+}
+
+/** The change minus the hunks already reviewed: what a re-review sends. */
+export function onlyChanged(files: FileDiff[], reviewed: Set<string>): { files: FileDiff[]; unchanged: number; keys: string[] } {
+  let unchanged = 0
+  const keys: string[] = []
+  const out: FileDiff[] = []
+  for (const f of files) {
+    const hunks = f.hunks.filter((h) => {
+      const k = hunkKey(f.path, h)
+      keys.push(k)
+      if (reviewed.has(k)) {
+        unchanged++
+        return false
+      }
+      return true
+    })
+    if (hunks.length || (f.binary && !reviewed.has(`${f.path}:binary`))) out.push({ ...f, hunks })
+  }
+  return { files: out, unchanged, keys }
+}
+
+/**
+ * Earlier findings, re-located in the files as they are now by their exact original lines
+ * (searching near where they were, since edits above shift lines). Found: still open, with the
+ * new line numbers. Not found: the code changed, so it is listed as addressed (if the change
+ * did not really fix it, the changed hunk is reviewed again and can be flagged anew).
+ */
+export function carryOver(previous: ReviewFinding[], textAfter: (path: string) => string | null): { open: ReviewFinding[]; addressed: ReviewFinding[] } {
+  const open: ReviewFinding[] = []
+  const addressed: ReviewFinding[] = []
+  for (const f of previous) {
+    const text = textAfter(f.path)
+    const want = f.original
+    if (!text || !want?.length) {
+      addressed.push(f)
+      continue
+    }
+    const lines = text.split(/\r?\n/)
+    const matchesAt = (i: number) => want.every((w, k) => lines[i + k] === w)
+    let at = -1
+    for (let d = 0; d <= Math.max(lines.length, 1) && at < 0; d++) {
+      for (const i of d ? [f.startLine - 1 - d, f.startLine - 1 + d] : [f.startLine - 1]) {
+        if (i >= 0 && i + want.length <= lines.length && matchesAt(i)) {
+          at = i
+          break
+        }
+      }
+    }
+    if (at < 0) addressed.push(f)
+    else open.push({ ...f, startLine: at + 1, endLine: at + want.length, status: 'open' })
+  }
+  return { open, addressed }
 }

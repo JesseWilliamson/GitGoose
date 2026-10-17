@@ -198,3 +198,7 @@ Part B:
 - [x] 32 impact of a change (local, no AI): definitions it touches, adds or removes, every use
       outside the change with the function it is in, tests (by name and by use), usual
       companions; Assess impact asks the model which uses are at risk, citing only listed ones
+- [x] 36 incremental re-review: hunks keyed by content; Review again sends only changed ones
+      (no model call when nothing changed), carries findings whose exact lines are still there
+      (relocated after shifts) and lists the rest as addressed; a change in guidance (a new
+      learning, an edited CLAUDE.md) makes it a full review

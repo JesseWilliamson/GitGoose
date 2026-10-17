@@ -17,12 +17,18 @@ export interface ReviewState {
   focus: string | null
 }
 
-/** Start an AI review and show the review view; a newer review replaces the last. */
-export function startReview(id: string, scope: ReviewScope): void {
+/**
+ * Start an AI review and show the review view; a newer review replaces the last. With
+ * `incremental`, the last review of the same change is the starting point: only hunks that
+ * changed since are sent, and its findings carry over while their lines are unchanged.
+ */
+export function startReview(id: string, scope: ReviewScope, opts: { incremental?: boolean } = {}): void {
   const old = useStore.getState().repos[id]?.review
   if (old?.requestId) cancelAi(old.requestId)
   const profile = setting('reviewProfile') as ReviewProfile
-  const run = startAi(id, { kind: 'review', scope, profile })
+  const same = old?.result && JSON.stringify(old.scope) === JSON.stringify(scope) && old.profile === profile
+  const previous = opts.incremental && same ? { findings: old!.result!.findings.filter((f) => !old!.dismissed.includes(f.id)), hunkKeys: old!.result!.hunkKeys, contextKey: old!.result!.contextKey } : undefined
+  const run = startAi(id, { kind: 'review', scope, profile, previous })
   updateRepo(id, { review: { scope, profile, requestId: run.requestId, result: null, error: null, dismissed: [], focus: null }, center: { kind: 'review' } })
   const mine = (v: RepoView) => v.review?.requestId === run.requestId
   run.done.then(

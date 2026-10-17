@@ -1,7 +1,7 @@
 import { initRepo } from '@gitsquid/fixtures'
 import { describe, expect, it } from 'vitest'
 import { Repo } from './repo'
-import { numberedDiff, reviewableLines, verifyFindings } from './review'
+import { carryOver, hunkKey, numberedDiff, onlyChanged, reviewableLines, verifyFindings } from './review'
 
 function setup() {
   const r = initRepo()
@@ -94,6 +94,35 @@ describe('review input and verification', () => {
     expect(await repo.workingText('src/price.ts')).toBe('fixed\n')
     await repo.undo(w)
     expect(await repo.workingText('src/price.ts')).toBe(before)
+    repo.dispose()
+  })
+
+  it('re-reviews: unchanged hunks are skipped, findings follow their lines or count as addressed', async () => {
+    const r = initRepo()
+    r.commit('root', { 'a.ts': 'one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n' })
+    r.write('a.ts', 'ONE\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nTEN\n')
+    const repo = await Repo.open(r.dir, {})
+    const first = await repo.reviewInput({ kind: 'working' })
+    const keys = first.files.flatMap((f) => f.hunks.map((h) => hunkKey(f.path, h)))
+    expect(keys).toHaveLength(2)
+    const findings = [
+      { id: 'F1', path: 'a.ts', startLine: 1, endLine: 1, type: 'style' as const, severity: 'nit' as const, title: 'Shouting', message: 'm', original: ['ONE'] },
+      { id: 'F2', path: 'a.ts', startLine: 10, endLine: 10, type: 'style' as const, severity: 'nit' as const, title: 'Shouting too', message: 'm', original: ['TEN'] },
+    ]
+    // Edit: a line inserted at the top (shifts everything) and TEN fixed.
+    r.write('a.ts', 'zero\nONE\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n')
+    const again = await repo.reviewInput({ kind: 'working' })
+    const { files, unchanged } = onlyChanged(again.files, new Set(keys))
+    expect(unchanged).toBe(0) // the first hunk changed too (it gained "zero")
+    expect(files.map((f) => f.hunks.length)).toEqual([1])
+    const c = carryOver(findings, (p) => again.texts.get(p) ?? null)
+    expect(c.open.map((f) => [f.title, f.startLine, f.status])).toEqual([['Shouting', 2, 'open']])
+    expect(c.addressed.map((f) => f.title)).toEqual(['Shouting too'])
+
+    // Nothing changed at all: everything is skipped.
+    const same = await repo.reviewInput({ kind: 'working' })
+    const sameKeys = same.files.flatMap((f) => f.hunks.map((h) => hunkKey(f.path, h)))
+    expect(onlyChanged(same.files, new Set(sameKeys))).toMatchObject({ files: [], unchanged: sameKeys.length })
     repo.dispose()
   })
 })

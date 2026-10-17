@@ -62,6 +62,8 @@ export interface ReviewFinding {
   suggestion?: string
   /** Those lines as they are now (to show the suggestion as a change). */
   original?: string[]
+  /** On a re-review: new, or carried over from the last review because its lines are unchanged. */
+  status?: 'new' | 'open'
 }
 
 export interface ReviewResult {
@@ -84,6 +86,12 @@ export interface ReviewResult {
   skipped: string[]
   /** What the model was told besides the diff (shown, so a review is never a black box). */
   context: { guidelines: string[]; pathInstructions: string[]; learnings: number }
+  /** Keys of the hunks reviewed (and of unchanged ones carried over): what a re-review can skip. */
+  hunkKeys: string[]
+  /** A key of what the model was told besides the diff: a re-review with other guidance starts over. */
+  contextKey: string
+  /** On a re-review: pieces sent again vs. unchanged, and earlier findings whose lines changed. */
+  incremental?: { sent: number; unchanged: number; addressed: { title: string; path: string }[] }
 }
 
 /** Where a hunk sits in a reading order: read contracts first, then what implements them, then tests. */
@@ -178,7 +186,7 @@ export type AiTask =
   /** Rebuild these commits (graph order) as a better-structured set. */
   | { kind: 'recompose'; hashes: string[] }
   /** Review a change: findings tied to lines, checked against the diff before they are shown. */
-  | { kind: 'review'; scope: ReviewScope; profile: ReviewProfile }
+  | { kind: 'review'; scope: ReviewScope; profile: ReviewProfile; previous?: { findings: ReviewFinding[]; hunkKeys: string[]; contextKey: string } }
   /** Explain a change: summary, grouped files, effort, reading order, a sequence diagram. */
   | { kind: 'walkthrough'; scope: ReviewScope }
   /** Which of the call sites found by Repo.impact are at risk (it may cite only those). */

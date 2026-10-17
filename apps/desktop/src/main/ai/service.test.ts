@@ -173,4 +173,21 @@ describe('prompts', () => {
     expect(sent).toContain('- Maps without types are fine here')
     expect(sent).not.toContain('Only for css')
   })
+
+  it('re-reviews incrementally: an unchanged change is not sent again, its findings stay open', async () => {
+    const answer = JSON.stringify({ summary: 'One nit.', findings: [{ path: 'widgets.ts', startLine: 1, endLine: 1, type: 'maintainability', severity: 'minor', title: 'Type the map', message: 'Add types.' }] })
+    const fake = await fakeAnthropic([answer])
+    cleanup.push(() => fake.close())
+    const t = await setup({ aiProvider: 'anthropic' }, fake)
+    t.ai.setApiKey('sk-test')
+    t.ai.consent()
+    const first = (await t.ai.run('r1', 'x', { kind: 'review', scope: { kind: 'staged' }, profile: 'chill' })).review!
+    expect(first.findings).toHaveLength(1)
+    expect(fake.requests).toHaveLength(1)
+    const again = (await t.ai.run('r2', 'x', { kind: 'review', scope: { kind: 'staged' }, profile: 'chill', previous: { findings: first.findings, hunkKeys: first.hunkKeys, contextKey: first.contextKey } })).review!
+    expect(fake.requests).toHaveLength(1) // nothing new to ask
+    expect(again.incremental).toEqual({ sent: 0, unchanged: 1, addressed: [] })
+    expect(again.findings).toMatchObject([{ title: 'Type the map', status: 'open' }])
+    expect(again.summary).toBe('Nothing changed in the reviewed code since the last review.')
+  })
 })
