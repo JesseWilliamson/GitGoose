@@ -13,7 +13,9 @@ beforeAll(() => {
   chmodSync(home, 0o700)
   process.env.GNUPGHOME = home
   process.env.GIT_CONFIG_GLOBAL = '/dev/null'
-  execFileSync('gpg', ['--batch', '--passphrase', '', '--quick-gen-key', 'Ada Lovelace <ada@example.com>', 'ed25519', 'sign', 'never'], { stdio: 'ignore' })
+  // Loopback: take the (empty) passphrase from the command line, never from a pinentry window.
+  // stderr is kept so a failure says why.
+  execFileSync('gpg', ['--batch', '--pinentry-mode', 'loopback', '--passphrase', '', '--quick-gen-key', 'Ada Lovelace <ada@example.com>', 'ed25519', 'sign', 'never'], { stdio: ['ignore', 'ignore', 'pipe'] })
 })
 afterAll(() => {
   if (!hasGpg) return

@@ -103,6 +103,10 @@ describe('ACP agent', () => {
     const a = new AcpAgent(() => ({ command: '/no/such/agent', args: [] }))
     agents.push(a)
     await expect(a.info()).rejects.toThrow(/Could not start the agent/)
+    // One that starts but quits before answering (what a missing command looks like through the Windows shell).
+    const quits = new AcpAgent(() => ({ command: process.execPath, args: ['-e', 'process.exit(3)'] }))
+    agents.push(quits)
+    await expect(quits.info()).rejects.toThrow(/Could not start the agent .*: it exited before answering/)
   })
 })
 
@@ -116,6 +120,13 @@ describe('allInside', () => {
     symlinkSync(join(outside, 'secret'), join(dir, 'link'))
     expect(await allInside(dir, [join(dir, 'src', 'a.ts'), join(dir, 'new-file.ts')])).toBe(true)
     expect(await allInside(dir, [join(dir, 'link')])).toBe(false)
+    // A file that does not exist yet, under a linked folder, would be created outside.
+    symlinkSync(outside, join(dir, 'linked-dir'))
+    expect(await allInside(dir, [join(dir, 'linked-dir', 'new-file.ts')])).toBe(false)
+    // The repository itself reached through a link is still the repository.
+    const via = join(tempDir(), 'via')
+    symlinkSync(dir, via)
+    expect(await allInside(via, [join(dir, 'src', 'a.ts'), join(via, 'src', 'new.ts')])).toBe(true)
     expect(await allInside(dir, [join(dir, '..', 'x')])).toBe(false)
     expect(await allInside(dir, ['relative/path'])).toBe(false)
   })

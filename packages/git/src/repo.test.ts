@@ -1,7 +1,7 @@
 import { initRepo, makeFixture, makeLargeRepo, tempDir, type FixtureRepo } from '@gitsquid/fixtures'
 import { execFile, execFileSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
+import { basename, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { AskpassServer, isSecretPrompt } from './askpass'
 import { buildPatch } from './patch'
@@ -501,7 +501,9 @@ describe('init and clone', () => {
   it('initializes a new repository, creating the folder', async () => {
     const dir = join(tempDir(), 'brand new')
     const repo = await Repo.init(dir)
-    expect(repo.path).toBe(dir)
+    // Git reports the folder resolved: symlinks followed (the macOS temp folder is one), and on
+    // Windows short names like RUNNER~1 expanded. realpath.native does both.
+    expect(repo.path).toBe(realpathSync.native(dir))
     const s = await repo.snapshot()
     expect(s.head.hash).toBeUndefined()
     expect(await repo.logPage(0, 10)).toMatchObject({ commits: [], done: true })
@@ -512,7 +514,7 @@ describe('init and clone', () => {
     const progress: (string | null)[] = []
     const parent = tempDir()
     const repo = await Repo.clone(src.dir + '/', parent, { onProgress: (t) => progress.push(t) })
-    expect(repo.path).toBe(join(parent, src.dir.split('/').pop()!))
+    expect(repo.path).toBe(join(realpathSync.native(parent), basename(src.dir)))
     expect((await repo.logPage(0, 10)).commits).toHaveLength(5)
     expect(progress.at(-1)).toBeNull()
   })
@@ -539,8 +541,8 @@ describe('commit-graph maintenance', () => {
     const wt = r.dir + '-wt'
     r.git('worktree', 'add', '-q', wt, 'feature')
     const repo = await Repo.open(wt)
-    expect(repo.path).toBe(wt)
-    expect(repo.commonDir).toBe(join(r.dir, '.git'))
+    expect(repo.path).toBe(realpathSync.native(wt))
+    expect(realpathSync.native(repo.commonDir)).toBe(realpathSync.native(join(r.dir, '.git')))
     expect((await repo.snapshot()).head.branch).toBe('feature')
   })
 })
@@ -591,8 +593,8 @@ describe('askpass', () => {
     // loop and the server could never answer (a deadlock).
     const run = (prompt: string) => new Promise<string>((resolve) => {
       // Windows only runs .cmd scripts through a shell (git itself does the same when it calls askpass).
-      execFile(env.GIT_ASKPASS!, [process.platform === 'win32' ? JSON.stringify(prompt) : prompt], { env: { ...process.env, ...env }, encoding: 'utf8', shell: process.platform === 'win32' }, (err, stdout) => {
-        resolve(err ? `exit ${(err as { code?: number }).code}` : stdout)
+      execFile(env.GIT_ASKPASS!, [process.platform === 'win32' ? JSON.stringify(prompt) : prompt], { env: { ...process.env, ...env }, encoding: 'utf8', shell: process.platform === 'win32' }, (err, stdout, stderr) => {
+        resolve(err ? `exit ${(err as { code?: number }).code}${stderr.trim() ? `: ${stderr.trim()}` : ''}` : stdout)
       })
     })
     expect(await run("Password for 'https://x@example.com': ")).toBe('s3cret\n')

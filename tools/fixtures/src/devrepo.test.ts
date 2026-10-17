@@ -9,7 +9,8 @@ describe('development repository', () => {
   it('has the promised shape', () => {
     const t = Date.now()
     const { dir, authors } = makeDevRepo({ commits: 1500 })
-    expect(Date.now() - t).toBeLessThan(20_000)
+    // Git and the file system are much slower on Windows CI runners (21 s there for this one).
+    expect(Date.now() - t).toBeLessThan(process.platform === 'win32' ? 60_000 : 20_000)
     expect(Number(git(dir, 'rev-list', '--all', '--count'))).toBeGreaterThan(1450)
     expect(Number(git(dir, 'rev-list', '--all', '--merges', '--count'))).toBeGreaterThan(50)
     expect(git(dir, 'tag').trim().split('\n').length).toBeGreaterThanOrEqual(30)
