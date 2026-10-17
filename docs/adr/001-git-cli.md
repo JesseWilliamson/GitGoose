@@ -23,6 +23,11 @@ No libgit2, nodegit, or isomorphic-git.
 - Parse only NUL-separated machine output. Never parse text meant for humans.
 - Read-only commands use `--no-optional-locks`, so a background refresh never blocks the user's
   own git in a terminal.
+- Paths after `--` are literal (`GIT_LITERAL_PATHSPECS=1`, set by the runner), so a file named
+  `a[1].txt` never matches `a1.txt`. Not set globally: `git stash push -u` stops removing untracked
+  files under it.
+- `Repo.snapshot()` never runs twice at once; overlapping callers share the next run, so an older
+  result can never land after a newer one.
 - Process start-up cost is real (a few ms). Where we would spawn many processes, keep one open:
   `LogStream` (one `git log` per history walk) and `CatFile` (one `cat-file --batch` per repo).
 

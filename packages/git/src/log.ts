@@ -57,6 +57,14 @@ export class LogParser {
 export const GRAPH_REVS = ['--branches', '--remotes', '--tags', 'HEAD']
 
 /**
+ * GRAPH_REVS for a repository whose HEAD may be unborn (a new repo, or `checkout --orphan`).
+ * Naming an unborn HEAD makes `git log` fail, which would hide every other branch.
+ */
+export function graphRevs(headHash: string | undefined): string[] {
+  return headHash ? GRAPH_REVS : GRAPH_REVS.filter((r) => r !== 'HEAD')
+}
+
+/**
  * One `git log` walk over the whole history, read only as far as the UI has asked for.
  *
  * Paging with `--skip=N` would make git re-walk N commits for every page, so page 50 costs 50x
@@ -94,12 +102,10 @@ export class LogStream {
     })
     let stderr = ''
     child.stderr!.on('data', (b: Buffer) => (stderr += b.toString('utf8')))
-    child.on('close', (code) => {
+    child.on('close', (code, signal) => {
       this.done = true
-      // An empty repository has no HEAD to log; that is an empty history, not an error.
-      if (code !== 0 && !/does not have any commits|bad default revision|unknown revision|bad revision 'HEAD'/.test(stderr)) {
-        this.error = new Error(stderr.trim() || `git log exited with ${code}`)
-      }
+      // A kill from dispose() is not an error. Anything else that fails is reported, not hidden.
+      if (code !== 0 && !signal && !this.disposed) this.error = new Error(stderr.trim() || `git log exited with ${code}`)
       this.settle()
     })
     child.on('error', (e) => {
@@ -137,7 +143,10 @@ export class LogStream {
     return { commits, done: this.done && offset + count >= this.commits.length }
   }
 
+  private disposed = false
+
   dispose(): void {
+    this.disposed = true
     this.child?.kill()
     this.child = null
     this.done = true

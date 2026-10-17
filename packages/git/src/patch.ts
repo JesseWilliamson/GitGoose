@@ -22,7 +22,7 @@ import type { FileDiff, Hunk, HunkSelection } from '@gitsquid/shared'
  * that changed is shifted by the net lines added or removed by the hunks kept before it.
  */
 export function buildPatch(diff: FileDiff, selection: HunkSelection[], reverse: boolean): string | null {
-  const out: string[] = [...diff.header]
+  const out: string[] = [...patchHeader(diff, isPartial(diff, selection), reverse)]
   // Net lines (new side minus old side) added by the hunks already written.
   let shift = 0
   let any = false
@@ -57,36 +57,106 @@ export function buildPatch(diff: FileDiff, selection: HunkSelection[], reverse: 
   return any ? out.join('\n') + '\n' : null
 }
 
+/** True unless the selection covers every change line of every hunk. */
+function isPartial(diff: FileDiff, selection: HunkSelection[]): boolean {
+  return diff.hunks.some((h, i) => {
+    const sel = selection.find((s) => s.hunk === i)
+    if (!sel) return h.lines.some((l) => l.kind !== ' ')
+    if (!sel.lines) return false
+    const chosen = new Set(sel.lines)
+    return h.lines.some((l, j) => l.kind !== ' ' && !chosen.has(j))
+  })
+}
+
+/**
+ * The header lines for the patch. Usually the diff's own header, but two cases need a plain
+ * "modify this file" header instead:
+ *
+ * - Part of a new or deleted file. "new file" means "create it with exactly this content";
+ *   keeping a few lines of a new file is a modification of the file that already exists.
+ * - A rename, applied in reverse (unstaging lines of a staged rename). Its header would also
+ *   reverse the rename itself; we only want to change lines in the file under its new name.
+ */
+function patchHeader(diff: FileDiff, partial: boolean, reverse: boolean): string[] {
+  const renamed = reverse && diff.oldPath !== undefined && diff.oldPath !== diff.path
+  const addOrDelete = partial && (diff.change === 'added' || diff.change === 'deleted')
+  if (!renamed && !addOrDelete) return diff.header
+  const a = quotePath(`a/${diff.path}`)
+  const b = quotePath(`b/${diff.path}`)
+  return [`diff --git ${a} ${b}`, `--- ${a}`, `+++ ${b}`]
+}
+
+/** Quote a path the way git does when it contains characters that would be ambiguous in a header. */
+function quotePath(p: string): string {
+  if (!/["\\\t\n\r]/.test(p)) return p
+  return '"' + p.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\t/g, '\\t').replace(/\n/g, '\\n').replace(/\r/g, '\\r') + '"'
+}
+
 interface RewrittenHunk {
   lines: string[]
   oldCount: number
   newCount: number
 }
 
+interface Kept {
+  kind: ' ' | '+' | '-'
+  text: string
+  noNewline: boolean
+}
+
 function rewriteHunk(hunk: Hunk, chosen: Set<number> | null, reverse: boolean): RewrittenHunk | null {
-  const lines: string[] = []
-  let oldCount = 0
-  let newCount = 0
+  const kept: Kept[] = []
   let changes = 0
-
-  const emit = (prefix: ' ' | '+' | '-', text: string, noNewline: boolean | undefined) => {
-    lines.push(prefix + text)
-    if (noNewline) lines.push('\\ No newline at end of file')
-    if (prefix !== '+') oldCount++
-    if (prefix !== '-') newCount++
-  }
-
   hunk.lines.forEach((line, i) => {
     const selected = chosen === null || chosen.has(i)
-    if (line.kind === ' ') emit(' ', line.text, line.noNewline)
+    const noNewline = line.noNewline === true
+    if (line.kind === ' ') kept.push({ kind: ' ', text: line.text, noNewline })
     else if (selected) {
-      emit(line.kind, line.text, line.noNewline)
+      kept.push({ kind: line.kind, text: line.text, noNewline })
       changes++
     } else if (line.kind === (reverse ? '+' : '-')) {
       // Not selected, and still present in the file the patch applies to: keep as context.
-      emit(' ', line.text, line.noNewline)
+      kept.push({ kind: ' ', text: line.text, noNewline })
     }
     // Otherwise: not selected and absent from the target file. Drop it.
   })
-  return changes > 0 ? { lines, oldCount, newCount } : null
+  if (changes === 0) return null
+
+  // "\ No newline at end of file" may only follow the *last* line of a side (old side: context and
+  // '-' lines; new side: context and '+' lines). A rewrite can leave a marked line with more lines
+  // after it on one side, e.g. staging "+c" after an unselected "-b" that had no newline. Such a
+  // line gains a newline on that side. For a context line that changes it on one side only, so it
+  // is written as a '-'/'+' pair with the marker on just one of them.
+  let lastOld = -1
+  let lastNew = -1
+  kept.forEach((k, i) => {
+    if (k.kind !== '+') lastOld = i
+    if (k.kind !== '-') lastNew = i
+  })
+  const lines: string[] = []
+  const NO_NL = '\\ No newline at end of file'
+  let oldCount = 0
+  let newCount = 0
+  kept.forEach((k, i) => {
+    if (k.kind !== '+') oldCount++
+    if (k.kind !== '-') newCount++
+    const markOld = k.noNewline && i === lastOld
+    const markNew = k.noNewline && i === lastNew
+    if (k.kind === '-') {
+      lines.push('-' + k.text)
+      if (markOld) lines.push(NO_NL)
+    } else if (k.kind === '+') {
+      lines.push('+' + k.text)
+      if (markNew) lines.push(NO_NL)
+    } else if (markOld === markNew) {
+      lines.push(' ' + k.text)
+      if (markOld) lines.push(NO_NL)
+    } else {
+      lines.push('-' + k.text)
+      if (markOld) lines.push(NO_NL)
+      lines.push('+' + k.text)
+      if (markNew) lines.push(NO_NL)
+    }
+  })
+  return { lines, oldCount, newCount }
 }

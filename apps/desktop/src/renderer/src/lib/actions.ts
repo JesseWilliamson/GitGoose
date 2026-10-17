@@ -3,23 +3,34 @@ import { api } from './api'
 import { toUiError } from './api'
 import { activeRepo, addRepo, onSnapshot, openRepo, refreshAux, toast, toastError, updateRepo, useStore } from './store'
 
+/** The undo entry ids an action produced: a single id, an array of them (multi-step actions), or none. */
+function undoIdsOf(result: unknown): number[] {
+  if (typeof result === 'number') return [result]
+  if (Array.isArray(result)) return result.filter((x): x is number => typeof x === 'number')
+  return []
+}
+
 /**
  * Every user-visible git action goes through `run`. It shows progress, turns failures into a
  * toast with git's own stderr, and offers Undo on success instead of asking "are you sure?"
  * beforehand. Confirmation dialogs are kept for the few things undo cannot reverse (anything
  * that changes a remote).
+ *
+ * Undo is offered only when the operation recorded an undo entry, and the button undoes exactly
+ * that entry (the main process refuses if something newer happened since). A merge that was
+ * already up to date changes nothing, so it offers nothing to undo.
  */
 export async function run(
   id: string,
   label: string,
   fn: () => Promise<unknown>,
-  opts: { undoable?: boolean; quiet?: boolean; success?: string } = {},
+  opts: { quiet?: boolean; success?: string } = {},
 ): Promise<boolean> {
   updateRepo(id, { busy: label })
   try {
-    await fn()
-    if (opts.undoable) {
-      toast({ kind: 'success', title: opts.success ?? label, action: { label: 'Undo', run: () => void undo(id) } })
+    const ids = undoIdsOf(await fn())
+    if (ids.length) {
+      toast({ kind: 'success', title: opts.success ?? label, action: { label: 'Undo', run: () => void undoEntries(id, ids) } })
     } else if (!opts.quiet) {
       toast({ kind: 'success', title: opts.success ?? label })
     }
@@ -46,11 +57,30 @@ function capitalize(s: string): string {
   return s[0]!.toUpperCase() + s.slice(1)
 }
 
+/** Undo the most recent operation (toolbar, Ctrl/Cmd+Z, palette). */
 export async function undo(id: string): Promise<void> {
   updateRepo(id, { busy: 'Undo' })
   try {
     const label = await api.undo(id)
     toast({ kind: label ? 'success' : 'info', title: label ? `Undid: ${label}` : 'Nothing to undo' })
+  } catch (e) {
+    toastError('Undo failed', e)
+  } finally {
+    updateRepo(id, { busy: null })
+    void refreshAux(id)
+  }
+}
+
+/** Undo specific entries (a toast's Undo button), newest first. Refused if anything newer exists. */
+async function undoEntries(id: string, entries: number[]): Promise<void> {
+  updateRepo(id, { busy: 'Undo' })
+  try {
+    const labels: string[] = []
+    for (const entry of [...entries].reverse()) {
+      const label = await api.undo(id, entry)
+      if (label) labels.push(label)
+    }
+    toast({ kind: 'success', title: `Undid: ${labels.join(', ')}` })
   } catch (e) {
     toastError('Undo failed', e)
   } finally {
@@ -128,24 +158,24 @@ export function currentBranchRef(snap: RepoSnapshot): Ref | undefined {
 }
 
 export const checkout = (id: string, ref: string) =>
-  run(id, `Check out ${shortRef(ref)}`, () => api.checkout(id, ref), { undoable: true })
+  run(id, `Check out ${shortRef(ref)}`, () => api.checkout(id, ref))
 
 export function newBranch(id: string, at?: string): void {
   ask('New branch', 'Branch name', 'Create and check out', (name) => {
-    void run(id, `Create branch ${name}`, () => api.createBranch(id, name.trim(), { at, checkout: true }), { undoable: true })
+    void run(id, `Create branch ${name}`, () => api.createBranch(id, name.trim(), { at, checkout: true }))
   }, { placeholder: 'feature/my-change' })
 }
 
 export function renameBranch(id: string, name: string): void {
   ask(`Rename ${name}`, 'New name', 'Rename', (to) => {
-    void run(id, `Rename ${name}`, () => api.renameBranch(id, name, to.trim()), { undoable: true })
+    void run(id, `Rename ${name}`, () => api.renameBranch(id, name, to.trim()))
   }, { initial: name })
 }
 
 export async function deleteBranch(id: string, name: string): Promise<void> {
   try {
-    await api.deleteBranch(id, name)
-    toast({ kind: 'success', title: `Deleted ${name}`, action: { label: 'Undo', run: () => void undo(id) } })
+    const entry = await api.deleteBranch(id, name)
+    toast({ kind: 'success', title: `Deleted ${name}`, ...(entry !== null ? { action: { label: 'Undo', run: () => void undoEntries(id, [entry]) } } : {}) })
   } catch (e) {
     const err = toUiError(e)
     if (/not fully merged/.test(err.message + (err.stderr ?? ''))) {
@@ -158,32 +188,32 @@ export async function deleteBranch(id: string, name: string): Promise<void> {
 }
 
 export function forceDeleteBranch(id: string, name: string): void {
-  void run(id, `Delete ${name}`, () => api.deleteBranch(id, name, { force: true }), { undoable: true })
+  void run(id, `Delete ${name}`, () => api.deleteBranch(id, name, { force: true }))
 }
 
 export const merge = (id: string, ref: string, opts?: { noFf?: boolean; ffOnly?: boolean }) =>
-  run(id, `Merge ${shortRef(ref)}`, () => api.merge(id, ref, opts), { undoable: true })
+  run(id, `Merge ${shortRef(ref)}`, () => api.merge(id, ref, opts))
 
 export const rebase = (id: string, onto: string) =>
-  run(id, `Rebase onto ${shortRef(onto)}`, () => api.rebase(id, onto), { undoable: true })
+  run(id, `Rebase onto ${shortRef(onto)}`, () => api.rebase(id, onto))
 
 export const reset = (id: string, hash: string, mode: ResetMode) =>
-  run(id, `Reset (${mode}) to ${hash.slice(0, 7)}`, () => api.reset(id, hash, mode), { undoable: true })
+  run(id, `Reset (${mode}) to ${hash.slice(0, 7)}`, () => api.reset(id, hash, mode))
 
 export const cherryPick = (id: string, hash: string) =>
-  run(id, `Cherry-pick ${hash.slice(0, 7)}`, () => api.cherryPick(id, hash), { undoable: true })
+  run(id, `Cherry-pick ${hash.slice(0, 7)}`, () => api.cherryPick(id, hash))
 
 export const revert = (id: string, hash: string) =>
-  run(id, `Revert ${hash.slice(0, 7)}`, () => api.revert(id, hash), { undoable: true })
+  run(id, `Revert ${hash.slice(0, 7)}`, () => api.revert(id, hash))
 
 export function newTag(id: string, hash: string): void {
   ask('New tag', 'Tag name', 'Create tag', (name, message) => {
-    void run(id, `Create tag ${name}`, () => api.createTag(id, name.trim(), hash, message.trim() || undefined), { undoable: true })
+    void run(id, `Create tag ${name}`, () => api.createTag(id, name.trim(), hash, message.trim() || undefined))
   }, { placeholder: 'v1.0.0', extra: { label: 'Message (optional, makes an annotated tag)' } })
 }
 
 export const deleteTag = (id: string, name: string) =>
-  run(id, `Delete tag ${name}`, () => api.deleteTag(id, name), { undoable: true })
+  run(id, `Delete tag ${name}`, () => api.deleteTag(id, name))
 
 export function deleteRemoteBranch(id: string, ref: string): void {
   confirmAction(`Delete ${shortRef(ref)} on the remote?`, 'This deletes the branch for everyone. Undo cannot reverse changes to a remote.', 'Delete remote branch', () => {
@@ -196,7 +226,7 @@ export function deleteRemoteBranch(id: string, ref: string): void {
 export const fetchAll = (id: string) => run(id, 'Fetch', () => api.fetch(id, { prune: true }), { success: 'Fetched' })
 
 export const pull = (id: string, rebaseMode = false) =>
-  run(id, rebaseMode ? 'Pull (rebase)' : 'Pull', () => api.pull(id, { rebase: rebaseMode }), { undoable: true, success: 'Pulled' })
+  run(id, rebaseMode ? 'Pull (rebase)' : 'Pull', () => api.pull(id, { rebase: rebaseMode }), { success: 'Pulled' })
 
 export function push(id: string, force = false): void {
   const go = () => void run(id, force ? 'Force push' : 'Push', () => api.push(id, { force }), { success: 'Pushed' })
@@ -212,7 +242,7 @@ export function stash(id: string): void {
     toast({ kind: 'info', title: 'No changes to stash' })
     return
   }
-  void run(id, 'Stash', () => api.stashPush(id, { includeUntracked: true }), { undoable: true, success: 'Changes stashed' })
+  void run(id, 'Stash', () => api.stashPush(id, { includeUntracked: true }), { success: 'Changes stashed' })
 }
 
 export function pop(id: string, index = 0): void {
@@ -221,11 +251,11 @@ export function pop(id: string, index = 0): void {
     toast({ kind: 'info', title: 'No stashes' })
     return
   }
-  void run(id, 'Pop stash', () => api.stashPop(id, index), { undoable: true, success: 'Stash popped' })
+  void run(id, 'Pop stash', () => api.stashPop(id, index), { success: 'Stash popped' })
 }
 
 export const stashApply = (id: string, index: number) => run(id, 'Apply stash', () => api.stashApply(id, index), { success: 'Stash applied' })
-export const stashDrop = (id: string, index: number) => run(id, 'Drop stash', () => api.stashDrop(id, index), { undoable: true, success: 'Stash dropped' })
+export const stashDrop = (id: string, index: number) => run(id, 'Drop stash', () => api.stashDrop(id, index), { success: 'Stash dropped' })
 
 // ------------------------------------------------------------------ drag and drop
 
@@ -260,19 +290,19 @@ export function dropOptions(id: string, snap: RepoSnapshot, source: Ref, target:
   } else if (target.ref?.kind === 'local' && source.kind !== 'tag') {
     opts.push({
       label: `Check out ${targetName} and merge ${src} into it`,
-      run: () => void run(id, `Merge ${src} into ${targetName}`, async () => {
-        await api.checkout(id, target.ref!.name)
-        await api.merge(id, source.name)
-      }, { undoable: true }),
+      run: () => void run(id, `Merge ${src} into ${targetName}`, async () => [
+        await api.checkout(id, target.ref!.name),
+        await api.merge(id, source.name),
+      ]),
     })
   }
   if (source.kind === 'local' && !(head && source.name === head.name)) {
     opts.push({
       label: `Check out ${src} and rebase it onto ${targetName}`,
-      run: () => void run(id, `Rebase ${src} onto ${targetName}`, async () => {
-        await api.checkout(id, source.name)
-        await api.rebase(id, targetRev)
-      }, { undoable: true }),
+      run: () => void run(id, `Rebase ${src} onto ${targetName}`, async () => [
+        await api.checkout(id, source.name),
+        await api.rebase(id, targetRev),
+      ]),
     })
   }
   return opts
