@@ -25,7 +25,13 @@ export type UndoAction =
   | { kind: 'read-tree'; tree: string }
   | { kind: 'checkout'; target: string; detach: boolean }
   | { kind: 'rename-branch'; from: string; to: string }
-  | { kind: 'set-upstream'; branch: string; upstream: string }
+  /** upstream null: the branch tracked nothing. */
+  | { kind: 'set-upstream'; branch: string; upstream: string | null }
+  /** Remotes: put one back (undo of remove), remove one (undo of add), rename, or set a URL. */
+  | { kind: 'remote-add'; name: string; url: string; pushUrl?: string }
+  | { kind: 'remote-remove'; name: string }
+  | { kind: 'remote-rename'; from: string; to: string }
+  | { kind: 'remote-url'; name: string; url: string | null; push: boolean }
   /** Pop the stash entry whose commit is `hash`, wherever it now sits in the list. */
   | { kind: 'stash-pop'; hash: string }
   | { kind: 'stash-store'; hash: string; message: string }

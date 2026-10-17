@@ -22,7 +22,8 @@ export function broadcast(event: GitSquidEvent): void {
 /** Methods that change the repository. After each one we refresh and push a snapshot right away. */
 const WRITES = new Set<ApiMethod>([
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'checkout', 'createBranch',
-  'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset', 'cherryPick', 'cherryPickMany', 'recomposeApply', 'dropCommits', 'moveCommits', 'restoreFile', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'redo', 'revert', 'createTag',
+  'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset', 'cherryPick', 'cherryPickMany', 'recomposeApply', 'dropCommits', 'moveCommits', 'restoreFile', 'addRemote', 'removeRemote', 'renameRemote', 'setRemoteUrl', 'pushTags',
+  'deleteRemoteTag', 'setUpstream', 'fastForward', 'deleteBranches', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'redo', 'revert', 'createTag',
   'deleteTag', 'fetch', 'pull', 'push', 'deleteRemoteBranch', 'stashPush', 'stashApply', 'stashPop',
   'stashDrop', 'resolveConflict', 'continueOperation', 'abortOperation', 'undo',
 ])
@@ -123,6 +124,18 @@ export function createHandlers(
     commitsText: (id, hashes, format) => r(id).commitsText(hashes, format),
     recomposeApply: (id, hashes, commits) => r(id).recompose(hashes, commits),
     editableCommits: (id) => r(id).editableCommits(),
+    remotes: (id) => r(id).remotes(),
+    addRemote: (id, name, url) => r(id).addRemote(name, url),
+    removeRemote: (id, name) => r(id).removeRemote(name),
+    renameRemote: (id, from, to) => r(id).renameRemote(from, to),
+    setRemoteUrl: (id, name, url, push) => r(id).setRemoteUrl(name, url, push),
+    pushTags: (id, remote, name) => r(id).pushTags(remote, name),
+    deleteRemoteTag: (id, remote, name) => r(id).deleteRemoteTag(remote, name),
+    remoteTags: (id, remote) => r(id).remoteTags(remote),
+    setUpstream: (id, branch, upstream) => r(id).setUpstream(branch, upstream),
+    fastForward: (id, branch) => r(id).fastForward(branch),
+    deleteBranches: (id, names, opts) => r(id).deleteBranches(names, opts),
+    mergedBranches: (id) => r(id).mergedBranches(),
     compareFiles: (id, from, to) => r(id).compareFiles(from, to),
     mergeBase: (id, a, b) => r(id).mergeBase(a, b),
     restoreFile: (id, path, rev) => r(id).restoreFile(path, rev),

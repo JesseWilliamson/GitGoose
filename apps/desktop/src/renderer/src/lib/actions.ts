@@ -388,6 +388,139 @@ export function push(id: string, force = false): void {
   else go()
 }
 
+// ------------------------------------------------------------------ managing remotes, tags and tracking
+
+/** Remote names: configured ones first, then any only known from their branches. */
+export function remoteNames(view: { remotes: { name: string }[]; snapshot: RepoSnapshot }): string[] {
+  const names = view.remotes.map((r) => r.name)
+  for (const r of view.snapshot.refs) {
+    if (r.kind !== 'remote') continue
+    const name = r.shortName.split('/')[0]!
+    if (!names.includes(name)) names.push(name)
+  }
+  return names
+}
+
+export function addRemote(id: string): void {
+  const taken = useStore.getState().repos[id]?.remotes.some((r) => r.name === 'origin')
+  ask('Add remote', 'Name', 'Add remote', (name, url) => {
+    if (!url.trim()) {
+      reportError('Add remote failed', new Error('A remote needs a URL.'))
+      return
+    }
+    void run(id, `Add remote ${name.trim()}`, () => api.addRemote(id, name.trim(), url.trim())).then((ok) => {
+      // A new remote has no branches until it is fetched; fetching is what the user wants next.
+      if (ok) void run(id, `Fetch ${name.trim()}`, () => api.fetch(id, { remote: name.trim() }), { quiet: true })
+    })
+  }, { initial: taken ? 'upstream' : 'origin', extra: { label: 'URL', placeholder: 'https://github.com/owner/repo.git' } })
+}
+
+export const fetchRemote = (id: string, remote: string) =>
+  run(id, `Fetch ${remote}`, () => api.fetch(id, { remote, prune: setting('pruneOnFetch') }), { success: `Fetched ${remote}` })
+
+export function renameRemote(id: string, remote: string): void {
+  ask(`Rename remote ${remote}`, 'New name', 'Rename', (to) => {
+    void run(id, `Rename ${remote}`, () => api.renameRemote(id, remote, to.trim()))
+  }, { initial: remote })
+}
+
+/** Edit a remote's URL, or its push URL (`push`): an empty push URL means "push where you fetch". */
+export function editRemoteUrl(id: string, remote: string, push = false): void {
+  const r = useStore.getState().repos[id]?.remotes.find((x) => x.name === remote)
+  const initial = push ? (r?.pushUrl ?? r?.fetchUrl ?? '') : (r?.fetchUrl ?? '')
+  ask(push ? `Push URL for ${remote}` : `URL for ${remote}`, push ? 'Push URL' : 'URL', 'Save', (url) => {
+    void run(id, `Change ${remote}'s URL`, () => api.setRemoteUrl(id, remote, url.trim(), push))
+  }, { initial })
+}
+
+export const clearPushUrl = (id: string, remote: string) =>
+  run(id, `Change ${remote}'s push URL`, () => api.setRemoteUrl(id, remote, null, true))
+
+/** Remove a remote. Only local configuration changes (and its remote-tracking branches go), so it is undoable. */
+export const removeRemote = (id: string, remote: string) =>
+  run(id, `Remove remote ${remote}`, () => api.removeRemote(id, remote))
+
+export function pushTags(id: string, remote: string, name: string | null): Promise<boolean> {
+  return run(id, name ? `Push tag ${name}` : 'Push tags', () => api.pushTags(id, remote, name), {
+    success: name ? `Pushed ${name} to ${remote}` : `Pushed all tags to ${remote}`,
+  }).then(async (ok) => {
+    // Keep a check the user already ran up to date (it is local knowledge now, no new request).
+    const checked = useStore.getState().repos[id]?.remoteTags
+    if (ok && checked?.remote === remote) {
+      const local = useStore.getState().repos[id]!.snapshot.refs.filter((r) => r.kind === 'tag').map((r) => r.shortName)
+      updateRepo(id, { remoteTags: { remote, names: [...new Set([...checked.names, ...(name ? [name] : local)])] } })
+    }
+    return ok
+  })
+}
+
+export function deleteRemoteTag(id: string, remote: string, name: string): void {
+  confirmAction(`Delete tag ${name} on ${remote}?`, 'This deletes the tag for everyone. Undo cannot reverse changes to a remote; your local tag stays.', 'Delete remote tag', () => {
+    void run(id, `Delete ${name} on ${remote}`, () => api.deleteRemoteTag(id, remote, name)).then((ok) => {
+      const checked = useStore.getState().repos[id]?.remoteTags
+      if (ok && checked?.remote === remote) updateRepo(id, { remoteTags: { remote, names: checked.names.filter((n) => n !== name) } })
+    })
+  })
+}
+
+/** Ask a remote which tags it has, so the sidebar can mark the ones that exist only here. */
+export async function checkRemoteTags(id: string, remote: string): Promise<void> {
+  updateRepo(id, { busy: `Asking ${remote} for its tags` })
+  try {
+    const names = await api.remoteTags(id, remote)
+    updateRepo(id, { remoteTags: { remote, names } })
+    const local = useStore.getState().repos[id]!.snapshot.refs.filter((r) => r.kind === 'tag' && !names.includes(r.shortName)).length
+    toast({ kind: 'info', title: local ? `${local} tag${local === 1 ? ' is' : 's are'} not on ${remote}` : `Every tag is on ${remote}` })
+  } catch (e) {
+    reportError(`Could not list ${remote}'s tags`, e)
+  } finally {
+    updateRepo(id, { busy: null })
+  }
+}
+
+/** Push a branch to a remote branch that may have another name (and track it). */
+export function pushTo(id: string, branch: string, remote: string): void {
+  ask(`Push ${branch} to ${remote}`, `Branch name on ${remote}`, 'Push', (remoteBranch) => {
+    void run(id, `Push ${branch}`, () => api.push(id, { branch, remote, remoteBranch: remoteBranch.trim() }), { success: `Pushed ${branch} to ${remote}/${remoteBranch.trim()}` })
+  }, { initial: branch })
+}
+
+/** Push a branch that is not checked out to its upstream (or the default remote). */
+export const pushBranch = (id: string, branch: string) =>
+  run(id, `Push ${branch}`, () => api.push(id, { branch }), { success: `Pushed ${branch}` })
+
+export const setUpstream = (id: string, branch: string, upstream: string | null) =>
+  run(id, upstream ? `Track ${shortRef(upstream)}` : `Stop tracking for ${branch}`, () => api.setUpstream(id, branch, upstream))
+
+export const fastForward = (id: string, branch: string) =>
+  run(id, `Fast-forward ${branch}`, () => api.fastForward(id, branch))
+
+/** Days without a commit after which a branch counts as stale in the sidebar and cleanup. */
+export const STALE_DAYS = 90
+
+export function isStale(r: Ref, now = Date.now()): boolean {
+  return r.date !== undefined && now / 1000 - r.date > STALE_DAYS * 86_400
+}
+
+/** Branches the cleanup dialog offers: merged into HEAD or stale, never the checked-out one. */
+export function cleanupCandidates(view: { snapshot: RepoSnapshot; merged: string[] }, now = Date.now()) {
+  return view.snapshot.refs
+    .filter((r) => r.kind === 'local' && r.shortName !== view.snapshot.head.branch)
+    .map((r) => ({ name: r.shortName, date: r.date, merged: view.merged.includes(r.shortName), stale: isStale(r, now) }))
+    .filter((c) => c.merged || c.stale)
+}
+
+export function cleanupBranches(id: string): void {
+  useStore.setState({ dialog: { kind: 'cleanup', repoId: id } })
+}
+
+/**
+ * Delete several branches in one undoable step. `force` is needed when some are not merged
+ * (stale ones usually are not); the dialog says so before the user confirms.
+ */
+export const deleteBranches = (id: string, names: string[], force: boolean) =>
+  run(id, `Delete ${names.length} branch${names.length === 1 ? '' : 'es'}`, () => api.deleteBranches(id, names, { force }))
+
 // ------------------------------------------------------------------ stash
 
 export function stash(id: string): void {

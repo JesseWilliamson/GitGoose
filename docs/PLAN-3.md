@@ -118,3 +118,7 @@ changes.
 - [x] 11–13 compare (two commits, a commit vs HEAD or the working tree, branch vs HEAD, since
       the fork point, a chain's combined changes), split view, word-level highlighting,
       open / save / restore a file as of a revision (restore is undoable)
+- [x] 5–9 remotes (add, rename, URL and push URL, remove; all undoable), tags (push one or all,
+      delete on a remote, "local only" marks after an explicit check), tracking (track, stop,
+      push to a named remote branch), fast-forward a branch that is not checked out, branch
+      cleanup (merged and stale badges, delete several in one undoable step)

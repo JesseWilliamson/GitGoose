@@ -2,7 +2,7 @@ import { DEFAULT_LAYOUT, setCollapsed } from '@gitsquid/shared'
 import { Command } from 'cmdk'
 import { RDialogCompat } from './RDialogCompat'
 import {
-  checkout, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, reopen, stash, undo,
+  addRemote, checkout, cleanupBranches, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, reopen, stash, undo,
 } from '../lib/actions'
 import { saveSettings, useStore } from '../lib/store'
 
@@ -40,6 +40,8 @@ export function CommandPalette() {
     add('Repository', 'Push', () => push(id))
     add('Repository', 'Force push (with lease)', () => push(id, true))
     add('Repository', 'New branch', () => newBranch(id))
+    add('Repository', 'Clean up branches…', () => cleanupBranches(id))
+    add('Repository', 'Add remote…', () => addRemote(id))
     add('Repository', 'Stash all changes', () => stash(id))
     add('Repository', 'Pop latest stash', () => pop(id))
     add('Repository', 'Show uncommitted changes', () => useStore.setState((s) => ({ repos: { ...s.repos, [id]: { ...s.repos[id]!, selected: { kind: 'wip' }, center: { kind: 'graph' } } } })))

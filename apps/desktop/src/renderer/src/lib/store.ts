@@ -1,5 +1,5 @@
 import { GraphLayout, type Row } from '@gitsquid/graph'
-import { SETTINGS, type Commit, type DiffTarget, type GitHubStatus, type GitSquidEvent, type Ref, type RepoSnapshot, type SearchField, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitsquid/shared'
+import { SETTINGS, type Commit, type DiffTarget, type GitHubStatus, type GitSquidEvent, type Ref, type Remote, type RepoSnapshot, type SearchField, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitsquid/shared'
 import { create } from 'zustand'
 import { api, toUiError, type UiError } from './api'
 import { onAiEvent } from './ai'
@@ -48,6 +48,12 @@ export interface RepoView {
   redo: UndoEntry[]
   stashes: StashEntry[]
   undo: UndoEntry[]
+  /** Configured remotes (a remote with no branches fetched yet still shows). */
+  remotes: Remote[]
+  /** Local branches already in HEAD: safe to delete. */
+  merged: string[]
+  /** Tag names on a remote, after the user asked to check (the only way it is read: network). */
+  remoteTags: { remote: string; names: string[] } | null
   progress: string | null
   busy: string | null
   /** Bumped whenever files change on disk; open diffs reload on it. */
@@ -92,7 +98,7 @@ export type Dialog =
       initial?: string
       confirm: string
       /** A second, optional field (e.g. a tag message). */
-      extra?: { label: string; placeholder?: string }
+      extra?: { label: string; placeholder?: string; initial?: string }
       onSubmit: (value: string, extra: string) => void | Promise<void>
     }
   | { kind: 'confirm'; title: string; message: string; confirm: string; danger?: boolean; onConfirm: () => void | Promise<void> }
@@ -102,6 +108,8 @@ export type Dialog =
   | { kind: 'shortcuts' }
   /** Several lines of text (a commit message). */
   | { kind: 'text'; title: string; initial: string; confirm: string; onSubmit: (text: string) => void }
+  /** Branch cleanup: pick merged or stale branches to delete. */
+  | { kind: 'cleanup'; repoId: string }
 
 export interface DropRequest {
   x: number
@@ -116,6 +124,9 @@ export type MenuTarget =
   | { kind: 'commits'; hashes: string[] }
   | { kind: 'stash'; stash: StashEntry }
   | { kind: 'ref'; ref: Ref; hash: string }
+  | { kind: 'remote'; remote: string }
+  /** A sidebar section header with its own actions. */
+  | { kind: 'section'; section: 'local' | 'remotes' | 'tags' }
   | null
 
 interface State {
@@ -327,7 +338,7 @@ function newView(snap: RepoSnapshot): RepoView {
     id: snap.id, snapshot: snap, logVersion: 0,
     selected: snap.status.length ? { kind: 'wip' } : snap.head.hash ? { kind: 'commit', hash: snap.head.hash } : { kind: 'wip' },
     center: snap.operation && snap.status.some((e) => e.kind === 'unmerged') ? { kind: 'conflicts' } : { kind: 'graph' },
-    search: null, searchOpen: false, searchFocus: 0, editable: [], redo: [], stashes: [], undo: [], progress: null, busy: null, worktreeTick: 0,
+    search: null, searchOpen: false, searchFocus: 0, editable: [], redo: [], stashes: [], undo: [], remotes: [], merged: [], remoteTags: null, progress: null, busy: null, worktreeTick: 0,
   }
 }
 
@@ -405,8 +416,10 @@ export function onSnapshot(snap: RepoSnapshot): void {
 
 export async function refreshAux(id: string): Promise<void> {
   try {
-    const [stashes, undo, editable, redo] = await Promise.all([api.stashList(id), api.undoList(id), api.editableCommits(id), api.redoList(id)])
-    updateRepo(id, { stashes, undo, editable, redo })
+    const [stashes, undo, editable, redo, remotes, merged] = await Promise.all([
+      api.stashList(id), api.undoList(id), api.editableCommits(id), api.redoList(id), api.remotes(id), api.mergedBranches(id),
+    ])
+    updateRepo(id, { stashes, undo, editable, redo, remotes, merged })
   } catch {
     // The tab was closed meanwhile.
   }

@@ -1,12 +1,26 @@
 import { DropdownMenu } from 'radix-ui'
 import {
+ addRemote, checkRemoteTags, cleanupBranches, clearPushUrl, deleteRemoteTag, editRemoteUrl, fastForward, fetchAll, fetchRemote, pushBranch, pushTags, pushTo, remoteNames, removeRemote, renameRemote, setUpstream,
  checkout, cherryPick, cherryPickMany, compare, compareSinceFork, copy, fixupInto, pop, reword, squashCommit, stashApply, stashDrop, copyCommits, dropCommits, moveCommits, currentBranchRef, deleteBranch, deleteRemoteBranch, deleteTag, dropOptions,
   merge, newBranch, newTag, push, rebase, renameBranch, reset, revert, shortRef,
 } from '../lib/actions'
 import { shortHash, stashLabel } from '../lib/format'
-import { getLog, useStore } from '../lib/store'
+import { ask } from '../lib/actions'
+import { getLog, updateRepo, useStore } from '../lib/store'
+import type { ReactNode } from 'react'
 import { recomposeWithAi } from './RecomposeDialog'
 import { CM, DM } from './ui'
+
+/** One item per remote: a plain item when there is only one remote, a submenu when there are several. */
+function PerRemote({ names, label, onPick, danger }: { names: string[]; label: (remote: string) => string; onPick: (remote: string) => void; danger?: boolean }): ReactNode {
+  if (names.length === 0) return null
+  if (names.length === 1) return <CM.Item danger={danger} onSelect={() => onPick(names[0]!)}>{label(names[0]!)}</CM.Item>
+  return (
+    <CM.Sub label={label('…').replace(/ …$/, '')}>
+      {names.map((n) => <CM.Item key={n} danger={danger} onSelect={() => onPick(n)}>{n}</CM.Item>)}
+    </CM.Sub>
+  )
+}
 
 /** Right-click menu for the graph. Rows record what was clicked in the store; this renders for it. */
 export function GraphMenu({ repoId }: { repoId: string }) {
@@ -22,6 +36,12 @@ export function GraphMenu({ repoId }: { repoId: string }) {
     const r = menu.ref
     const name = shortRef(r)
     const isHead = head?.name === r.name
+    const remotes = remoteNames(view)
+    const upstream = r.upstream ? snap.refs.find((x) => x.name === r.upstream) : undefined
+    // Not checked out, nothing of its own, behind its upstream: moving it forward loses nothing.
+    const canFastForward = r.kind === 'local' && !isHead && !!upstream && (r.behind ?? 0) > 0 && (r.ahead ?? 0) === 0
+    /** Remote branches with the same name, the usual thing to track (all remote branches can be typed). */
+    const tracking = r.kind === 'local' ? snap.refs.filter((x) => x.kind === 'remote' && x.name !== r.upstream && x.shortName.endsWith(`/${name}`)) : []
     return (
       <CM.Content>
         <CM.Label>{r.kind === 'tag' ? `Tag ${name}` : r.kind === 'remote' ? `Remote branch ${name}` : `Branch ${name}`}</CM.Label>
@@ -47,15 +67,87 @@ export function GraphMenu({ repoId }: { repoId: string }) {
         <CM.Item onSelect={() => newBranch(repoId, r.name)}>Create branch here…</CM.Item>
         {r.kind === 'local' && (
           <>
-            {isHead && <CM.Item onSelect={() => push(repoId)}>Push {name}</CM.Item>}
+            {isHead ? <CM.Item onSelect={() => push(repoId)}>Push {name}</CM.Item> : <CM.Item onSelect={() => void pushBranch(repoId, name)}>Push {name}</CM.Item>}
+            <PerRemote names={remotes} label={(n) => `Push to ${n}…`} onPick={(n) => pushTo(repoId, name, n)} />
+            {canFastForward && <CM.Item onSelect={() => void fastForward(repoId, name)}>Fast-forward {name} to {shortRef(r.upstream!)}</CM.Item>}
+            {r.kind === 'local' && remotes.length > 0 && (
+              <CM.Sub label={r.upstream ? 'Track another remote branch' : 'Track a remote branch'}>
+                {tracking.map((t) => <CM.Item key={t.name} onSelect={() => void setUpstream(repoId, name, t.name)}>{t.shortName}</CM.Item>)}
+                <CM.Separator />
+                <CM.Item onSelect={() => ask(`Track a remote branch with ${name}`, 'Remote branch', 'Track', (u) => void setUpstream(repoId, name, u.trim()), { placeholder: `origin/${name}` })}>Other…</CM.Item>
+              </CM.Sub>
+            )}
+            {r.upstream && <CM.Item onSelect={() => void setUpstream(repoId, name, null)}>Stop tracking {shortRef(r.upstream)}</CM.Item>}
             <CM.Item onSelect={() => renameBranch(repoId, name)}>Rename {name}…</CM.Item>
             {!isHead && <CM.Item danger onSelect={() => void deleteBranch(repoId, name)}>Delete {name}</CM.Item>}
           </>
         )}
+        {r.kind === 'remote' && head && head.upstream !== r.name && (
+          <CM.Item onSelect={() => void setUpstream(repoId, head.shortName, r.name)}>Make {headName} track {name}</CM.Item>
+        )}
         {r.kind === 'remote' && <CM.Item danger onSelect={() => deleteRemoteBranch(repoId, r.name)}>Delete {name} on remote…</CM.Item>}
-        {r.kind === 'tag' && <CM.Item danger onSelect={() => void deleteTag(repoId, name)}>Delete tag {name}</CM.Item>}
+        {r.kind === 'tag' && (
+          <>
+            <PerRemote names={remotes} label={(n) => `Push ${name} to ${n}`} onPick={(n) => void pushTags(repoId, n, name)} />
+            <CM.Item danger onSelect={() => void deleteTag(repoId, name)}>Delete tag {name}</CM.Item>
+            <PerRemote names={remotes} danger label={(n) => `Delete ${name} on ${n}…`} onPick={(n) => deleteRemoteTag(repoId, n, name)} />
+          </>
+        )}
         <CM.Separator />
         <CM.Item onSelect={() => copy(name, 'Copied name')}>Copy name</CM.Item>
+      </CM.Content>
+    )
+  }
+
+  if (menu.kind === 'remote') {
+    const name = menu.remote
+    const remote = view.remotes.find((x) => x.name === name)
+    return (
+      <CM.Content>
+        <CM.Label>Remote {name}{remote ? ` · ${remote.fetchUrl}` : ''}</CM.Label>
+        <CM.Item onSelect={() => void fetchRemote(repoId, name)}>Fetch {name}</CM.Item>
+        <CM.Item onSelect={() => void pushTags(repoId, name, null)}>Push all tags to {name}</CM.Item>
+        <CM.Item onSelect={() => void checkRemoteTags(repoId, name)}>Check which tags are on {name}</CM.Item>
+        {remote && (
+          <>
+            <CM.Separator />
+            <CM.Item onSelect={() => editRemoteUrl(repoId, name)}>Edit URL…</CM.Item>
+            <CM.Item onSelect={() => editRemoteUrl(repoId, name, true)}>{remote.pushUrl ? 'Edit push URL…' : 'Use a different URL for pushing…'}</CM.Item>
+            {remote.pushUrl && <CM.Item onSelect={() => void clearPushUrl(repoId, name)}>Push to the fetch URL again</CM.Item>}
+            <CM.Item onSelect={() => renameRemote(repoId, name)}>Rename {name}…</CM.Item>
+            <CM.Item onSelect={() => copy(remote.fetchUrl, 'Copied URL')}>Copy URL</CM.Item>
+            <CM.Separator />
+            <CM.Item danger onSelect={() => void removeRemote(repoId, name)}>Remove {name}</CM.Item>
+          </>
+        )}
+      </CM.Content>
+    )
+  }
+
+  if (menu.kind === 'section') {
+    const remotes = remoteNames(view)
+    if (menu.section === 'local') {
+      return (
+        <CM.Content>
+          <CM.Item onSelect={() => newBranch(repoId)}>New branch…</CM.Item>
+          <CM.Item onSelect={() => cleanupBranches(repoId)}>Clean up branches…</CM.Item>
+        </CM.Content>
+      )
+    }
+    if (menu.section === 'remotes') {
+      return (
+        <CM.Content>
+          <CM.Item onSelect={() => addRemote(repoId)}>Add remote…</CM.Item>
+          <CM.Item disabled={remotes.length === 0} onSelect={() => void fetchAll(repoId)}>Fetch all</CM.Item>
+        </CM.Content>
+      )
+    }
+    return (
+      <CM.Content>
+        <PerRemote names={remotes} label={(n) => `Push all tags to ${n}`} onPick={(n) => void pushTags(repoId, n, null)} />
+        <PerRemote names={remotes} label={(n) => `Check which tags are on ${n}`} onPick={(n) => void checkRemoteTags(repoId, n)} />
+        {view.remoteTags && <CM.Item onSelect={() => updateRepo(repoId, { remoteTags: null })}>Hide the "local only" marks</CM.Item>}
+        {remotes.length === 0 && <CM.Label>No remotes</CM.Label>}
       </CM.Content>
     )
   }

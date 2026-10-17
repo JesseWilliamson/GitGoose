@@ -1,9 +1,9 @@
 import type { Ref } from '@gitsquid/shared'
 import clsx from 'clsx'
-import { Archive, ChevronDown, ChevronRight, Cloud, GitBranch, Tag } from 'lucide-react'
+import { Archive, ChevronDown, ChevronRight, Cloud, GitBranch, Plus, Tag } from 'lucide-react'
 import { ContextMenu } from 'radix-ui'
 import { useMemo, useState, type ReactNode } from 'react'
-import { checkout, pop, stashApply, stashDrop } from '../lib/actions'
+import { addRemote, checkout, isStale, pop, remoteNames, stashApply, stashDrop } from '../lib/actions'
 import { relativeTime, stashLabel } from '../lib/format'
 import { ensureLoaded, updateRepo, useStore, type RepoView } from '../lib/store'
 import { REF_MIME } from './Graph'
@@ -19,14 +19,18 @@ export function Sidebar({ view }: { view: RepoView }) {
   const locals = snap.refs.filter((r) => r.kind === 'local' && match(r))
   const tags = snap.refs.filter((r) => r.kind === 'tag' && match(r)).reverse()
   const remotes = useMemo(() => {
-    const m = new Map<string, Ref[]>()
+    const m = new Map<string, Ref[]>(remoteNames(view).map((n) => [n, []]))
     for (const r of snap.refs) {
       if (r.kind !== 'remote' || !match(r)) continue
       const remote = r.shortName.split('/')[0]!
-      m.set(remote, [...(m.get(remote) ?? []), r])
+      m.get(remote)?.push(r)
     }
     return m
-  }, [snap.refs, f])
+  }, [snap.refs, view.remotes, f])
+  const merged = new Set(view.merged)
+  /** After "Check which tags are on <remote>": the tags it does not have. */
+  const onRemote = view.remoteTags ? new Set(view.remoteTags.names) : null
+  const menuFor = (section: 'local' | 'remotes' | 'tags') => () => useStore.setState({ menu: { kind: 'section', section } })
 
   const jump = async (hash: string) => {
     updateRepo(view.id, { selected: { kind: 'commit', hash }, center: { kind: 'graph' } })
@@ -46,25 +50,39 @@ export function Sidebar({ view }: { view: RepoView }) {
       <ContextMenu.Root>
         <ContextMenu.Trigger asChild>
           <div className="min-h-0 flex-1 overflow-y-auto pb-4" data-testid="sidebar">
-            <Section title="Local" count={locals.length} icon={<GitBranch size={13} />}>
-              {locals.map((r) => (
-                <RefItem key={r.name} r={r} label={r.shortName} view={view} onJump={jump} head={r.shortName === snap.head.branch}>
-                  {(r.ahead ?? 0) > 0 && <span className="text-[10px] text-add">↑{r.ahead}</span>}
-                  {(r.behind ?? 0) > 0 && <span className="text-[10px] text-warn">↓{r.behind}</span>}
-                  {r.upstreamGone && <span className="text-[10px] text-faint" title="Upstream deleted">gone</span>}
+            <Section title="Local" count={locals.length} icon={<GitBranch size={13} />} onContextMenu={menuFor('local')}>
+              {locals.map((r) => {
+                const head = r.shortName === snap.head.branch
+                return (
+                  <RefItem key={r.name} r={r} label={r.shortName} view={view} onJump={jump} head={head}>
+                    {(r.ahead ?? 0) > 0 && <span className="text-[10px] text-add">↑{r.ahead}</span>}
+                    {(r.behind ?? 0) > 0 && <span className="text-[10px] text-warn">↓{r.behind}</span>}
+                    {r.upstreamGone && <span className="text-[10px] text-faint" title="Upstream deleted">gone</span>}
+                    {!head && merged.has(r.shortName) && <Badge title={`Already in ${snap.head.branch ?? 'HEAD'}: safe to delete`}>merged</Badge>}
+                    {!head && isStale(r) && <Badge title="No commits for 90 days">stale</Badge>}
+                  </RefItem>
+                )
+              })}
+            </Section>
+            <Section title="Remotes" count={remotes.size} icon={<Cloud size={13} />} onContextMenu={menuFor('remotes')}
+              action={<button title="Add remote" aria-label="Add remote" onClick={() => addRemote(view.id)} className="rounded p-0.5 text-faint hover:bg-hover hover:text-fg"><Plus size={13} /></button>}>
+              {[...remotes.entries()].filter(([, refs]) => !f || refs.length).map(([remote, refs]) => (
+                <Section key={remote} title={remote} count={refs.length} icon={null} defaultOpen={false} depth={1}
+                  testId="remote-section" onContextMenu={() => useStore.setState({ menu: { kind: 'remote', remote } })}>
+                  {refs.map((r) => (
+                    <RefItem key={r.name} r={r} label={r.shortName.slice(remote.length + 1)} view={view} onJump={jump} depth={1} />
+                  ))}
+                  {refs.length === 0 && <Empty depth={1}>Not fetched yet</Empty>}
+                </Section>
+              ))}
+              {remotes.size === 0 && <Empty>No remotes</Empty>}
+            </Section>
+            <Section title="Tags" count={tags.length} icon={<Tag size={13} />} defaultOpen={false} onContextMenu={menuFor('tags')}>
+              {tags.map((r) => (
+                <RefItem key={r.name} r={r} label={r.shortName} view={view} onJump={jump}>
+                  {onRemote && !onRemote.has(r.shortName) && <Badge title={`Not on ${view.remoteTags!.remote}`}>local only</Badge>}
                 </RefItem>
               ))}
-            </Section>
-            {[...remotes.entries()].map(([remote, refs]) => (
-              <Section key={remote} title={remote} count={refs.length} icon={<Cloud size={13} />} defaultOpen={false}>
-                {refs.map((r) => (
-                  <RefItem key={r.name} r={r} label={r.shortName.slice(remote.length + 1)} view={view} onJump={jump} />
-                ))}
-              </Section>
-            ))}
-            {remotes.size === 0 && !f && <Section title="Remotes" count={0} icon={<Cloud size={13} />}><Empty>No remotes</Empty></Section>}
-            <Section title="Tags" count={tags.length} icon={<Tag size={13} />} defaultOpen={false}>
-              {tags.map((r) => <RefItem key={r.name} r={r} label={r.shortName} view={view} onJump={jump} />)}
             </Section>
             <Section title="Stashes" count={view.stashes.length} icon={<Archive size={13} />}>
               {view.stashes.map((s) => (
@@ -82,29 +100,42 @@ export function Sidebar({ view }: { view: RepoView }) {
   )
 }
 
-function Section({ title, count, icon, children, defaultOpen = true }: {
-  title: string; count: number; icon: ReactNode; children: ReactNode; defaultOpen?: boolean
+function Section({ title, count, icon, children, defaultOpen = true, depth = 0, action, onContextMenu, testId }: {
+  title: string; count: number; icon: ReactNode; children: ReactNode; defaultOpen?: boolean; depth?: number
+  /** A small button at the end of the header (Add remote). */
+  action?: ReactNode
+  /** Right-click on the header: records the menu target (the sidebar's menu renders it). */
+  onContextMenu?: () => void
+  testId?: string
 }) {
   const [open, setOpen] = useState(defaultOpen)
   return (
-    <div className="mt-1">
-      <button onClick={() => setOpen(!open)} className="flex h-7 w-full items-center gap-1.5 px-2 text-[12px] font-semibold text-muted hover:text-fg">
-        {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-        {icon}
-        <span className="flex-1 truncate text-left">{title}</span>
-        <span className="text-[11px] font-normal text-faint">{count}</span>
-      </button>
+    <div className={depth ? '' : 'mt-1'} data-testid={testId} data-name={title}>
+      <div className="flex h-7 items-center pr-2" onContextMenu={onContextMenu}>
+        <button onClick={() => setOpen(!open)} style={{ paddingLeft: 8 + depth * 16 }}
+          className={clsx('flex h-full min-w-0 flex-1 items-center gap-1.5 text-[12px] hover:text-fg', depth ? 'font-medium text-muted' : 'font-semibold text-muted')}>
+          {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+          {icon}
+          <span className="flex-1 truncate text-left">{title}</span>
+          <span className="text-[11px] font-normal text-faint">{count}</span>
+        </button>
+        {action && <span className="ml-1">{action}</span>}
+      </div>
       {open && <div>{children}</div>}
     </div>
   )
 }
 
-function Empty({ children }: { children: ReactNode }) {
-  return <div className="px-8 py-1 text-xs text-faint">{children}</div>
+function Badge({ title, children }: { title: string; children: ReactNode }) {
+  return <span title={title} className="rounded bg-hover px-1 text-[10px] text-faint">{children}</span>
 }
 
-function RefItem({ r, label, view, onJump, head, children }: {
-  r: Ref; label: string; view: RepoView; onJump: (hash: string) => void; head?: boolean; children?: ReactNode
+function Empty({ children, depth = 0 }: { children: ReactNode; depth?: number }) {
+  return <div className="py-1 text-xs text-faint" style={{ paddingLeft: 32 + depth * 16 }}>{children}</div>
+}
+
+function RefItem({ r, label, view, onJump, head, depth = 0, children }: {
+  r: Ref; label: string; view: RepoView; onJump: (hash: string) => void; head?: boolean; depth?: number; children?: ReactNode
 }) {
   const selected = view.selected.kind === 'commit' && view.selected.hash === r.hash
   return (
@@ -120,7 +151,8 @@ function RefItem({ r, label, view, onJump, head, children }: {
       data-testid="sidebar-ref"
       data-ref={r.name}
       title={`${r.name}\nDouble-click to check out`}
-      className={clsx('flex h-6 cursor-default items-center gap-1.5 pr-3 pl-8 text-[13px]', selected ? 'bg-select' : 'hover:bg-hover', head && 'font-semibold')}
+      style={{ paddingLeft: 32 + depth * 16 }}
+      className={clsx('flex h-6 cursor-default items-center gap-1.5 pr-3 text-[13px]', selected ? 'bg-select' : 'hover:bg-hover', head && 'font-semibold')}
     >
       {head && <span className="-ml-4 w-3 text-[10px] text-accent">✓</span>}
       <span className="min-w-0 flex-1 truncate">{label}</span>

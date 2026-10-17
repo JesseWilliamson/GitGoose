@@ -52,6 +52,8 @@ export interface Ref {
   behind?: number
   /** True when the upstream is configured but no longer exists on the remote. */
   upstreamGone?: boolean
+  /** Unix seconds of the tip commit (branches; tags with a commit date). */
+  date?: number
 }
 
 export interface Head {
@@ -138,6 +140,13 @@ export type DiffTarget =
   | { kind: 'commit'; hash: string; path: string }
   /** Between two revisions, or a revision and the working tree (`to: null`). */
   | { kind: 'range'; from: string; to: string | null; path: string; oldPath?: string }
+
+export interface Remote {
+  name: string
+  fetchUrl: string
+  /** Only when it differs from the fetch URL (remote.<name>.pushurl). */
+  pushUrl?: string
+}
 
 export interface StashEntry {
   index: number

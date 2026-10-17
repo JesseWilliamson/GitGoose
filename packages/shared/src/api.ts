@@ -1,6 +1,6 @@
 import type {
   BlameLine, ChangedFile, Commit, CommitDetails, ConflictFile, DiffTarget, FileDiff, RepoSnapshot,
-  SearchField, StashEntry, UndoEntry,
+  Remote, SearchField, StashEntry, UndoEntry,
 } from './index'
 import type { AgentInfo, AiPermissionRequest, AiResult, AiStatus, AiTask } from './ai'
 import type { DeviceCodeInfo, GitHubAccount, GitHubStatus } from './github'
@@ -179,7 +179,24 @@ export interface GitSquidApi {
   // Remotes
   fetch(repoId: string, opts?: { remote?: string; prune?: boolean }): Promise<void>
   pull(repoId: string, opts?: { mode?: PullMode }): Promise<UndoId>
-  push(repoId: string, opts?: { force?: boolean; branch?: string; remote?: string }): Promise<void>
+  push(repoId: string, opts?: { force?: boolean; branch?: string; remote?: string; remoteBranch?: string }): Promise<void>
+  remotes(repoId: string): Promise<Remote[]>
+  addRemote(repoId: string, name: string, url: string): Promise<UndoId>
+  removeRemote(repoId: string, name: string): Promise<UndoId>
+  renameRemote(repoId: string, from: string, to: string): Promise<UndoId>
+  /** A remote's URL, or with `push` its separate push URL (null removes that). */
+  setRemoteUrl(repoId: string, name: string, url: string | null, push?: boolean): Promise<UndoId>
+  /** Push one tag, or all (name null). Changes the remote: not undoable. */
+  pushTags(repoId: string, remote: string, name: string | null): Promise<void>
+  deleteRemoteTag(repoId: string, remote: string, name: string): Promise<void>
+  /** Tag names on a remote (asks the remote). */
+  remoteTags(repoId: string, remote: string): Promise<string[]>
+  setUpstream(repoId: string, branch: string, upstream: string | null): Promise<UndoId>
+  /** Move a branch that is not checked out forward to its upstream. */
+  fastForward(repoId: string, branch: string): Promise<UndoId>
+  deleteBranches(repoId: string, names: string[], opts?: { force?: boolean }): Promise<UndoId>
+  /** Local branches already contained in HEAD (safe to delete). */
+  mergedBranches(repoId: string): Promise<string[]>
   deleteRemoteBranch(repoId: string, remoteRef: string): Promise<void>
 
   // Stash
@@ -217,7 +234,8 @@ export const API_METHODS = [
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit',
   'checkout', 'createBranch', 'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset',
   'cherryPick', 'cherryPickMany', 'commitsText', 'recomposeApply', 'compareFiles', 'mergeBase', 'restoreFile', 'openFileAt', 'saveFileAt', 'editableCommits', 'dropCommits', 'moveCommits', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'preparedMessage', 'redo', 'redoList', 'revert', 'createTag', 'deleteTag',
-  'fetch', 'pull', 'push', 'deleteRemoteBranch',
+  'fetch', 'pull', 'push', 'deleteRemoteBranch', 'remotes', 'addRemote', 'removeRemote', 'renameRemote', 'setRemoteUrl',
+  'pushTags', 'deleteRemoteTag', 'remoteTags', 'setUpstream', 'fastForward', 'deleteBranches', 'mergedBranches',
   'stashPush', 'stashApply', 'stashPop', 'stashDrop',
   'conflicts', 'conflictVersions', 'resolveConflict', 'continueOperation', 'abortOperation',
   'undoList', 'undo',

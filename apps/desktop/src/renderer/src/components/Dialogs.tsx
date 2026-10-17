@@ -1,6 +1,7 @@
 import { KeyRound } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { cloneRepo } from '../lib/actions'
+import { cleanupCandidates, cloneRepo, deleteBranches, STALE_DAYS } from '../lib/actions'
+import { relativeTime } from '../lib/format'
 import { COMMANDS, FIXED_KEYS, formatCombo, keymap, modName } from '../lib/keys'
 import { api } from '../lib/api'
 import { dismissToast, setting, useStore } from '../lib/store'
@@ -39,6 +40,7 @@ export function Dialogs() {
   }
   if (dialog.kind === 'shortcuts') return <ShortcutsDialog close={close} />
   if (dialog.kind === 'text') return <TextDialog key={dialog.title} d={dialog} close={close} />
+  if (dialog.kind === 'cleanup') return <CleanupDialog repoId={dialog.repoId} close={close} />
   return <CloneDialog close={close} />
 }
 
@@ -69,9 +71,56 @@ function TextDialog({ d, close }: { d: Extract<NonNullable<ReturnType<typeof use
   )
 }
 
+/**
+ * Branch cleanup (Tower): branches already merged into HEAD are ticked, stale ones are offered but
+ * left unticked. Deleting unmerged branches needs force, so the button says so before it happens.
+ */
+function CleanupDialog({ repoId, close }: { repoId: string; close: () => void }) {
+  const view = useStore((s) => s.repos[repoId])
+  const candidates = view ? cleanupCandidates(view) : []
+  const [picked, setPicked] = useState(() => new Set(candidates.filter((c) => c.merged).map((c) => c.name)))
+  const unmerged = candidates.filter((c) => picked.has(c.name) && !c.merged).length
+  const toggle = (name: string) => setPicked((p) => {
+    const next = new Set(p)
+    if (next.has(name)) next.delete(name)
+    else next.add(name)
+    return next
+  })
+  const submit = () => {
+    close()
+    void deleteBranches(repoId, candidates.filter((c) => picked.has(c.name)).map((c) => c.name), unmerged > 0)
+  }
+  return (
+    <Modal open onClose={close} title="Clean up branches" width={520}>
+      <p className="mb-3 text-[13px] text-muted">
+        Merged branches are already part of {view?.snapshot.head.branch ?? 'HEAD'}. Stale ones have had no commits for {STALE_DAYS} days. Undo brings deleted branches back.
+      </p>
+      {candidates.length === 0 && <p className="mb-3 text-[13px] text-faint">Nothing to clean up.</p>}
+      <div className="mb-3 max-h-72 overflow-y-auto rounded-md border border-line" data-testid="cleanup-list">
+        {candidates.map((c) => (
+          <label key={c.name} className="flex h-7 items-center gap-2 px-2 text-[13px] hover:bg-hover">
+            <input type="checkbox" checked={picked.has(c.name)} onChange={() => toggle(c.name)} aria-label={c.name} />
+            <span className="min-w-0 flex-1 truncate">{c.name}</span>
+            {c.merged && <span className="text-[10px] text-add">merged</span>}
+            {c.stale && <span className="text-[10px] text-warn">stale</span>}
+            {c.date !== undefined && <span className="w-20 text-right text-[11px] text-faint">{relativeTime(c.date)}</span>}
+          </label>
+        ))}
+      </div>
+      {unmerged > 0 && <p className="mb-3 text-[12px] text-warn">{unmerged} of these {unmerged === 1 ? 'is' : 'are'} not merged: {unmerged === 1 ? 'its' : 'their'} commits will only be reachable through undo.</p>}
+      <div className="flex justify-end gap-2">
+        <Button onClick={close}>Cancel</Button>
+        <Button variant={unmerged ? 'danger' : 'primary'} disabled={picked.size === 0} onClick={submit} data-testid="dialog-submit">
+          Delete {picked.size} branch{picked.size === 1 ? '' : 'es'}
+        </Button>
+      </div>
+    </Modal>
+  )
+}
+
 function InputDialog({ d, close }: { d: Extract<NonNullable<ReturnType<typeof useStore.getState>['dialog']>, { kind: 'input' }>; close: () => void }) {
   const [value, setValue] = useState(d.initial ?? '')
-  const [extra, setExtra] = useState('')
+  const [extra, setExtra] = useState(d.extra?.initial ?? '')
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!value.trim()) return

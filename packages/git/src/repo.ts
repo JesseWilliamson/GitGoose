@@ -1,6 +1,6 @@
 import type {
   BlameLine, ChangedFile, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
-  LogPage, Ref, RepoOperation, RepoSnapshot, ResetMode, Resolution, SearchField, SelectionRequest,
+  LogPage, Ref, Remote, RepoOperation, RepoSnapshot, ResetMode, Resolution, SearchField, SelectionRequest,
   StashEntry, StatusEntry, UndoEntry,
 } from '@gitsquid/shared'
 import { countConflicts } from '@gitsquid/shared'
@@ -624,6 +624,133 @@ export class Repo {
     })
   }
 
+  /** Delete several branches at once (branch cleanup); one undo entry brings them all back. */
+  deleteBranches(names: string[], opts: { force?: boolean } = {}): Promise<number> {
+    return this.exclusive(async () => {
+      const refs = await this.refs()
+      const actions: UndoAction[] = []
+      for (const name of names) {
+        const ref = refs.find((r) => r.name === `refs/heads/${name}`)
+        if (!ref) throw new Error(`No branch named ${name}`)
+        actions.push({ kind: 'update-ref', ref: ref.name, to: ref.hash, from: null })
+        if (ref.upstream) actions.push({ kind: 'set-upstream', branch: name, upstream: ref.upstream })
+      }
+      await this.git(['branch', opts.force ? '-D' : '-d', ...names])
+      return this.record(`Delete ${names.length} branches`, actions, (await this.currentHead()).hash)
+    })
+  }
+
+  /** Local branches whose tip is already in `into` (default HEAD): safe to delete. */
+  async mergedBranches(into = 'HEAD'): Promise<string[]> {
+    const head = await this.currentHead()
+    if (!head.hash) return []
+    return (await this.read(['for-each-ref', `--merged=${into}`, '--format=%(refname:short)', 'refs/heads'])).split('\n').filter(Boolean)
+  }
+
+  /**
+   * Move a branch that is not checked out forward to its upstream, when that is a fast-forward
+   * (the checked-out branch uses pull instead). One update-ref, with the old value checked.
+   */
+  fastForward(branch: string): Promise<number> {
+    return this.exclusive(async () => {
+      const refs = await this.refs()
+      const ref = refs.find((r) => r.name === `refs/heads/${branch}`)
+      if (!ref?.upstream) throw new Error(`${branch} does not track a remote branch.`)
+      if ((await this.currentHead()).branch === branch) throw new Error(`${branch} is checked out: pull it instead.`)
+      const target = refs.find((r) => r.name === ref.upstream)
+      if (!target) throw new Error(`${shortName(ref.upstream)} no longer exists.`)
+      if (!(await this.isAncestor(ref.hash, target.hash))) throw new Error(`${branch} has commits ${shortName(ref.upstream)} does not: it cannot fast-forward.`)
+      await this.git(['update-ref', '-m', `gitsquid: fast-forward to ${shortName(ref.upstream)}`, ref.name, target.hash, ref.hash])
+      return this.record(`Fast-forward ${branch}`, [{ kind: 'update-ref', ref: ref.name, to: ref.hash, from: target.hash }], (await this.currentHead()).hash)
+    })
+  }
+
+  /** Make `branch` track `upstream` (a remote branch's full or short name), or nothing. */
+  setUpstream(branch: string, upstream: string | null): Promise<number> {
+    return this.exclusive(async () => {
+      const ref = (await this.refs()).find((r) => r.name === `refs/heads/${branch}`)
+      if (!ref) throw new Error(`No branch named ${branch}`)
+      if (upstream) await this.git(['branch', `--set-upstream-to=${shortName(upstream)}`, branch])
+      else await this.git(['branch', '--unset-upstream', branch], { okCodes: [128] })
+      return this.record(upstream ? `Track ${shortName(upstream)}` : `Stop tracking for ${branch}`,
+        [{ kind: 'set-upstream', branch, upstream: ref.upstream ?? null }], (await this.currentHead()).hash)
+    })
+  }
+
+  // ---------------------------------------------------------------- remotes and tags
+
+  async remotes(): Promise<Remote[]> {
+    const out = (await this.runner.run(['config', '-z', '--get-regexp', '^remote\\..*\\.(url|pushurl)$'], { readOnly: true, okCodes: [1] })).stdout
+    const map = new Map<string, Remote>()
+    for (const entry of out.split('\0').filter(Boolean)) {
+      const nl = entry.indexOf('\n')
+      const key = entry.slice(0, nl)
+      const value = entry.slice(nl + 1)
+      const m = /^remote\.(.+)\.(url|pushurl)$/.exec(key)
+      if (!m) continue
+      const r = map.get(m[1]!) ?? { name: m[1]!, fetchUrl: '' }
+      if (m[2] === 'url') r.fetchUrl = value
+      else r.pushUrl = value
+      map.set(m[1]!, r)
+    }
+    return [...map.values()]
+  }
+
+  addRemote(name: string, url: string): Promise<number> {
+    return this.exclusive(async () => {
+      await this.git(['remote', 'add', name, url])
+      return this.record(`Add remote ${name}`, [{ kind: 'remote-remove', name }], (await this.currentHead()).hash)
+    })
+  }
+
+  /** Remove a remote (and its remote-tracking branches; a fetch brings those back after undo). */
+  removeRemote(name: string): Promise<number> {
+    return this.exclusive(async () => {
+      const r = (await this.remotes()).find((x) => x.name === name)
+      if (!r) throw new Error(`No remote named ${name}`)
+      await this.git(['remote', 'remove', name])
+      return this.record(`Remove remote ${name}`, [{ kind: 'remote-add', name, url: r.fetchUrl, pushUrl: r.pushUrl }], (await this.currentHead()).hash)
+    })
+  }
+
+  renameRemote(from: string, to: string): Promise<number> {
+    return this.exclusive(async () => {
+      await this.git(['remote', 'rename', from, to])
+      return this.record(`Rename remote ${from} to ${to}`, [{ kind: 'remote-rename', from: to, to: from }], (await this.currentHead()).hash)
+    })
+  }
+
+  /** Change a remote's URL (or its separate push URL; null removes that). */
+  setRemoteUrl(name: string, url: string | null, push = false): Promise<number> {
+    return this.exclusive(async () => {
+      const r = (await this.remotes()).find((x) => x.name === name)
+      if (!r) throw new Error(`No remote named ${name}`)
+      if (url) await this.git(['remote', 'set-url', ...(push ? ['--push'] : []), name, url])
+      else if (push) await this.git(['config', '--unset', `remote.${name}.pushurl`], { okCodes: [5] })
+      else throw new Error('A remote needs a URL.')
+      return this.record(`Change ${name}'s ${push ? 'push ' : ''}URL`, [{ kind: 'remote-url', name, url: push ? (r.pushUrl ?? null) : r.fetchUrl, push }], (await this.currentHead()).hash)
+    })
+  }
+
+  /** Push one tag, or all of them (name null), to a remote. */
+  pushTags(remote: string, name: string | null): Promise<void> {
+    return this.exclusive(async () => {
+      await this.progress(['push', '--progress', remote, ...(name ? [`refs/tags/${name}`] : ['--tags'])])
+    })
+  }
+
+  deleteRemoteTag(remote: string, name: string): Promise<void> {
+    return this.exclusive(async () => {
+      await this.progress(['push', '--progress', remote, '--delete', `refs/tags/${name}`])
+    })
+  }
+
+  /** Tag names a remote has (asks the remote: network, only on request). */
+  async remoteTags(remote: string): Promise<string[]> {
+    const out = await this.read(['ls-remote', '--tags', '--refs', remote])
+    return out.split('\n').filter(Boolean).map((l) => l.split('\t')[1]!.replace(/^refs\/tags\//, ''))
+  }
+
   /** Run an operation that moves the current branch; its undo moves it back with reset --keep. */
   private moving(label: string, run: () => Promise<unknown>): Promise<number | null> {
     return this.exclusive(async () => {
@@ -1061,14 +1188,17 @@ export class Repo {
     })
   }
 
-  push(opts: { force?: boolean; branch?: string; remote?: string } = {}): Promise<void> {
+  push(opts: { force?: boolean; branch?: string; remote?: string; remoteBranch?: string } = {}): Promise<void> {
     return this.exclusive(async () => {
       const head = await this.currentHead()
       const branch = opts.branch ?? head.branch
       if (!branch) throw new Error('Check out a branch to push')
       const local = (await this.refs()).find((r) => r.name === `refs/heads/${branch}`)
       const force = opts.force ? ['--force-with-lease'] : []
-      if (local?.upstream && !local.upstreamGone && !opts.remote) {
+      if (opts.remoteBranch) {
+        // Push to a branch with another name on the remote, and track it.
+        await this.progress(['push', '--progress', ...force, '-u', opts.remote ?? (await this.defaultRemote()), `${branch}:${opts.remoteBranch}`])
+      } else if (local?.upstream && !local.upstreamGone && !opts.remote) {
         await this.progress(['push', '--progress', ...force, ...(opts.branch ? [remoteOf(local.upstream), branch] : [])])
       } else {
         const remote = opts.remote ?? (await this.defaultRemote())
@@ -1306,7 +1436,22 @@ export class Repo {
         await this.git(['branch', '-m', a.from, a.to])
         break
       case 'set-upstream':
-        await this.git(['branch', `--set-upstream-to=${shortName(a.upstream)}`, a.branch], { okCodes: [128] })
+        if (a.upstream) await this.git(['branch', `--set-upstream-to=${shortName(a.upstream)}`, a.branch], { okCodes: [128] })
+        else await this.git(['branch', '--unset-upstream', a.branch], { okCodes: [128] })
+        break
+      case 'remote-add':
+        await this.git(['remote', 'add', a.name, a.url])
+        if (a.pushUrl) await this.git(['remote', 'set-url', '--push', a.name, a.pushUrl])
+        break
+      case 'remote-remove':
+        await this.git(['remote', 'remove', a.name])
+        break
+      case 'remote-rename':
+        await this.git(['remote', 'rename', a.from, a.to])
+        break
+      case 'remote-url':
+        if (a.url) await this.git(['remote', 'set-url', ...(a.push ? ['--push'] : []), a.name, a.url])
+        else await this.git(['config', '--unset', `remote.${a.name}.pushurl`], { okCodes: [5] })
         break
       case 'stash-pop': {
         // Find the entry by its commit: other stash operations may have moved it from stash@{0}.
