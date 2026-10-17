@@ -1,9 +1,9 @@
 import { KeyRound } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { cloneRepo } from '../lib/actions'
-import { modName, SHORTCUT_HELP } from '../lib/keys'
+import { COMMANDS, FIXED_KEYS, formatCombo, keymap, modName } from '../lib/keys'
 import { api } from '../lib/api'
-import { dismissToast, saveSettings, useStore } from '../lib/store'
+import { dismissToast, setting, useStore } from '../lib/store'
 import { Button, Modal, TextField } from './ui'
 
 export function Dialogs() {
@@ -22,7 +22,21 @@ export function Dialogs() {
       </Modal>
     )
   }
-  if (dialog.kind === 'settings') return <SettingsDialog close={close} />
+  if (dialog.kind === 'choice') {
+    return (
+      <Modal open onClose={close} title={dialog.title} width={500}>
+        <div data-testid="choice-dialog">
+          <p className="mb-3 text-[13px] text-muted">{dialog.message}</p>
+          {dialog.detail && <pre className="selectable mb-4 max-h-40 overflow-auto rounded bg-bg p-2 font-mono text-[11px] whitespace-pre-wrap text-muted">{dialog.detail}</pre>}
+          <div className="flex flex-wrap justify-end gap-2">
+            {dialog.choices.map((c, i) => (
+              <Button key={c.label} autoFocus={i === 0} variant={c.variant ?? 'default'} onClick={() => { close(); void c.run?.() }}>{c.label}</Button>
+            ))}
+          </div>
+        </div>
+      </Modal>
+    )
+  }
   if (dialog.kind === 'shortcuts') return <ShortcutsDialog close={close} />
   return <CloneDialog close={close} />
 }
@@ -46,36 +60,6 @@ function InputDialog({ d, close }: { d: Extract<NonNullable<ReturnType<typeof us
           <Button type="submit" variant="primary" disabled={!value.trim()} data-testid="dialog-submit">{d.confirm}</Button>
         </div>
       </form>
-    </Modal>
-  )
-}
-
-function SettingsDialog({ close }: { close: () => void }) {
-  const settings = useStore((s) => s.settings)
-  const [gitPath, setGitPath] = useState(settings?.gitPath ?? 'git')
-  if (!settings) return null
-  return (
-    <Modal open onClose={close} title="Settings">
-      <div className="space-y-4 text-[13px]">
-        <div>
-          <span className="mb-1 block text-xs text-muted">Theme</span>
-          <div className="flex gap-1">
-            {(['system', 'dark', 'light'] as const).map((t) => (
-              <Button key={t} size="sm" variant={settings.theme === t ? 'primary' : 'default'} onClick={() => void saveSettings({ theme: t })} className="capitalize">{t}</Button>
-            ))}
-          </div>
-        </div>
-        <div>
-          <span className="mb-1 block text-xs text-muted">Font size: {settings.fontSize}px</span>
-          <input type="range" min={11} max={16} value={settings.fontSize} onChange={(e) => void saveSettings({ fontSize: Number(e.target.value) })} className="w-full" />
-        </div>
-        <div className="flex items-end gap-2">
-          <div className="flex-1"><TextField label="Git executable" value={gitPath} onChange={(e) => setGitPath(e.target.value)} placeholder="git" /></div>
-          <Button onClick={() => void saveSettings({ gitPath: gitPath.trim() || 'git' })} disabled={gitPath === settings.gitPath}>Save</Button>
-        </div>
-        <p className="text-xs text-faint">A new git path applies to repositories opened after saving.</p>
-        <div className="flex justify-end"><Button variant="primary" onClick={close}>Done</Button></div>
-      </div>
     </Modal>
   )
 }
@@ -113,7 +97,17 @@ function ShortcutsDialog({ close }: { close: () => void }) {
     <Modal open onClose={close} title="Keyboard shortcuts" width={520}>
       <table className="w-full text-[13px]" data-testid="shortcuts">
         <tbody>
-          {SHORTCUT_HELP.map((s) => (
+          {/* The live bindings, so rebinding in Settings → Keyboard shows up here too. */}
+          {COMMANDS.map((c) => {
+            const combos = [...keymap(setting('keybindings'))].filter(([, id]) => id === c.id).map(([k]) => formatCombo(k))
+            return combos.length ? (
+              <tr key={c.id} className="border-b border-line/50">
+                <td className="py-1.5 pr-4 font-mono text-xs whitespace-nowrap text-muted">{combos.join('  or  ')}</td>
+                <td className="py-1.5">{c.label}</td>
+              </tr>
+            ) : null
+          })}
+          {FIXED_KEYS.map((s) => (
             <tr key={s.what} className="border-b border-line/50 last:border-0">
               <td className="py-1.5 pr-4 font-mono text-xs whitespace-nowrap text-muted">{s.keys.replaceAll('mod', mod)}</td>
               <td className="py-1.5">{s.what}</td>
@@ -156,9 +150,9 @@ export function Toasts() {
     <div className="pointer-events-none fixed right-4 bottom-8 z-50 flex w-96 flex-col gap-2" data-testid="toasts">
       {toasts.map((t) => (
         <div key={t.id} role="status" data-kind={t.kind}
-          className={`pointer-events-auto rounded-lg border bg-raised p-3 text-[13px] shadow-xl shadow-black/30 ${t.kind === 'error' ? 'border-del/60' : 'border-line'}`}>
+          className="pointer-events-auto rounded-lg border border-line bg-raised p-3 text-[13px] shadow-xl shadow-black/30">
           <div className="flex items-start gap-2">
-            <span className={`mt-1 size-2 shrink-0 rounded-full ${t.kind === 'error' ? 'bg-del' : t.kind === 'success' ? 'bg-add' : 'bg-accent'}`} />
+            <span className={`mt-1 size-2 shrink-0 rounded-full ${t.kind === 'success' ? 'bg-add' : 'bg-accent'}`} />
             <div className="min-w-0 flex-1">
               <div className="font-medium">{t.title}</div>
               {t.detail && (

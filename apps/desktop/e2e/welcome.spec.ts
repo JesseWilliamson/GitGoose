@@ -27,7 +27,7 @@ test('offers to initialize a folder that is not a repository', async () => {
   const { app, page } = await launch()
   await pickReturns(app, dir)
   await page.getByTestId('welcome').getByRole('button', { name: 'Open' }).click()
-  await page.getByTestId('toast-action').filter({ hasText: 'Initialize it' }).click()
+  await page.getByTestId('choice-dialog').getByRole('button', { name: 'Initialize repository' }).click()
   await expect(page.getByTestId('wip-row')).toContainText('No commits yet')
   expect(existsSync(join(dir, '.git'))).toBe(true)
   await app.close()

@@ -2,7 +2,9 @@ import type { Row } from '@gitsquid/graph'
 import { memo } from 'react'
 import { laneColor } from '../lib/format'
 
+/** Graph row height: normal and compact (Settings → Appearance). */
 export const ROW_H = 28
+export const ROW_H_COMPACT = 22
 export const LANE_W = 16
 const PAD = 6
 
@@ -13,14 +15,14 @@ export const laneX = (lane: number) => PAD + lane * LANE_W + LANE_W / 2
  * straight lines for 'pass' edges, and curves for lines that change column on their way into
  * (top half) or out of (bottom half) the node.
  */
-export const GraphCell = memo(function GraphCell({ row, width, showPending, isHead }: {
+export const GraphCell = memo(function GraphCell({ row, width, showPending, isHead, h = ROW_H }: {
   row: Row
   width: number
+  h?: number
   /** Draw the dashed HEAD lane (only when there is an uncommitted-changes row above). */
   showPending: boolean
   isHead: boolean
 }) {
-  const h = ROW_H
   const mid = h / 2
   const cx = laneX(row.lane)
   return (
@@ -45,8 +47,7 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
 })
 
 /** The "uncommitted changes" node: hollow and dashed, in HEAD's lane, joined to HEAD below. */
-export function WipCell({ width, hasHead }: { width: number; hasHead: boolean }) {
-  const h = ROW_H
+export function WipCell({ width, hasHead, h = ROW_H }: { width: number; hasHead: boolean; h?: number }) {
   const cx = laneX(0)
   return (
     <svg width={width} height={h} className="block shrink-0" aria-hidden>

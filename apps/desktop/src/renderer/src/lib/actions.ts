@@ -1,7 +1,6 @@
-import type { Ref, RepoSnapshot, ResetMode } from '@gitsquid/shared'
-import { api } from './api'
-import { toUiError } from './api'
-import { activeRepo, addRepo, onSnapshot, openRepo, refreshAux, toast, toastError, updateRepo, useStore } from './store'
+import type { PullMode, Ref, RepoSnapshot, ResetMode } from '@gitsquid/shared'
+import { api, toUiError, type UiError } from './api'
+import { activeRepo, addRepo, choose, onSnapshot, openRepo, refreshAux, reportError, setting, toast, updateRepo, useStore } from './store'
 
 /** The undo entry ids an action produced: a single id, an array of them (multi-step actions), or none. */
 function undoIdsOf(result: unknown): number[] {
@@ -11,9 +10,9 @@ function undoIdsOf(result: unknown): number[] {
 }
 
 /**
- * Every user-visible git action goes through `run`. It shows progress, turns failures into a
- * toast with git's own stderr, and offers Undo on success instead of asking "are you sure?"
- * beforehand. Confirmation dialogs are kept for the few things undo cannot reverse (anything
+ * Every user-visible git action goes through `run`. It shows progress, reports failures in the
+ * attention bar with git's own stderr (they stay until dismissed, so they cannot be missed), and
+ * offers Undo on success instead of asking "are you sure?" beforehand. Confirmation dialogs are kept for the few things undo cannot reverse (anything
  * that changes a remote).
  *
  * Undo is offered only when the operation recorded an undo entry, and the button undoes exactly
@@ -24,7 +23,15 @@ export async function run(
   id: string,
   label: string,
   fn: () => Promise<unknown>,
-  opts: { quiet?: boolean; success?: string } = {},
+  opts: {
+    quiet?: boolean
+    success?: string
+    /**
+     * Turn a specific failure into a question (return true when handled). Failures that ask the
+     * user to decide something get a choice dialog; everything else goes to the attention bar.
+     */
+    onError?: (err: UiError) => boolean
+  } = {},
 ): Promise<boolean> {
   updateRepo(id, { busy: label })
   try {
@@ -43,8 +50,8 @@ export async function run(
       onSnapshot(snap)
       updateRepo(id, { center: { kind: 'conflicts' } })
       toast({ kind: 'info', title: `${capitalize(snap.operation)} stopped on conflicts`, detail: 'Resolve them, then continue.' })
-    } else {
-      toastError(`${label} failed`, e)
+    } else if (!opts.onError?.(toUiError(e))) {
+      reportError(`${label} failed`, e)
     }
     return false
   } finally {
@@ -57,14 +64,14 @@ function capitalize(s: string): string {
   return s[0]!.toUpperCase() + s.slice(1)
 }
 
-/** Undo the most recent operation (toolbar, Ctrl/Cmd+Z, palette). */
+/** Undo the most recent operation (toolbar, Ctrl+Z / ⌘Z, palette). */
 export async function undo(id: string): Promise<void> {
   updateRepo(id, { busy: 'Undo' })
   try {
     const label = await api.undo(id)
     toast({ kind: label ? 'success' : 'info', title: label ? `Undid: ${label}` : 'Nothing to undo' })
   } catch (e) {
-    toastError('Undo failed', e)
+    reportError('Undo failed', e)
   } finally {
     updateRepo(id, { busy: null })
     void refreshAux(id)
@@ -82,7 +89,7 @@ async function undoEntries(id: string, entries: number[]): Promise<void> {
     }
     toast({ kind: 'success', title: `Undid: ${labels.join(', ')}` })
   } catch (e) {
-    toastError('Undo failed', e)
+    reportError('Undo failed', e)
   } finally {
     updateRepo(id, { busy: null })
     void refreshAux(id)
@@ -112,10 +119,10 @@ export async function openRepoDialog(): Promise<void> {
     addRepo(await api.openRepo(dir))
     useStore.setState({ settings: await api.getSettings() })
   } catch (e) {
-    toast({
-      kind: 'error', title: `${dir} is not a git repository`, detail: String((e as Error).message ?? e),
-      action: { label: 'Initialize it', run: () => void initRepo(dir) },
-    })
+    choose(`${dir} is not a git repository`, 'Create a new, empty repository in this folder?', [
+      { label: 'Initialize repository', variant: 'primary', run: () => initRepo(dir) },
+      { label: 'Cancel' },
+    ], toUiError(e).message)
   }
 }
 
@@ -125,7 +132,7 @@ export async function initRepo(dir?: string): Promise<void> {
   try {
     addRepo(await api.initRepo(target))
   } catch (e) {
-    toastError('Could not create the repository', e)
+    reportError('Could not create the repository', e)
   }
 }
 
@@ -135,7 +142,7 @@ export async function cloneRepo(url: string, parent: string): Promise<boolean> {
     addRepo(await api.cloneRepo(url, parent))
     return true
   } catch (e) {
-    toastError('Clone failed', e)
+    reportError('Clone failed', e)
     return false
   } finally {
     useStore.setState({ cloneProgress: null })
@@ -157,8 +164,31 @@ export function currentBranchRef(snap: RepoSnapshot): Ref | undefined {
   return snap.head.branch ? snap.refs.find((r) => r.name === `refs/heads/${snap.head.branch}`) : undefined
 }
 
+/** Lines git prints with tab indentation: file lists in "would be overwritten" messages. */
+function listedFiles(err: UiError): string {
+  return (err.stderr ?? '').split('\n').filter((l) => l.startsWith('\t')).map((l) => l.trim()).join('\n')
+}
+
 export const checkout = (id: string, ref: string) =>
-  run(id, `Check out ${shortRef(ref)}`, () => api.checkout(id, ref))
+  run(id, `Check out ${shortRef(ref)}`, () => api.checkout(id, ref), {
+    onError: (err) => {
+      if (!/would be overwritten by checkout/.test(err.message + (err.stderr ?? ''))) return false
+      // A question, not just a failure: offer the usual way through.
+      choose(`Local changes are in the way of ${shortRef(ref)}`,
+        'Checking out would overwrite these files. Stash your changes (including untracked files) and check out? You can pop the stash afterwards, or undo.',
+        [
+          {
+            label: 'Stash and check out', variant: 'primary',
+            run: () => void run(id, `Check out ${shortRef(ref)}`, async () => [
+              await api.stashPush(id, { includeUntracked: true, message: `GitSquid: before checking out ${shortRef(ref)}` }),
+              await api.checkout(id, ref),
+            ]),
+          },
+          { label: 'Cancel' },
+        ], listedFiles(err) || err.stderr)
+      return true
+    },
+  })
 
 export function newBranch(id: string, at?: string): void {
   ask('New branch', 'Branch name', 'Create and check out', (name) => {
@@ -172,19 +202,20 @@ export function renameBranch(id: string, name: string): void {
   }, { initial: name })
 }
 
-export async function deleteBranch(id: string, name: string): Promise<void> {
-  try {
-    const entry = await api.deleteBranch(id, name)
-    toast({ kind: 'success', title: `Deleted ${name}`, ...(entry !== null ? { action: { label: 'Undo', run: () => void undoEntries(id, [entry]) } } : {}) })
-  } catch (e) {
-    const err = toUiError(e)
-    if (/not fully merged/.test(err.message + (err.stderr ?? ''))) {
-      toast({ kind: 'error', title: `${name} is not fully merged`, detail: 'Its commits are not on any other branch. Deleting is still undoable.',
-        action: { label: 'Delete anyway', run: () => forceDeleteBranch(id, name) } })
-    } else toastError(`Delete ${name} failed`, e)
-  } finally {
-    void refreshAux(id)
-  }
+export function deleteBranch(id: string, name: string): Promise<boolean> {
+  return run(id, `Delete ${name}`, () => api.deleteBranch(id, name), {
+    success: `Deleted ${name}`,
+    onError: (err) => {
+      if (!/not fully merged/.test(err.message + (err.stderr ?? ''))) return false
+      choose(`${name} is not fully merged`,
+        `Some commits on ${name} are not on any other branch. Deleting the branch leaves them unreachable. You can still undo the deletion right afterwards.`,
+        [
+          { label: 'Delete anyway', variant: 'danger', run: () => forceDeleteBranch(id, name) },
+          { label: 'Keep branch' },
+        ], err.stderr)
+      return true
+    },
+  })
 }
 
 export function forceDeleteBranch(id: string, name: string): void {
@@ -197,8 +228,18 @@ export const merge = (id: string, ref: string, opts?: { noFf?: boolean; ffOnly?:
 export const rebase = (id: string, onto: string) =>
   run(id, `Rebase onto ${shortRef(onto)}`, () => api.rebase(id, onto))
 
-export const reset = (id: string, hash: string, mode: ResetMode) =>
-  run(id, `Reset (${mode}) to ${hash.slice(0, 7)}`, () => api.reset(id, hash, mode))
+export function reset(id: string, hash: string, mode: ResetMode): Promise<boolean> {
+  const go = () => run(id, `Reset (${mode}) to ${hash.slice(0, 7)}`, () => api.reset(id, hash, mode))
+  if (mode !== 'hard' || !setting('confirmHardReset')) return go()
+  return new Promise((resolve) => confirmAction('Reset hard?', `Moves the branch to ${hash.slice(0, 7)} and discards uncommitted changes. Undo can bring them back.`, 'Reset hard', async () => resolve(await go())))
+}
+
+/** Discard changes in files, asking first only if Settings → Confirmations says so (it is undoable). */
+export function discard(id: string, paths: string[]): Promise<boolean> {
+  const go = () => run(id, `Discard ${paths.length === 1 ? paths[0] : `${paths.length} files`}`, () => api.discardPaths(id, paths))
+  if (!setting('confirmDiscard')) return go()
+  return new Promise((resolve) => confirmAction('Discard changes?', `${paths.length === 1 ? paths[0] : `${paths.length} files`} will go back to their last committed or staged state. Undo can bring the changes back.`, 'Discard', async () => resolve(await go())))
+}
 
 export const cherryPick = (id: string, hash: string) =>
   run(id, `Cherry-pick ${hash.slice(0, 7)}`, () => api.cherryPick(id, hash))
@@ -216,21 +257,58 @@ export const deleteTag = (id: string, name: string) =>
   run(id, `Delete tag ${name}`, () => api.deleteTag(id, name))
 
 export function deleteRemoteBranch(id: string, ref: string): void {
+  if (!setting('confirmDeleteRemoteBranch')) {
+    void run(id, `Delete ${shortRef(ref)}`, () => api.deleteRemoteBranch(id, ref))
+    return
+  }
   confirmAction(`Delete ${shortRef(ref)} on the remote?`, 'This deletes the branch for everyone. Undo cannot reverse changes to a remote.', 'Delete remote branch', () => {
     void run(id, `Delete ${shortRef(ref)}`, () => api.deleteRemoteBranch(id, ref))
   })
 }
 
+export async function openTerminal(id: string): Promise<void> {
+  try {
+    await api.openTerminal(id)
+  } catch (e) {
+    reportError('Could not open a terminal', e)
+  }
+}
+
+export async function openInEditor(path: string, line?: number): Promise<void> {
+  try {
+    await api.openInEditor(path, line)
+  } catch (e) {
+    reportError('Could not open the editor', e)
+  }
+}
+
 // ------------------------------------------------------------------ remotes
 
-export const fetchAll = (id: string) => run(id, 'Fetch', () => api.fetch(id, { prune: true }), { success: 'Fetched' })
+export const fetchAll = (id: string, opts: { quiet?: boolean } = {}) =>
+  run(id, 'Fetch', () => api.fetch(id, { prune: setting('pruneOnFetch') }), { success: 'Fetched', quiet: opts.quiet })
 
-export const pull = (id: string, rebaseMode = false) =>
-  run(id, rebaseMode ? 'Pull (rebase)' : 'Pull', () => api.pull(id, { rebase: rebaseMode }), { success: 'Pulled' })
+const PULL_LABEL: Record<PullMode, string> = { merge: 'Pull', rebase: 'Pull (rebase)', 'ff-only': 'Pull (fast-forward only)' }
+
+/** Pull with the mode from Settings → Git, or an explicit one from the Pull menu. */
+export const pull = (id: string, mode: PullMode = setting('pullMode')) =>
+  run(id, PULL_LABEL[mode], () => api.pull(id, { mode }), { success: 'Pulled' })
 
 export function push(id: string, force = false): void {
-  const go = () => void run(id, force ? 'Force push' : 'Push', () => api.push(id, { force }), { success: 'Pushed' })
-  if (force) confirmAction('Force push?', 'Overwrites the remote branch with yours (with --force-with-lease, so it refuses if someone else pushed meanwhile).', 'Force push', go)
+  const go = () => void run(id, force ? 'Force push' : 'Push', () => api.push(id, { force }), {
+    success: 'Pushed',
+    onError: (err) => {
+      if (force || !/\[rejected\]|non-fast-forward|fetch first/.test(err.message + (err.stderr ?? ''))) return false
+      choose('The remote has commits you do not have',
+        'Someone pushed to this branch since you last pulled. Pull their commits first, then push.',
+        [
+          { label: 'Pull, then push', variant: 'primary', run: async () => { if (await pull(id)) push(id) } },
+          { label: 'Force push (with lease)…', variant: 'danger', run: () => push(id, true) },
+          { label: 'Cancel' },
+        ], err.stderr)
+      return true
+    },
+  })
+  if (force && setting('confirmForcePush')) confirmAction('Force push?', 'Overwrites the remote branch with yours (with --force-with-lease, so it refuses if someone else pushed meanwhile).', 'Force push', go)
   else go()
 }
 

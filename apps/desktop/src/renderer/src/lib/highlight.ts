@@ -73,9 +73,9 @@ async function getHighlighter(): Promise<HighlighterCore> {
 export type Tokens = ThemedToken[][]
 
 /** Tokenize `code` (lines joined by \n). Returns null if the language is unknown or the input too big. */
-export async function tokenize(code: string, path: string, dark: boolean): Promise<Tokens | null> {
+export async function tokenize(code: string, path: string, dark: boolean, maxChars = 400_000): Promise<Tokens | null> {
   const lang = languageFor(path)
-  if (!lang || code.length > 400_000) return null
+  if (!lang || code.length > maxChars) return null
   const h = await getHighlighter()
   if (!loaded.has(lang)) {
     const mod = (await LANGS[lang]!()) as { default: Parameters<HighlighterCore['loadLanguage']>[0] }

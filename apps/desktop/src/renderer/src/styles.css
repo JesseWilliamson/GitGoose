@@ -94,7 +94,7 @@ body {
   background: var(--gs-bg);
   color: var(--gs-fg);
   font-family: var(--font-sans);
-  font-size: var(--gs-font-size, 13px);
+  font-size: 13px;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
   user-select: none;
@@ -128,9 +128,13 @@ textarea,
   background-color: var(--gs-faint);
 }
 
-:focus-visible {
-  outline: 2px solid var(--gs-accent);
-  outline-offset: -2px;
+/* In the base layer so utilities like outline-none can override it (unlayered CSS beats every
+   Tailwind layer, which made outline-none silently useless). */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--gs-accent);
+    outline-offset: -2px;
+  }
 }
 
 /* cmdk */

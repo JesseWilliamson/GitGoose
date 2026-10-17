@@ -5,6 +5,7 @@ import {
 } from '@gitsquid/shared'
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { logError } from './diagnostics'
+import { openInEditor, openTerminal } from './launch'
 import type { RepoManager } from './repos'
 import { forgetOpenRepo, getSettings, rememberRepo, setSettings } from './settings'
 
@@ -57,13 +58,15 @@ export function createHandlers(repos: RepoManager, prompts: PromptBroker, gitOpt
       const err = await shell.openPath(path)
       if (err) throw new Error(err)
     },
+    openInEditor: (path, line) => openInEditor(path, line),
+    openTerminal: (id) => openTerminal(r(id).path),
     revealPath: async (path) => shell.showItemInFolder(path),
     logError: async (message) => logError('renderer', message),
 
     snapshot: (id) => r(id).snapshot(),
     logPage: (id, offset, count) => r(id).logPage(offset, count),
     commitDetails: (id, hash, opts) => r(id).commitDetails(hash, opts),
-    diff: (id, target) => r(id).diff(target),
+    diff: (id, target, opts) => r(id).diff(target, opts),
     fileHistory: (id, path) => r(id).fileHistory(path),
     blame: (id, path, rev) => r(id).blame(path, rev),
     search: (id, field, q) => r(id).search(field, q),

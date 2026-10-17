@@ -5,7 +5,7 @@ import { installCrashHandlers } from './diagnostics'
 import { broadcast, createHandlers, registerIpc } from './ipc'
 import { installMenu } from './menu'
 import { RepoManager } from './repos'
-import { getSettings, setSettings } from './settings'
+import { applyZoom, getSettings, onSettingsChanged, setSettings } from './settings'
 import { scheduleUpdateCheck } from './updater'
 import { loadWindowState, trackWindowState } from './windowState'
 
@@ -73,6 +73,11 @@ function createWindow(): BrowserWindow {
       spellcheck: true,
     },
   })
+  // Ctrl+wheel and pinch would change the zoom behind the UI scale setting's back.
+  win.webContents.on('did-finish-load', () => {
+    applyZoom(win)
+    void win.webContents.setVisualZoomLevelLimits(1, 1)
+  })
   win.once('ready-to-show', () => {
     if (saved?.maximized) win.maximize()
     win.show()
@@ -91,6 +96,8 @@ function createWindow(): BrowserWindow {
   return win
 }
 
+onSettingsChanged((settings) => broadcast({ type: 'settings', settings }))
+
 app.whenReady().then(async () => {
   try {
     askpassEnv = await askpass.start()
@@ -103,6 +110,7 @@ app.whenReady().then(async () => {
     ? process.env.GITSQUID_OPEN.split(delimiter).filter(Boolean)
     : process.argv.slice(app.isPackaged ? 1 : 2).filter((a) => !a.startsWith('-'))
   if (paths.length) setSettings({ openRepos: paths.map((p) => resolve(p)) })
+  else if (!getSettings().reopenTabs) setSettings({ openRepos: [] })
   registerIpc(createHandlers(repos, prompts, gitOpts), repos)
   installMenu()
   createWindow()

@@ -1,11 +1,12 @@
 import type { CommitDetails, DiffTarget, StatusEntry } from '@gitsquid/shared'
 import { Check, Copy, Minus, Plus, Undo2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { copy, pop, run, stashApply, stashDrop } from '../lib/actions'
+import { copy, discard as discardFiles, openInEditor, pop, run, stashApply, stashDrop } from '../lib/actions'
 import { api } from '../lib/api'
 import { dateTime, hashColor, initials, laneColor, sentence, shortHash } from '../lib/format'
-import { ensureLoaded, toastError, updateRepo, type FileMode, type RepoView } from '../lib/store'
+import { ensureLoaded, reportError, setting, updateRepo, type FileMode, type RepoView } from '../lib/store'
 import { FileRow, statusKind } from './FileList'
+import { modName } from '../lib/keys'
 import { Button, CM, SectionHeader, Spinner } from './ui'
 
 export function DetailPanel({ view }: { view: RepoView }) {
@@ -36,7 +37,8 @@ function FileMenu({ view, target, children }: { view: RepoView; target: DiffTarg
       {target.kind !== 'untracked' && <CM.Item onSelect={() => openFile(view, target, 'history')}>File history</CM.Item>}
       {target.kind !== 'untracked' && <CM.Item onSelect={() => openFile(view, target, 'blame')}>Blame</CM.Item>}
       <CM.Separator />
-      <CM.Item onSelect={() => void api.openPath(abs).catch((e) => toastError('Could not open the file', e))}>Open in default app</CM.Item>
+      {target.kind !== 'commit' && <CM.Item onSelect={() => void openInEditor(abs)}>Open in editor</CM.Item>}
+      <CM.Item onSelect={() => void api.openPath(abs).catch((e) => reportError('Could not open the file', e))}>Open with default app</CM.Item>
       <CM.Item onSelect={() => void api.revealPath(abs)}>Reveal in file manager</CM.Item>
       <CM.Item onSelect={() => copy(target.path, 'Copied path')}>Copy path</CM.Item>
     </CM.Content>
@@ -54,7 +56,7 @@ function WipPanel({ view }: { view: RepoView }) {
 
   const stage = (paths: string[]) => run(id, 'Stage', () => api.stagePaths(id, paths), { quiet: true })
   const unstage = (paths: string[]) => run(id, 'Unstage', () => api.unstagePaths(id, paths), { quiet: true })
-  const discard = (paths: string[]) => run(id, `Discard ${paths.length === 1 ? paths[0] : `${paths.length} files`}`, () => api.discardPaths(id, paths))
+  const discard = (paths: string[]) => discardFiles(id, paths)
 
   const unstagedTarget = (e: StatusEntry): DiffTarget => (e.kind === 'untracked' ? { kind: 'untracked', path: e.path } : { kind: 'unstaged', path: e.path })
 
@@ -152,7 +154,8 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
   const commit = async () => {
     if (!canCommit) return
     const message = body.trim() ? `${summary.trim()}\n\n${body.trim()}\n` : `${summary.trim()}\n`
-    const ok = await run(id, amend ? 'Amend commit' : 'Commit', () => api.commit(id, message, { amend }), { success: amend ? 'Commit amended' : 'Committed' })
+    const opts = { amend, signOff: setting('signOff'), gpgSign: setting('gpgSign') }
+    const ok = await run(id, amend ? 'Amend commit' : 'Commit', () => api.commit(id, message, opts), { success: amend ? 'Commit amended' : 'Committed' })
     if (ok) {
       setSummary('')
       setBody('')
@@ -175,6 +178,7 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
           onChange={(e) => setSummary(e.target.value)}
           onKeyDown={onKey}
           placeholder="Summary"
+          style={{ fontFamily: 'var(--gs-code-font)' }}
           data-testid="commit-summary"
           className="h-8 w-full rounded-md border border-line bg-bg px-2 pr-9 text-[13px] outline-none focus:border-accent"
         />
@@ -185,6 +189,7 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
         onChange={(e) => setBody(e.target.value)}
         onKeyDown={onKey}
         placeholder="Description"
+        style={{ fontFamily: 'var(--gs-code-font)', fontSize: 'var(--gs-code-size)' }}
         rows={3}
         className="mt-2 w-full resize-none rounded-md border border-line bg-bg px-2 py-1.5 text-[13px] outline-none focus:border-accent"
       />
@@ -193,7 +198,7 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
           <input type="checkbox" checked={amend} onChange={(e) => void toggleAmend(e.target.checked)} disabled={!view.snapshot.head.hash} />
           Amend previous commit
         </label>
-        <Button variant="primary" disabled={!canCommit} onClick={() => void commit()} data-testid="commit-button" title="Commit (Ctrl/Cmd+Enter)">
+        <Button variant="primary" disabled={!canCommit} onClick={() => void commit()} data-testid="commit-button" title={`Commit (${modName()}+Enter)`}>
           {view.busy === 'Commit' ? <Spinner /> : <Check size={14} />}
           {amend ? 'Amend' : stagedCount ? `Commit ${stagedCount} ${stagedCount === 1 ? 'file' : 'files'}` : 'Commit'}
         </Button>
@@ -223,7 +228,7 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
       if (detailsCache.size > 500) detailsCache.clear()
       detailsCache.set(hash, d)
       if (latest.current === hash) setDetails(d)
-    }, (e) => toastError('Could not load commit', e))
+    }, (e) => reportError('Could not load commit', e))
   }, [hash, view.id])
 
   if (!details) return <div className="flex flex-1 items-center justify-center text-faint"><Spinner /></div>

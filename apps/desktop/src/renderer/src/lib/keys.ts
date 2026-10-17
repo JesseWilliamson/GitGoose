@@ -1,53 +1,100 @@
 /**
- * Keyboard shortcuts, all in one table. The native menu displays the same shortcuts but does not
- * register them (see src/main/menu.ts), so this is the single place a key press is handled.
+ * Keyboard shortcuts. The native menu displays shortcuts but does not register them (see
+ * src/main/menu.ts), so this is the single place a key press is handled.
  *
- * A shortcut is "mod+shift+key", where mod is Cmd on macOS and Ctrl elsewhere.
+ * A combination is written "mod+shift+key", where mod is Cmd on macOS and Ctrl elsewhere.
+ * COMMANDS holds the defaults; the `keybindings` setting maps a command id to a replacement
+ * combination ("" means no shortcut).
  */
-export const SHORTCUTS: Record<string, string> = {
-  'mod+z': 'undo',
-  'mod+o': 'open-repo',
-  'mod+w': 'close-tab',
-  'mod+,': 'settings',
-  'mod+f': 'search',
-  'mod+k': 'palette',
-  'mod+shift+p': 'palette',
-  'mod+shift+l': 'fetch',
-  'mod+shift+arrowdown': 'pull',
-  'mod+shift+arrowup': 'push',
-  'mod+b': 'new-branch',
-  'mod+shift+s': 'stash',
+
+export interface KeyCommand {
+  id: string
+  label: string
+  defaults: string[]
 }
+
+export const COMMANDS: KeyCommand[] = [
+  { id: 'palette', label: 'Command palette', defaults: ['mod+k', 'mod+shift+p'] },
+  { id: 'undo', label: 'Undo the last git operation', defaults: ['mod+z'] },
+  { id: 'search', label: 'Find commits', defaults: ['mod+f'] },
+  { id: 'open-repo', label: 'Open repository', defaults: ['mod+o'] },
+  { id: 'close-tab', label: 'Close tab', defaults: ['mod+w'] },
+  { id: 'settings', label: 'Settings', defaults: ['mod+,'] },
+  { id: 'fetch', label: 'Fetch', defaults: ['mod+shift+l'] },
+  { id: 'pull', label: 'Pull', defaults: ['mod+shift+arrowdown'] },
+  { id: 'push', label: 'Push', defaults: ['mod+shift+arrowup'] },
+  { id: 'new-branch', label: 'New branch', defaults: ['mod+shift+b'] },
+  { id: 'stash', label: 'Stash changes', defaults: ['mod+shift+s'] },
+  { id: 'terminal', label: 'Open terminal here', defaults: ['mod+shift+t'] },
+  { id: 'zoom-in', label: 'Zoom in', defaults: ['mod+='] },
+  { id: 'zoom-out', label: 'Zoom out', defaults: ['mod+-'] },
+  { id: 'zoom-reset', label: 'Actual size', defaults: ['mod+0'] },
+  { id: 'toggle-sidebar', label: 'Show or hide the sidebar', defaults: ['mod+b'] },
+  { id: 'toggle-details', label: 'Show or hide the details panel', defaults: ['mod+alt+b'] },
+  { id: 'toggle-bottom', label: 'Show or hide the bottom panel', defaults: ['mod+j'] },
+]
 
 const mac = typeof window !== 'undefined' && window.gitsquid?.platform === 'darwin'
 
-export function shortcutOf(e: KeyboardEvent): string | null {
+/** The combination a key event represents, or null for keys without a modifier. */
+export function comboOf(e: KeyboardEvent): string | null {
   const mod = mac ? e.metaKey : e.ctrlKey
   if (!mod) return null
-  return `mod+${e.shiftKey ? 'shift+' : ''}${e.key.toLowerCase()}`
+  let key = e.key.toLowerCase()
+  if (['control', 'meta', 'shift', 'alt'].includes(key)) return null
+  // "+" is shift+"=" on most layouts; treat both as "=" so zoom in works either way.
+  let shift = e.shiftKey
+  if (key === '+') {
+    key = '='
+    shift = false
+  }
+  return `mod+${e.altKey ? 'alt+' : ''}${shift ? 'shift+' : ''}${key}`
 }
 
-/** Human-readable list for the shortcuts dialog. */
-export const SHORTCUT_HELP: { keys: string; what: string }[] = [
-  { keys: 'mod+K  or  mod+Shift+P', what: 'Command palette' },
-  { keys: 'mod+Z', what: 'Undo the last git operation (in a text field: undo typing)' },
-  { keys: 'mod+F', what: 'Find commits' },
-  { keys: 'Enter / Shift+Enter', what: 'Next / previous search match' },
-  { keys: 'J / K  or  ↓ / ↑', what: 'Next / previous commit in the graph' },
-  { keys: 'PageDown / PageUp, Home / End', what: 'Move through the graph faster' },
-  { keys: 'mod+Enter', what: 'Commit (in the message box)' },
-  { keys: 'Esc', what: 'Close the diff and return to the graph' },
-  { keys: 'mod+B', what: 'New branch' },
-  { keys: 'mod+Shift+S', what: 'Stash changes' },
-  { keys: 'mod+Shift+L', what: 'Fetch' },
-  { keys: 'mod+Shift+↓ / ↑', what: 'Pull / push' },
-  { keys: 'mod+O', what: 'Open repository' },
-  { keys: 'mod+1 … 9', what: 'Switch tab' },
-  { keys: 'mod+W', what: 'Close tab' },
-  { keys: 'mod+,', what: 'Settings' },
-  { keys: '?', what: 'This list' },
-]
+/** The effective combinations for each command. */
+export function bindings(overrides: Record<string, string>): Map<string, string[]> {
+  const out = new Map<string, string[]>()
+  for (const c of COMMANDS) {
+    const o = overrides[c.id]
+    out.set(c.id, o === undefined ? c.defaults : o ? [o] : [])
+  }
+  return out
+}
+
+/** combination -> command id, for dispatching key presses. */
+export function keymap(overrides: Record<string, string>): Map<string, string> {
+  const map = new Map<string, string>()
+  for (const [id, combos] of bindings(overrides)) for (const k of combos) if (!map.has(k)) map.set(k, id)
+  return map
+}
+
+/** Combinations bound to more than one command. */
+export function conflicts(overrides: Record<string, string>): Map<string, string[]> {
+  const seen = new Map<string, string[]>()
+  for (const [id, combos] of bindings(overrides)) for (const k of combos) seen.set(k, [...(seen.get(k) ?? []), id])
+  return new Map([...seen].filter(([, ids]) => ids.length > 1))
+}
 
 export function modName(): string {
   return mac ? '⌘' : 'Ctrl'
 }
+
+/** "mod+shift+p" -> "Ctrl+Shift+P" (or "⌘⇧P" on macOS). */
+export function formatCombo(combo: string): string {
+  const names: Record<string, string> = mac
+    ? { mod: '⌘', shift: '⇧', alt: '⌥', arrowdown: '↓', arrowup: '↑', arrowleft: '←', arrowright: '→' }
+    : { mod: 'Ctrl', shift: 'Shift', alt: 'Alt', arrowdown: '↓', arrowup: '↑', arrowleft: '←', arrowright: '→' }
+  const parts = combo.split('+').map((p) => names[p] ?? (p.length === 1 ? p.toUpperCase() : p[0]!.toUpperCase() + p.slice(1)))
+  return mac ? parts.join('') : parts.join('+')
+}
+
+/** Keys that are not configurable commands, for the shortcuts dialog. */
+export const FIXED_KEYS: { keys: string; what: string }[] = [
+  { keys: 'Enter / Shift+Enter', what: 'Next / previous search match' },
+  { keys: 'J / K  or  ↓ / ↑', what: 'Next / previous commit in the graph' },
+  { keys: 'PageDown / PageUp, Home / End', what: 'Move through the graph faster' },
+  { keys: 'mod+Enter', what: 'Commit (in the message box)' },
+  { keys: 'Esc', what: 'Close the diff or settings and return to the graph' },
+  { keys: 'mod+1 … 9', what: 'Switch tab' },
+  { keys: '?', what: 'This list' },
+]
