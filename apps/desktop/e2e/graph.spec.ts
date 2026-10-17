@@ -24,8 +24,8 @@ test('keeps the checked-out branch in the leftmost lane', async () => {
   const { app, page } = await launch(r.dir)
   const row = page.locator(`[data-testid="commit-row"][data-hash="${head}"]`)
   await expect(row).toBeVisible()
-  // laneX(0) = PAD + LANE_W/2 = 6 + 20/2 = 16: the node sits in lane 0 even though newer commits come first.
-  await expect(row.locator('[data-testid="avatar-node"] circle').first()).toHaveAttribute('cx', '16')
+  // laneX(0) = PAD + LANE_W/2 = 6 + 24/2 = 18: the node sits in lane 0 even though newer commits come first.
+  await expect(row.locator('[data-testid="avatar-node"] circle').first()).toHaveAttribute('cx', '18')
   await app.close()
 })
 
@@ -72,7 +72,7 @@ test('caps the graph column on wide histories and lets the user resize it', asyn
   const header = page.getByTestId('graph-resizer').locator('..')
   await expect(header).toBeVisible()
   const auto = (await header.boundingBox())!.width
-  expect(auto).toBeLessThanOrEqual(8 * 20 + 12 + 1) // AUTO_LANES * LANE_W + padding
+  expect(auto).toBeLessThanOrEqual(8 * 24 + 12 + 1) // AUTO_LANES * LANE_W + padding
   const handle = (await page.getByTestId('graph-resizer').boundingBox())!
   await page.mouse.move(handle.x + 2, handle.y + 5)
   await page.mouse.down()
@@ -81,5 +81,41 @@ test('caps the graph column on wide histories and lets the user resize it', asyn
   await expect.poll(async () => (await header.boundingBox())!.width).toBeGreaterThan(auto + 90)
   await page.getByTestId('graph-resizer').dblclick()
   await expect.poll(async () => (await header.boundingBox())!.width).toBeCloseTo(auto, 0)
+  await app.close()
+})
+
+test('the gear in the graph header hides and shows columns; the author column has no avatar', async () => {
+  const r = makeFixture('linear')
+  const { app, page } = await launch(r.dir)
+  const header = page.getByTestId('graph-header')
+  const row = page.getByTestId('commit-row').first()
+  await expect(header).toContainText('SHA')
+  // The graph node is the author's avatar, so the author column is just the name.
+  await expect(row.getByTestId('author-cell')).toHaveText('Ada Lovelace')
+  await expect(row.getByTestId('author-cell').locator('img, svg')).toHaveCount(0)
+  await page.getByTestId('graph-columns').click()
+  await page.getByTestId('col-sha').click()
+  await page.getByTestId('col-author').click()
+  await page.keyboard.press('Escape')
+  await expect(header).not.toContainText('SHA')
+  await expect(header).not.toContainText('Author')
+  await expect(row.getByTestId('author-cell')).toHaveCount(0)
+  await expect.poll(async () => (await page.evaluate(() => window.gitsquid.getSettings())).graphColumns)
+    .toEqual({ refs: true, graph: true, author: false, date: true, sha: false })
+  await page.getByTestId('graph-columns').click()
+  await page.getByRole('menuitem', { name: 'Reset columns' }).click()
+  await expect(header).toContainText('SHA')
+  await app.close()
+})
+
+test('Ctrl+P opens the command palette and Ctrl+F the search', async () => {
+  const r = makeFixture('linear')
+  const { app, page } = await launch(r.dir)
+  await page.getByTestId('commit-row').first().click()
+  await page.keyboard.press('Control+p')
+  await expect(page.getByTestId('palette-input')).toBeFocused()
+  await page.keyboard.press('Escape')
+  await page.keyboard.press('Control+f')
+  await expect(page.getByTestId('search-input')).toBeFocused()
   await app.close()
 })

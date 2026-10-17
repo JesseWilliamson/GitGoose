@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react'
 import { fetchAll, newBranch, pop, pull, push, stash, undo } from '../lib/actions'
 import { api } from '../lib/api'
 import { ensureLoaded, onCommand, reportError, updateRepo, useStore, type RepoView } from '../lib/store'
-import { modName } from '../lib/keys'
+import { modName, shortcutOf } from '../lib/keys'
 import { DM, Spinner, ToolbarButton } from './ui'
 
 export function Toolbar({ view }: { view: RepoView }) {
@@ -56,7 +56,7 @@ export function Toolbar({ view }: { view: RepoView }) {
       )}
       <SearchBox view={view} />
       {/* Not the ⌘ glyph: that is a macOS key, and this button is the same on every platform. */}
-      <ToolbarButton icon={<SquareTerminal size={17} />} label="Palette" onClick={() => useStore.setState({ palette: true })} title={`Command palette (${modName()}+K)`} />
+      <ToolbarButton icon={<SquareTerminal size={17} />} label="Palette" onClick={() => useStore.setState({ palette: true })} title={`Command palette (${shortcutOf('palette', useStore.getState().settings?.keybindings)})`} />
       <ToolbarButton icon={<Settings size={17} />} label="Settings" onClick={() => useStore.setState({ page: 'settings' })} />
     </div>
   )

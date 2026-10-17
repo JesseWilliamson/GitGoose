@@ -37,7 +37,9 @@ test('commit nodes show initials, and GitHub avatars when turned on, with no net
   await expect.poll(() => hits).toContain('/u/583231?s=64&v=4')
   // The image really loads through the custom scheme: CSP allows it as an image (and only as an
   // image: fetch() from the page is still blocked), and the main process serves the bytes.
-  const img = first.locator('img[src^="gitsquid-avatar:"]')
+  // (The details panel shows it as an <img>; the graph node draws it in SVG.)
+  await first.click()
+  const img = page.getByTestId('detail-panel').locator('img[src^="gitsquid-avatar:"]').first()
   await expect.poll(() => img.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth)).toBe(1)
   // Authors that GitHub cannot be asked about keep their initials and cost no request.
   const ada = page.getByTestId('commit-row').nth(1)

@@ -14,7 +14,7 @@ export interface KeyCommand {
 }
 
 export const COMMANDS: KeyCommand[] = [
-  { id: 'palette', label: 'Command palette', defaults: ['mod+k', 'mod+shift+p'] },
+  { id: 'palette', label: 'Command palette', defaults: ['mod+p', 'mod+shift+p', 'mod+k'] },
   { id: 'undo', label: 'Undo the last git operation', defaults: ['mod+z'] },
   { id: 'search', label: 'Find commits', defaults: ['mod+f'] },
   { id: 'open-repo', label: 'Open repository', defaults: ['mod+o'] },
@@ -31,7 +31,6 @@ export const COMMANDS: KeyCommand[] = [
   { id: 'zoom-reset', label: 'Actual size', defaults: ['mod+0'] },
   { id: 'toggle-sidebar', label: 'Show or hide the sidebar', defaults: ['mod+b'] },
   { id: 'toggle-details', label: 'Show or hide the details panel', defaults: ['mod+alt+b'] },
-  { id: 'toggle-bottom', label: 'Show or hide the bottom panel', defaults: ['mod+j'] },
 ]
 
 const mac = typeof window !== 'undefined' && window.gitsquid?.platform === 'darwin'
@@ -86,6 +85,12 @@ export function formatCombo(combo: string): string {
     : { mod: 'Ctrl', shift: 'Shift', alt: 'Alt', arrowdown: '↓', arrowup: '↑', arrowleft: '←', arrowright: '→' }
   const parts = combo.split('+').map((p) => names[p] ?? (p.length === 1 ? p.toUpperCase() : p[0]!.toUpperCase() + p.slice(1)))
   return mac ? parts.join('') : parts.join('+')
+}
+
+/** The first shortcut bound to a command, formatted for a tooltip ("" when it has none). */
+export function shortcutOf(id: string, overrides: Record<string, string> = {}): string {
+  const combo = bindings(overrides).get(id)?.[0]
+  return combo ? formatCombo(combo) : ''
 }
 
 /** Keys that are not configurable commands, for the shortcuts dialog. */

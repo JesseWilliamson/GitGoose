@@ -96,6 +96,14 @@ export const DM = {
   Item: ({ children, onSelect, disabled }: { children: ReactNode; onSelect: () => void; disabled?: boolean }) => (
     <DropdownMenu.Item className={menuItem} onSelect={onSelect} disabled={disabled}>{children}</DropdownMenu.Item>
   ),
+  /** A toggle that keeps the menu open, so several can be flipped in a row. */
+  Check: ({ children, checked, onChange, disabled, testId }: { children: ReactNode; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean; testId?: string }) => (
+    <DropdownMenu.CheckboxItem className={clsx(menuItem, 'pl-7 relative')} checked={checked} disabled={disabled} data-testid={testId}
+      onCheckedChange={(v) => onChange(v === true)} onSelect={(e) => e.preventDefault()}>
+      <DropdownMenu.ItemIndicator className="absolute left-2 flex items-center">✓</DropdownMenu.ItemIndicator>
+      {children}
+    </DropdownMenu.CheckboxItem>
+  ),
   Separator: () => <DropdownMenu.Separator className="my-1 h-px bg-line" />,
   Label: ({ children }: { children: ReactNode }) => <DropdownMenu.Label className="px-2 py-1 text-[11px] text-faint">{children}</DropdownMenu.Label>,
 }

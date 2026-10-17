@@ -1,8 +1,8 @@
-import { presetLayout } from '@gitsquid/shared'
+import { DEFAULT_LAYOUT, setCollapsed } from '@gitsquid/shared'
 import { useEffect } from 'react'
 import { fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, stash, undo } from '../lib/actions'
 import { comboOf, keymap } from '../lib/keys'
-import { closeTab, onCommand, saveSettings, setting, useActiveRepo, useStore } from '../lib/store'
+import { closeTab, onCommand, runCommand, saveSettings, setting, useActiveRepo, useStore } from '../lib/store'
 import { AttentionBar } from './AttentionBar'
 import { CommandPalette } from './CommandPalette'
 import { Dialogs, PromptDialog, Toasts } from './Dialogs'
@@ -13,7 +13,7 @@ import { StatusBar } from './StatusBar'
 import { TabBar } from './TabBar'
 import { Toolbar } from './Toolbar'
 import { Welcome } from './Welcome'
-import { toggleBottom, toggleSlotOf } from './Workspace'
+import { toggleSlot } from './Workspace'
 import { Workspace } from './Workspace'
 
 function isTyping(): boolean {
@@ -36,12 +36,10 @@ function useCommands() {
         case 'zoom-in': return void saveSettings({ uiScale: setting('uiScale') + 0.1 })
         case 'zoom-out': return void saveSettings({ uiScale: setting('uiScale') - 0.1 })
         case 'zoom-reset': return void saveSettings({ uiScale: 1 })
-        case 'toggle-sidebar': return toggleSlotOf('branches')
-        case 'toggle-details': return toggleSlotOf('details')
-        case 'toggle-bottom': return toggleBottom()
-        case 'layout-default': return void saveSettings({ layout: presetLayout('default', setting('layout')) })
-        case 'layout-wide-graph': return void saveSettings({ layout: presetLayout('wide-graph', setting('layout')) })
-        case 'layout-diff-below': return void saveSettings({ layout: presetLayout('diff-below', setting('layout')) })
+        case 'toggle-sidebar': return toggleSlot('left')
+        case 'toggle-details': return toggleSlot('right')
+        case 'layout-default': return void saveSettings({ layout: structuredClone(DEFAULT_LAYOUT) })
+        case 'layout-wide-graph': return void saveSettings({ layout: setCollapsed(setCollapsed(setting('layout'), 'left', true), 'right', true) })
       }
       if (!id) return
       switch (name) {
@@ -88,7 +86,8 @@ function useCommands() {
       // In a text field, Cmd/Ctrl+Z belongs to the text field.
       if (name === 'undo' && isTyping()) return
       e.preventDefault()
-      handle(name)
+      // Through the same path as the menu, so components listening for a command hear keys too.
+      runCommand(name)
     }
     window.addEventListener('keydown', onKey)
     return () => {

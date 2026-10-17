@@ -237,6 +237,8 @@ and invalid stored values fall back to defaults instead of breaking startup.
 
 ## 7. Movable, resizable panes
 
+*Later change (Jesse): moving panes between slots was removed; the panes have fixed places and stay resizable and collapsible. The layout setting now holds only side widths and collapsed flags; older saved layouts keep their widths.*
+
 ### Design: layout as data
 
 Today the three columns have fixed widths. The target is: drag the dividers; collapse the

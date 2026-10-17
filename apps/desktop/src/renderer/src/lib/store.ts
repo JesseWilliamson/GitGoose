@@ -385,6 +385,11 @@ export async function loadGitHub(): Promise<void> {
 }
 
 const commandListeners = new Set<(name: string) => void>()
+/** Run a command as if chosen from the menu: every listener hears it (App, the search box, …). */
+export function runCommand(name: string): void {
+  commandListeners.forEach((l) => l(name))
+}
+
 export function onCommand(l: (name: string) => void): () => void {
   commandListeners.add(l)
   return () => commandListeners.delete(l)

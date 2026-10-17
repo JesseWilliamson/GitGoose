@@ -11,7 +11,7 @@ test('the palette button uses a platform-neutral icon and the real modifier name
   const toolbar = page.getByTestId('toolbar')
   await expect(toolbar.locator('.lucide-command')).toHaveCount(0)
   const palette = toolbar.getByRole('button', { name: 'Palette' })
-  await expect(palette).toHaveAttribute('title', process.platform === 'darwin' ? /⌘\+K/ : /Ctrl\+K/)
+  await expect(palette).toHaveAttribute('title', process.platform === 'darwin' ? /⌘\+P/ : /Ctrl\+P/)
   await app.close()
 })
 

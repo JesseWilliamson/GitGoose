@@ -3,11 +3,15 @@ import { memo } from 'react'
 import { hashColor, initials, laneColor } from '../lib/format'
 
 /** Graph row height: normal and compact (Settings → Appearance). */
-export const ROW_H = 28
-export const ROW_H_COMPACT = 22
-/** Wide enough for an avatar node (radius 9) with room for the lines either side. */
-export const LANE_W = 20
+export const ROW_H = 32
+export const ROW_H_COMPACT = 24
+/** Wide enough for an avatar node (radius 11) with room for the lines either side. */
+export const LANE_W = 24
 const PAD = 6
+
+/** Node radius and line width for a row height: GitKraken-sized, a little smaller when compact. */
+export const nodeRadius = (h: number) => (h < ROW_H ? 9 : 11)
+export const lineWidth = (h: number) => (h < ROW_H ? 2.5 : 3)
 
 export const laneX = (lane: number) => PAD + lane * LANE_W + LANE_W / 2
 
@@ -38,7 +42,8 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
   const mid = h / 2
   const cx = laneX(row.lane)
   const color = laneColor(row.color)
-  const r = h < ROW_H ? 8 : 9
+  const r = nodeRadius(h)
+  const stroke = lineWidth(h)
   const clip = `clip-${row.hash}`
   return (
     <svg width={width} height={h} className="block shrink-0 overflow-hidden" aria-hidden data-node={row.merge ? 'merge' : 'commit'}>
@@ -51,18 +56,18 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
         else if (e.part === 'top') d = x1 === x2 ? `M${x1} 0V${mid}` : `M${x1} 0C${x1} ${mid * 0.9} ${x2} ${mid * 0.3} ${x2} ${mid}`
         else d = x1 === x2 ? `M${x1} ${mid}V${h}` : `M${x1} ${mid}C${x1} ${mid + mid * 0.7} ${x2} ${mid + mid * 0.1} ${x2} ${h}`
         return (
-          <path key={i} d={d} fill="none" stroke={laneColor(e.color)} strokeWidth={2} strokeLinecap="round"
-            strokeDasharray={e.pending ? '3 3' : undefined} opacity={e.pending ? 0.7 : 1} />
+          <path key={i} d={d} fill="none" stroke={laneColor(e.color)} strokeWidth={stroke} strokeLinecap="round"
+            strokeDasharray={e.pending ? '3 4' : undefined} opacity={e.pending ? 0.7 : 1} />
         )
       })}
       {row.merge ? (
-        <circle cx={cx} cy={mid} r={4} fill={color} stroke="var(--gs-bg)" strokeWidth={1.5} />
+        <circle cx={cx} cy={mid} r={r > 9 ? 5.5 : 4.5} fill={color} stroke="var(--gs-bg)" strokeWidth={1.5} />
       ) : (
         <g data-testid="avatar-node">
-          {isHead && <circle cx={cx} cy={mid} r={r + 3} fill="none" stroke={color} strokeWidth={1.5} />}
+          {isHead && <circle cx={cx} cy={mid} r={r + 3} fill="none" stroke={color} strokeWidth={2} />}
           <circle cx={cx} cy={mid} r={r} fill={color} />
           <circle cx={cx} cy={mid} r={r - 2} fill={laneColor(hashColor(author.email))} />
-          <text x={cx} y={mid} dy="0.35em" textAnchor="middle" fontSize={r > 8 ? 7.5 : 6.5} fontWeight={700} fill="#fff"
+          <text x={cx} y={mid} dy="0.35em" textAnchor="middle" fontSize={r > 9 ? 9 : 7.5} fontWeight={700} fill="#fff"
             style={{ pointerEvents: 'none', fontFamily: 'var(--font-sans)' }}>{initials(author.name)}</text>
           {author.src && (
             <>
@@ -82,13 +87,14 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
 /** The "uncommitted changes" node: hollow and dashed with a pencil, in HEAD's lane, joined to HEAD below. */
 export function WipCell({ width, hasHead, h = ROW_H }: { width: number; hasHead: boolean; h?: number }) {
   const cx = laneX(0)
-  const r = h < ROW_H ? 8 : 9
+  const r = nodeRadius(h)
+  const s = r / 9
   return (
     <svg width={width} height={h} className="block shrink-0" aria-hidden>
-      {hasHead && <path d={`M${cx} ${h / 2 + r}V${h}`} stroke={laneColor(0)} strokeWidth={2} strokeDasharray="3 3" opacity={0.7} />}
+      {hasHead && <path d={`M${cx} ${h / 2 + r}V${h}`} stroke={laneColor(0)} strokeWidth={lineWidth(h)} strokeDasharray="3 4" opacity={0.7} />}
       <circle cx={cx} cy={h / 2} r={r} fill="var(--gs-bg)" stroke={laneColor(0)} strokeWidth={2} strokeDasharray="3 2" />
       {/* A pencil: "you are editing here". */}
-      <path d={`M${cx - 3} ${h / 2 + 3}l1-3 4-4 2 2-4 4z`} fill={laneColor(0)} />
+      <path transform={`translate(${cx} ${h / 2}) scale(${s})`} d="M-3 3l1-3 4-4 2 2-4 4z" fill={laneColor(0)} />
     </svg>
   )
 }
