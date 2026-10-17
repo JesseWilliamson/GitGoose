@@ -2,7 +2,7 @@ import { DEFAULT_LAYOUT, setCollapsed } from '@gitsquid/shared'
 import { useEffect } from 'react'
 import { fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, stash, undo } from '../lib/actions'
 import { comboOf, keymap } from '../lib/keys'
-import { closeTab, onCommand, runCommand, saveSettings, setting, useActiveRepo, useStore } from '../lib/store'
+import { closeTab, onCommand, runCommand, updateRepo, saveSettings, setting, useActiveRepo, useStore } from '../lib/store'
 import { AttentionBar } from './AttentionBar'
 import { CommandPalette } from './CommandPalette'
 import { Dialogs, PromptDialog, Toasts } from './Dialogs'
@@ -49,6 +49,9 @@ function useCommands() {
           else void undo(id)
           return
         case 'close-tab': return void closeTab(id)
+        case 'search':
+          // Over the graph, so leave a diff or the conflict view for it.
+          return updateRepo(id, (v) => ({ searchOpen: true, searchFocus: v.searchFocus + 1, center: { kind: 'graph' } }))
         case 'fetch': return void fetchAll(id)
         case 'pull': return void pull(id)
         case 'push': return push(id)

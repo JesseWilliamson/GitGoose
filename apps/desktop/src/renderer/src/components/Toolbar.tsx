@@ -1,11 +1,8 @@
-import type { SearchField } from '@gitsquid/shared'
 import clsx from 'clsx'
-import { Archive, ArchiveRestore, ArrowDown, ArrowUp, ChevronDown, ChevronUp, GitBranch, SquareTerminal, RefreshCw, Search, Settings, Undo2, X } from 'lucide-react'
+import { Archive, ArchiveRestore, ArrowDown, ArrowUp, ChevronDown, GitBranch, SquareTerminal, RefreshCw, Search, Settings, Undo2 } from 'lucide-react'
 import { DropdownMenu } from 'radix-ui'
-import { useEffect, useRef, useState } from 'react'
 import { fetchAll, newBranch, pop, pull, push, stash, undo } from '../lib/actions'
-import { api } from '../lib/api'
-import { ensureLoaded, onCommand, reportError, updateRepo, useStore, type RepoView } from '../lib/store'
+import { runCommand, useStore, type RepoView } from '../lib/store'
 import { modName, shortcutOf } from '../lib/keys'
 import { DM, Spinner, ToolbarButton } from './ui'
 
@@ -54,7 +51,7 @@ export function Toolbar({ view }: { view: RepoView }) {
           <Spinner /> <span className="truncate">{view.progress ?? view.busy}</span>
         </div>
       )}
-      <SearchBox view={view} />
+      <ToolbarButton icon={<Search size={17} />} label="Search" onClick={() => runCommand('search')} title={`Search commits (${shortcutOf('search', useStore.getState().settings?.keybindings)})`} />
       {/* Not the ⌘ glyph: that is a macOS key, and this button is the same on every platform. */}
       <ToolbarButton icon={<SquareTerminal size={17} />} label="Palette" onClick={() => useStore.setState({ palette: true })} title={`Command palette (${shortcutOf('palette', useStore.getState().settings?.keybindings)})`} />
       <ToolbarButton icon={<Settings size={17} />} label="Settings" onClick={() => useStore.setState({ page: 'settings' })} />
@@ -64,94 +61,4 @@ export function Toolbar({ view }: { view: RepoView }) {
 
 function Badge({ children }: { children: React.ReactNode }) {
   return <span className="absolute -top-0.5 right-0.5 rounded-full bg-accent px-1 text-[9px] leading-[14px] font-bold text-accent-fg">{children}</span>
-}
-
-const FIELDS: { value: SearchField; label: string }[] = [
-  { value: 'message', label: 'Message' },
-  { value: 'author', label: 'Author' },
-  { value: 'path', label: 'File path' },
-  { value: 'content', label: 'Code (added/removed)' },
-  { value: 'hash', label: 'SHA' },
-]
-
-function SearchBox({ view }: { view: RepoView }) {
-  const [query, setQuery] = useState(view.search?.query ?? '')
-  const [field, setField] = useState<SearchField>(view.search?.field ?? 'message')
-  const [busy, setBusy] = useState(false)
-  const input = useRef<HTMLInputElement>(null)
-  const s = view.search
-
-  useEffect(() => onCommand((name) => {
-    if (name === 'search') input.current?.focus()
-  }), [])
-
-  const go = async (hash: string) => {
-    updateRepo(view.id, { selected: { kind: 'commit', hash }, center: { kind: 'graph' } })
-    await ensureLoaded(view.id, hash)
-  }
-
-  const submit = async () => {
-    if (!query.trim()) {
-      updateRepo(view.id, { search: null })
-      return
-    }
-    setBusy(true)
-    try {
-      const hits = await api.search(view.id, field, query)
-      updateRepo(view.id, { search: { field, query, hits, index: 0 } })
-      if (hits[0]) await go(hits[0])
-    } catch (e) {
-      reportError('Search failed', e)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const step = (d: number) => {
-    if (!s || !s.hits.length) return
-    const index = (s.index + d + s.hits.length) % s.hits.length
-    updateRepo(view.id, { search: { ...s, index } })
-    void go(s.hits[index]!)
-  }
-
-  const clear = () => {
-    setQuery('')
-    updateRepo(view.id, { search: null })
-  }
-
-  return (
-    <div className="no-drag mx-2 flex h-8 items-center rounded-md border border-line bg-bg text-xs focus-within:border-accent">
-      <select value={field} onChange={(e) => setField(e.target.value as SearchField)} title="Search in"
-        className="h-full rounded-l-md border-r border-line bg-transparent px-1 text-muted outline-none">
-        {FIELDS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
-      </select>
-      <Search size={13} className="ml-2 shrink-0 text-faint" />
-      <input
-        ref={input}
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            if (s && s.query === query && s.field === field) step(e.shiftKey ? -1 : 1)
-            else void submit()
-          } else if (e.key === 'Escape') {
-            clear()
-            input.current?.blur()
-          }
-        }}
-        placeholder="Find commits"
-        data-testid="search-input"
-        className="h-full w-44 bg-transparent px-2 outline-none"
-      />
-      {busy && <Spinner className="mr-2 text-faint" />}
-      {s && !busy && (
-        <>
-          <span className="px-1 whitespace-nowrap text-faint" data-testid="search-count">{s.hits.length ? `${s.index + 1} of ${s.hits.length}` : 'No matches'}</span>
-          <button onClick={() => step(-1)} className="px-0.5 text-muted hover:text-fg" title="Previous (Shift+Enter)"><ChevronUp size={13} /></button>
-          <button onClick={() => step(1)} className="px-0.5 text-muted hover:text-fg" title="Next (Enter)"><ChevronDown size={13} /></button>
-          <button onClick={clear} className="px-1 text-muted hover:text-fg" title="Clear (Esc)"><X size={13} /></button>
-        </>
-      )}
-    </div>
-  )
 }

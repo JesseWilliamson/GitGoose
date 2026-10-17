@@ -12,6 +12,7 @@ import { parseBlame } from './blame'
 import { CatFile } from './catfile'
 import { parseChangedFiles, parseDiff, untrackedDiff } from './diff'
 import { graphRevs, LOG_FORMAT, LogStream, parseLog } from './log'
+import { searchLog } from './search'
 import { buildPatch } from './patch'
 import { parseRefs, REFS_FORMAT } from './refs'
 import { GitRunner } from './runner'
@@ -297,10 +298,30 @@ export class Repo {
     return parseBlame(await this.read(['blame', '--porcelain', ...(rev ? [rev] : []), '--', path]))
   }
 
+  /** The all-fields search in flight: a newer one cancels it (typing fires one per pause). */
+  private searching: AbortController | null = null
+
   async search(field: SearchField, query: string): Promise<string[]> {
     const q = query.trim()
     if (!q) return []
-    const head = (this.last ?? (await this.snapshot())).head
+    const snap = this.last ?? (await this.snapshot())
+    const head = snap.head
+    if (field === 'all') {
+      this.searching?.abort()
+      const abort = (this.searching = new AbortController())
+      const refNames = new Map<string, string[]>()
+      for (const r of snap.refs) {
+        if (r.kind === 'stash') continue
+        const list = refNames.get(r.hash)
+        if (list) list.push(r.shortName)
+        else refNames.set(r.hash, [r.shortName])
+      }
+      try {
+        return await searchLog(this.runner, graphRevs(head.hash), q, { refNames, signal: abort.signal })
+      } finally {
+        if (this.searching === abort) this.searching = null
+      }
+    }
     const base = ['log', '--format=%H', '-n', '2000', ...graphRevs(head.hash)]
     let args: string[]
     switch (field) {

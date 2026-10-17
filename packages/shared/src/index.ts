@@ -165,7 +165,8 @@ export interface UndoEntry {
   time: number
 }
 
-export type SearchField = 'message' | 'author' | 'path' | 'hash' | 'content'
+/** 'all': message, author, SHA, branch and tag names at once (the default, GitKraken-style). */
+export type SearchField = 'all' | 'message' | 'author' | 'path' | 'hash' | 'content'
 
 export * from './github'
 export * from './ai'

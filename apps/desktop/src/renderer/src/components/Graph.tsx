@@ -12,6 +12,7 @@ import { formatDate, laneColor, shortHash } from '../lib/format'
 import { getLog, loadMore, saveSettings, updateRepo, useSetting, useStore, type RepoView } from '../lib/store'
 import { GraphCell, LANE_W, ROW_H, ROW_H_COMPACT, WipCell } from './GraphCell'
 import { GraphMenu } from './menus'
+import { SearchBar } from './SearchBar'
 import { DM, Spinner } from './ui'
 
 const REFS_W = 160
@@ -172,7 +173,8 @@ function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
     // @container: the author, date and SHA columns appear only when the pane is wide enough,
     // so the commit message never gets squeezed out (container queries, not window size,
     // because the side panels decide how wide this pane is).
-    <div className="@container flex min-h-0 min-w-0 flex-1 flex-col">
+    <div className="@container relative flex min-h-0 min-w-0 flex-1 flex-col">
+      {view.searchOpen && <SearchBar view={view} />}
       <div className="flex h-7 shrink-0 items-center border-b border-line bg-panel text-[11px] font-semibold tracking-wide whitespace-nowrap text-faint uppercase"
         data-testid="graph-header">
         {cols.refs && <div style={{ width: REFS_W }} className="shrink-0 truncate px-3">Branch / Tag</div>}

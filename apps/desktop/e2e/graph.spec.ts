@@ -45,18 +45,60 @@ test('navigates with the keyboard and shows commit details', async () => {
 test('searches commits and steps through matches', async () => {
   const r = makeFixture('branches')
   const { app, page } = await launch(r.dir)
+  await page.getByTestId('commit-row').first().click()
+  await page.keyboard.press('Control+f')
   const search = page.getByTestId('search-input')
-  await page.locator('select[title="Search in"]').selectOption('path')
+  await expect(search).toBeFocused()
+  await page.getByTestId('search-scope').selectOption('path')
+  // Live: no Enter needed for the first search.
   await search.fill('.txt')
-  await search.press('Enter')
   // 6, not 7: a path-limited log leaves out the merge commit M, which changes no file itself.
   await expect(page.getByTestId('search-count')).toHaveText('1 of 6')
   await search.press('Enter')
   await expect(page.getByTestId('search-count')).toHaveText('2 of 6')
-  await page.locator('select[title="Search in"]').selectOption('message')
+  await search.press('Shift+Enter')
+  await expect(page.getByTestId('search-count')).toHaveText('1 of 6')
+  await page.getByTestId('search-scope').selectOption('all')
   await search.fill('nothing like this')
-  await search.press('Enter')
   await expect(page.getByTestId('search-count')).toHaveText('No matches')
+  await app.close()
+})
+
+test('one search matches messages, authors, SHAs, branches and tags, greying out the rest', async () => {
+  const r = makeFixture('branches')
+  r.git('tag', 'v2.0-beta', 'HEAD~1')
+  const { app, page } = await launch(r.dir)
+  const rows = page.getByTestId('commit-row')
+  const dimmed = page.locator('[data-testid="commit-row"].opacity-35')
+  await expect(rows).toHaveCount(7)
+  await page.keyboard.press('Control+f')
+  const search = page.getByTestId('search-input')
+
+  // A branch name: the commit it points at stays bright, everything else greys out.
+  await search.fill('wip')
+  await expect(page.getByTestId('search-count')).toHaveText('1 of 1')
+  await expect(dimmed).toHaveCount(6)
+  await expect(page.getByTestId('detail-panel')).toContainText('F')
+
+  // A tag name.
+  await search.fill('v2.0')
+  await expect(page.getByTestId('search-count')).toHaveText('1 of 1')
+  // A SHA prefix.
+  const sha = r.git('rev-parse', 'feature').trim()
+  await search.fill(sha.slice(0, 8))
+  await expect(page.getByTestId('search-count')).toHaveText('1 of 1')
+  await expect(page.locator(`[data-testid="commit-row"][data-hash="${sha}"]`)).not.toHaveClass(/opacity-35/)
+  // An author: every commit here is Ada's.
+  await search.fill('ada@example')
+  await expect(page.getByTestId('search-count')).toHaveText('1 of 7')
+  await expect(dimmed).toHaveCount(0)
+
+  // Esc closes the bar and the graph is whole again.
+  await search.fill('wip')
+  await expect(dimmed).toHaveCount(6)
+  await search.press('Escape')
+  await expect(page.getByTestId('search-bar')).toHaveCount(0)
+  await expect(dimmed).toHaveCount(0)
   await app.close()
 })
 

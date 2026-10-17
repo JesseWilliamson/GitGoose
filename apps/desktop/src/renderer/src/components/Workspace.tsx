@@ -60,11 +60,15 @@ function SidePanel({ slot, children }: { slot: Slot; children: ReactNode }) {
   return (
     <Panel id={slot} panelRef={ref} defaultSize={st.collapsed ? 0 : st.size} minSize={MIN[slot]} collapsible collapsedSize={0}
       groupResizeBehavior="preserve-pixel-size"
-      onResize={(size, _id, prev) => {
+      onResize={(_size, _id, prev) => {
         if (!prev) return // the initial measurement is not a user change
         // Persist after the drag settles; dragging past the minimum collapses the side.
         if (timer.current) clearTimeout(timer.current)
         timer.current = setTimeout(() => {
+          // The size now, not the one this event carried: a collapse from the keyboard or the
+          // palette may have happened since, and a stale size would undo it.
+          const size = ref.current?.getSize()
+          if (!size) return
           const current = setting('layout')
           const collapsed = size.inPixels < 1
           let next = setCollapsed(current, slot, collapsed)

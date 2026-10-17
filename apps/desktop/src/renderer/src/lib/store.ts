@@ -29,6 +29,10 @@ export interface RepoView {
   selected: Selection
   center: CenterView
   search: SearchState | null
+  /** The search bar over the graph is open (it can be open with no query yet). */
+  searchOpen: boolean
+  /** Bumped to focus the search bar again (Ctrl+F while it is open). */
+  searchFocus: number
   stashes: StashEntry[]
   undo: UndoEntry[]
   progress: string | null
@@ -261,7 +265,7 @@ function newView(snap: RepoSnapshot): RepoView {
     id: snap.id, snapshot: snap, logVersion: 0,
     selected: snap.status.length ? { kind: 'wip' } : snap.head.hash ? { kind: 'commit', hash: snap.head.hash } : { kind: 'wip' },
     center: snap.operation && snap.status.some((e) => e.kind === 'unmerged') ? { kind: 'conflicts' } : { kind: 'graph' },
-    search: null, stashes: [], undo: [], progress: null, busy: null, worktreeTick: 0,
+    search: null, searchOpen: false, searchFocus: 0, stashes: [], undo: [], progress: null, busy: null, worktreeTick: 0,
   }
 }
 
