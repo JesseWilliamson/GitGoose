@@ -7,7 +7,7 @@ import { ContextMenu } from 'radix-ui'
 import { memo, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import type { AvatarSource } from '@gitsquid/shared'
 import { checkout } from '../lib/actions'
-import { avatarSrc } from '../lib/avatar'
+import { avatarSrc, useAvatarVariant } from '../lib/avatar'
 import { Avatar } from './Avatar'
 import { formatDate, laneColor, shortHash } from '../lib/format'
 import { getLog, loadMore, saveSettings, updateRepo, useSetting, useStore, type RepoView } from '../lib/store'
@@ -78,6 +78,7 @@ export interface RowLook {
   dateFormat: string
   dateW: number
   avatars: AvatarSource
+  avatarVariant: string
   showRemotes: boolean
   showTags: boolean
 }
@@ -87,8 +88,9 @@ function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
   const showRemotes = useSetting('showRemoteBranches')
   const showTags = useSetting('showTags')
   const avatars = useSetting('avatars')
-  const look = useMemo<RowLook>(() => ({ rowH, dateFormat, dateW: DATE_W[dateFormat] ?? 100, showRemotes, showTags, avatars }),
-    [rowH, dateFormat, showRemotes, showTags, avatars])
+  const avatarVariant = useAvatarVariant()
+  const look = useMemo<RowLook>(() => ({ rowH, dateFormat, dateW: DATE_W[dateFormat] ?? 100, showRemotes, showTags, avatars, avatarVariant }),
+    [rowH, dateFormat, showRemotes, showTags, avatars, avatarVariant])
   const log = getLog(view.id)
   const snap = view.snapshot
   const showWip = snap.status.length > 0 || !snap.head.hash
@@ -307,7 +309,7 @@ const CommitRow = memo(function CommitRow(props: {
   look: RowLook
 }) {
   const { commit, row, repoId, look } = props
-  const src = avatarSrc(commit.authorEmail, look.avatars)
+  const src = avatarSrc(commit.authorEmail, look.avatars, look.avatarVariant)
   const author = useMemo(() => ({ name: commit.authorName, email: commit.authorEmail, src }), [commit.authorName, commit.authorEmail, src])
   const [dropping, setDropping] = useState(false)
   const pills = useMemo(() => (props.refs ? pillsFor(props.refs, props.headBranch, { remotes: look.showRemotes, tags: look.showTags }) : []),

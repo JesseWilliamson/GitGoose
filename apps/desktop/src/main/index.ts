@@ -1,9 +1,12 @@
 import { AskpassServer } from '@gitsquid/git'
 import { DEFAULT_AVATAR_BASES } from '@gitsquid/shared'
-import { app, BrowserWindow, nativeTheme, protocol } from 'electron'
+import { app, BrowserWindow, nativeTheme, net, protocol, safeStorage } from 'electron'
 import { existsSync } from 'node:fs'
 import { delimiter, join, resolve } from 'node:path'
 import { AvatarCache } from './avatars'
+import { githubEndpoints } from './github/config'
+import { GitHubService } from './github/service'
+import { TokenStore } from './github/tokenStore'
 import { installCrashHandlers } from './diagnostics'
 import { broadcast, createHandlers, registerIpc } from './ipc'
 import { installMenu } from './menu'
@@ -23,6 +26,42 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'gitsquid-avatar', privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ])
 
+const here = import.meta.dirname
+
+// ------------------------------------------------------------ credential prompts
+
+// ------------------------------------------------------------ GitHub sign-in
+
+/** One environment object shared by every repository's GitRunner, updated in place. */
+const gitEnv: Record<string, string> = {}
+let credentialKeys: string[] = []
+/** Switch the github.com credential-helper override on or off for every open repository. */
+function refreshCredentialEnv(): void {
+  for (const k of credentialKeys) delete gitEnv[k]
+  const extra = github.credentialEnv()
+  credentialKeys = Object.keys(extra)
+  Object.assign(gitEnv, extra)
+}
+
+const github = new GitHubService({
+  endpoints: githubEndpoints(),
+  store: new TokenStore(join(app.getPath('userData'), 'github.json'), {
+    // Linux without a secret service falls back to a hard-coded key ("basic_text"): no better
+    // than plain text, so the token then stays in memory only.
+    secure: () => safeStorage.isEncryptionAvailable() && !(process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text'),
+    encrypt: (s) => safeStorage.encryptString(s),
+    decrypt: (b) => safeStorage.decryptString(b),
+  }),
+  // Electron's net uses Chromium's network stack: the system proxy settings apply.
+  fetch: (input, init) => net.fetch(input instanceof Request ? input : String(input), init),
+  repos: () => repos.all(),
+  httpsEnabled: () => getSettings().githubHttps,
+  onChange: (status) => {
+    refreshCredentialEnv()
+    broadcast({ type: 'github', status })
+  },
+})
+
 const avatars = new AvatarCache({
   dir: join(app.getPath('userData'), 'avatars'),
   source: () => getSettings().avatars,
@@ -31,16 +70,18 @@ const avatars = new AvatarCache({
     github: process.env.GITSQUID_AVATAR_GITHUB_BASE ?? DEFAULT_AVATAR_BASES.github,
     gravatar: process.env.GITSQUID_AVATAR_GRAVATAR_BASE ?? DEFAULT_AVATAR_BASES.gravatar,
   },
+  resolve: (email) => github.resolveAvatar(email),
+  variant: () => github.avatarVariant(),
 })
 
-const here = import.meta.dirname
-
-// ------------------------------------------------------------ credential prompts
 
 let nextPrompt = 1
 const pending = new Map<number, (answer: string | null) => void>()
 const prompts = {
   ask(message: string, secret: boolean): Promise<string | null> {
+    // github.com over HTTPS, signed in with repository access and the setting on: no dialog.
+    const known = github.answerPrompt(message)
+    if (known !== null) return Promise.resolve(known)
     const promptId = nextPrompt++
     return new Promise((resolve) => {
       const timer = setTimeout(() => finish(null), 5 * 60_000)
@@ -58,9 +99,8 @@ const prompts = {
   },
 }
 const askpass = new AskpassServer((message, secret) => prompts.ask(message, secret))
-let askpassEnv: Record<string, string> = {}
 
-const gitOpts = () => ({ gitPath: getSettings().gitPath || 'git', env: askpassEnv })
+const gitOpts = () => ({ gitPath: getSettings().gitPath || 'git', env: gitEnv })
 
 const repos = new RepoManager(
   gitOpts,
@@ -115,11 +155,14 @@ function createWindow(): BrowserWindow {
   return win
 }
 
-onSettingsChanged((settings) => broadcast({ type: 'settings', settings }))
+onSettingsChanged((settings) => {
+  refreshCredentialEnv()
+  broadcast({ type: 'settings', settings })
+})
 
 app.whenReady().then(async () => {
   try {
-    askpassEnv = await askpass.start()
+    Object.assign(gitEnv, await askpass.start())
   } catch {
     // Without askpass, git falls back to the user's credential helpers.
   }
@@ -141,7 +184,8 @@ app.whenReady().then(async () => {
     const img = await avatars.get(email)
     return new Response(new Uint8Array(img.body), { headers: { 'content-type': img.type, 'cache-control': 'max-age=3600' } })
   })
-  registerIpc(createHandlers(repos, prompts, gitOpts), repos)
+  refreshCredentialEnv()
+  registerIpc(createHandlers(repos, prompts, gitOpts, github), repos)
   installMenu()
   createWindow()
   scheduleUpdateCheck()

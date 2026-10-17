@@ -2,6 +2,7 @@ import type {
   BlameLine, Commit, CommitDetails, ConflictFile, DiffTarget, FileDiff, RepoSnapshot,
   SearchField, StashEntry, UndoEntry,
 } from './index'
+import type { DeviceCodeInfo, GitHubAccount, GitHubStatus } from './github'
 import type { Settings } from './settings'
 
 export interface LogPage {
@@ -71,6 +72,17 @@ export interface GitSquidApi {
   initRepo(path: string): Promise<RepoSnapshot>
   cloneRepo(url: string, parentDir: string): Promise<RepoSnapshot>
   respondPrompt(promptId: number, answer: string | null): Promise<void>
+
+  // GitHub sign-in (device flow; see apps/desktop/src/main/github/)
+  githubStatus(): Promise<GitHubStatus>
+  /** Start signing in; 'repo' also asks for access to repositories (HTTPS push and fetch). */
+  githubSignIn(access: 'basic' | 'repo'): Promise<DeviceCodeInfo>
+  /** Resolves when the user has approved on github.com; rejects on denial, expiry or cancel. */
+  githubWaitForSignIn(): Promise<GitHubAccount>
+  githubCancelSignIn(): Promise<void>
+  /** Open a GitHub page in the browser: where to enter the code, or where to revoke access. */
+  githubOpenPage(page: 'verification' | 'applications'): Promise<void>
+  githubSignOut(): Promise<void>
   openPath(path: string): Promise<void>
   /** Open a file in the configured external editor (Settings → Integrations), at a line if given. */
   openInEditor(path: string, line?: number): Promise<void>
@@ -145,6 +157,7 @@ export type ApiMethod = keyof GitSquidApi
 export const API_METHODS = [
   'getSettings', 'setSettings', 'pickDirectory', 'openRepo', 'closeRepo', 'initRepo', 'cloneRepo',
   'respondPrompt', 'openPath', 'openInEditor', 'openTerminal', 'revealPath', 'logError',
+  'githubStatus', 'githubSignIn', 'githubWaitForSignIn', 'githubCancelSignIn', 'githubOpenPage', 'githubSignOut',
   'snapshot', 'logPage', 'commitDetails', 'diff', 'fileHistory', 'blame', 'search', 'stashList',
   'lastCommitMessage',
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit',
@@ -172,6 +185,8 @@ export type GitSquidEvent =
   | { type: 'command'; name: string }
   /** Settings changed (from any window, or main): every window re-applies theme, fonts, scale. */
   | { type: 'settings'; settings: Settings }
+  /** Signed in or out of GitHub. */
+  | { type: 'github'; status: GitHubStatus }
 
 /** Errors cross IPC as data, so the renderer gets git's stderr intact. */
 export interface SerializedError {

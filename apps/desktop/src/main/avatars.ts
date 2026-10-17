@@ -33,6 +33,8 @@ export interface AvatarCacheOptions {
   bases?: AvatarBases
   /** Extra lookup for authors the URL rules cannot resolve (signed-in GitHub, see github.ts). */
   resolve?: (email: string) => Promise<string | null>
+  /** Part of the cache key that changes when `resolve` can find more (signed in or not). */
+  variant?: () => string
   fetch?: typeof fetch
 }
 
@@ -50,7 +52,8 @@ export class AvatarCache {
   async get(email: string): Promise<AvatarImage> {
     const source = this.opts.source()
     if (source === 'initials') return { body: TRANSPARENT_PNG, type: 'image/png' }
-    const key = `${source}-${sha256(email.trim().toLowerCase())}`
+    const variant = this.opts.variant?.() ?? ''
+    const key = `${source}${variant ? `-${variant}` : ''}-${sha256(email.trim().toLowerCase())}`
     // Concurrent requests for the same author share one lookup.
     let p = this.inFlight.get(key)
     if (!p) {

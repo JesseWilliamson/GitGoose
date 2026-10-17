@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { copy, discard as discardFiles, openInEditor, pop, run, stashApply, stashDrop } from '../lib/actions'
 import { api } from '../lib/api'
 import { dateTime, sentence, shortHash } from '../lib/format'
-import { avatarSrc } from '../lib/avatar'
+import { avatarSrc, useAvatarVariant } from '../lib/avatar'
 import { ensureLoaded, reportError, setting, updateRepo, useSetting, type FileMode, type RepoView } from '../lib/store'
 import { Avatar } from './Avatar'
 import { FileRow, statusKind } from './FileList'
@@ -216,6 +216,7 @@ const detailsCache = new Map<string, CommitDetails>()
 
 function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
   const avatarSource = useSetting('avatars')
+  const avatarVariant = useAvatarVariant()
   const [details, setDetails] = useState<CommitDetails | null>(() => detailsCache.get(hash) ?? null)
   const latest = useRef(hash)
   useEffect(() => {
@@ -261,7 +262,7 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
         <div className="text-[14px] leading-snug font-semibold">{stash ? stash.message : d.subject}</div>
         {d.body && <pre className="mt-2 max-h-40 overflow-y-auto font-sans text-[13px] whitespace-pre-wrap text-muted">{d.body}</pre>}
         <div className="mt-3 flex items-center gap-2">
-          <Avatar name={d.authorName} email={d.authorEmail} src={avatarSrc(d.authorEmail, avatarSource)} size={28} />
+          <Avatar name={d.authorName} email={d.authorEmail} src={avatarSrc(d.authorEmail, avatarSource, avatarVariant)} size={28} />
           <div className="min-w-0 text-xs">
             <div className="truncate"><b>{d.authorName}</b> <span className="text-faint">&lt;{d.authorEmail}&gt;</span></div>
             <div className="text-muted">authored {dateTime(d.authorDate)}</div>
