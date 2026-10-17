@@ -1,5 +1,6 @@
 import { AskpassServer } from '@gitsquid/git'
 import { app, BrowserWindow, nativeTheme } from 'electron'
+import { existsSync } from 'node:fs'
 import { delimiter, join, resolve } from 'node:path'
 import { installCrashHandlers } from './diagnostics'
 import { broadcast, createHandlers, registerIpc } from './ipc'
@@ -111,6 +112,11 @@ app.whenReady().then(async () => {
     : process.argv.slice(app.isPackaged ? 1 : 2).filter((a) => !a.startsWith('-'))
   if (paths.length) setSettings({ openRepos: paths.map((p) => resolve(p)) })
   else if (!getSettings().reopenTabs) setSettings({ openRepos: [] })
+  // `pnpm dev` with nothing open: open the generated development repository (pnpm dev:repo).
+  const devRepo = resolve(app.getAppPath(), '../../.fixtures/dev-repo')
+  if (process.env.ELECTRON_RENDERER_URL && !paths.length && !getSettings().openRepos.length && getSettings().openDevRepo && existsSync(join(devRepo, '.git'))) {
+    setSettings({ openRepos: [devRepo] })
+  }
   registerIpc(createHandlers(repos, prompts, gitOpts), repos)
   installMenu()
   createWindow()
