@@ -130,6 +130,7 @@ export function createHandlers(
     applySelection: (id, req) => r(id).applySelection(req),
     ignorePaths: (id, paths) => r(id).ignorePaths(paths),
     commit: (id, message, opts) => r(id).commit(message, opts),
+    commandLog: async (id, afterId) => r(id).commandLog(afterId),
     bisectMark: (id, rev, term) => r(id).bisectMark(rev, term),
     bisectReset: (id) => r(id).bisectReset(),
     identity: (id) => r(id).identity(),

@@ -23,6 +23,7 @@ export type CenterView =
   | { kind: 'file'; target: DiffTarget; mode: FileMode }
   | { kind: 'conflicts' }
   | { kind: 'reflog' }
+  | { kind: 'commands' }
 
 export interface SearchState {
   field: SearchField

@@ -67,6 +67,7 @@ function useCommands() {
         case 'apply-patch': return void applyPatchFile(id)
         case 'apply-patch-clipboard': return void applyPatchFromClipboard(id)
         case 'reflog': return updateRepo(id, { center: { kind: 'reflog' } })
+        case 'command-log': return updateRepo(id, { center: { kind: 'commands' } })
       }
     }
     const off = onCommand(handle)

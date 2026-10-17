@@ -204,6 +204,22 @@ export interface Worktree {
   prunable?: string
 }
 
+/** One git process GitSquid ran (the command log). */
+export interface CommandRecord {
+  id: number
+  /** git's arguments as GitSquid passed them (credentials in URLs masked). */
+  args: string[]
+  /** Started at (ms since the epoch). */
+  start: number
+  /** null while it is still running (the log stream, cat-file). */
+  durationMs: number | null
+  code: number | null
+  /** The end of what it wrote to stderr. */
+  stderr: string
+  /** Only reads (passed --no-optional-locks). */
+  readOnly: boolean
+}
+
 /** Who commits are made as, and where that comes from. */
 export interface Identity {
   name?: string

@@ -1,5 +1,5 @@
 import type {
-  BisectState, BlameLine, ChangedFile, GraphFilter, Identity, Person, Signature, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
+  BisectState, BlameLine, ChangedFile, CommandRecord, GraphFilter, Identity, Person, Signature, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
   LogPage, Ref, Remote, RepoOperation, ReflogEntry, RepoSnapshot, ResetMode, Resolution, SearchField, SelectionRequest,
   StashEntry, StatusEntry, Submodule, UndoEntry, Worktree,
 } from '@gitsquid/shared'
@@ -795,6 +795,13 @@ export class Repo {
     return this.exclusive(async () => {
       await this.git(['worktree', 'prune'])
     })
+  }
+
+  // ---------------------------------------------------------------- command log
+
+  /** The git commands run for this repository, newest first (after `afterId`, when given). */
+  commandLog(afterId = 0): CommandRecord[] {
+    return this.runner.history.filter((r) => r.id > afterId).reverse().map((r) => ({ ...r }))
   }
 
   // ---------------------------------------------------------------- bisect

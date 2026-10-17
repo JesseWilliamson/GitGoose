@@ -67,6 +67,8 @@ export function installMenu(): void {
         { label: 'Hide Side Panels', click: cmd('layout-wide-graph') },
         { label: 'Reset Panel Sizes', click: cmd('layout-default') },
         { type: 'separator' },
+        { label: 'Git Command Log', click: cmd('command-log') },
+        { type: 'separator' },
         { role: 'reload' }, { role: 'toggleDevTools' }, { type: 'separator' },
         // Zoom is the UI scale setting, so it persists; the renderer handles the keys.
         { label: 'Actual Size', accelerator: 'CmdOrCtrl+0', click: cmd('zoom-reset'), registerAccelerator: false },

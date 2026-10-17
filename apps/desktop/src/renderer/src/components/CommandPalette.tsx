@@ -40,6 +40,7 @@ export function CommandPalette() {
     add('Repository', 'Push', () => push(id))
     add('Repository', 'Force push (with lease)', () => push(id, true))
     add('Repository', 'New branch', () => newBranch(id))
+    add('Repository', 'Show git command log', () => useStore.setState((s) => ({ repos: { ...s.repos, [id]: { ...s.repos[id]!, center: { kind: 'commands' } } } })))
     add('Repository', 'Show reflog (recover lost commits)', () => useStore.setState((s) => ({ repos: { ...s.repos, [id]: { ...s.repos[id]!, center: { kind: 'reflog' } } } })))
     add('Repository', 'Clean up branches…', () => cleanupBranches(id))
     add('Repository', 'Add remote…', () => addRemote(id))

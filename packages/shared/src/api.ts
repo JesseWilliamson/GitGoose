@@ -1,5 +1,5 @@
 import type {
-  BlameLine, ChangedFile, GraphFilter, Identity, Person, Commit, CommitDetails, ConflictFile, DiffTarget, FileDiff, RepoSnapshot,
+  BlameLine, ChangedFile, CommandRecord, GraphFilter, Identity, Person, Commit, CommitDetails, ConflictFile, DiffTarget, FileDiff, RepoSnapshot,
   ReflogEntry, Remote, SearchField, Submodule, Worktree, StashEntry, UndoEntry,
 } from './index'
 import type { AgentInfo, AiPermissionRequest, AiResult, AiStatus, AiTask } from './ai'
@@ -144,6 +144,8 @@ export interface GitSquidApi {
   ignorePaths(repoId: string, paths: string[]): Promise<UndoId>
   /** `noVerify` skips the commit hooks. */
   commit(repoId: string, message: string, opts?: { amend?: boolean; signOff?: boolean; gpgSign?: boolean; noVerify?: boolean }): Promise<UndoId>
+  /** Git commands GitSquid ran for this repository, newest first (only newer than `afterId`). */
+  commandLog(repoId: string, afterId?: number): Promise<CommandRecord[]>
   /** Mark a commit for bisect (starts one if needed); git checks out the next commit to test. */
   bisectMark(repoId: string, rev: string, term: 'good' | 'bad' | 'skip'): Promise<void>
   bisectReset(repoId: string): Promise<void>
@@ -265,7 +267,7 @@ export const API_METHODS = [
   'aiStatus', 'aiConsent', 'aiRun', 'aiCancel', 'aiRespondPermission', 'aiAgentInfo', 'aiAuthenticate', 'aiSetApiKey',
   'snapshot', 'logPage', 'commitDetails', 'diff', 'fileHistory', 'blame', 'search', 'stashList', 'reflog', 'setGraphFilter', 'submodules', 'updateSubmodules', 'syncSubmodules', 'addSubmodule', 'removeSubmodule', 'worktrees', 'addWorktree', 'removeWorktree', 'lockWorktree', 'pruneWorktrees',
   'lastCommitMessage',
-  'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'bisectMark', 'bisectReset', 'identity', 'setIdentity', 'commitTemplate', 'recentAuthors',
+  'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'commandLog', 'bisectMark', 'bisectReset', 'identity', 'setIdentity', 'commitTemplate', 'recentAuthors',
   'checkout', 'createBranch', 'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset',
   'cherryPick', 'cherryPickMany', 'commitsText', 'recomposeApply', 'compareFiles', 'mergeBase', 'restoreFile', 'savePatches', 'pickPatch', 'applyPatch', 'openFileAt', 'saveFileAt', 'editableCommits', 'dropCommits', 'moveCommits', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'preparedMessage', 'redo', 'redoList', 'revert', 'createTag', 'deleteTag',
   'fetch', 'pull', 'push', 'deleteRemoteBranch', 'remotes', 'addRemote', 'removeRemote', 'renameRemote', 'setRemoteUrl',

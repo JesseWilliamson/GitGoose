@@ -145,3 +145,5 @@ changes.
       read "cannot be checked"), signed tags (Settings → Git)
 - [x] 26 bisect from the graph: start from a commit's menu, a bar that says what to do next with
       Good / Bad / Skip / Stop, good / bad / first-bad marks on rows
+- [x] 27 git command log (View menu, palette): every git process per repository with duration,
+      exit code and stderr; reads hidden by default; credentials in URLs masked
