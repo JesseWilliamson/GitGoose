@@ -1,12 +1,12 @@
 import type { CommitDetails, DiffTarget, StatusEntry } from '@gitsquid/shared'
 import { Check, Copy, Minus, Plus, Sparkles, Undo2, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { copy, discard as discardFiles, openInEditor, pop, run, stashApply, stashDrop } from '../lib/actions'
+import { cherryPickMany, copy, copyCommits, discard as discardFiles, openInEditor, pop, run, stashApply, stashDrop } from '../lib/actions'
 import { cancelAi, startAi, useAiEnabled } from '../lib/ai'
 import { api, toUiError } from '../lib/api'
 import { dateTime, sentence, shortHash } from '../lib/format'
 import { avatarSrc, useAvatarVariant } from '../lib/avatar'
-import { ensureLoaded, reportError, setting, updateRepo, useSetting, type FileMode, type RepoView } from '../lib/store'
+import { ensureLoaded, getLog, reportError, selectCommit, setting, updateRepo, useSetting, type FileMode, type RepoView } from '../lib/store'
 import { Avatar } from './Avatar'
 import { FileRow, statusKind } from './FileList'
 import { modName } from '../lib/keys'
@@ -15,7 +15,9 @@ import { Button, CM, SectionHeader, Spinner } from './ui'
 export function DetailPanel({ view }: { view: RepoView }) {
   return (
     <aside className="flex h-full min-h-0 w-full flex-col bg-panel" data-testid="detail-panel">
-      {view.selected.kind === 'wip' ? <WipPanel view={view} /> : <CommitPanel view={view} hash={view.selected.hash} />}
+      {view.selected.kind === 'wip' ? <WipPanel view={view} />
+        : view.selected.kind === 'commits' ? <MultiPanel view={view} hashes={view.selected.hashes} />
+        : <CommitPanel view={view} hash={view.selected.hash} />}
     </aside>
   )
 }
@@ -236,6 +238,40 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
           {view.busy === 'Commit' ? <Spinner /> : <Check size={14} />}
           {amend ? 'Amend' : stagedCount ? `Commit ${stagedCount} ${stagedCount === 1 ? 'file' : 'files'}` : 'Commit'}
         </Button>
+      </div>
+    </div>
+  )
+}
+
+// ------------------------------------------------------------------ several commits
+
+/** Shift- or Ctrl-click selected several commits: what can be done with all of them. */
+function MultiPanel({ view, hashes }: { view: RepoView; hashes: string[] }) {
+  const log = getLog(view.id)
+  const commits = hashes.map((h) => log.commits[log.index.get(h) ?? -1]).filter((c): c is NonNullable<typeof c> => !!c)
+  const headName = view.snapshot.head.branch ?? 'HEAD'
+  return (
+    <div className="flex min-h-0 flex-1 flex-col" data-testid="multi-panel">
+      <div className="border-b border-line p-3">
+        <div className="text-[14px] font-semibold">{hashes.length} commits selected</div>
+        <div className="mt-0.5 text-xs text-muted">Shift-click selects a range, {modName()}-click adds or removes one.</div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button size="sm" variant="primary" onClick={() => void cherryPickMany(view.id, hashes)} disabled={!!view.busy} data-testid="multi-cherry-pick">
+            Cherry-pick onto {headName}
+          </Button>
+          <Button size="sm" onClick={() => void copyCommits(view.id, hashes, 'diff')} data-testid="multi-copy-diff">Copy as diff</Button>
+          <Button size="sm" onClick={() => void copyCommits(view.id, hashes, 'patch')} data-testid="multi-copy-patch">Copy as patch</Button>
+        </div>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto py-1">
+        {commits.map((c) => (
+          <button key={c.hash} className="flex w-full items-center gap-2 px-3 py-1 text-left text-[13px] hover:bg-hover"
+            onClick={() => selectCommit(view.id, c.hash)} title="Select only this commit">
+            <span className="shrink-0 font-mono text-xs text-faint">{shortHash(c.hash)}</span>
+            <span className="min-w-0 flex-1 truncate">{c.subject}</span>
+            <span className="shrink-0 truncate text-xs text-muted">{c.authorName}</span>
+          </button>
+        ))}
       </div>
     </div>
   )

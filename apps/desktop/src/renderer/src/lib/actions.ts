@@ -244,6 +244,18 @@ export function discard(id: string, paths: string[]): Promise<boolean> {
 export const cherryPick = (id: string, hash: string) =>
   run(id, `Cherry-pick ${hash.slice(0, 7)}`, () => api.cherryPick(id, hash))
 
+export const cherryPickMany = (id: string, hashes: string[]) =>
+  run(id, `Cherry-pick ${hashes.length} commits`, () => api.cherryPickMany(id, hashes))
+
+/** Copy several commits as one diff or as format-patch text. */
+export async function copyCommits(id: string, hashes: string[], format: 'diff' | 'patch'): Promise<void> {
+  try {
+    copy(await api.commitsText(id, hashes, format), format === 'diff' ? `Copied the diff of ${hashes.length} commits` : `Copied ${hashes.length} patches`)
+  } catch (e) {
+    reportError(`Could not copy the ${format}`, e)
+  }
+}
+
 export const revert = (id: string, hash: string) =>
   run(id, `Revert ${hash.slice(0, 7)}`, () => api.revert(id, hash))
 

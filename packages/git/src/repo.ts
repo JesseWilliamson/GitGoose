@@ -638,6 +638,54 @@ export class Repo {
     return this.moving(`Cherry-pick ${hash.slice(0, 7)}`, () => this.git(['cherry-pick', ...mainline, hash]))
   }
 
+  /**
+   * Cherry-pick several commits onto HEAD in one go, one undo entry for all of them.
+   * `hashes` are in graph order (newest first, as the UI shows them); they are applied oldest
+   * first. Commits already on the current branch are skipped (picking them would be empty).
+   */
+  async cherryPickMany(hashes: string[]): Promise<number | null> {
+    const head = (await this.currentHead()).hash
+    const todo: string[] = []
+    for (const h of [...hashes].reverse()) {
+      if (head && (await this.isAncestor(h, head))) continue
+      todo.push(h)
+    }
+    if (!todo.length) throw new Error('Those commits are already on the current branch.')
+    // -m 1 is accepted for ordinary commits too, so one flag covers a mixed selection.
+    const mainline = (await Promise.all(todo.map((h) => this.isMerge(h)))).some(Boolean) ? ['-m', '1'] : []
+    return this.moving(`Cherry-pick ${todo.length} ${todo.length === 1 ? 'commit' : 'commits'}`, () => this.git(['cherry-pick', ...mainline, ...todo]))
+  }
+
+  private async isAncestor(a: string, b: string): Promise<boolean> {
+    const res = await this.runner.run(['merge-base', '--is-ancestor', a, b], { okCodes: [1], readOnly: true })
+    return res.code === 0
+  }
+
+  /**
+   * Several commits as text to paste or `git apply`/`git am`: a diff or a mailbox of patches.
+   * `hashes` are in graph order (newest first). When they form a chain (each one's first parent
+   * is the one before), it is one diff from the oldest's parent to the newest, or a numbered
+   * patch series; otherwise each commit's own diff or patch, oldest first.
+   */
+  async commitsText(hashes: string[], format: 'diff' | 'patch'): Promise<string> {
+    const list = [...hashes].reverse()
+    if (!list.length) return ''
+    const parents = await Promise.all(list.map(async (h) => (await this.read(['rev-list', '--parents', '-n', '1', h])).trim().split(' ').slice(1)))
+    const chain = list.every((h, i) => i === 0 || parents[i]![0] === list[i - 1])
+    const diffOf = async (from: string | undefined, to: string) =>
+      this.read(['diff', '--no-color', '--no-ext-diff', '-M', '--binary', from ?? (await this.emptyTreeHash()), to])
+    if (format === 'diff') {
+      if (chain) return diffOf(parents[0]![0], list[list.length - 1]!)
+      return (await Promise.all(list.map((h, i) => diffOf(parents[i]![0], h)))).join('')
+    }
+    const fp = ['format-patch', '--stdout', '--no-color', '--binary']
+    if (chain) {
+      const newest = list[list.length - 1]!
+      return this.read(parents[0]!.length ? [...fp, `${list[0]}^..${newest}`] : [...fp, '--root', newest])
+    }
+    return (await Promise.all(list.map((h) => this.read([...fp, '-1', h])))).join('')
+  }
+
   async revert(hash: string): Promise<number | null> {
     const mainline = (await this.isMerge(hash)) ? ['-m', '1'] : []
     return this.moving(`Revert ${hash.slice(0, 7)}`, () => this.git(['revert', '--no-edit', ...mainline, hash]))

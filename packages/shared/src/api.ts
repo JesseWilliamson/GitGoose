@@ -137,6 +137,10 @@ export interface GitSquidApi {
   rebase(repoId: string, onto: string): Promise<UndoId>
   reset(repoId: string, hash: string, mode: ResetMode): Promise<UndoId>
   cherryPick(repoId: string, hash: string): Promise<UndoId>
+  /** Several commits, given in graph order (newest first); applied oldest first, one undo entry. */
+  cherryPickMany(repoId: string, hashes: string[]): Promise<UndoId>
+  /** Several commits as a diff or as format-patch text (graph order in, oldest first out). */
+  commitsText(repoId: string, hashes: string[], format: 'diff' | 'patch'): Promise<string>
   revert(repoId: string, hash: string): Promise<UndoId>
   createTag(repoId: string, name: string, hash: string, message?: string): Promise<UndoId>
   deleteTag(repoId: string, name: string): Promise<UndoId>
@@ -178,7 +182,7 @@ export const API_METHODS = [
   'lastCommitMessage',
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit',
   'checkout', 'createBranch', 'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset',
-  'cherryPick', 'revert', 'createTag', 'deleteTag',
+  'cherryPick', 'cherryPickMany', 'commitsText', 'revert', 'createTag', 'deleteTag',
   'fetch', 'pull', 'push', 'deleteRemoteBranch',
   'stashPush', 'stashApply', 'stashPop', 'stashDrop',
   'conflicts', 'conflictVersions', 'resolveConflict', 'continueOperation', 'abortOperation',

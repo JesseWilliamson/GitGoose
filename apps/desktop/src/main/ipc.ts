@@ -19,7 +19,7 @@ export function broadcast(event: GitSquidEvent): void {
 /** Methods that change the repository. After each one we refresh and push a snapshot right away. */
 const WRITES = new Set<ApiMethod>([
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'checkout', 'createBranch',
-  'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset', 'cherryPick', 'revert', 'createTag',
+  'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset', 'cherryPick', 'cherryPickMany', 'revert', 'createTag',
   'deleteTag', 'fetch', 'pull', 'push', 'deleteRemoteBranch', 'stashPush', 'stashApply', 'stashPop',
   'stashDrop', 'resolveConflict', 'continueOperation', 'abortOperation', 'undo',
 ])
@@ -116,6 +116,8 @@ export function createHandlers(
     rebase: (id, onto) => r(id).rebase(onto),
     reset: (id, hash, mode) => r(id).reset(hash, mode),
     cherryPick: (id, hash) => r(id).cherryPick(hash),
+    cherryPickMany: (id, hashes) => r(id).cherryPickMany(hashes),
+    commitsText: (id, hashes, format) => r(id).commitsText(hashes, format),
     revert: (id, hash) => r(id).revert(hash),
     createTag: (id, name, hash, message) => r(id).createTag(name, hash, message),
     deleteTag: (id, name) => r(id).deleteTag(name),

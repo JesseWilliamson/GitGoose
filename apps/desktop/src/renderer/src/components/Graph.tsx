@@ -9,12 +9,13 @@ import type { AvatarSource } from '@gitsquid/shared'
 import { checkout } from '../lib/actions'
 import { avatarSrc, useAvatarVariant } from '../lib/avatar'
 import { formatDate, laneColor, shortHash } from '../lib/format'
-import { getLog, loadMore, saveSettings, updateRepo, useSetting, useStore, type RepoView } from '../lib/store'
+import { getLog, loadMore, saveSettings, selectCommit, selectedHashes, selectionCursor, updateRepo, useSetting, useStore, type RepoView } from '../lib/store'
 import { GraphCell, LANE_W, ROW_H, ROW_H_COMPACT, WipCell } from './GraphCell'
 import { GraphMenu } from './menus'
 import { SearchBar } from './SearchBar'
 import { DM, Spinner } from './ui'
 
+const isMac = window.gitsquid?.platform === 'darwin'
 const REFS_W = 160
 const AUTHOR_W = 140
 const DATE_W: Record<string, number> = { relative: 100, absolute: 110, both: 200 }
@@ -131,11 +132,13 @@ function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
   const userW = useStore((s) => s.settings?.graphWidth ?? null)
   const graphW = userW ?? Math.max(MIN_GRAPH_W, Math.min(log.maxWidth, AUTO_LANES) * LANE_W + 12)
 
+  const selectedSet = useMemo(() => new Set(selectedHashes(view.selected)), [view.selected])
   // Keep the selected row in view when it changes (keyboard navigation, search, jumping to a parent).
   let selectedIndex = -1
+  const cursor = selectionCursor(view.selected)
   if (view.selected.kind === 'wip') selectedIndex = showWip ? 0 : -1
-  else {
-    const ci = log.index.get(view.selected.hash)
+  else if (cursor) {
+    const ci = log.index.get(cursor)
     if (ci !== undefined) selectedIndex = ci + offset
   }
   const lastScrolled = useRef(-1)
@@ -149,20 +152,22 @@ function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
   // The last row may be the "Loading…" placeholder; keyboard selection stops at the last commit.
   // Landing there scrolls near the end, which loads the next page, so End can be pressed again.
   const lastSelectable = offset + log.commits.length - 1
-  const select = (wanted: number) => {
+  const select = (wanted: number, range = false) => {
     const i = Math.min(Math.max(wanted, 0), lastSelectable)
     if (i < 0) return
-    if (showWip && i === 0) updateRepo(view.id, { selected: { kind: 'wip' } })
-    else {
+    if (showWip && i === 0) {
+      if (!range) updateRepo(view.id, { selected: { kind: 'wip' } })
+    } else {
       const c = log.commits[i - offset]
-      if (c) updateRepo(view.id, { selected: { kind: 'commit', hash: c.hash } })
+      if (c) selectCommit(view.id, c.hash, { range })
     }
   }
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     const cur = selectedIndex < 0 ? -1 : selectedIndex
-    if (e.key === 'ArrowDown' || e.key === 'j') { e.preventDefault(); select(cur + 1) }
-    else if (e.key === 'ArrowUp' || e.key === 'k') { e.preventDefault(); select(Math.max(0, cur - 1)) }
+    // Shift+arrows grow the selection from where it started, like Shift-click.
+    if (e.key === 'ArrowDown' || e.key === 'j') { e.preventDefault(); select(cur + 1, e.shiftKey) }
+    else if (e.key === 'ArrowUp' || e.key === 'k') { e.preventDefault(); select(Math.max(0, cur - 1), e.shiftKey) }
     else if (e.key === 'PageDown') { e.preventDefault(); select(cur + 20) }
     else if (e.key === 'PageUp') { e.preventDefault(); select(cur - 20) }
     else if (e.key === 'Home') { e.preventDefault(); select(0) }
@@ -226,7 +231,7 @@ function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
                     refs={refsByHash.get(commit.hash)}
                     headBranch={snap.head.branch}
                     isHead={commit.hash === snap.head.hash}
-                    selected={view.selected.kind === 'commit' && view.selected.hash === commit.hash}
+                    selected={selectedSet.has(commit.hash)}
                     hit={hits ? hits.has(commit.hash) : null}
                     showPending={showWip}
                     graphW={graphW}
@@ -377,12 +382,17 @@ const CommitRow = memo(function CommitRow(props: {
       style={{ position: 'absolute', top: 0, left: 0, right: 0, height: look.rowH, transform: `translateY(${props.top}px)` }}
       data-testid="commit-row"
       data-hash={commit.hash}
-      onClick={() => updateRepo(repoId, { selected: { kind: 'commit', hash: commit.hash } })}
+      // Shift-click would otherwise also select the text between the two rows.
+      onMouseDown={(e) => e.shiftKey && e.preventDefault()}
+      onClick={(e) => selectCommit(repoId, commit.hash, { range: e.shiftKey, toggle: isMac ? e.metaKey : e.ctrlKey })}
       onContextMenu={(e) => {
         // A right-click on a branch pill bubbles up to here; the pill already set the menu target.
         // (The pill must not stopPropagation: the menu's trigger is the list container above us.)
         if ((e.target as HTMLElement).closest('[data-testid="ref-pill"]')) return
-        useStore.setState({ menu: { kind: 'commit', hash: commit.hash } })
+        // On one of several selected commits, the menu acts on all of them.
+        const sel = useStore.getState().repos[repoId]?.selected
+        if (sel?.kind === 'commits' && sel.hashes.includes(commit.hash)) useStore.setState({ menu: { kind: 'commits', hashes: sel.hashes } })
+        else useStore.setState({ menu: { kind: 'commit', hash: commit.hash } })
       }}
       onDragOver={onDragOver}
       onDragLeave={() => setDropping(false)}

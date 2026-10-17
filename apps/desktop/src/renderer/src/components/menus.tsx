@@ -1,6 +1,6 @@
 import { DropdownMenu } from 'radix-ui'
 import {
-  checkout, cherryPick, copy, currentBranchRef, deleteBranch, deleteRemoteBranch, deleteTag, dropOptions,
+  checkout, cherryPick, cherryPickMany, copy, copyCommits, currentBranchRef, deleteBranch, deleteRemoteBranch, deleteTag, dropOptions,
   merge, newBranch, newTag, push, rebase, renameBranch, reset, revert, shortRef,
 } from '../lib/actions'
 import { getLog, useStore } from '../lib/store'
@@ -42,6 +42,20 @@ export function GraphMenu({ repoId }: { repoId: string }) {
         {r.kind === 'tag' && <CM.Item danger onSelect={() => void deleteTag(repoId, name)}>Delete tag {name}</CM.Item>}
         <CM.Separator />
         <CM.Item onSelect={() => copy(name, 'Copied name')}>Copy name</CM.Item>
+      </CM.Content>
+    )
+  }
+
+  if (menu.kind === 'commits') {
+    const n = menu.hashes.length
+    return (
+      <CM.Content>
+        <CM.Label>{n} commits selected</CM.Label>
+        <CM.Item onSelect={() => void cherryPickMany(repoId, menu.hashes)}>Cherry-pick {n} commits onto {headName}</CM.Item>
+        <CM.Separator />
+        <CM.Item onSelect={() => void copyCommits(repoId, menu.hashes, 'diff')}>Copy as diff</CM.Item>
+        <CM.Item onSelect={() => void copyCommits(repoId, menu.hashes, 'patch')}>Copy as patch</CM.Item>
+        <CM.Item onSelect={() => copy(menu.hashes.join('\n'), 'Copied SHAs')}>Copy SHAs</CM.Item>
       </CM.Content>
     )
   }

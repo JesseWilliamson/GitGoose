@@ -4,7 +4,14 @@ import { create } from 'zustand'
 import { api, toUiError, type UiError } from './api'
 import { onAiEvent } from './ai'
 
-export type Selection = { kind: 'wip' } | { kind: 'commit'; hash: string }
+export type Selection =
+  | { kind: 'wip' }
+  | { kind: 'commit'; hash: string }
+  /**
+   * Several commits (Shift- or Ctrl/Cmd-click). `hashes` are in graph order; `anchor` is where a
+   * Shift-click range starts, `cursor` the commit the keyboard moves from.
+   */
+  | { kind: 'commits'; hashes: string[]; anchor: string; cursor: string }
 
 export type FileMode = 'diff' | 'history' | 'blame'
 
@@ -94,7 +101,11 @@ export interface DropRequest {
   target: { ref?: Ref; hash: string }
 }
 
-export type MenuTarget = { kind: 'commit'; hash: string } | { kind: 'ref'; ref: Ref; hash: string } | null
+export type MenuTarget =
+  | { kind: 'commit'; hash: string }
+  | { kind: 'commits'; hashes: string[] }
+  | { kind: 'ref'; ref: Ref; hash: string }
+  | null
 
 interface State {
   settings: Settings | null
@@ -246,6 +257,46 @@ export function loadMore(id: string): Promise<void> {
     },
   )
   return log.loading
+}
+
+/** The commits a selection covers, in graph order. */
+export function selectedHashes(sel: Selection): string[] {
+  return sel.kind === 'commit' ? [sel.hash] : sel.kind === 'commits' ? sel.hashes : []
+}
+
+/** The commit the keyboard moves from (the last one clicked). */
+export function selectionCursor(sel: Selection): string | null {
+  return sel.kind === 'commit' ? sel.hash : sel.kind === 'commits' ? sel.cursor : null
+}
+
+/**
+ * Click on a commit row: plain selects one; Shift selects the range from the anchor (graph
+ * order, like a file list); Ctrl/Cmd adds or removes one. A selection of one is a plain one.
+ */
+export function selectCommit(id: string, hash: string, mods: { range?: boolean; toggle?: boolean } = {}): void {
+  const v = get().repos[id]
+  if (!v) return
+  const log = getLog(id)
+  const sel = v.selected
+  const one = (h: string): Selection => ({ kind: 'commit', hash: h })
+  const many = (hashes: string[], anchor: string, cursor: string): Selection =>
+    hashes.length === 1 ? one(hashes[0]!) : { kind: 'commits', hashes, anchor, cursor }
+  let next: Selection = one(hash)
+  if (mods.range) {
+    const anchor = sel.kind === 'commits' ? sel.anchor : sel.kind === 'commit' ? sel.hash : null
+    const a = anchor ? log.index.get(anchor) : undefined
+    const b = log.index.get(hash)
+    if (anchor && a !== undefined && b !== undefined) {
+      next = many(log.commits.slice(Math.min(a, b), Math.max(a, b) + 1).map((c) => c.hash), anchor, hash)
+    }
+  } else if (mods.toggle) {
+    const set = new Set(selectedHashes(sel))
+    if (set.has(hash)) set.delete(hash)
+    else set.add(hash)
+    const hashes = [...set].sort((x, y) => (log.index.get(x) ?? Infinity) - (log.index.get(y) ?? Infinity))
+    if (hashes.length) next = many(hashes, sel.kind === 'commits' ? sel.anchor : hash, hash)
+  }
+  updateRepo(id, { selected: next })
 }
 
 /** Load pages until `hash` is in the log (for jumping to a search hit or a parent commit). */
