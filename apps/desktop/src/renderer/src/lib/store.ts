@@ -21,6 +21,7 @@ export type CenterView =
   | { kind: 'graph' }
   | { kind: 'file'; target: DiffTarget; mode: FileMode }
   | { kind: 'conflicts' }
+  | { kind: 'reflog' }
 
 export interface SearchState {
   field: SearchField

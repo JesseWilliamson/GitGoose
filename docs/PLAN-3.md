@@ -122,3 +122,5 @@ changes.
       delete on a remote, "local only" marks after an explicit check), tracking (track, stop,
       push to a named remote branch), fast-forward a branch that is not checked out, branch
       cleanup (merged and stale badges, delete several in one undoable step)
+- [x] 20 reflog view (sidebar, palette, Repository menu): lost commits marked, restore as a
+      branch under the name it had, check out, reset to an entry

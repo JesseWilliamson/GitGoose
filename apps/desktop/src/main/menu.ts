@@ -51,6 +51,7 @@ export function installMenu(): void {
         { label: 'New Branch…', accelerator: 'CmdOrCtrl+Shift+B', click: cmd('new-branch'), registerAccelerator: false },
         { label: 'Stash Changes', accelerator: 'CmdOrCtrl+Shift+S', click: cmd('stash'), registerAccelerator: false },
         { label: 'Pop Stash', click: cmd('pop') },
+        { label: 'Reflog (Recover Lost Commits)', click: cmd('reflog') },
         { type: 'separator' },
         { label: 'Reveal in File Manager', click: cmd('reveal') },
       ],

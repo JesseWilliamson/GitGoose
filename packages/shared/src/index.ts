@@ -148,6 +148,25 @@ export interface Remote {
   pushUrl?: string
 }
 
+/** One move of a ref, newest first (`git log -g`). */
+export interface ReflogEntry {
+  /** The n in HEAD@{n}. */
+  index: number
+  hash: string
+  /** When the ref moved (unix seconds), not when the commit was made. */
+  date: number
+  /** What moved it: commit, checkout, reset, rebase (finish), merge main, pull, … */
+  action: string
+  /** The rest of git's reflog message ("moving from main to topic"). */
+  message: string
+  /** The subject of the commit the ref moved to. */
+  subject: string
+  /** Reachable from no branch, tag or HEAD: only the reflog still knows it. */
+  lost?: boolean
+  /** The branch whose tip this was when HEAD moved away from it (a name to restore it under). */
+  branchHint?: string
+}
+
 export interface StashEntry {
   index: number
   /** stash@{n} */

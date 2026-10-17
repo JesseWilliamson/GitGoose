@@ -1,6 +1,6 @@
 import type {
   BlameLine, ChangedFile, Commit, CommitDetails, ConflictFile, DiffTarget, FileDiff, RepoSnapshot,
-  Remote, SearchField, StashEntry, UndoEntry,
+  ReflogEntry, Remote, SearchField, StashEntry, UndoEntry,
 } from './index'
 import type { AgentInfo, AiPermissionRequest, AiResult, AiStatus, AiTask } from './ai'
 import type { DeviceCodeInfo, GitHubAccount, GitHubStatus } from './github'
@@ -117,6 +117,8 @@ export interface GitSquidApi {
   blame(repoId: string, path: string, rev?: string): Promise<BlameLine[]>
   search(repoId: string, field: SearchField, query: string): Promise<string[]>
   stashList(repoId: string): Promise<StashEntry[]>
+  /** A ref's reflog (default HEAD), newest first; commits nothing else reaches are marked lost. */
+  reflog(repoId: string, ref?: string): Promise<ReflogEntry[]>
   lastCommitMessage(repoId: string): Promise<string>
 
   // Working tree
@@ -229,7 +231,7 @@ export const API_METHODS = [
   'respondPrompt', 'openPath', 'openInEditor', 'openTerminal', 'revealPath', 'logError',
   'githubStatus', 'githubSignIn', 'githubWaitForSignIn', 'githubCancelSignIn', 'githubOpenPage', 'githubSignOut',
   'aiStatus', 'aiConsent', 'aiRun', 'aiCancel', 'aiRespondPermission', 'aiAgentInfo', 'aiAuthenticate', 'aiSetApiKey',
-  'snapshot', 'logPage', 'commitDetails', 'diff', 'fileHistory', 'blame', 'search', 'stashList',
+  'snapshot', 'logPage', 'commitDetails', 'diff', 'fileHistory', 'blame', 'search', 'stashList', 'reflog',
   'lastCommitMessage',
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit',
   'checkout', 'createBranch', 'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset',

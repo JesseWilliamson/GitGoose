@@ -1,6 +1,6 @@
 import type { Ref } from '@gitsquid/shared'
 import clsx from 'clsx'
-import { Archive, ChevronDown, ChevronRight, Cloud, GitBranch, Plus, Tag } from 'lucide-react'
+import { Archive, ChevronDown, ChevronRight, Cloud, GitBranch, History, Plus, Tag } from 'lucide-react'
 import { ContextMenu } from 'radix-ui'
 import { useMemo, useState, type ReactNode } from 'react'
 import { addRemote, checkout, isStale, pop, remoteNames, stashApply, stashDrop } from '../lib/actions'
@@ -92,6 +92,11 @@ export function Sidebar({ view }: { view: RepoView }) {
               ))}
               {view.stashes.length === 0 && <Empty>No stashes</Empty>}
             </Section>
+            <button onClick={() => updateRepo(view.id, { center: { kind: 'reflog' } })} data-testid="open-reflog"
+              title="Every place HEAD has been: recover deleted branches and lost commits"
+              className={clsx('mt-1 flex h-7 w-full items-center gap-1.5 pr-2 pl-[27px] text-[12px] font-semibold hover:text-fg', view.center.kind === 'reflog' ? 'text-fg' : 'text-muted')}>
+              <History size={13} /> Reflog
+            </button>
           </div>
         </ContextMenu.Trigger>
         <GraphMenu repoId={view.id} />

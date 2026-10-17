@@ -6,6 +6,7 @@ import { ConflictWizard } from './ConflictWizard'
 import { DetailPanel } from './DetailPanel'
 import { FileView } from './DiffView'
 import { Graph } from './Graph'
+import { ReflogView } from './ReflogView'
 import { Sidebar } from './Sidebar'
 
 /**
@@ -24,6 +25,7 @@ function saveLayout(next: PaneLayout) {
 
 export function Workspace({ view }: { view: RepoView }) {
   const center = view.center.kind === 'conflicts' ? <ConflictWizard view={view} />
+    : view.center.kind === 'reflog' ? <ReflogView view={view} />
     : view.center.kind === 'file' ? <FileView view={view} target={view.center.target} mode={view.center.mode} />
     : <Graph view={view} />
 

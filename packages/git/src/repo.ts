@@ -1,6 +1,6 @@
 import type {
   BlameLine, ChangedFile, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
-  LogPage, Ref, Remote, RepoOperation, RepoSnapshot, ResetMode, Resolution, SearchField, SelectionRequest,
+  LogPage, Ref, Remote, RepoOperation, ReflogEntry, RepoSnapshot, ResetMode, Resolution, SearchField, SelectionRequest,
   StashEntry, StatusEntry, UndoEntry,
 } from '@gitsquid/shared'
 import { countConflicts } from '@gitsquid/shared'
@@ -17,6 +17,7 @@ import { checkPlan, patchFor, splitUnits, type PlannedCommit, type RecomposeUnit
 import { buildPatch } from './patch'
 import { parseRefs, REFS_FORMAT } from './refs'
 import { GitRunner } from './runner'
+import { parseReflog, REFLOG_FORMAT } from './reflog'
 import { parseStashList, STASH_FORMAT } from './stash'
 import { parseStatus } from './status'
 import { UndoJournal, type UndoAction } from './undo'
@@ -413,6 +414,23 @@ export class Repo {
 
   async stashList(): Promise<StashEntry[]> {
     return parseStashList(await this.read(['stash', 'list', `--format=${STASH_FORMAT}`]))
+  }
+
+  /**
+   * A ref's reflog, newest first, with the commits nothing else reaches marked lost. Finding
+   * them is one `rev-list <hashes> --not --all`: it walks only what the refs do not already
+   * reach, so its cost is the size of what was lost, not the size of the repository.
+   */
+  async reflog(ref = 'HEAD', limit = 300): Promise<ReflogEntry[]> {
+    const out = await this.runner.run(['log', '-g', '--date=unix', `--format=${REFLOG_FORMAT}`, `-n${limit}`, ref, '--'], { readOnly: true, okCodes: [128] })
+    if (out.code !== 0) return [] // no reflog yet (a fresh clone of an empty repository)
+    const entries = parseReflog(out.stdout)
+    const hashes = [...new Set(entries.map((e) => e.hash))]
+    if (hashes.length) {
+      const lost = new Set((await this.read(['rev-list', ...hashes, '--not', '--all'])).split('\n').filter(Boolean))
+      for (const e of entries) if (lost.has(e.hash)) e.lost = true
+    }
+    return entries
   }
 
   async lastCommitMessage(): Promise<string> {

@@ -103,6 +103,7 @@ export function createHandlers(
     blame: (id, path, rev) => r(id).blame(path, rev),
     search: (id, field, q) => r(id).search(field, q),
     stashList: (id) => r(id).stashList(),
+    reflog: (id, ref) => r(id).reflog(ref),
     lastCommitMessage: (id) => r(id).lastCommitMessage(),
 
     stagePaths: (id, paths) => r(id).stagePaths(paths),

@@ -64,6 +64,7 @@ function useCommands() {
         case 'pop': return pop(id)
         case 'reveal': return void window.gitsquid.revealPath(s.repos[id]!.snapshot.path)
         case 'terminal': return void openTerminal(id)
+        case 'reflog': return updateRepo(id, { center: { kind: 'reflog' } })
       }
     }
     const off = onCommand(handle)
