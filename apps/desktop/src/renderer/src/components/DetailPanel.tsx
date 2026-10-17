@@ -3,8 +3,10 @@ import { Check, Copy, Minus, Plus, Undo2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { copy, discard as discardFiles, openInEditor, pop, run, stashApply, stashDrop } from '../lib/actions'
 import { api } from '../lib/api'
-import { dateTime, hashColor, initials, laneColor, sentence, shortHash } from '../lib/format'
-import { ensureLoaded, reportError, setting, updateRepo, type FileMode, type RepoView } from '../lib/store'
+import { dateTime, sentence, shortHash } from '../lib/format'
+import { avatarSrc } from '../lib/avatar'
+import { ensureLoaded, reportError, setting, updateRepo, useSetting, type FileMode, type RepoView } from '../lib/store'
+import { Avatar } from './Avatar'
 import { FileRow, statusKind } from './FileList'
 import { modName } from '../lib/keys'
 import { Button, CM, SectionHeader, Spinner } from './ui'
@@ -213,6 +215,7 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
 const detailsCache = new Map<string, CommitDetails>()
 
 function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
+  const avatarSource = useSetting('avatars')
   const [details, setDetails] = useState<CommitDetails | null>(() => detailsCache.get(hash) ?? null)
   const latest = useRef(hash)
   useEffect(() => {
@@ -258,9 +261,7 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
         <div className="text-[14px] leading-snug font-semibold">{stash ? stash.message : d.subject}</div>
         {d.body && <pre className="mt-2 max-h-40 overflow-y-auto font-sans text-[13px] whitespace-pre-wrap text-muted">{d.body}</pre>}
         <div className="mt-3 flex items-center gap-2">
-          <span className="flex size-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: laneColor(hashColor(d.authorEmail)) }}>
-            {initials(d.authorName)}
-          </span>
+          <Avatar name={d.authorName} email={d.authorEmail} src={avatarSrc(d.authorEmail, avatarSource)} size={28} />
           <div className="min-w-0 text-xs">
             <div className="truncate"><b>{d.authorName}</b> <span className="text-faint">&lt;{d.authorEmail}&gt;</span></div>
             <div className="text-muted">authored {dateTime(d.authorDate)}</div>

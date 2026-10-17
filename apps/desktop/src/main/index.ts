@@ -1,7 +1,9 @@
 import { AskpassServer } from '@gitsquid/git'
-import { app, BrowserWindow, nativeTheme } from 'electron'
+import { DEFAULT_AVATAR_BASES } from '@gitsquid/shared'
+import { app, BrowserWindow, nativeTheme, protocol } from 'electron'
 import { existsSync } from 'node:fs'
 import { delimiter, join, resolve } from 'node:path'
+import { AvatarCache } from './avatars'
 import { installCrashHandlers } from './diagnostics'
 import { broadcast, createHandlers, registerIpc } from './ipc'
 import { installMenu } from './menu'
@@ -14,6 +16,22 @@ import { loadWindowState, trackWindowState } from './windowState'
 if (process.env.GITSQUID_USER_DATA) app.setPath('userData', process.env.GITSQUID_USER_DATA)
 
 installCrashHandlers()
+
+// Custom schemes must be declared before the app is ready. "secure" lets the page (whose CSP
+// allows gitsquid-avatar:) load from it like any https image.
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'gitsquid-avatar', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+])
+
+const avatars = new AvatarCache({
+  dir: join(app.getPath('userData'), 'avatars'),
+  source: () => getSettings().avatars,
+  // Tests point these at a local server; nothing else should.
+  bases: {
+    github: process.env.GITSQUID_AVATAR_GITHUB_BASE ?? DEFAULT_AVATAR_BASES.github,
+    gravatar: process.env.GITSQUID_AVATAR_GRAVATAR_BASE ?? DEFAULT_AVATAR_BASES.gravatar,
+  },
+})
 
 const here = import.meta.dirname
 
@@ -117,6 +135,12 @@ app.whenReady().then(async () => {
   if (process.env.ELECTRON_RENDERER_URL && !paths.length && !getSettings().openRepos.length && getSettings().openDevRepo && existsSync(join(devRepo, '.git'))) {
     setSettings({ openRepos: [devRepo] })
   }
+  // gitsquid-avatar://author/<email> -> image bytes (or a transparent pixel; see avatars.ts).
+  protocol.handle('gitsquid-avatar', async (req) => {
+    const email = decodeURIComponent(new URL(req.url).pathname.slice(1))
+    const img = await avatars.get(email)
+    return new Response(new Uint8Array(img.body), { headers: { 'content-type': img.type, 'cache-control': 'max-age=3600' } })
+  })
   registerIpc(createHandlers(repos, prompts, gitOpts), repos)
   installMenu()
   createWindow()

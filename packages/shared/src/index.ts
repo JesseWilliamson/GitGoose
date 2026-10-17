@@ -7,6 +7,7 @@ export * from './api'
 export * from './conflict-markers'
 export * from './settings'
 export * from './command'
+export * from './avatars'
 
 /** A commit as the graph needs it. Bodies and file lists are fetched lazily (see CommitDetails). */
 export interface Commit {
