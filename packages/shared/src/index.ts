@@ -12,6 +12,9 @@ export * from './layout'
 export * from './merge3'
 
 /** A commit as the graph needs it. Bodies and file lists are fetched lazily (see CommitDetails). */
+/** Enough of a commit to show it in a list of results. */
+export type CommitSummary = Pick<Commit, 'hash' | 'subject' | 'authorName' | 'authorEmail' | 'authorDate'>
+
 export interface Commit {
   hash: string
   parents: string[]

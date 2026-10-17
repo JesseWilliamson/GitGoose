@@ -47,12 +47,13 @@ test('searches commits and steps through matches', async () => {
   const r = makeFixture('branches')
   const { app, page } = await launch(r.dir)
   await page.getByTestId('commit-row').first().click()
+  // The omni search hands a file search to the graph, where the matches stay bright.
   await page.keyboard.press('Control+f')
+  await page.getByTestId('palette-input').fill('.txt')
+  await page.getByTestId('omni-item').filter({ hasText: 'Commits that changed files matching' }).click()
   const search = page.getByTestId('search-input')
   await expect(search).toBeFocused()
-  await page.getByTestId('search-scope').selectOption('path')
-  // Live: no Enter needed for the first search.
-  await search.fill('.txt')
+  await expect(page.getByTestId('search-scope')).toHaveValue('path')
   // 6, not 7: a path-limited log leaves out the merge commit M, which changes no file itself.
   await expect(page.getByTestId('search-count')).toHaveText('1 of 6')
   await search.press('Enter')
@@ -73,10 +74,12 @@ test('one search matches messages, authors, SHAs, branches and tags, greying out
   const dimmed = page.locator('[data-testid="commit-row"].opacity-35')
   await expect(rows).toHaveCount(7)
   await page.keyboard.press('Control+f')
+  await page.getByTestId('palette-input').fill('wip')
+  await page.getByTestId('omni-item').filter({ hasText: /Show all 1 matching commit in the graph/ }).click()
   const search = page.getByTestId('search-input')
 
   // A branch name: the commit it points at stays bright, everything else greys out.
-  await search.fill('wip')
+  await expect(search).toHaveValue('wip')
   await expect(page.getByTestId('search-count')).toHaveText('1 of 1')
   await expect(dimmed).toHaveCount(6)
   await expect(page.getByTestId('detail-panel')).toContainText('F')
@@ -181,14 +184,21 @@ test('GitKraken look: pills joined to their node, recent times inline, far lanes
   await app.close()
 })
 
-test('Ctrl+P opens the command palette and Ctrl+F the search', async () => {
+test('Ctrl+P opens the search on commands only; Ctrl+K and Ctrl+F on everything', async () => {
   const r = makeFixture('linear')
   const { app, page } = await launch(r.dir)
   await page.getByTestId('commit-row').first().click()
   await page.keyboard.press('Control+p')
-  await expect(page.getByTestId('palette-input')).toBeFocused()
+  const input = page.getByTestId('palette-input')
+  await expect(input).toBeFocused()
+  await expect(input).toHaveValue('> ')
+  await expect(page.getByTestId('omni-scope-command')).toHaveAttribute('aria-selected', 'true')
   await page.keyboard.press('Escape')
-  await page.keyboard.press('Control+f')
-  await expect(page.getByTestId('search-input')).toBeFocused()
+  for (const key of ['Control+k', 'Control+f']) {
+    await page.keyboard.press(key)
+    await expect(input).toBeFocused()
+    await expect(input).toHaveValue('')
+    await page.keyboard.press('Escape')
+  }
   await app.close()
 })

@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { Archive, ArchiveRestore, ArrowDown, ArrowUp, ChevronDown, GitBranch, SquareTerminal, RefreshCw, Redo2, Search, Settings, Undo2 } from 'lucide-react'
+import { Archive, ArchiveRestore, ArrowDown, ArrowUp, ChevronDown, GitBranch, RefreshCw, Redo2, Search, Settings, Undo2 } from 'lucide-react'
 import { DropdownMenu } from 'radix-ui'
 import { fetchAll, newBranch, pop, pull, push, redo, stash, undo } from '../lib/actions'
 import { runCommand, useStore, type RepoView } from '../lib/store'
@@ -53,9 +53,15 @@ export function Toolbar({ view }: { view: RepoView }) {
           <Spinner /> <span className="truncate">{view.progress ?? view.busy}</span>
         </div>
       )}
-      <ToolbarButton icon={<Search size={17} />} label="Search" onClick={() => runCommand('search')} title={`Search commits (${shortcutOf('search', useStore.getState().settings?.keybindings)})`} />
-      {/* Not the ⌘ glyph: that is a macOS key, and this button is the same on every platform. */}
-      <ToolbarButton icon={<SquareTerminal size={17} />} label="Palette" onClick={() => useStore.setState({ palette: true })} title={`Command palette (${shortcutOf('palette', useStore.getState().settings?.keybindings)})`} />
+      {/* Like the Next.js docs: a box that looks like a search field, with its shortcut. The
+          shortcut is spelled out per platform (not the ⌘ glyph everywhere). */}
+      <button onClick={() => runCommand('search')} data-testid="omni-open"
+        title={`Search everything (${shortcutOf('search', useStore.getState().settings?.keybindings)}); commands only: ${shortcutOf('palette', useStore.getState().settings?.keybindings)}`}
+        className="no-drag mx-2 flex h-8 w-56 shrink items-center gap-2 rounded-lg border border-line bg-bg px-2.5 text-[13px] text-faint hover:border-accent/60 hover:text-muted">
+        <Search size={14} className="shrink-0" />
+        <span className="min-w-0 flex-1 truncate text-left">Search…</span>
+        <kbd className="shrink-0 rounded border border-line px-1 text-[10px]">{shortcutOf('search', useStore.getState().settings?.keybindings)}</kbd>
+      </button>
       <ToolbarButton icon={<Settings size={17} />} label="Settings" onClick={() => useStore.setState({ page: 'settings' })} />
     </div>
   )

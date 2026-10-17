@@ -5,13 +5,15 @@ import { chmodSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { launch } from './app'
 
-test('the palette button uses a platform-neutral icon and the real modifier name', async () => {
+test('the search box names its shortcuts with the real modifier, no ⌘ glyph elsewhere', async () => {
   const r = makeFixture('linear')
   const { app, page } = await launch(r.dir)
   const toolbar = page.getByTestId('toolbar')
   await expect(toolbar.locator('.lucide-command')).toHaveCount(0)
-  const palette = toolbar.getByRole('button', { name: 'Palette' })
-  await expect(palette).toHaveAttribute('title', process.platform === 'darwin' ? /⌘\+P/ : /Ctrl\+P/)
+  const search = page.getByTestId('omni-open')
+  const mod = process.platform === 'darwin' ? '⌘' : 'Ctrl'
+  await expect(search).toContainText(`${mod}+K`)
+  await expect(search).toHaveAttribute('title', new RegExp(`commands only: ${mod.replace('+', '')}\\+P`))
   await app.close()
 })
 

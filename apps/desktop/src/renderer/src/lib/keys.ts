@@ -14,10 +14,10 @@ export interface KeyCommand {
 }
 
 export const COMMANDS: KeyCommand[] = [
-  { id: 'palette', label: 'Command palette', defaults: ['mod+p', 'mod+shift+p', 'mod+k'] },
+  { id: 'search', label: 'Search everything', defaults: ['mod+k', 'mod+f'] },
+  { id: 'palette', label: 'Commands', defaults: ['mod+p', 'mod+shift+p'] },
   { id: 'undo', label: 'Undo the last git operation', defaults: ['mod+z'] },
   { id: 'redo', label: 'Redo what was undone', defaults: ['mod+shift+z', 'mod+y'] },
-  { id: 'search', label: 'Find commits', defaults: ['mod+f'] },
   { id: 'open-repo', label: 'Open repository', defaults: ['mod+o'] },
   { id: 'close-tab', label: 'Close tab', defaults: ['mod+w'] },
   { id: 'settings', label: 'Settings', defaults: ['mod+,'] },
@@ -96,7 +96,8 @@ export function shortcutOf(id: string, overrides: Record<string, string> = {}): 
 
 /** Keys that are not configurable commands, for the shortcuts dialog. */
 export const FIXED_KEYS: { keys: string; what: string }[] = [
-  { keys: 'Enter / Shift+Enter', what: 'Next / previous search match' },
+  { keys: 'Enter / Shift+Enter', what: 'Next / previous match in the graph (after “Show matching commits in the graph”)' },
+  { keys: '> (in search)', what: 'Search commands only' },
   { keys: 'J / K  or  ↓ / ↑', what: 'Next / previous commit in the graph' },
   { keys: 'PageDown / PageUp, Home / End', what: 'Move through the graph faster' },
   { keys: 'mod+Enter', what: 'Commit (in the message box)' },

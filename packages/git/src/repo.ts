@@ -1,5 +1,5 @@
 import type {
-  BisectState, BlameLine, ChangeInsights, CodePeek, ImpactResult, ReviewScope, ImageSide, LfsInfo, LfsLock, ChangedFile, CommandRecord, GraphFilter, Identity, Person, Signature, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
+  BisectState, BlameLine, ChangeInsights, CodePeek, ImpactResult, ReviewScope, ImageSide, LfsInfo, LfsLock, ChangedFile, CommandRecord, GraphFilter, Identity, Person, Signature, Commit, CommitSummary, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
   LogPage, Ref, Remote, RepoOperation, ReflogEntry, RepoSnapshot, ResetMode, Resolution, SearchField, SelectionRequest,
   StashEntry, StatusEntry, Submodule, UndoEntry, Worktree,
 } from '@gitsquid/shared'
@@ -498,6 +498,26 @@ export class Repo {
 
   /** The all-fields search in flight: a newer one cancels it (typing fires one per pause). */
   private searching: AbortController | null = null
+
+  /** Every file in the working tree, tracked or not (ignored ones left out), for finding files by name. */
+  async listFiles(limit = 200_000): Promise<string[]> {
+    const out = await this.read(['ls-files', '-z', '--cached', '--others', '--exclude-standard'])
+    // A file with conflicts is listed once per stage.
+    return [...new Set(out.split('\0').filter(Boolean))].slice(0, limit)
+  }
+
+  /** search(), plus what the first `limit` hits are (subject, author, date), for showing them as results. */
+  async searchCommits(field: SearchField, query: string, limit = 20): Promise<{ total: number; commits: CommitSummary[] }> {
+    const hashes = await this.search(field, query)
+    if (!hashes.length) return { total: 0, commits: [] }
+    const raw = await this.read(['log', '--no-walk=unsorted', '-z', '--format=%H%x00%s%x00%an%x00%ae%x00%at', ...hashes.slice(0, limit), '--'])
+    const f = raw.split('\0')
+    const commits: CommitSummary[] = []
+    for (let i = 0; i + 4 < f.length; i += 5) {
+      commits.push({ hash: f[i]!.trim(), subject: f[i + 1]!, authorName: f[i + 2]!, authorEmail: f[i + 3]!, authorDate: Number(f[i + 4]) })
+    }
+    return { total: hashes.length, commits }
+  }
 
   async search(field: SearchField, query: string): Promise<string[]> {
     const q = query.trim()

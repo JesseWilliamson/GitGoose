@@ -37,8 +37,8 @@ export function installMenu(): void {
         { type: 'separator' },
         { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' },
         { type: 'separator' },
-        { label: 'Find Commit…', accelerator: 'CmdOrCtrl+F', click: cmd('search'), registerAccelerator: false },
-        { label: 'Command Palette…', accelerator: 'CmdOrCtrl+Shift+P', click: cmd('palette'), registerAccelerator: false },
+        { label: 'Search…', accelerator: 'CmdOrCtrl+K', click: cmd('search'), registerAccelerator: false },
+        { label: 'Commands…', accelerator: 'CmdOrCtrl+P', click: cmd('palette'), registerAccelerator: false },
       ],
     },
     {

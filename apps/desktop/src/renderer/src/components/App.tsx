@@ -4,7 +4,7 @@ import { applyPatchFile, applyPatchFromClipboard, fetchAll, initRepo, newBranch,
 import { comboOf, keymap } from '../lib/keys'
 import { closeTab, onCommand, runCommand, updateRepo, saveSettings, setting, useActiveRepo, useStore } from '../lib/store'
 import { AttentionBar } from './AttentionBar'
-import { CommandPalette } from './CommandPalette'
+import { OmniSearch } from './OmniSearch'
 import { Dialogs, PromptDialog, Toasts } from './Dialogs'
 import { DropMenu } from './menus'
 import { SettingsPage } from './SettingsPage'
@@ -32,7 +32,8 @@ function useCommands() {
         case 'clone-repo': return useStore.setState({ dialog: { kind: 'clone' } })
         case 'init-repo': return void initRepo()
         case 'settings': return useStore.setState({ page: s.page === 'settings' ? null : 'settings' })
-        case 'palette': return useStore.setState({ palette: !s.palette })
+        case 'palette': return useStore.setState({ omni: s.omni ? null : { query: '> ' } })
+        case 'search': return useStore.setState({ omni: { query: '' } })
         case 'zoom-in': return void saveSettings({ uiScale: setting('uiScale') + 0.1 })
         case 'zoom-out': return void saveSettings({ uiScale: setting('uiScale') - 0.1 })
         case 'zoom-reset': return void saveSettings({ uiScale: 1 })
@@ -53,9 +54,6 @@ function useCommands() {
           else void redo(id)
           return
         case 'close-tab': return void closeTab(id)
-        case 'search':
-          // Over the graph, so leave a diff or the conflict view for it.
-          return updateRepo(id, (v) => ({ searchOpen: true, searchFocus: v.searchFocus + 1, center: { kind: 'graph' } }))
         case 'fetch': return void fetchAll(id)
         case 'pull': return void pull(id)
         case 'push': return push(id)
@@ -72,7 +70,7 @@ function useCommands() {
     }
     const off = onCommand(handle)
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && useStore.getState().page && !useStore.getState().dialog && !useStore.getState().palette) {
+      if (e.key === 'Escape' && useStore.getState().page && !useStore.getState().dialog && !useStore.getState().omni) {
         useStore.setState({ page: null })
         return
       }
@@ -128,7 +126,7 @@ export function App() {
           <StatusBar view={view} />
         </>
       )}
-      <CommandPalette />
+      <OmniSearch />
       <Dialogs />
       <AiDialogs />
       <PromptDialog />

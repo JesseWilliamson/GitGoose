@@ -1,15 +1,13 @@
 import { DEFAULT_LAYOUT, setCollapsed } from '@gitsquid/shared'
-import { Command } from 'cmdk'
-import { RDialogCompat } from './RDialogCompat'
 import {
-  lfsPull, lfsTrack, snapshot, addRemote, addSubmodule, applyPatchFile, updateSubmodules, addWorktree, applyPatchFromClipboard, checkout, cleanupBranches, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, reopen, stash, undo,
-} from '../lib/actions'
-import { startReview } from '../lib/review'
-import { startWalkthrough } from '../lib/walkthrough'
-import { showImpact } from '../lib/impact'
-import { saveSettings, useStore } from '../lib/store'
+  lfsPull, lfsTrack, snapshot, addRemote, addSubmodule, applyPatchFile, updateSubmodules, addWorktree, applyPatchFromClipboard, cleanupBranches, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, reopen, stash, undo,
+} from './actions'
+import { startReview } from './review'
+import { startWalkthrough } from './walkthrough'
+import { showImpact } from './impact'
+import { saveSettings, useStore } from './store'
 
-interface Entry {
+export interface CommandEntry {
   id: string
   label: string
   group: string
@@ -18,18 +16,15 @@ interface Entry {
 }
 
 /**
- * Every action, searchable by name. The list is built fresh each time it opens, so it always
- * reflects the current repository: its branches become "Check out ..." entries, and so on.
+ * Every action GitSquid has, for the omni search (Ctrl+P shows only these). Built fresh each time
+ * from the current state, so it always fits the active repository: an operation in progress
+ * offers "Resolve conflicts", a repository with submodules "Update submodules", and so on.
+ * Branches are not here: they are search results of their own (Ctrl+Enter checks one out).
  */
-export function CommandPalette() {
-  const open = useStore((s) => s.palette)
-  const active = useStore((s) => (s.active ? s.repos[s.active] : null))
-  const tabs = useStore((s) => s.tabs)
-  const repos = useStore((s) => s.repos)
-  const settings = useStore((s) => s.settings)
-  const close = () => useStore.setState({ palette: false })
-
-  const entries: Entry[] = []
+export function commandEntries(): CommandEntry[] {
+  const { active: activeId, repos, tabs, settings } = useStore.getState()
+  const active = activeId ? repos[activeId] : null
+  const entries: CommandEntry[] = []
   const add = (group: string, label: string, run: () => void, hint?: string) => entries.push({ id: `${group}:${label}`, group, label, run, hint })
 
   if (active) {
@@ -72,10 +67,6 @@ export function CommandPalette() {
     add('Repository', 'Show uncommitted changes', () => useStore.setState((s) => ({ repos: { ...s.repos, [id]: { ...s.repos[id]!, selected: { kind: 'wip' }, center: { kind: 'graph' } } } })))
     if (active.snapshot.operation) add('Repository', `Resolve conflicts (${active.snapshot.operation})`, () => useStore.setState((s) => ({ repos: { ...s.repos, [id]: { ...s.repos[id]!, center: { kind: 'conflicts' } } } })))
     add('Repository', 'Reveal in file manager', () => void window.gitsquid.revealPath(active.snapshot.path))
-    for (const r of active.snapshot.refs) {
-      if (r.kind === 'local' && r.shortName !== active.snapshot.head.branch) add('Check out', r.shortName, () => void checkout(id, r.name), 'local')
-      if (r.kind === 'remote') add('Check out', r.shortName, () => void checkout(id, r.name), 'remote')
-    }
   }
   for (const t of tabs) {
     const r = repos[t]
@@ -93,28 +84,5 @@ export function CommandPalette() {
     for (const p of settings.recentRepos) add('Recent', p.split(/[\\/]/).pop() ?? p, () => reopen(p), p)
   }
 
-  const groups = [...new Set(entries.map((e) => e.group))]
-  return (
-    <RDialogCompat open={open} onClose={close}>
-      <Command label="Command palette" className="overflow-hidden rounded-lg border border-line bg-raised shadow-2xl shadow-black/40" loop>
-        <Command.Input autoFocus placeholder="Type a command or branch name…" data-testid="palette-input"
-          className="h-11 w-full border-b border-line bg-transparent px-4 text-[14px] outline-none" />
-        <Command.List className="max-h-[50vh] overflow-y-auto p-1">
-          <Command.Empty className="px-3 py-6 text-center text-sm text-faint">No matching commands</Command.Empty>
-          {groups.map((g) => (
-            <Command.Group key={g} heading={g} className="[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-1 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:text-faint">
-              {entries.filter((e) => e.group === g).map((e) => (
-                <Command.Item key={e.id} value={`${e.group} ${e.label} ${e.hint ?? ''}`}
-                  onSelect={() => { close(); e.run() }}
-                  className="flex h-8 cursor-default items-center gap-2 rounded px-3 text-[13px]">
-                  <span className="min-w-0 flex-1 truncate">{e.label}</span>
-                  {e.hint && <span className="max-w-60 truncate text-xs text-faint">{e.hint}</span>}
-                </Command.Item>
-              ))}
-            </Command.Group>
-          ))}
-        </Command.List>
-      </Command>
-    </RDialogCompat>
-  )
+  return entries
 }

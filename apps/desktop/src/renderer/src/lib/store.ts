@@ -179,7 +179,10 @@ interface State {
   dialog: Dialog | null
   toasts: Toast[]
   attentions: Attention[]
-  palette: boolean
+  /** The omni search, open with this text in the box ("> " for commands only), or closed. */
+  omni: { query: string } | null
+  /** What the settings page's search box starts with (the omni search opens settings this way). */
+  settingsQuery: string
   drop: DropRequest | null
   menu: MenuTarget
   /** Progress text for a clone in flight. */
@@ -199,7 +202,8 @@ export const useStore = create<State>(() => ({
   dialog: null,
   toasts: [],
   attentions: [],
-  palette: false,
+  omni: null,
+  settingsQuery: '',
   drop: null,
   menu: null,
   cloneProgress: null,

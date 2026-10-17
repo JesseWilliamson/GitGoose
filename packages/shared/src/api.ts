@@ -1,5 +1,5 @@
 import type {
-  BlameLine, ChangedFile, ChangeInsights, CodePeek, CommandRecord, GraphFilter, ImageSide, LfsInfo, LfsLock, Identity, Person, Commit, CommitDetails, ConflictFile, DiffTarget, FileDiff, RepoSnapshot,
+  BlameLine, ChangedFile, ChangeInsights, CodePeek, CommandRecord, GraphFilter, ImageSide, LfsInfo, LfsLock, Identity, Person, Commit, CommitDetails, CommitSummary, ConflictFile, DiffTarget, FileDiff, RepoSnapshot,
   ReflogEntry, Remote, SearchField, Submodule, Worktree, StashEntry, UndoEntry,
 } from './index'
 import type { AgentInfo, AiPermissionRequest, AiResult, AiRunOptions, AiStatus, AiTask, AskThread, ImpactResult, LinterInfo, PushCheck, PushCheckPlan, ReviewLearning, ReviewScope } from './ai'
@@ -123,6 +123,10 @@ export interface GitSquidApi {
   fileHistory(repoId: string, path: string): Promise<Commit[]>
   blame(repoId: string, path: string, rev?: string): Promise<BlameLine[]>
   search(repoId: string, field: SearchField, query: string): Promise<string[]>
+  /** search(), with the first `limit` hits described (for the omni search's results). */
+  searchCommits(repoId: string, field: SearchField, query: string, limit?: number): Promise<{ total: number; commits: CommitSummary[] }>
+  /** Every file in the working tree, tracked or not (not ignored), for finding a file by name. */
+  listFiles(repoId: string): Promise<string[]>
   stashList(repoId: string): Promise<StashEntry[]>
   /** Hide or solo branches in this repository's graph (remembered per repository). */
   setGraphFilter(repoId: string, filter: GraphFilter): Promise<void>
@@ -315,7 +319,7 @@ export const API_METHODS = [
   'respondPrompt', 'openPath', 'openInEditor', 'openTerminal', 'revealPath', 'logError',
   'githubStatus', 'githubSignIn', 'githubWaitForSignIn', 'githubCancelSignIn', 'githubOpenPage', 'githubSignOut', 'pullRequests', 'createPullRequest', 'checkoutPullRequest', 'openPullRequest',
   'aiStatus', 'aiConsent', 'aiRun', 'aiCancel', 'aiRespondPermission', 'aiAgentInfo', 'aiAuthenticate', 'aiSetApiKey',
-  'snapshot', 'logPage', 'commitDetails', 'diff', 'fileHistory', 'blame', 'search', 'stashList', 'reflog', 'setGraphFilter', 'submodules', 'updateSubmodules', 'syncSubmodules', 'addSubmodule', 'removeSubmodule', 'worktrees', 'addWorktree', 'removeWorktree', 'lockWorktree', 'pruneWorktrees',
+  'snapshot', 'logPage', 'commitDetails', 'diff', 'fileHistory', 'blame', 'search', 'searchCommits', 'listFiles', 'stashList', 'reflog', 'setGraphFilter', 'submodules', 'updateSubmodules', 'syncSubmodules', 'addSubmodule', 'removeSubmodule', 'worktrees', 'addWorktree', 'removeWorktree', 'lockWorktree', 'pruneWorktrees',
   'lastCommitMessage',
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'codePeek', 'impact', 'askThreads', 'saveAskThread', 'deleteAskThread', 'reviewLearnings', 'setReviewLearnings', 'linters', 'decideLinter', 'pushCheckPlan', 'pushCheckRules', 'setPushChecks', 'changeInsights', 'applySuggestion', 'writeFileChecked', 'workingText', 'lfsInfo', 'lfsInstall', 'lfsTrack', 'lfsPull', 'lfsLocks', 'lfsLock', 'commandLog', 'bisectMark', 'bisectReset', 'identity', 'setIdentity', 'commitTemplate', 'recentAuthors',
   'checkout', 'createBranch', 'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset',

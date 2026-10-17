@@ -114,6 +114,8 @@ export function createHandlers(
     fileHistory: (id, path) => r(id).fileHistory(path),
     blame: (id, path, rev) => r(id).blame(path, rev),
     search: (id, field, q) => r(id).search(field, q),
+    searchCommits: (id, field, q, limit) => r(id).searchCommits(field, q, limit),
+    listFiles: (id) => r(id).listFiles(),
     stashList: (id) => r(id).stashList(),
     reflog: (id, ref) => r(id).reflog(ref),
     setGraphFilter: async (id, filter) => {
