@@ -1,7 +1,7 @@
 import clsx from 'clsx'
 import { KeyRound } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { parseGitHubRemote, type Identity, type LfsLock, type PushCheck, type PushCheckResult, type ReviewLearning } from '@gitsquid/shared'
+import { pickGitHubRemote, type Identity, type LfsLock, type PushCheck, type PushCheckResult, type ReviewLearning } from '@gitsquid/shared'
 import { cleanupCandidates, cloneRepo, confirmAction, deleteBranches, lfsLock, loadPulls, openPull, run, STALE_DAYS } from '../lib/actions'
 import { relativeTime } from '../lib/format'
 import { COMMANDS, FIXED_KEYS, formatCombo, keymap, modName } from '../lib/keys'
@@ -185,7 +185,8 @@ function IdentityDialog({ repoId, onSaved, close }: { repoId: string; onSaved?: 
  */
 function CreatePullDialog({ repoId, branch, close }: { repoId: string; branch: string; close: () => void }) {
   const view = useStore((s) => s.repos[repoId])
-  const remote = view?.remotes.find((r) => parseGitHubRemote(r.fetchUrl))?.name
+  // The same remote main opens the pull request on, so the push lands where GitHub looks.
+  const remote = pickGitHubRemote((view?.remotes ?? []).map((r) => ({ name: r.name, url: r.fetchUrl })))?.remote
   const bases = (view?.snapshot.refs ?? []).filter((r) => r.kind === 'remote' && remote && r.shortName.startsWith(`${remote}/`))
     .map((r) => r.shortName.slice(remote!.length + 1)).filter((b) => b !== branch && b !== 'HEAD')
   const [title, setTitle] = useState('')

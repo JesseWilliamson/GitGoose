@@ -358,6 +358,10 @@ async function runResult(r: OmniResult, alt: boolean, view: RepoView | null, que
       return ref ? show(ref.hash) : undefined
     }
     case 'stash':
+      // With stashes off the graph, a stash is never in the log: looking for it there would page
+      // through the whole history. Select it anyway; the detail panel shows it.
+      if (!useStore.getState().settings?.showStashes) return updateRepo(id, { selected: { kind: 'commit', hash: r.key }, center: { kind: 'graph' } })
+      return show(r.key)
     case 'commit':
       return show(r.key)
     case 'change': {

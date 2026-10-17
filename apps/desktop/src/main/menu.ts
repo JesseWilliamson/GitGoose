@@ -30,10 +30,10 @@ export function installMenu(): void {
     {
       label: 'Edit',
       submenu: [
-        // Not role: 'undo': in a text field Cmd+Z should undo typing, elsewhere it undoes the
-        // last git operation. Only the renderer knows which, so it decides.
+        // Not role: 'undo' / 'redo': in a text field Cmd+Z should undo typing, elsewhere it undoes
+        // the last git operation. Only the renderer knows which, so it decides.
         { label: 'Undo', accelerator: 'CmdOrCtrl+Z', click: cmd('undo'), registerAccelerator: false },
-        { role: 'redo' },
+        { label: 'Redo', accelerator: isMac ? 'Shift+CmdOrCtrl+Z' : 'CmdOrCtrl+Y', click: cmd('redo'), registerAccelerator: false },
         { type: 'separator' },
         { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' },
         { type: 'separator' },

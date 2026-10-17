@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { githubPromptKind, parseGitHubRemote } from './github'
+import { githubPromptKind, parseGitHubRemote, pickGitHubRemote } from './github'
 
 describe('parseGitHubRemote', () => {
   it('reads the URL forms git accepts', () => {
@@ -26,6 +26,17 @@ describe('parseGitHubRemote', () => {
       '/home/me/widgets',
       'https://github.com/acme/widgets/tree/main',
     ]) expect(parseGitHubRemote(url), url).toBeNull()
+  })
+})
+
+describe('pickGitHubRemote', () => {
+  it('prefers origin, whatever the config order, then the first GitHub remote', () => {
+    const fork = { name: 'fork', url: 'git@github.com:me/widgets.git' }
+    const origin = { name: 'origin', url: 'https://github.com/acme/widgets.git' }
+    const gitlab = { name: 'origin', url: 'https://gitlab.com/acme/widgets.git' }
+    expect(pickGitHubRemote([fork, origin])).toEqual({ owner: 'acme', repo: 'widgets', remote: 'origin' })
+    expect(pickGitHubRemote([gitlab, fork])).toEqual({ owner: 'me', repo: 'widgets', remote: 'fork' })
+    expect(pickGitHubRemote([gitlab])).toBeNull()
   })
 })
 
