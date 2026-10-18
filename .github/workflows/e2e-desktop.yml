@@ -1,12 +1,10 @@
 name: E2E (macOS, Windows)
 
-# The end-to-end suite on macOS and Windows: nightly and on demand, not on every pull request.
+# The end-to-end suite on macOS and Windows: on demand only, not on every pull request.
 # Every test starts the app and many git processes, and starting a process costs several times
 # more there than on Linux (on Windows about 10 s a test, against 2 s), so these runs are slow.
-# CI runs the same suite on Linux for every change.
+# CI runs the same suite on Linux for every change. Run this from the Actions tab before a release.
 on:
-  schedule:
-    - cron: '43 4 * * *'
   workflow_dispatch:
 
 jobs:
