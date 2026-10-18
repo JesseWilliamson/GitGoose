@@ -4,7 +4,7 @@
 
 ## Undo
 
-- Ctrl/Cmd+Z (outside text fields), the toolbar Undo button (its tooltip names the operation),
+- Ctrl/Cmd+Z (outside text fields), the toolbar Undo chip (it names the operation it would undo),
   the Undo button on success toasts, or the palette.
 - Undo refuses, with an explanation, if HEAD moved since the operation (another tool changed the
   repository).

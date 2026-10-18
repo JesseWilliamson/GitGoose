@@ -1,17 +1,18 @@
 # 007: Search, multi-select and recompose
 
 Jesse's GitKraken requests after PLAN-2. Code: `packages/git/src/search.ts`, `recompose.ts`,
-`Repo.cherryPickMany / commitsText / recomposeInfo / recompose`, renderer `SearchBar.tsx`,
+`Repo.cherryPickMany / commitsText / recomposeInfo / recompose`, renderer `OmniSearch.tsx`,
 `RecomposeDialog.tsx`, `selectCommit` in `lib/store.ts`. Tests: `search.test.ts`, `multi.test.ts`,
 `recompose.test.ts`, `e2e/graph.spec.ts`, `multiselect.spec.ts`, `recompose.spec.ts`.
 
 ## Search
 
-Ctrl/Cmd+F (or Search in the toolbar) opens a bar over the graph. One query matches message,
-author name and email, SHA prefix, and branch and tag names; non-matches grey out in place;
-"N of M", Enter / Shift+Enter, Esc closes. Files and Code are separate, slower scopes. Main walks
-the log once in graph order (same revs and `--topo-order` as LogStream) and tests each commit in
-JS; a newer search cancels the running one; the renderer drops stale answers.
+Ctrl/Cmd+K or Ctrl/Cmd+F (or the box in the middle of the toolbar) opens the omni search. The
+Commits group matches message, author name and email, SHA prefix, and branch and tag names
+(`Repo.searchCommits`); choosing a commit selects it in the graph, paging the log until it is
+loaded. There is no second search bar over the graph: one place to search, one set of results.
+(The main process still has `Repo.search`, the grey-out search over the whole log, for a later
+"filter the graph" view.)
 
 ## Several commits
 
