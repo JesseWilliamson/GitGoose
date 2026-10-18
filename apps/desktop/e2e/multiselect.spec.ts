@@ -1,4 +1,4 @@
-import { initRepo } from '@gitgoose/fixtures'
+import { initRepo, makeFixture } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import { launch } from './app'
 
@@ -16,7 +16,7 @@ function setup() {
 }
 
 const row = (page: Page, hash: string) => page.locator(`[data-testid="commit-row"][data-hash="${hash}"]`)
-const selected = (page: Page) => page.locator('[data-testid="commit-row"].bg-select')
+const selected = (page: Page) => page.locator('[data-testid="commit-row"][data-selected]')
 
 test('shift-click selects a range, ctrl-click adds and removes; cherry-pick them all, undoably', async () => {
   const { r, X, Y, Z } = setup()
@@ -93,5 +93,19 @@ test('right-click on a selection squashes the commits into one, undoably', async
   expect(r.git('ls-tree', '--name-only', 'HEAD').trim().split('\n')).toEqual(['a.txt', 'b.txt', 'c.txt', 'd.txt'])
   await page.getByTestId('toolbar').getByRole('button', { name: 'Undo' }).click()
   await expect.poll(() => r.head()).toBe(D)
+  await app.close()
+})
+
+test('shift-click across a merge keeps only the commits on the anchor\'s line', async () => {
+  // main: A - B - M(feature) - E, with feature C - D merged at M and wip F off B.
+  const r = makeFixture('branches')
+  const { app, page } = await launch(r.dir)
+  const E = r.head()
+  const A = r.git('rev-parse', 'main~3').trim()
+  await row(page, E).click()
+  await row(page, A).click({ modifiers: ['Shift'] })
+  // Not C, D or F: they sit on other lanes between E and A.
+  await expect(selected(page)).toHaveCount(4)
+  for (const name of ['main', 'main~1', 'main~2', 'main~3']) await expect(row(page, r.git('rev-parse', name).trim())).toHaveAttribute('data-selected', 'true')
   await app.close()
 })

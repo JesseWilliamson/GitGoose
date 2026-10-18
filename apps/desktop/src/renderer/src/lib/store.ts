@@ -356,7 +356,14 @@ export function selectCommit(id: string, hash: string, mods: { range?: boolean; 
     const a = anchor ? log.index.get(anchor) : undefined
     const b = log.index.get(hash)
     if (anchor && a !== undefined && b !== undefined) {
-      next = many(log.commits.slice(Math.min(a, b), Math.max(a, b) + 1).map((c) => c.hash), anchor, hash)
+      // Only the anchor's line of history: a range across a merge would otherwise sweep in the
+      // other branch's commits, which is never what a run of commits is meant to be. A line keeps
+      // its lane (the layout only moves a line at a fork), so the lane is the branch.
+      const lane = log.rows[a]?.lane
+      const lo = Math.min(a, b)
+      const hashes: string[] = []
+      for (let i = lo; i <= Math.max(a, b); i++) if (log.rows[i]?.lane === lane) hashes.push(log.commits[i]!.hash)
+      next = many(hashes, anchor, hash)
     }
   } else if (mods.toggle) {
     const set = new Set(selectedHashes(sel))
