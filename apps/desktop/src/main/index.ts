@@ -138,7 +138,7 @@ function createWindow(): BrowserWindow {
     minHeight: 560,
     show: false,
     title: 'GitSquid',
-    backgroundColor: dark || getSettings().theme === 'dark' ? '#16181d' : '#ffffff',
+    backgroundColor: dark || getSettings().theme === 'dark' ? '#171719' : '#ffffff',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     webPreferences: {
       preload: join(here, '../preload/index.cjs'),
