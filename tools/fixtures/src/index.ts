@@ -39,6 +39,18 @@ export class FixtureRepo {
     return execFileSync('git', args, { cwd: this.dir, env: this.env(), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] })
   }
 
+  /**
+   * git's output, or null when it fails. For polling a ref or setting the app is about to create:
+   * expect.poll gives up at the first throw instead of polling again.
+   */
+  gitOrNull(...args: string[]): string | null {
+    try {
+      return this.git(...args)
+    } catch {
+      return null
+    }
+  }
+
   /** Run git and return the exit code instead of throwing (for merges expected to conflict). */
   tryGit(...args: string[]): number {
     return spawnSync('git', args, { cwd: this.dir, env: this.env(), stdio: 'ignore' }).status ?? -1

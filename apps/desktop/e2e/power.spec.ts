@@ -1,7 +1,7 @@
 import { makeFixture } from '@gitsquid/fixtures'
 import { expect, test } from '@playwright/test'
 import { delimiter } from 'node:path'
-import { launch } from './app'
+import { launch, pickFromSubmenu } from './app'
 
 test('resolves a merge conflict in the wizard and continues', async () => {
   const r = makeFixture('conflict')
@@ -60,8 +60,7 @@ test('undoes a hard reset from the toolbar', async () => {
   const before = r.head()
   const { app, page } = await launch(r.dir)
   await page.getByTestId('commit-row').nth(3).click({ button: 'right' })
-  await page.getByRole('menuitem', { name: /Reset main to here/ }).hover()
-  await page.getByRole('menuitem', { name: /^Hard/ }).click()
+  await pickFromSubmenu(page, /Reset main to here/, /^Hard/)
   await expect(page.getByTestId('commit-row')).toHaveCount(2)
   await page.getByTestId('toolbar').getByRole('button', { name: 'Undo' }).click()
   await expect(page.getByTestId('commit-row')).toHaveCount(5)

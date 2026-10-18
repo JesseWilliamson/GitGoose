@@ -2,7 +2,7 @@ import { initRepo } from '@gitsquid/fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { launch } from './app'
+import { launch, pickFromSubmenu } from './app'
 
 const row = (page: Page, hash: string) => page.locator(`[data-testid="commit-row"][data-hash="${hash}"]`)
 
@@ -46,8 +46,7 @@ test('compare a commit with the working tree; restore a file to that version, un
   writeFileSync(join(r.dir, 'calc.ts'), 'local\n')
   const { app, page } = await launch(r.dir)
   await row(page, A).click({ button: 'right' })
-  await page.getByRole('menuitem', { name: 'Compare' }).click()
-  await page.getByRole('menuitem', { name: 'With the working tree' }).click()
+  await pickFromSubmenu(page, 'Compare', 'With the working tree')
   await expect(page.getByTestId('compare-panel')).toContainText('working tree')
   const file = page.getByTestId('compare-file').filter({ hasText: 'calc.ts' })
   await file.click({ button: 'right' })
