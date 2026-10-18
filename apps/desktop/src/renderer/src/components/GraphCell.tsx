@@ -12,7 +12,9 @@ const PAD = 6
 
 /** Node radius and line width for a row height: GitKraken-sized, a little smaller when compact. */
 export const nodeRadius = (h: number) => (h < ROW_H ? 9 : 11)
-export const lineWidth = (h: number) => (h < ROW_H ? 2.5 : 3)
+export const lineWidth = (h: number) => (h < ROW_H ? 2 : 2.5)
+/** The solid lane-coloured bar at the graph column's right edge, beside the message (GitKraken's). */
+const STRIP_W = 3
 
 export const laneX = (lane: number) => PAD + lane * LANE_W + LANE_W / 2
 
@@ -30,7 +32,8 @@ export interface NodeAuthor {
  *
  * Nodes, like GitKraken's: a commit is its author's avatar ringed in the lane colour (initials
  * underneath, so they show while the image loads or when there is none); a merge is a small
- * dot; HEAD gets an extra outer ring.
+ * dot; HEAD gets an extra outer ring. Behind each node, a faint band in its lane colour runs
+ * from the node to the right edge, ending in a solid strip: it ties the message to its lane.
  */
 export const GraphCell = memo(function GraphCell({ row, width, showPending, isHead, h = ROW_H, author, stash, refLine }: {
   row: Row
@@ -46,8 +49,8 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
 }) {
   const mid = h / 2
   // A node whose lane is past the column's width (many lanes open, column not widened) is kept
-  // at the right edge with a dashed ring, rather than clipped away and leaving a row with no node.
-  const lastX = width - LANE_W / 2
+  // at the right edge, faded, rather than clipped away and leaving a row with no node.
+  const lastX = width - STRIP_W - LANE_W / 2
   const offscreen = laneX(row.lane) > lastX
   const cx = offscreen ? lastX : laneX(row.lane)
   const color = laneColor(row.color)
@@ -57,6 +60,8 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
   return (
     <svg width={width} height={h} className="block shrink-0 overflow-hidden" aria-hidden data-node={row.merge ? 'merge' : 'commit'}
       data-offscreen={offscreen || undefined}>
+      <rect x={cx} y={0} width={Math.max(0, width - cx)} height={h} fill={color} opacity={0.1} data-testid="lane-band" />
+      <rect x={width - STRIP_W} y={0} width={STRIP_W} height={h} fill={color} />
       {refLine && <path d={`M0 ${mid}H${cx}`} stroke={color} strokeWidth={2} opacity={0.85} data-testid="ref-line" />}
       {row.edges.map((e, i) => {
         if (e.pending && !showPending) return null
@@ -65,33 +70,34 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
             strokeLinecap="round" strokeLinejoin="round" strokeDasharray={e.pending ? '3 4' : undefined} opacity={e.pending ? 0.7 : 1} />
         )
       })}
-      {stash ? (
-        <g data-testid="stash-node">
-          <rect x={cx - r + 1} y={mid - r + 1} width={(r - 1) * 2} height={(r - 1) * 2} rx={3} fill="var(--gs-bg)" stroke={color} strokeWidth={2} strokeDasharray="3 2" />
-          {/* An archive box: lid and body. */}
-          <path transform={`translate(${cx} ${mid}) scale(${r / 11})`} d="M-5 -4h10v3h-10z M-4 -1v5h8v-5 M-1.5 1h3" fill="none" stroke={color} strokeWidth={1.4} strokeLinejoin="round" />
-        </g>
-      ) : row.merge ? (
-        <circle cx={cx} cy={mid} r={r > 9 ? 5.5 : 4.5} fill={color} stroke="var(--gs-bg)" strokeWidth={1.5} />
-      ) : (
-        <g data-testid="avatar-node">
-          {isHead && <circle cx={cx} cy={mid} r={r + 3} fill="none" stroke={color} strokeWidth={2} />}
-          {offscreen && <circle cx={cx} cy={mid} r={r + 2.5} fill="none" stroke={color} strokeWidth={1.5} strokeDasharray="2 2" />}
-          <circle cx={cx} cy={mid} r={r} fill={color} />
-          <circle cx={cx} cy={mid} r={r - 2} fill={laneColor(hashColor(author.email))} />
-          <text x={cx} y={mid} dy="0.35em" textAnchor="middle" fontSize={r > 9 ? 9 : 7.5} fontWeight={700} fill="#fff"
-            style={{ pointerEvents: 'none', fontFamily: 'var(--font-sans)' }}>{initials(author.name)}</text>
-          {author.src && (
-            <>
-              <defs>
-                <clipPath id={clip}><circle cx={cx} cy={mid} r={r - 2} /></clipPath>
-              </defs>
-              <image href={author.src} x={cx - (r - 2)} y={mid - (r - 2)} width={(r - 2) * 2} height={(r - 2) * 2}
-                clipPath={`url(#${clip})`} preserveAspectRatio="xMidYMid slice" />
-            </>
-          )}
-        </g>
-      )}
+      <g opacity={offscreen ? 0.45 : undefined}>
+        {stash ? (
+          <g data-testid="stash-node">
+            <rect x={cx - r + 1} y={mid - r + 1} width={(r - 1) * 2} height={(r - 1) * 2} rx={3} fill="var(--gs-bg)" stroke={color} strokeWidth={2} strokeDasharray="3 2" />
+            {/* An archive box: lid and body. */}
+            <path transform={`translate(${cx} ${mid}) scale(${r / 11})`} d="M-5 -4h10v3h-10z M-4 -1v5h8v-5 M-1.5 1h3" fill="none" stroke={color} strokeWidth={1.4} strokeLinejoin="round" />
+          </g>
+        ) : row.merge ? (
+          <circle cx={cx} cy={mid} r={r > 9 ? 5.5 : 4.5} fill={color} stroke="var(--gs-bg)" strokeWidth={1.5} />
+        ) : (
+          <g data-testid="avatar-node">
+            {isHead && <circle cx={cx} cy={mid} r={r + 3} fill="none" stroke={color} strokeWidth={2} />}
+            <circle cx={cx} cy={mid} r={r} fill={color} />
+            <circle cx={cx} cy={mid} r={r - 2} fill={laneColor(hashColor(author.email))} />
+            <text x={cx} y={mid} dy="0.35em" textAnchor="middle" fontSize={r > 9 ? 9 : 7.5} fontWeight={700} fill="#fff"
+              style={{ pointerEvents: 'none', fontFamily: 'var(--font-sans)' }}>{initials(author.name)}</text>
+            {author.src && (
+              <>
+                <defs>
+                  <clipPath id={clip}><circle cx={cx} cy={mid} r={r - 2} /></clipPath>
+                </defs>
+                <image href={author.src} x={cx - (r - 2)} y={mid - (r - 2)} width={(r - 2) * 2} height={(r - 2) * 2}
+                  clipPath={`url(#${clip})`} preserveAspectRatio="xMidYMid slice" />
+              </>
+            )}
+          </g>
+        )}
+      </g>
     </svg>
   )
 })

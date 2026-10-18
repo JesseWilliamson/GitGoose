@@ -99,7 +99,7 @@ test('three panes on the dev repository: a renamed file, accept left, edit by ha
   test.setTimeout(120_000)
   const { dir } = makeDevRepo({ commits: 300 })
   const r = new FixtureRepo(dir)
-  // The dev repo has a dirty working tree on purpose; git will not merge over a staged change.
+  // The dev repo has a dirty working tree on purpose; start from a clean one so only the merge shows.
   r.git('reset', '-q', '--hard')
   r.git('clean', '-fdq')
   r.tryGit('merge', CONFLICT_BRANCH)

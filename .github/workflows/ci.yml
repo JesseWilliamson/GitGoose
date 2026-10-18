@@ -31,12 +31,11 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+      # End-to-end on Linux only: macOS and Windows run it on a schedule (e2e-desktop.yml),
+      # since process starts there make the suite several times slower.
       - name: End-to-end (Linux, virtual display)
         if: runner.os == 'Linux'
         run: xvfb-run -a pnpm e2e
-      - name: End-to-end
-        if: runner.os != 'Linux'
-        run: pnpm e2e
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

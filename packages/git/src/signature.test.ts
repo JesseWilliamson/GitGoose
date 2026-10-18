@@ -11,7 +11,9 @@ const saved = { GNUPGHOME: process.env.GNUPGHOME, GIT_CONFIG_GLOBAL: process.env
 beforeAll(() => {
   if (!hasGpg) return
   chmodSync(home, 0o700)
-  process.env.GNUPGHOME = home
+  // On Windows the gpg on PATH is usually Git for Windows' MSYS2 build, which reads C:\x as a
+  // relative path; it takes /c/x. (Gpg4win's gpg takes that form too.)
+  process.env.GNUPGHOME = process.platform === 'win32' ? home.replace(/^([A-Za-z]):/, (_, d: string) => `/${d.toLowerCase()}`).replace(/\\/g, '/') : home
   process.env.GIT_CONFIG_GLOBAL = '/dev/null'
   // Loopback: take the (empty) passphrase from the command line, never from a pinentry window.
   const gen = spawnSync('gpg', ['--batch', '--pinentry-mode', 'loopback', '--passphrase', '', '--quick-gen-key', 'Ada Lovelace <ada@example.com>', 'ed25519', 'sign', 'never'], { encoding: 'utf8' })

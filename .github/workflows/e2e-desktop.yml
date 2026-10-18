@@ -1,0 +1,45 @@
+name: E2E (macOS, Windows)
+
+# The end-to-end suite on macOS and Windows: nightly and on demand, not on every pull request.
+# Every test starts the app and many git processes, and starting a process costs several times
+# more there than on Linux (on Windows about 10 s a test, against 2 s), so these runs are slow.
+# CI runs the same suite on Linux for every change.
+on:
+  schedule:
+    - cron: '43 4 * * *'
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Configure git for tests
+        run: |
+          git config --global user.name "CI"
+          git config --global user.email "ci@example.com"
+          git config --global init.defaultBranch main
+      # Defender scans every file git writes and every program it starts; the tests make
+      # thousands of both in the workspace and the temp folder.
+      - name: Exclude the test folders from Windows Defender
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Add-MpPreference -ExclusionPath $env:GITHUB_WORKSPACE, $env:RUNNER_TEMP, $env:TEMP
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-${{ matrix.os }}
+          path: apps/desktop/test-results/
