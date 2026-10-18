@@ -26,7 +26,8 @@ test('recompose: the AI proposes, you reorder and edit, Create commits rewrites,
   await page.evaluate((p) => window.gitsquid.setSettings(p as never), AGENT)
   await row(page, C2).click()
   await row(page, C1).click({ modifiers: ['Shift'] })
-  await page.getByTestId('multi-recompose').click()
+  await row(page, C1).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Recompose with AI…' }).click()
 
   // The fake agent's plan: the last piece (notes.md… whichever came last) alone first, then the rest.
   const commits = page.getByTestId('recompose-commit')
@@ -69,7 +70,8 @@ test('squashing in the review, and refusing a selection that is not a range', as
   // C1 and C3 do not follow each other: main refuses before asking the AI anything.
   await row(page, C3).click()
   await row(page, C1).click({ modifiers: ['ControlOrMeta'] })
-  await page.getByTestId('multi-recompose').click()
+  await row(page, C1).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Recompose with AI…' }).click()
   await expect(page.getByTestId('recompose-error')).toContainText('follow each other')
   await page.getByRole('button', { name: 'Close' }).click()
 
@@ -95,7 +97,8 @@ test('move a change to another commit or a new one; empty commits block until re
   await page.evaluate((p) => window.gitsquid.setSettings(p as never), AGENT)
   await row(page, C2).click()
   await row(page, C1).click({ modifiers: ['Shift'] })
-  await page.getByTestId('multi-recompose').click()
+  await row(page, C1).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Recompose with AI…' }).click()
   const commits = page.getByTestId('recompose-commit')
   await expect(commits).toHaveCount(2)
   // The first proposed commit has one change; move it into the second: the first is now empty.

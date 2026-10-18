@@ -30,8 +30,14 @@ test('shift-click selects a range, ctrl-click adds and removes; cherry-pick them
   await row(page, Y).click({ modifiers: ['ControlOrMeta'] })
   await expect(selected(page)).toHaveCount(2)
   await expect(page.getByTestId('multi-panel')).toContainText('2 commits selected')
+  // Z and X do not follow each other: the panel lists the files either one touched.
+  await expect(page.getByTestId('multi-commit')).toHaveCount(2)
+  await expect(page.getByTestId('multi-file')).toHaveCount(2)
+  await expect(page.getByTestId('multi-panel')).toContainText('Files they touch')
 
-  await page.getByTestId('multi-cherry-pick').click()
+  // Actions live in the right-click menu, not the panel.
+  await row(page, Z).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: /^Cherry-pick 2 commits/ }).click()
   await expect.poll(() => r.git('log', '--format=%s', `${before}..main`).trim()).toBe('Z\nX')
   // One undo entry for both.
   await page.getByTestId('toolbar').getByRole('button', { name: 'Undo' }).click()
@@ -47,6 +53,12 @@ test('the right-click menu acts on the whole selection; patches copy to the clip
   await page.keyboard.press('Shift+ArrowDown')
   await page.keyboard.press('Shift+ArrowDown')
   await expect(selected(page)).toHaveCount(3)
+  // Consecutive commits: one combined diff, and clicking a file shows its change across all three.
+  await expect(page.getByTestId('multi-panel')).toContainText('Combined changes')
+  await expect(page.getByTestId('multi-file')).toHaveCount(3)
+  await page.getByTestId('multi-file').filter({ hasText: 'y.txt' }).click()
+  await expect(page.getByTestId('file-view')).toContainText('y.txt')
+  await page.keyboard.press('Escape')
   await row(page, Y).click({ button: 'right' })
   await expect(page.getByRole('menu')).toContainText('3 commits selected')
   await page.getByRole('menuitem', { name: 'Copy as patch' }).click()
