@@ -93,7 +93,9 @@ function useMonthStarts(log: LogData): Uint8Array {
       c.flags = grown
     }
     for (let i = c.n; i < total; i++) {
-      c.flags[i] = i === 0 || !sameMonth(log.commits[i - 1]!.authorDate, log.commits[i]!.authorDate) ? 1 : 0
+      // Commit date: the order the log is in, so headings only ever go back in time down the list
+      // (author dates do not: a rebase keeps them while giving the commits new places).
+      c.flags[i] = i === 0 || !sameMonth(log.commits[i - 1]!.commitDate, log.commits[i]!.commitDate) ? 1 : 0
     }
     c.n = total
   }
@@ -235,7 +237,7 @@ function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
                   <CommitRow
                     key={commit.hash}
                     top={item.start}
-                    month={headers && monthStarts[ci] ? monthLabel(commit.authorDate) : null}
+                    month={headers && monthStarts[ci] ? monthLabel(commit.commitDate) : null}
                     repoId={view.id}
                     commit={commit}
                     row={row}
