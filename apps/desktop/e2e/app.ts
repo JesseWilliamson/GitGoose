@@ -20,7 +20,7 @@ export const WINDOW = { width: 1024, height: 640 }
  * small for the submenu on the right it opens on the left, that jump leaves Radix's grace area,
  * and the submenu closes before the click lands.
  */
-export async function pickFromSubmenu(page: Page, submenu: string, name: string): Promise<void> {
+export async function pickFromSubmenu(page: Page, submenu: string | RegExp, name: string | RegExp): Promise<void> {
   await page.getByRole('menuitem', { name: submenu }).press('ArrowRight')
   await page.getByRole('menuitem', { name }).press('Enter')
 }
