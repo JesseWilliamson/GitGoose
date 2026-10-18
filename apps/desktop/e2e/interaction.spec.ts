@@ -17,6 +17,20 @@ test('drags a branch onto the checked-out branch to merge it', async () => {
   await app.close()
 })
 
+test('right-clicking the commit at a branch tip offers the branch actions too', async () => {
+  const r = makeFixture('branches')
+  const { app, page } = await launch(r.dir)
+  const tip = r.git('rev-parse', 'wip').trim()
+  // On the message, not the pill: the pill has always had its own branch menu.
+  await page.locator(`[data-testid="commit-row"][data-hash="${tip}"]`).getByText('F', { exact: true }).click({ button: 'right' })
+  await expect(page.getByRole('menuitem', { name: 'Rebase main onto wip' })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: 'Revert this commit' })).toBeVisible()
+  await page.getByRole('menuitem', { name: 'Merge wip into main' }).click()
+  await expect(page.getByTestId('commit-row').first()).toContainText('Merge')
+  expect(r.git('log', '-1', '--format=%P').trim().split(' ')).toHaveLength(2)
+  await app.close()
+})
+
 test('drags the checked-out branch onto another to rebase it', async () => {
   const r = makeFixture('branches')
   r.checkout('wip')
