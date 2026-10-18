@@ -1,5 +1,5 @@
 import { tempDir } from '@gitgoose/fixtures'
-import { readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { applicationsDir, installDevDesktopEntry } from './linuxDesktop'
@@ -18,6 +18,15 @@ describe('dev desktop entry', () => {
     expect(installDevDesktopEntry(opts)).toBe(false)
     expect(installDevDesktopEntry({ ...opts, icon: '/elsewhere/icon.png' })).toBe(true)
     expect(readFileSync(join(dir, 'gitgoose.desktop'), 'utf8')).toContain('Icon=/elsewhere/icon.png')
+  })
+
+  it('leaves an installed copy\'s entry alone (pnpm install:local writes the same file)', () => {
+    const dir = join(tempDir('gitgoose-apps-'), 'applications')
+    const installed = '[Desktop Entry]\nName=GitGoose\nExec="/home/me/.local/share/gitgoose/GitGoose.AppImage" %U\n'
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'gitgoose.desktop'), installed)
+    expect(installDevDesktopEntry({ icon: '/src/build/icon.png', repo: '/src', dir })).toBe(false)
+    expect(readFileSync(join(dir, 'gitgoose.desktop'), 'utf8')).toBe(installed)
   })
 
   it('honours XDG_DATA_HOME', () => {

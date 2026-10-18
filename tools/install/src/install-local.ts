@@ -92,7 +92,8 @@ function installLinux(): string {
   symlinkSync(app, join(bin, 'gitgoose'))
 
   // The file name and StartupWMClass match desktopName in package.json, so the window groups
-  // with this launcher.
+  // with this launcher. It replaces the entry `pnpm dev` writes, which then leaves it alone
+  // (see linuxDesktop.ts).
   const applications = join(data, 'applications')
   mkdirSync(applications, { recursive: true })
   writeFileSync(
