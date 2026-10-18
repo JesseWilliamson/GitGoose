@@ -74,7 +74,7 @@ Key commands:
 
 | Need | Command |
 |---|---|
-| Log for the graph | `git log --topo-order --all --format='%H%x00%P%x00%an%x00%ae%x00%aI%x00%cI%x00%s%x00%x1e' -n 2000 [--skip]` (stream stdout, parse per record) |
+| Log for the graph | `git log --date-order --all --format='%H%x00%P%x00%an%x00%ae%x00%aI%x00%cI%x00%s%x00%x1e' -n 2000 [--skip]` (stream stdout, parse per record) |
 | Refs / decorations | `git for-each-ref --format='%(refname)%00%(objectname)%00%(upstream)%00%(upstream:track)' ` |
 | Working tree | `git status --porcelain=v2 -z --branch --untracked-files=all` |
 | Diffs | `git diff [--cached] --no-color -U3 -z -- <path>`; `--numstat -z` for summaries |

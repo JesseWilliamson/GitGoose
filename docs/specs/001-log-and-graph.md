@@ -24,7 +24,7 @@
 
 ## Git commands
 
-- `git log --topo-order --format=%H%x00%P%x00%an%x00%ae%x00%at%x00%ct%x00<co-authors>%x00%s%x1e --branches --remotes --tags HEAD --`
+- `git log --date-order --format=%H%x00%P%x00%an%x00%ae%x00%at%x00%ct%x00<co-authors>%x00%s%x1e --branches --remotes --tags HEAD --`
   streamed by `LogStream` (ADR-004), where `<co-authors>` is
   `%(trailers:key=Co-authored-by,valueonly,unfold,separator=%x1f)`.
 - `git for-each-ref` with NUL-separated fields for refs; `status --porcelain=v2 -z --branch`.
