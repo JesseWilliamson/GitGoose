@@ -2,23 +2,6 @@ import type { GraphFilter } from './index'
 import type { AskThread, PushCheck, ReviewLearning } from './ai'
 import { DEFAULT_LAYOUT, normalizeLayout, type PaneLayout } from './layout'
 
-export type GraphColumn = 'refs' | 'graph' | 'author' | 'date' | 'sha'
-export type GraphColumns = Record<GraphColumn, boolean>
-export const GRAPH_COLUMNS: { id: GraphColumn; label: string }[] = [
-  { id: 'refs', label: 'Branch / Tag' },
-  { id: 'graph', label: 'Graph' },
-  { id: 'author', label: 'Author' },
-  { id: 'date', label: 'Date / Time' },
-  { id: 'sha', label: 'SHA' },
-]
-/** The defaults: branch / tag, graph and message. Author, date and SHA are a click away in the gear menu. */
-export const DEFAULT_GRAPH_COLUMNS: GraphColumns = { refs: true, graph: true, author: false, date: false, sha: false }
-
-function normalizeColumns(raw: unknown): GraphColumns {
-  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
-  return Object.fromEntries(GRAPH_COLUMNS.map((c) => [c.id, typeof r[c.id] === 'boolean' ? r[c.id] : DEFAULT_GRAPH_COLUMNS[c.id]])) as GraphColumns
-}
-
 /**
  * Every setting in one table. The settings page, defaults, validation and migration all come
  * from this, so adding a setting is one entry here and nothing else drifts out of sync.
@@ -187,9 +170,6 @@ export const SETTINGS = {
   settingsVersion: internal(2),
   recentRepos: internal<string[]>([]),
   openRepos: internal<string[]>([]),
-  graphWidth: internal<number | null>(null),
-  /** Which optional graph columns show (the commit message always does). From the gear in the graph header. */
-  graphColumns: internal<GraphColumns>({ ...DEFAULT_GRAPH_COLUMNS }),
   /** Questions asked about code, per repository path, newest first (kept to 100). */
   askThreads: internal<Record<string, AskThread[]>>({}),
   /** Review learnings per repository path ("do not flag X"), from dismissed findings. */
@@ -231,7 +211,6 @@ export function validateSetting<K extends SettingKey>(key: K, value: unknown): S
       return Object.fromEntries(Object.entries(value).filter(([, v]) => typeof v === 'string')) as Settings[K]
     case 'internal':
       if (key === 'layout') return normalizeLayout(value) as Settings[K]
-      if (key === 'graphColumns') return normalizeColumns(value) as Settings[K]
       // App state is trusted as long as its JSON shape matches the default's.
       if (value === undefined) return fallback
       if (Array.isArray(spec.default) !== Array.isArray(value)) return fallback
