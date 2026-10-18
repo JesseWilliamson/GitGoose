@@ -18,15 +18,25 @@ test('loads history page by page as you scroll', async () => {
   await app.close()
 })
 
-test('keeps the checked-out branch in the leftmost lane', async () => {
+test('keeps main in the leftmost lane whatever is checked out', async () => {
   const r = makeFixture('branches')
   r.checkout('wip') // F, an older side branch, is now HEAD
-  const head = r.head()
+  r.write('notes.txt', 'draft\n') // an untracked file: the WIP row shows, and checkouts still work
+  const main = r.git('rev-parse', 'main').trim()
   const { app, page } = await launch(r.dir)
-  const row = page.locator(`[data-testid="commit-row"][data-hash="${head}"]`)
-  await expect(row).toBeVisible()
-  // laneX(0) = PAD + LANE_W/2 = 6 + 24/2 = 18: the node sits in lane 0 even though newer commits come first.
-  await expect(row.locator('[data-testid="avatar-node"] circle').first()).toHaveAttribute('cx', '18')
+  // laneX(n) = PAD + n * LANE_W + LANE_W / 2 = 6 + 24n + 12: lane 0 is x 18, lane 1 is x 42.
+  const nodeX = (hash: string) => page.locator(`[data-testid="commit-row"][data-hash="${hash}"] [data-testid="avatar-node"] circle`).first()
+  await expect(nodeX(main)).toHaveAttribute('cx', '18')
+  // HEAD sits next to main, and the WIP row above it in the same lane.
+  await expect(nodeX(r.head())).toHaveAttribute('cx', '42')
+  await expect(page.getByTestId('wip-node')).toHaveAttribute('data-lane', '1')
+
+  // Checking out another branch moves only that branch; main stays put.
+  const feature = r.git('rev-parse', 'feature').trim()
+  await page.locator('[data-testid="sidebar-ref"][data-ref="refs/heads/feature"]').dblclick()
+  await expect.poll(() => r.git('rev-parse', 'HEAD').trim()).toBe(feature)
+  await expect(nodeX(feature)).toHaveAttribute('cx', '42')
+  await expect(nodeX(main)).toHaveAttribute('cx', '18')
   await app.close()
 })
 
@@ -180,6 +190,10 @@ test('GitKraken look: pills joined to their node, recent times inline, far lanes
   await expect(far.locator('g[opacity="0.45"] [data-testid="avatar-node"]')).toHaveCount(1)
   await expect(far.locator('[stroke-dasharray]')).toHaveCount(0)
   await expect(plain.getByTestId('lane-band')).toHaveCount(1)
+  // Band and strip stop 2px short of the row's top and bottom, so stacked commits read as separate blocks.
+  await expect(plain.getByTestId('lane-band')).toHaveAttribute('y', '2')
+  await expect(plain.getByTestId('lane-band')).toHaveAttribute('height', '28')
+  await expect(plain.getByTestId('lane-strip')).toHaveAttribute('y', '2')
   await expect(page.getByTestId('sidebar-viewing')).toHaveText('Viewing 13/13')
   await page.locator('[data-testid="sidebar-ref"][data-ref="refs/heads/b3"]').hover()
   await page.locator('[data-testid="sidebar-ref"][data-ref="refs/heads/b3"]').getByTestId('toggle-hidden').click()

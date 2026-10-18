@@ -52,3 +52,9 @@ one over it. `pnpm install:local -- --build-only` stops after building into
 
 `pnpm dist` builds this OS's release installers into `apps/desktop/release/`.
 `pnpm --filter @gitsquid/desktop exec electron-builder --dir` builds an unpacked app (fast) for testing.
+Add `--linux AppImage` to build a single target.
+
+The `deb` target shells out to electron-builder's bundled fpm, whose Ruby wants `libcrypt.so.1`.
+Distributions that have moved to libxcrypt (Arch among them) need the compatibility package —
+`sudo pacman -S libxcrypt-compat` — or the build fails with `ruby: error while loading shared
+libraries`. CI builds the deb on Ubuntu, where it is present, so this only affects local builds.

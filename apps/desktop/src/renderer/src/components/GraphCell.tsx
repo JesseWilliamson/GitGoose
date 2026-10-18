@@ -15,6 +15,8 @@ export const nodeRadius = (h: number) => (h < ROW_H ? 9 : 11)
 export const lineWidth = (h: number) => (h < ROW_H ? 2 : 2.5)
 /** The solid lane-coloured bar at the graph column's right edge, beside the message (GitKraken's). */
 const STRIP_W = 3
+/** Space left above and below each row's band and strip, so neighbouring rows read as separate commits. */
+export const bandInset = (h: number) => (h < ROW_H ? 1.5 : 2)
 
 export const laneX = (lane: number) => PAD + lane * LANE_W + LANE_W / 2
 
@@ -34,6 +36,8 @@ export interface NodeAuthor {
  * underneath, so they show while the image loads or when there is none); a merge is a small
  * dot; HEAD gets an extra outer ring. Behind each node, a faint band in its lane colour runs
  * from the node to the right edge, ending in a solid strip: it ties the message to its lane.
+ * The band and strip stop short of the row's top and bottom (bandInset), so a run of commits in
+ * one lane shows as separate blocks rather than one long bar. Edges still span the full height.
  */
 export const GraphCell = memo(function GraphCell({ row, width, showPending, isHead, h = ROW_H, author, stash, refLine }: {
   row: Row
@@ -57,11 +61,12 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
   const r = nodeRadius(h)
   const stroke = lineWidth(h)
   const clip = `clip-${row.hash}`
+  const inset = bandInset(h)
   return (
     <svg width={width} height={h} className="block shrink-0 overflow-hidden" aria-hidden data-node={row.merge ? 'merge' : 'commit'}
       data-offscreen={offscreen || undefined}>
-      <rect x={cx} y={0} width={Math.max(0, width - cx)} height={h} fill={color} opacity={0.1} data-testid="lane-band" />
-      <rect x={width - STRIP_W} y={0} width={STRIP_W} height={h} fill={color} />
+      <rect x={cx} y={inset} width={Math.max(0, width - cx)} height={h - inset * 2} fill={color} opacity={0.1} data-testid="lane-band" />
+      <rect x={width - STRIP_W} y={inset} width={STRIP_W} height={h - inset * 2} fill={color} data-testid="lane-strip" />
       {refLine && <path d={`M0 ${mid}H${cx}`} stroke={color} strokeWidth={2} opacity={0.85} data-testid="ref-line" />}
       {row.edges.map((e, i) => {
         if (e.pending && !showPending) return null
@@ -103,16 +108,17 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
 })
 
 /** The "uncommitted changes" node: hollow and dashed with a pencil, in HEAD's lane, joined to HEAD below. */
-export function WipCell({ width, hasHead, h = ROW_H }: { width: number; hasHead: boolean; h?: number }) {
-  const cx = laneX(0)
+export function WipCell({ width, hasHead, h = ROW_H, lane, color }: { width: number; hasHead: boolean; h?: number; lane: number; color: number }) {
+  const cx = laneX(lane)
+  const stroke = laneColor(color)
   const r = nodeRadius(h)
   const s = r / 9
   return (
-    <svg width={width} height={h} className="block shrink-0" aria-hidden>
-      {hasHead && <path d={`M${cx} ${h / 2 + r}V${h}`} stroke={laneColor(0)} strokeWidth={lineWidth(h)} strokeDasharray="3 4" opacity={0.7} />}
-      <circle cx={cx} cy={h / 2} r={r} fill="var(--gs-bg)" stroke={laneColor(0)} strokeWidth={2} strokeDasharray="3 2" />
+    <svg width={width} height={h} className="block shrink-0" aria-hidden data-testid="wip-node" data-lane={lane}>
+      {hasHead && <path d={`M${cx} ${h / 2 + r}V${h}`} stroke={stroke} strokeWidth={lineWidth(h)} strokeDasharray="3 4" opacity={0.7} />}
+      <circle cx={cx} cy={h / 2} r={r} fill="var(--gs-bg)" stroke={stroke} strokeWidth={2} strokeDasharray="3 2" />
       {/* A pencil: "you are editing here". */}
-      <path transform={`translate(${cx} ${h / 2}) scale(${s})`} d="M-3 3l1-3 4-4 2 2-4 4z" fill={laneColor(0)} />
+      <path transform={`translate(${cx} ${h / 2}) scale(${s})`} d="M-3 3l1-3 4-4 2 2-4 4z" fill={stroke} />
     </svg>
   )
 }

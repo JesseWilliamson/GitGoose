@@ -11,9 +11,8 @@ files:
   - out/**
   - package.json
 # @parcel/watcher ships a native .node binary, which cannot be loaded from inside the asar archive.
-# One name pattern for every installer: no spaces (GitHub rewrites them on upload, which breaks
-# the file names electron-updater reads from latest*.yml) and no npm scope (the deb target
-# otherwise names itself after "@gitsquid/desktop" and lands in a subdirectory).
+# One name pattern for the installers (the deb spells out its own below): no spaces, since GitHub
+# rewrites them on upload, which breaks the file names electron-updater reads from latest*.yml.
 artifactName: ${productName}-${version}-${arch}.${ext}
 asarUnpack:
   - '**/node_modules/@parcel/watcher*/**'
@@ -37,10 +36,16 @@ nsis:
 linux:
   executableName: gitsquid
   target: [AppImage, deb]
-  # Ties the window to gitsquid.desktop, so docks and taskbars group it under the launcher.
-  syncDesktopName: true
   category: Development
   maintainer: Jesse Williamson
+  # Name the .desktop entry after package.json's desktopName so its StartupWMClass matches
+  # the app_id Electron reports, and window managers group running windows with the launcher.
+  syncDesktopName: true
+deb:
+  # The workspace package is @gitsquid/desktop, which is not a legal deb package name and
+  # would put a "@gitsquid" directory in release/. Both are spelled out here instead.
+  packageName: gitsquid
+  artifactName: gitsquid_${version}_${arch}.${ext}
 publish:
   provider: github
   owner: JesseWilliamson

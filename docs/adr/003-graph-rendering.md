@@ -5,7 +5,7 @@
 ## Decision
 
 - Layout (`packages/graph`) is a pure, incremental lane assignment over commits in topological
-  order, with HEAD's lane reserved as lane 0. Output per row: node lane, colour, and edges split
+  order, with lane 0 kept for the main line (see "Lane 0 is the trunk" below; it used to be HEAD's). Output per row: node lane, colour, and edges split
   at the node into `pass`, `top` and `bottom` parts.
 - Rendering is a virtualized list (`@tanstack/react-virtual`). Each visible row draws its own
   small SVG from its edges. Only ~40 rows exist in the DOM at any time.
@@ -39,3 +39,21 @@ Real histories can have dozens of lanes open at once: about 40 in Express, from 
 branches and hundreds of tags. Sizing the graph column to fit them all left commit messages a few
 characters wide. The column now shows at most 8 lanes by default and clips the rest (a "›" in
 the header says lanes are hidden); dragging the header edge resizes it and the width persists.
+
+## Lane 0 is the trunk, not HEAD (amended after use)
+
+Reserving lane 0 for HEAD meant every checkout rebuilt the graph around the new branch: it slid to
+the left edge and main and everything else shifted right. It felt like the graph jumping. GitKraken
+keeps the main line on the left instead, and so do we now:
+
+- The snapshot names the trunk refs (`trunkRefs`: origin/HEAD's branch, local and remote, else
+  main or master), keeping only refs the graph filter lets the walk reach. A trunk ref the log
+  never reaches would hold lane 0 empty all the way down.
+- The layout holds lane 0 free until the first trunk commit arrives. That commit takes lane 0 and
+  colour 0, and lines waiting for it curve in.
+- HEAD still gets a lane reserved from the top for the dashed line from the "uncommitted changes"
+  row: lane 0 when HEAD is a trunk tip, else lane 1. `GraphLayout.headLane`/`headColor` tell the
+  WIP row where to draw.
+
+A checkout now leaves the main line where it is. Side branches can still shift a column to make
+room for HEAD's lane, which is the price of the dashed WIP line.

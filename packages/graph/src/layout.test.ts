@@ -102,6 +102,51 @@ describe('layout', () => {
     expect(rows[2]!.edges).toContainEqual({ part: 'top', from: 0, to: 0, color: 0, pending: true })
   })
 
+  // The branches fixture: main is A-B-M-E, feature C-D merged at M, wip F off B.
+  const branches = [c('E', 'M'), c('M', 'B', 'D'), c('D', 'C'), c('C', 'B'), c('F', 'B'), c('B', 'A'), c('A')]
+
+  it('keeps the trunk in lane 0 whatever is checked out', () => {
+    const lanes = (head: string) => layout(branches, { head, trunk: ['E'] }).map((r) => r.lane)
+    //            E  M  D  C  F  B  A
+    expect(lanes('E')).toEqual([0, 0, 1, 1, 2, 0, 0])
+    // Checking out a side branch moves that branch into lane 1, next to the trunk, and nothing else.
+    expect(lanes('F')).toEqual([0, 0, 2, 2, 1, 0, 0])
+    expect(lanes('D')).toEqual([0, 0, 1, 1, 2, 0, 0])
+    const rows = layout(branches, { head: 'F', trunk: ['E'] })
+    // (Lane 1 above F is the dashed line to HEAD.)
+    expect(ascii(rows)).toEqual(['*| E', 'M| M', '||* D', '||* C', '|*| F', '* B', '* A'])
+    // The trunk keeps colour 0; HEAD's dashed line (for the WIP row) runs down lane 1.
+    expect(rows.filter((r) => ['E', 'M', 'B', 'A'].includes(r.hash)).every((r) => r.color === 0)).toBe(true)
+    expect(rows[0]!.edges).toContainEqual({ part: 'pass', from: 1, to: 1, color: 1, pending: true })
+  })
+
+  it('reports where HEAD\'s line runs', () => {
+    expect(new GraphLayout({ head: 'E', trunk: ['E'] })).toMatchObject({ headLane: 0, headColor: 0 })
+    expect(new GraphLayout({ head: 'F', trunk: ['E'] })).toMatchObject({ headLane: 1, headColor: 1 })
+    expect(new GraphLayout({ head: 'F' })).toMatchObject({ headLane: 0, headColor: 0 })
+  })
+
+  it('holds lane 0 empty until the trunk arrives, then curves lines waiting for it in', () => {
+    // HEAD (X) is ahead of main (B): X comes first, takes lane 1, and its line ends in B in lane 0.
+    const rows = layout([c('X', 'B'), c('B', 'A'), c('A')], { head: 'X', trunk: ['B'] })
+    expect(rows.map((r) => r.lane)).toEqual([1, 0, 0])
+    expect(rows[0]!.edges.some((e) => e.from === 0 || e.to === 0)).toBe(false)
+    expect(rows[1]!.edges).toContainEqual({ part: 'top', from: 1, to: 0, color: 1 })
+  })
+
+  it('gives lane 0 to whichever trunk tip comes first', () => {
+    // origin/main (O) is ahead of local main (B); the trunk line runs through both.
+    const rows = layout([c('O', 'B'), c('F', 'A'), c('B', 'A'), c('A')], { head: 'F', trunk: ['B', 'O'] })
+    expect(rows.map((r) => [r.hash, r.lane])).toEqual([['O', 0], ['F', 1], ['B', 0], ['A', 0]])
+  })
+
+  it('lets HEAD join the trunk lane when HEAD is behind it', () => {
+    // Checked out an older trunk commit (B): the trunk line reaches it first, in lane 0.
+    const rows = layout([c('C', 'B'), c('B', 'A'), c('A')], { head: 'B', trunk: ['C'] })
+    expect(rows.map((r) => r.lane)).toEqual([0, 0, 0])
+    expect(rows[1]!.edges).toContainEqual({ part: 'top', from: 1, to: 0, color: 1, pending: true })
+  })
+
   it('handles octopus merges and multiple roots', () => {
     const rows = layout([c('O', 'a', 'b', 'c'), c('c', 'r'), c('b', 'r'), c('a', 'r'), c('r'), c('orphan')])
     expect(rows[0]!.edges.filter((e) => e.part === 'bottom').map((e) => e.to)).toEqual([0, 1, 2])
@@ -115,6 +160,10 @@ describe('layout', () => {
     const g = new GraphLayout()
     const paged = [...g.push(commits.slice(0, 101)), ...g.push(commits.slice(101, 333)), ...g.push(commits.slice(333))]
     expect(paged).toEqual(whole)
+    // With a trunk that only arrives on a later page.
+    const opts = { head: commits[0]!.hash, trunk: [commits[150]!.hash] }
+    const g2 = new GraphLayout(opts)
+    expect([...g2.push(commits.slice(0, 101)), ...g2.push(commits.slice(101))]).toEqual(layout(commits, opts))
   })
 
   it.each(SHAPES.filter((s) => s !== 'empty'))('satisfies invariants on the %s fixture', (shape: Shape) => {
@@ -124,11 +173,19 @@ describe('layout', () => {
     checkInvariants(commits, layout(commits, { head }))
     const rows = layout(commits, { head })
     expect(rows.find((x) => x.hash === head)!.lane).toBe(0)
+    // With main as the trunk, checked out or not: main sits in lane 0 either way.
+    const main = r.git('rev-parse', 'main').trim()
+    for (const h of new Set([head, ...commits.map((x) => x.hash).slice(0, 5)])) {
+      const withTrunk = layout(commits, { head: h, trunk: [main] })
+      checkInvariants(commits, withTrunk)
+      expect(withTrunk.find((x) => x.hash === main)!.lane).toBe(0)
+    }
   })
 
   it('satisfies invariants on a large generated history', () => {
     const commits = logOf(makeLargeRepo(2000))
     checkInvariants(commits, layout(commits, { head: commits[0]!.hash }))
+    checkInvariants(commits, layout(commits, { head: commits[700]!.hash, trunk: [commits[3]!.hash] }))
   })
 
   it('lays out 100k commits quickly', () => {
