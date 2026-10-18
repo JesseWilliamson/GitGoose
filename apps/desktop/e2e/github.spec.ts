@@ -37,7 +37,7 @@ test('signs in with the device flow, finds avatars through GitHub, and signs out
   const opened = await captureOpened(app)
   await page.evaluate(() => window.gitgoose.setSettings({ avatars: 'github' }))
   // Signed out: GitHub is never contacted, whatever the graph shows.
-  await expect(page.getByTestId('commit-row').first().locator('image')).toHaveCount(1)
+  await expect(page.getByTestId('commit-row').first().locator('img')).toHaveCount(1)
   expect(gh.hits).toEqual([])
 
   await openAccounts(page)
@@ -54,7 +54,7 @@ test('signs in with the device flow, finds avatars through GitHub, and signs out
 
   // Back on the graph, Grace's commit asks GitHub who wrote it and shows that account's picture.
   await page.getByTestId('settings-close').click()
-  await expect(page.getByTestId('commit-row').first().locator('image')).toHaveAttribute('href', /\?v=gh$/)
+  await expect(page.getByTestId('commit-row').first().locator('img')).toHaveAttribute('src', /\?v=gh$/)
   await expect.poll(() => gh.hits).toContain(`GET /repos/acme/widgets/commits/${grace}`)
   await expect.poll(() => gh.hits).toContain('GET /avatars/ghopper.png')
 
