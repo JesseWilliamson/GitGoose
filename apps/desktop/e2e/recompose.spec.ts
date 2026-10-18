@@ -34,12 +34,16 @@ test('recompose: the AI proposes, you reorder and edit, Create commits rewrites,
   const titles = page.getByTestId('recompose-title')
   await expect(commits).toHaveCount(2)
   await expect(titles.nth(1)).toHaveText('feat: everything else')
-  await expect(page.getByTestId('recompose-summary')).toContainText('wip stuff · more wip')
   // Nothing has changed yet.
   expect(r.head()).toBe(C3)
 
-  // Reorder, reset, reorder again, then edit the (now first) commit's message.
+  // Reorder, undo it (Ctrl+Z), redo (the button), reset, reorder again; then edit the (now
+  // first) commit's message, and undo/redo that as one step.
   await page.getByTestId('recompose-down').first().click()
+  await expect(titles.first()).toHaveText('feat: everything else')
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect(titles.first()).not.toHaveText('feat: everything else')
+  await page.getByTestId('recompose-redo').click()
   await expect(titles.first()).toHaveText('feat: everything else')
   await page.getByTestId('recompose-reset').click()
   await expect(titles.first()).not.toHaveText('feat: everything else')
@@ -47,6 +51,15 @@ test('recompose: the AI proposes, you reorder and edit, Create commits rewrites,
   await commits.first().click()
   await page.getByTestId('recompose-message').fill('feat: a and b')
   await expect(titles.first()).toHaveText('feat: a and b')
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect(titles.first()).toHaveText('feat: everything else')
+  await page.keyboard.press('ControlOrMeta+Shift+z')
+  await expect(titles.first()).toHaveText('feat: a and b')
+  // Esc while typing only leaves the field; a second Esc, from rest, would close the dialog.
+  await page.getByTestId('recompose-message').focus()
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('recompose-dialog')).toHaveCount(1)
+  await expect(page.getByTestId('recompose-message')).not.toBeFocused()
 
   await page.getByTestId('recompose-apply').click()
   await expect(page.getByTestId('recompose-dialog')).toHaveCount(0)
@@ -75,19 +88,27 @@ test('squashing in the review, and refusing a selection that is not a range', as
   await expect(page.getByTestId('recompose-error')).toContainText('follow each other')
   await page.getByRole('button', { name: 'Close' }).click()
 
-  // One commit can be split too; squash the proposal back into one. (A plain click first: while
-  // both stay selected, the right-click menu is the one for the whole selection.)
+  // One commit can be split too; squash the proposal back into one: Shift-click both proposed
+  // commits, then the right-click menu. (A plain click first: while both stay selected, the
+  // graph's right-click menu is the one for the whole selection.)
   await row(page, C1).click()
   await row(page, C1).click({ button: 'right' })
   await page.getByRole('menuitem', { name: 'Split with AI…' }).click()
-  await expect(page.getByTestId('recompose-commit')).toHaveCount(2)
-  await page.getByTestId('recompose-squash').first().click()
-  await expect(page.getByTestId('recompose-commit')).toHaveCount(1)
+  const commits = page.getByTestId('recompose-commit')
+  await expect(commits).toHaveCount(2)
+  await commits.first().click()
+  await commits.nth(1).click({ modifiers: ['Shift'] })
+  await expect(page.locator('[data-testid="recompose-commit"][data-selected]')).toHaveCount(2)
+  await commits.nth(1).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Squash 2 commits into one' }).click()
+  await expect(commits).toHaveCount(1)
   await expect(page.getByTestId('recompose-apply')).toHaveText('Create 1 commit')
   await page.getByTestId('recompose-apply').click()
   await expect(page.getByTestId('recompose-dialog')).toHaveCount(0)
-  // C2 and C3 sit above the rebuilt C1, with their own messages and new parents.
-  expect(r.git('log', '--format=%s', '-3').trim().split('\n')).toEqual(['docs: later', 'more wip', 'feat: everything else'])
+  // C2 and C3 sit above the rebuilt C1, with their own messages and new parents. The squashed
+  // commit's message starts with the first proposed commit's (oldest first, as git squashes).
+  expect(r.git('log', '--format=%s', '-3').trim().split('\n')).toEqual(['docs: later', 'more wip', 'chore: notes.md first'])
+  expect(r.git('log', '--format=%B', '-1', 'HEAD~2')).toContain('feat: everything else')
   await app.close()
 })
 
@@ -123,5 +144,84 @@ test('move a change to another commit or a new one; empty commits block until re
   await page.getByTestId('recompose-apply').click()
   await expect(page.getByTestId('recompose-dialog')).toHaveCount(0)
   expect(r.git('log', '--format=%s', '-3').trim().split('\n')).toEqual(['docs: later', 'chore: split out', 'feat: everything else'])
+  await app.close()
+})
+
+/** Press on `from`, move the pointer to `to` (or a point) in steps, release: a pointer drag, not an HTML5 one. */
+async function drag(page: Page, from: ReturnType<Page['locator']>, to: ReturnType<Page['locator']> | { x: number; y: number }) {
+  // Near the top-left: a hunk card is dragged by its header, not its diff text.
+  const a = (await from.boundingBox())!
+  await page.mouse.move(a.x + 20, a.y + 12)
+  await page.mouse.down()
+  await page.mouse.move(a.x + 30, a.y + 20, { steps: 3 })
+  const target = 'x' in to ? to : await to.boundingBox().then((b) => ({ x: b!.x + b!.width / 2, y: b!.y + b!.height / 2 }))
+  await page.mouse.move(target.x, target.y, { steps: 10 })
+  return { drop: () => page.mouse.up() }
+}
+
+test('drag: a hunk onto a commit, a hunk into the open space for a new commit, a commit to reorder', async () => {
+  const { r } = setup()
+  const { app, page } = await launch(r.dir)
+  await page.evaluate((p) => window.gitsquid.setSettings(p as never), AGENT)
+  const [C1, C2] = [r.git('rev-parse', 'HEAD~2').trim(), r.git('rev-parse', 'HEAD~1').trim()]
+  await row(page, C2).click()
+  await row(page, C1).click({ modifiers: ['Shift'] })
+  await row(page, C1).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Recompose with AI…' }).click()
+  const commits = page.getByTestId('recompose-commit')
+  const titles = page.getByTestId('recompose-title')
+  await expect(commits).toHaveCount(2)
+  await expect(page.getByTestId('recompose-unit')).toHaveCount(1)
+  const first = await titles.first().textContent()
+
+  // Lift the one hunk of commit 1: it leaves an empty slot behind, the hunks column dims, and
+  // the commits column says where it can go. Over commit 2, that commit lights up.
+  let d = await drag(page, page.getByTestId('recompose-unit'), commits.nth(1))
+  await expect(page.locator('.drag-float')).toHaveCount(1)
+  await expect(page.locator('[data-testid="recompose-unit"].drag-placeholder')).toHaveCount(1)
+  await expect(page.getByTestId('recompose-hunks-column')).toHaveClass(/opacity-40/)
+  await expect(page.getByTestId('recompose-commits-column')).toContainText('drop on a commit')
+  await expect(commits.nth(1)).toHaveAttribute('data-target', 'true')
+  await d.drop()
+  await expect(page.locator('.drag-float')).toHaveCount(0)
+  await expect(commits.first()).toContainText('No changes')
+  await expect(page.getByTestId('recompose-problems')).toContainText('Commit 1 has no changes')
+
+  // From commit 2, drag a hunk into the open space below the list: a third commit appears with it.
+  await commits.nth(1).click()
+  await expect(page.getByTestId('recompose-unit')).toHaveCount(3)
+  d = await drag(page, page.getByTestId('recompose-unit').last(), page.getByTestId('recompose-new-commit'))
+  await expect(page.getByTestId('recompose-new-commit')).toHaveAttribute('data-target', 'true')
+  await d.drop()
+  await expect(commits).toHaveCount(3)
+  await expect(page.getByTestId('recompose-unit')).toHaveCount(2)
+  await expect(commits.nth(2)).toContainText('1 file')
+  // Released over nothing in particular, a hunk goes back where it was.
+  const box = (await page.getByTestId('recompose-dialog').boundingBox())!
+  d = await drag(page, page.getByTestId('recompose-unit').first(), { x: box.x + box.width - 40, y: box.y + box.height - 20 })
+  await d.drop()
+  await expect(page.getByTestId('recompose-unit')).toHaveCount(2)
+
+  // Drag commit 1 to the lower edge of commit 2: the list reorders as the pointer moves. Esc
+  // mid-drag puts it back (and does not close the dialog); dropping it keeps it there, selected.
+  const lowerEdge = async (i: number) => { const b = (await commits.nth(i).boundingBox())!; return { x: b.x + b.width / 2, y: b.y + b.height - 3 } }
+  d = await drag(page, commits.first(), await lowerEdge(1))
+  await expect(page.locator('[data-testid="recompose-commit"].drag-placeholder')).toHaveCount(1)
+  await expect(titles.nth(1)).toHaveText(first!)
+  await page.keyboard.press('Escape')
+  await page.mouse.up()
+  await expect(page.locator('.drag-float')).toHaveCount(0)
+  await expect(page.getByTestId('recompose-dialog')).toHaveCount(1)
+  await expect(titles.first()).toHaveText(first!)
+  d = await drag(page, commits.first(), await lowerEdge(1))
+  await d.drop()
+  await expect(titles.nth(1)).toHaveText(first!)
+  await expect(commits.nth(1)).toHaveAttribute('data-selected', 'true')
+
+  // Dropping a commit on the middle of another just reorders (squash is the right-click menu).
+  await expect(commits).toHaveCount(3)
+  d = await drag(page, commits.nth(2), commits.nth(1))
+  await d.drop()
+  await expect(commits).toHaveCount(3)
   await app.close()
 })

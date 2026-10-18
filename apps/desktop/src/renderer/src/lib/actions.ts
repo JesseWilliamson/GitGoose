@@ -266,6 +266,10 @@ export const dropCommits = (id: string, hashes: string[]) =>
 export const squashOnto = (id: string, hashes: string[], target: string) =>
   run(id, `Squash into ${target.slice(0, 7)}`, () => api.squashOnto(id, hashes, target))
 
+/** Squash several selected commits (graph order, newest first) into one: the rest fold into the oldest. */
+export const squashTogether = (id: string, hashes: string[]) =>
+  run(id, `Squash ${hashes.length} commits`, () => api.squashOnto(id, hashes.slice(0, -1), hashes[hashes.length - 1]!))
+
 export const squashCommit = (id: string, hash: string, mode: 'squash' | 'fixup') =>
   run(id, `${mode === 'squash' ? 'Squash' : 'Fixup'} ${hash.slice(0, 7)}`, () => api.squashCommit(id, hash, mode))
 

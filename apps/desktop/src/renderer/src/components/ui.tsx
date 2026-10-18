@@ -116,16 +116,19 @@ export const DM = {
   ),
 }
 
-export function Modal({ open, onClose, title, children, width = 440, tall = false }: {
+export function Modal({ open, onClose, title, children, width = 440, tall = false, onEscapeKeyDown }: {
   open: boolean; onClose: () => void; title: string; children: ReactNode; width?: number
   /** A big dialog (a whole editor): placed near the top so it has the height. */
   tall?: boolean
+  /** Esc closes the dialog unless this calls preventDefault (to end something inside it first). */
+  onEscapeKeyDown?: (e: KeyboardEvent) => void
 }) {
   return (
     <RDialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
       <RDialog.Portal>
         <RDialog.Overlay className="fixed inset-0 z-40 bg-black/40" />
         <RDialog.Content
+          onEscapeKeyDown={onEscapeKeyDown}
           style={{ width }}
           className={clsx('fixed left-1/2 z-50 max-w-[94vw] -translate-x-1/2 rounded-lg border border-line bg-raised p-4 shadow-2xl shadow-black/40', tall ? 'top-[5vh]' : 'top-[18%]')}
         >

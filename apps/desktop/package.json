@@ -18,14 +18,14 @@
     "preview": "electron-vite preview",
     "typecheck": "tsc -p tsconfig.node.json && tsc -p tsconfig.web.json",
     "e2e": "electron-vite build && playwright test",
-    "dist": "electron-vite build && electron-builder",
-    "dist:appimage": "electron-vite build && electron-builder --linux AppImage"
+    "dist": "electron-vite build && electron-builder"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.9.0",
     "@anthropic-ai/sdk": "^0.135.0",
     "@parcel/watcher": "^2.6.0",
-    "electron-updater": "^6.8.9"
+    "electron-updater": "^6.8.9",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@codemirror/commands": "^6.11.1",
