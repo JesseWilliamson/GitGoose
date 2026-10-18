@@ -6,8 +6,11 @@
 
 - Opening a repository shows the graph: branch/tag pills, lanes, message, author, date, SHA
   (author/date/SHA columns appear as the pane widens).
-- The checked-out branch is always the leftmost lane. Uncommitted changes appear as a dashed node
-  at the top, joined to HEAD by a dashed line.
+- The main line (the remote's default branch from origin/HEAD and its local namesake, else main or
+  master) is always the leftmost lane, whatever is checked out, so a checkout does not reshuffle
+  the graph. HEAD sits on it when HEAD is a trunk tip, otherwise in the lane next to it.
+  Uncommitted changes appear as a dashed node at the top in HEAD's lane, joined to HEAD by a
+  dashed line.
 - History loads as you scroll; the status bar shows "N+ commits" until it is complete.
 - Click or J/K/arrows select commits; the right panel shows details and changed files.
 - Search (Ctrl/Cmd+F) by message, author, file path, code (pickaxe) or SHA; Enter/Shift+Enter
