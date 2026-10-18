@@ -25,14 +25,25 @@ describe('settings schema', () => {
     expect(s.gitPath).toBe('/usr/bin/git')
     expect(s.recentRepos).toEqual(['/a'])
     expect(s.openRepos).toEqual([])
-    expect(s.settingsVersion).toBe(2)
+    expect(s.settingsVersion).toBe(3)
     expect('fontSize' in s).toBe(false)
+  })
+
+  it('migrates a v2 file: compact rows become the compact graph layout, and junk columns fall back', () => {
+    const on = migrateSettings({ settingsVersion: 2, compactRows: true, graphColumns: { sha: true, author: 'yes', bogus: true } })
+    expect(on.graphStyle).toBe('compact')
+    expect(on.graphColumns).toEqual({ refs: true, graph: true, author: false, date: false, sha: true })
+    expect('compactRows' in on).toBe(false)
+    const off = migrateSettings({ settingsVersion: 2, compactRows: false })
+    expect(off.graphStyle).toBe('comfortable')
+    expect(off.settingsVersion).toBe(3)
   })
 
   it('has a complete default set', () => {
     const d = defaultSettings()
     expect(d.contextLines).toBe(3)
     expect(d.avatars).toBe('initials')
-    expect(d.compactRows).toBe(false)
+    expect(d.graphStyle).toBe('comfortable')
+    expect(d.graphColumns).toEqual({ refs: true, graph: true, author: false, date: false, sha: false })
   })
 })

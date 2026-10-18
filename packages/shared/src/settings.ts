@@ -2,6 +2,24 @@ import type { GraphFilter } from './index'
 import type { AskThread, PushCheck, ReviewLearning } from './ai'
 import { DEFAULT_LAYOUT, normalizeLayout, type PaneLayout } from './layout'
 
+/** The columns of the compact (GitKraken-style) graph. The commit message always shows. */
+export type GraphColumn = 'refs' | 'graph' | 'author' | 'date' | 'sha'
+export type GraphColumns = Record<GraphColumn, boolean>
+export const GRAPH_COLUMNS: { id: GraphColumn; label: string }[] = [
+  { id: 'refs', label: 'Branch / Tag' },
+  { id: 'graph', label: 'Graph' },
+  { id: 'author', label: 'Author' },
+  { id: 'date', label: 'Date / Time' },
+  { id: 'sha', label: 'SHA' },
+]
+/** GitKraken's defaults: branch / tag, graph and message. Author, date and SHA are a click away in the gear menu. */
+export const DEFAULT_GRAPH_COLUMNS: GraphColumns = { refs: true, graph: true, author: false, date: false, sha: false }
+
+function normalizeColumns(raw: unknown): GraphColumns {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  return Object.fromEntries(GRAPH_COLUMNS.map((c) => [c.id, typeof r[c.id] === 'boolean' ? r[c.id] : DEFAULT_GRAPH_COLUMNS[c.id]])) as GraphColumns
+}
+
 /**
  * Every setting in one table. The settings page, defaults, validation and migration all come
  * from this, so adding a setting is one entry here and nothing else drifts out of sync.
@@ -55,7 +73,13 @@ export const SETTINGS = {
   fileTree: bool(false, { label: 'Show changed files as a tree', section: 'Appearance', keywords: 'folder list view', description: 'In the changes and commit file lists. Also the toggle beside their filter box.' }),
   dateFormat: choice('relative', [{ value: 'relative', label: 'Relative (3 days ago)' }, { value: 'absolute', label: 'Absolute (12 Mar 2026)' }, { value: 'both', label: 'Both' }],
     { label: 'Dates', section: 'Appearance' }),
-  compactRows: bool(false, { label: 'Compact graph rows', section: 'Appearance', keywords: 'density row height' }),
+  graphStyle: choice('comfortable', [
+    { value: 'comfortable', label: 'Two-line rows (Tower)' },
+    { value: 'compact', label: 'Compact columns (GitKraken)' },
+  ], {
+    label: 'Graph layout', section: 'Appearance', keywords: 'compact density row height columns gitkraken tower table',
+    description: 'Two-line rows: author and refs over hash and subject, text indented by the lanes, month headings. Compact: one line per commit in fixed columns (branch / tag, graph, message), avatars as the nodes, a header with a column menu.',
+  }),
 
   // ---------------------------------------------------------------- Graph
   avatars: choice('initials', [
@@ -171,9 +195,13 @@ export const SETTINGS = {
   keybindings: { kind: 'keybindings' as const, default: {} as Record<string, string>, label: 'Shortcuts', section: 'Keyboard' as const, description: 'Click a shortcut, then press the new keys. Esc cancels; Backspace restores the default.' },
 
   // ---------------------------------------------------------------- app state
-  settingsVersion: internal(2),
+  settingsVersion: internal(3),
   recentRepos: internal<string[]>([]),
   openRepos: internal<string[]>([]),
+  /** Width of the compact layout's graph column once the user has dragged it; null is automatic. */
+  graphWidth: internal<number | null>(null),
+  /** Which optional columns of the compact layout show (the commit message always does). From the gear in the graph header. */
+  graphColumns: internal<GraphColumns>({ ...DEFAULT_GRAPH_COLUMNS }),
   /** Questions asked about code, per repository path, newest first (kept to 100). */
   askThreads: internal<Record<string, AskThread[]>>({}),
   /** Review learnings per repository path ("do not flag X"), from dismissed findings. */
@@ -215,6 +243,7 @@ export function validateSetting<K extends SettingKey>(key: K, value: unknown): S
       return Object.fromEntries(Object.entries(value).filter(([, v]) => typeof v === 'string')) as Settings[K]
     case 'internal':
       if (key === 'layout') return normalizeLayout(value) as Settings[K]
+      if (key === 'graphColumns') return normalizeColumns(value) as Settings[K]
       // App state is trusted as long as its JSON shape matches the default's.
       if (value === undefined) return fallback
       if (Array.isArray(spec.default) !== Array.isArray(value)) return fallback
@@ -243,7 +272,13 @@ export function migrateSettings(stored: Record<string, unknown>): Settings {
     if (typeof s.fontSize === 'number' && s.uiScale === undefined) s.uiScale = s.fontSize / 13
     delete s.fontSize
   }
-  s.settingsVersion = 2
+  if (version < 3) {
+    // v2 had a "compact rows" switch that only shortened the Tower-style rows. Compact is now a
+    // layout of its own (GitKraken-style columns), so the switch becomes that choice.
+    if (s.compactRows === true && s.graphStyle === undefined) s.graphStyle = 'compact'
+    delete s.compactRows
+  }
+  s.settingsVersion = 3
   const out = defaultSettings() as Record<string, unknown>
   for (const k of Object.keys(SETTINGS)) if (k in s) out[k] = validateSetting(k as SettingKey, s[k])
   return out as Settings
