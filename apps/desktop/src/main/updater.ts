@@ -8,7 +8,7 @@ import { getSettings } from './settings'
  * for the same reason.
  */
 export function scheduleUpdateCheck(): void {
-  if (!app.isPackaged || process.env.GITSQUID_NO_UPDATE || !getSettings().checkForUpdates) return
+  if (!app.isPackaged || process.env.GITGOOSE_NO_UPDATE || !getSettings().checkForUpdates) return
   setTimeout(async () => {
     try {
       const { autoUpdater } = await import('electron-updater')

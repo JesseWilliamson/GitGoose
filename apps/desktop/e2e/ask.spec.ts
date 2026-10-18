@@ -1,4 +1,4 @@
-import { initRepo } from '@gitsquid/fixtures'
+import { initRepo } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import { join } from 'node:path'
 import { launch } from './app'
@@ -27,7 +27,7 @@ test('select lines in a diff and ask about them; follow up; the thread stays wit
   })
   const apply = r.commit('apply tax', { 'src/price.ts': "import { taxRate } from './tax'\nexport function gross(net: number, country: string): number {\n  return net * (1 + taxRate(country))\n}\n" })
   const { app, page } = await launch(r.dir)
-  await page.evaluate((p) => window.gitsquid.setSettings(p as never), AGENT)
+  await page.evaluate((p) => window.gitgoose.setSettings(p as never), AGENT)
   await page.locator(`[data-testid="commit-row"][data-hash="${apply}"]`).click()
   await page.getByTestId('commit-file').filter({ hasText: 'price.ts' }).click()
   await expect(page.getByTestId('diff-lines')).toContainText('taxRate(country)')

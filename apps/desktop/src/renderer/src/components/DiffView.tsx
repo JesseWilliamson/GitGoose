@@ -1,4 +1,4 @@
-import type { BlameLine, Commit, DiffTarget, FileDiff, HunkSelection, ReviewFinding } from '@gitsquid/shared'
+import type { BlameLine, Commit, DiffTarget, FileDiff, HunkSelection, ReviewFinding } from '@gitgoose/shared'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import clsx from 'clsx'
 import { ChevronDown, ExternalLink, MessageCircleQuestion, X } from 'lucide-react'

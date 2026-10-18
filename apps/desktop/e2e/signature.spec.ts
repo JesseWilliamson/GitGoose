@@ -1,4 +1,4 @@
-import { initRepo, tempDir } from '@gitsquid/fixtures'
+import { initRepo, tempDir } from '@gitgoose/fixtures'
 import { expect, test } from '@playwright/test'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { chmodSync } from 'node:fs'
@@ -7,7 +7,7 @@ import { launch } from './app'
 test.skip(spawnSync('gpg', ['--version']).status !== 0, 'needs gpg')
 
 test('a signed commit shows a verified signature; an unsigned one shows nothing', async () => {
-  const home = tempDir('gitsquid-gnupg-')
+  const home = tempDir('gitgoose-gnupg-')
   chmodSync(home, 0o700)
   const env = { GNUPGHOME: home, GIT_CONFIG_GLOBAL: '/dev/null' }
   execFileSync('gpg', ['--batch', '--passphrase', '', '--quick-gen-key', 'Ada Lovelace <ada@example.com>', 'ed25519', 'sign', 'never'], { stdio: 'ignore', env: { ...process.env, ...env } })

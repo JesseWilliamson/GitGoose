@@ -1,4 +1,4 @@
-import type { ChangeKind } from '@gitsquid/shared'
+import type { ChangeKind } from '@gitgoose/shared'
 import clsx from 'clsx'
 import { ChevronDown, ChevronRight, Folder, List, ListTree, Search } from 'lucide-react'
 import { ContextMenu } from 'radix-ui'

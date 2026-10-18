@@ -7,7 +7,7 @@ import { join } from 'node:path'
  * we did not ask for, and a git client sees private code paths in every error message.
  */
 export function logPath(): string {
-  return join(app.getPath('logs'), 'gitsquid.log')
+  return join(app.getPath('logs'), 'gitgoose.log')
 }
 
 export function logError(source: string, message: string): void {

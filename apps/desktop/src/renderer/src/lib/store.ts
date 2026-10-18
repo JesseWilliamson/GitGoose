@@ -1,5 +1,5 @@
-import { GraphLayout, type Row } from '@gitsquid/graph'
-import { SETTINGS, type PullRequestList, type Commit, type DiffTarget, type GitHubStatus, type GitSquidEvent, type AskThread, type LfsInfo, type PushCheckResult, type Ref, type Remote, type RepoSnapshot, type Submodule, type Worktree, type SearchField, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitsquid/shared'
+import { GraphLayout, type Row } from '@gitgoose/graph'
+import { SETTINGS, type PullRequestList, type Commit, type DiffTarget, type GitHubStatus, type GitGooseEvent, type AskThread, type LfsInfo, type PushCheckResult, type Ref, type Remote, type RepoSnapshot, type Submodule, type Worktree, type SearchField, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitgoose/shared'
 import { create } from 'zustand'
 import { api, toUiError, type UiError } from './api'
 import { onAiEvent } from './ai'
@@ -316,7 +316,7 @@ export function loadMore(id: string): Promise<void> {
         if (rows[i]!.width > log.maxWidth) log.maxWidth = rows[i]!.width
       }
       log.done = page.done
-      if (offset === 0) performance.mark('gitsquid:first-page')
+      if (offset === 0) performance.mark('gitgoose:first-page')
       updateRepo(id, (v) => ({ logVersion: v.logVersion + 1 }))
     },
     (e) => {
@@ -487,7 +487,7 @@ export async function refreshAux(id: string): Promise<void> {
   }
 }
 
-function onEvent(e: GitSquidEvent): void {
+function onEvent(e: GitGooseEvent): void {
   switch (e.type) {
     case 'snapshot':
       onSnapshot(e.snapshot)

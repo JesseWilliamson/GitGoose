@@ -1,4 +1,4 @@
-import { SECTIONS, SETTINGS, type Section, type SettingKey, type SettingSpec, type Settings } from '@gitsquid/shared'
+import { SECTIONS, SETTINGS, type Section, type SettingKey, type SettingSpec, type Settings } from '@gitgoose/shared'
 import clsx from 'clsx'
 import { RotateCcw, Search, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react'

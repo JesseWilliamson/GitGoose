@@ -1,4 +1,4 @@
-# GitSquid — plan 2
+# GitGoose — plan 2
 
 Nine additions on top of the first build. Each section says what it is, the design decision that
 makes it tractable, what it touches, and how it is tested. Section 10 orders them and maps them
@@ -176,7 +176,7 @@ stash icon. Tags and branches stay as pills in the ref column.
     on 404.
 - **Fetching and caching live in the main process**, not the renderer: the renderer is
   sandboxed with `img-src 'self' data:` in its CSP, and it should not know URLs or emails of
-  avatar services. Main exposes a custom protocol `gitsquid-avatar://<email-hash>` (registered
+  avatar services. Main exposes a custom protocol `gitgoose-avatar://<email-hash>` (registered
   with `protocol.handle`) that serves from a disk cache in `userData/avatars/` (PNG, 30-day
   TTL, negative cache for misses) and fetches on miss with a 3-second timeout. A failed fetch
   serves a 1×1 transparent PNG so `<image>` fails fast to the fallback. Concurrency capped at
@@ -344,7 +344,7 @@ type into the middle for another, save, continue; verify the file content with g
 Two sign-ins, for two different things. GitHub sign-in gives the app an identity on GitHub
 (avatars for every author, later pull requests, HTTPS push without a credential helper). AI
 features come from an agent the user already has installed and logged into, spoken to over the
-Agent Client Protocol (ACP), so GitSquid never holds AI credentials at all.
+Agent Client Protocol (ACP), so GitGoose never holds AI credentials at all.
 
 ### 9a. Sign in with GitHub
 
@@ -399,20 +399,20 @@ chunks, tool calls, plans) and asks the client for permission before tool calls.
 advertises `authMethods` in its `initialize` reply, and a prompt can fail with "auth required",
 which the client resolves by running the advertised login.
 
-**Why it fits GitSquid better than calling an API ourselves:**
+**Why it fits GitGoose better than calling an API ourselves:**
 
-- GitSquid never stores or sees AI credentials. The agent (Claude, Gemini, Codex, anything
+- GitGoose never stores or sees AI credentials. The agent (Claude, Gemini, Codex, anything
   ACP-speaking) uses whatever login it already has on the user's machine. That also answers
   the policy question from the earlier draft of this plan: the user is using their own agent
-  with their own account; GitSquid is an ACP client like Zed, not a product offering claude.ai
+  with their own account; GitGoose is an ACP client like Zed, not a product offering claude.ai
   login. (The Claude adapter is itself built on the Claude Agent SDK, so Anthropic's note that
   subscription login requires approval for "agents built on the Claude Agent SDK" still applies
   to how the adapter authenticates; that is the adapter's concern and Anthropic's call, not
-  something GitSquid can grant or bypass. The adapter's own `/login` offers an API key or
+  something GitGoose can grant or bypass. The adapter's own `/login` offers an API key or
   Claude Code login "where supported".)
 - One provider implementation covers every agent, now and later.
 - The agent can do more than complete text: for "resolve this conflict", it can be given the
-  repository as its working directory and permission to edit exactly one file, with GitSquid
+  repository as its working directory and permission to edit exactly one file, with GitGoose
   showing the resulting diff for approval, instead of us pasting three versions into a prompt.
 
 **Design.** `apps/desktop/src/main/ai/acp.ts` using `@agentclientprotocol/sdk` (the official
@@ -428,10 +428,10 @@ TypeScript library) on the client side:
 - **Capabilities we advertise:** `fs.readTextFile: true` (so the agent can read files when
   asked to explain changes), `fs.writeTextFile` only for the conflict feature, `terminal: false`
   (the agent does not get a shell from a git client), `auth.terminal: true` so terminal-type
-  login methods can be offered: when a prompt returns auth-required, GitSquid shows a dialog
+  login methods can be offered: when a prompt returns auth-required, GitGoose shows a dialog
   naming the method and opens the user's terminal (the external-terminal setting from §6) with
   the login command, then retries.
-- **Permissions.** Every `requestPermission` becomes a modal in GitSquid (the attention surface
+- **Permissions.** Every `requestPermission` becomes a modal in GitGoose (the attention surface
   from §2) showing the tool call and the file; "Allow once", "Allow for this session", "Deny".
   Nothing is auto-approved except read-only reads of files inside the open repository.
 - **Prompts** are built in `ai/prompts.ts` exactly as before (commit message from the staged

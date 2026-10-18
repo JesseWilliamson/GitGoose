@@ -1,4 +1,4 @@
-import type { ChangeKind, ChangedFile, DiffLine, FileDiff, Hunk } from '@gitsquid/shared'
+import type { ChangeKind, ChangedFile, DiffLine, FileDiff, Hunk } from '@gitgoose/shared'
 
 const HUNK_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@ ?(.*)$/
 

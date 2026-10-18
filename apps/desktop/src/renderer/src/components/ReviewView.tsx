@@ -1,4 +1,4 @@
-import type { FindingSeverity, ReviewFinding } from '@gitsquid/shared'
+import type { FindingSeverity, ReviewFinding } from '@gitgoose/shared'
 import clsx from 'clsx'
 import { Sparkles } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -90,7 +90,7 @@ export function ReviewView({ view }: { view: RepoView }) {
                 <div className="flex items-center gap-2">
                   <span className={clsx('rounded px-1.5 text-[10px] font-semibold uppercase', SEVERITY_STYLE[f.severity])}>{f.severity}</span>
                   <span className="text-[11px] text-faint">{f.type}</span>
-                  {f.source && <span className="rounded border border-line px-1 text-[10px] text-muted" data-testid="finding-source" title={f.source === 'scan' ? "Found by GitSquid's built-in secret scan, not the AI" : 'Reported by a linter, not the AI'}>{f.tool}</span>}
+                  {f.source && <span className="rounded border border-line px-1 text-[10px] text-muted" data-testid="finding-source" title={f.source === 'scan' ? "Found by GitGoose's built-in secret scan, not the AI" : 'Reported by a linter, not the AI'}>{f.tool}</span>}
                   {f.status && <span className={clsx('text-[10px]', f.status === 'new' ? 'text-accent' : 'text-faint')} data-testid="finding-status">{f.status === 'new' ? 'new' : 'still open'}</span>}
                   <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">{f.title}</span>
                   <button className="font-mono text-[11px] text-accent hover:underline" onClick={() => open(f)} title="Show in the diff">

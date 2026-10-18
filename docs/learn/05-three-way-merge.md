@@ -63,7 +63,7 @@ path.
 - Two people make the same fix on both branches, plus one more line each. How does the
   'both-same' rule handle it? (Try it in a test.)
 - IntelliJ marks a conflict resolved as soon as you apply either side. Git counts a file
-  resolved only when you stage it. Which one does GitSquid follow where, and why both?
+  resolved only when you stage it. Which one does GitGoose follow where, and why both?
 - `git merge` with rename detection put base and ours for `src/utils/formatting.ts` under the
   new path even though only theirs renamed the file (try the dev repo's conflict branch). Where
   in git does that happen, and what would break if we read the versions by the old path?

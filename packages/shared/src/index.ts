@@ -255,10 +255,10 @@ export interface LfsLock {
   lockedAt: string
 }
 
-/** One git process GitSquid ran (the command log). */
+/** One git process GitGoose ran (the command log). */
 export interface CommandRecord {
   id: number
-  /** git's arguments as GitSquid passed them (credentials in URLs masked). */
+  /** git's arguments as GitGoose passed them (credentials in URLs masked). */
   args: string[]
   /** Started at (ms since the epoch). */
   start: number

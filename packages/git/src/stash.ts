@@ -1,4 +1,4 @@
-import type { StashEntry } from '@gitsquid/shared'
+import type { StashEntry } from '@gitgoose/shared'
 
 export const STASH_FORMAT = '%gd%x00%H%x00%ct%x00%gs%x1e'
 

@@ -1,4 +1,4 @@
-import type { ReadingLayer, SequenceDiagram, WalkthroughHunk } from '@gitsquid/shared'
+import type { ReadingLayer, SequenceDiagram, WalkthroughHunk } from '@gitgoose/shared'
 import clsx from 'clsx'
 import { BookOpen } from 'lucide-react'
 import { useState } from 'react'

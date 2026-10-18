@@ -1,4 +1,4 @@
-import type { Ref, RefKind } from '@gitsquid/shared'
+import type { Ref, RefKind } from '@gitgoose/shared'
 
 /**
  * for-each-ref fields, NUL separated, one ref per line:

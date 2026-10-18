@@ -9,7 +9,7 @@ import { commandArgv } from './command'
 export type AiProvider = 'off' | 'agent' | 'anthropic'
 export type AgentPreset = 'claude' | 'codex' | 'gemini' | 'custom'
 
-/** The agents GitSquid knows how to start. Each speaks ACP on stdin/stdout. */
+/** The agents GitGoose knows how to start. Each speaks ACP on stdin/stdout. */
 export const AGENT_PRESETS: Record<Exclude<AgentPreset, 'custom'>, { label: string; command: string }> = {
   claude: { label: 'Claude', command: 'npx -y @agentclientprotocol/claude-agent-acp' },
   codex: { label: 'Codex', command: 'npx -y @agentclientprotocol/codex-acp' },
@@ -89,7 +89,7 @@ export type PushCheckVerdict = 'pass' | 'fail' | 'inconclusive'
 export interface PushCheckResult {
   name: string
   mode: PushCheck['mode']
-  /** builtin: GitSquid's own (no AI); repo: .coderabbit.yaml; settings: the user's list. */
+  /** builtin: GitGoose's own (no AI); repo: .coderabbit.yaml; settings: the user's list. */
   source: 'builtin' | 'repo' | 'settings'
   verdict: PushCheckVerdict
   /** One or two sentences on why, in plain words. */
@@ -287,7 +287,7 @@ export interface AgentAuthMethod {
   id: string
   name: string
   description?: string
-  /** For terminal logins: the command to run in a terminal. Otherwise GitSquid asks the agent. */
+  /** For terminal logins: the command to run in a terminal. Otherwise GitGoose asks the agent. */
   terminalCommand?: string
 }
 

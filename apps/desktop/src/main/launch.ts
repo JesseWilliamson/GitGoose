@@ -1,11 +1,11 @@
-import { commandArgv } from '@gitsquid/shared'
+import { commandArgv } from '@gitgoose/shared'
 import { shell } from 'electron'
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 import { getSettings } from './settings'
 
-/** Start a program detached from the app, so closing GitSquid does not close the editor. */
+/** Start a program detached from the app, so closing GitGoose does not close the editor. */
 function launch(argv: string[], cwd?: string): Promise<void> {
   const [cmd, ...args] = argv
   if (!cmd) return Promise.reject(new Error('The command is empty'))

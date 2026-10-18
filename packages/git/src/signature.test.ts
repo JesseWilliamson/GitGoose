@@ -1,4 +1,4 @@
-import { initRepo, tempDir } from '@gitsquid/fixtures'
+import { initRepo, tempDir } from '@gitgoose/fixtures'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { chmodSync } from 'node:fs'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -6,7 +6,7 @@ import { Repo } from './repo'
 
 // A throwaway GPG home with one passphrase-less key, and no global git config (it may force SSH).
 const hasGpg = spawnSync('gpg', ['--version']).status === 0
-const home = tempDir('gitsquid-gnupg-')
+const home = tempDir('gitgoose-gnupg-')
 const saved = { GNUPGHOME: process.env.GNUPGHOME, GIT_CONFIG_GLOBAL: process.env.GIT_CONFIG_GLOBAL }
 beforeAll(() => {
   if (!hasGpg) return

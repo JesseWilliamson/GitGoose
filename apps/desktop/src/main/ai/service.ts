@@ -1,13 +1,13 @@
-import type { Repo } from '@gitsquid/git'
+import type { Repo } from '@gitgoose/git'
 import {
   agentCommandLine, agentLabel, commandArgv,
-  type AgentInfo, type AgentPreset, type AiPermissionRequest, type AiResult, type AiRunOptions, type AiStatus, type AiTask, type GitSquidEvent, type Settings,
-} from '@gitsquid/shared'
+  type AgentInfo, type AgentPreset, type AiPermissionRequest, type AiResult, type AiRunOptions, type AiStatus, type AiTask, type GitGooseEvent, type Settings,
+} from '@gitgoose/shared'
 import { tmpdir } from 'node:os'
 import { AcpAgent } from './acp'
 import { anthropicComplete } from './anthropic'
 import type { SecretFile } from './keyStore'
-import { extractJson, locateSecret, redactSecrets, repairPlan, scanSecrets, verifyFindings, verifyPushChecks, verifyWalkthrough } from '@gitsquid/git'
+import { extractJson, locateSecret, redactSecrets, repairPlan, scanSecrets, verifyFindings, verifyPushChecks, verifyWalkthrough } from '@gitgoose/git'
 import { lintForReview } from './linters'
 import { buildPrompt, cleanCommitMessage, type BuiltPrompt } from './prompts'
 
@@ -25,7 +25,7 @@ export interface AiServiceDeps {
   setSettings: (patch: Partial<Settings>) => void
   repo: (repoId: string) => Repo
   apiKey: SecretFile
-  emit: (event: GitSquidEvent) => void
+  emit: (event: GitGooseEvent) => void
   anthropicBaseURL?: string
   fetch?: typeof fetch
 }

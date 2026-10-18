@@ -1,4 +1,4 @@
-import type { Ref } from '@gitsquid/shared'
+import type { Ref } from '@gitgoose/shared'
 import clsx from 'clsx'
 import { Archive, Boxes, ChevronDown, ChevronRight, Cloud, Eye, EyeOff, Focus, FolderTree, GitBranch, GitPullRequest, HardDrive, History, Plus, RefreshCw, Tag } from 'lucide-react'
 import { ContextMenu } from 'radix-ui'

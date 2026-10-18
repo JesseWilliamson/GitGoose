@@ -1,6 +1,6 @@
 import { history, redo, undo } from '@codemirror/commands'
 import { EditorState, type Transaction, type TransactionSpec } from '@codemirror/state'
-import { merge3 } from '@gitsquid/shared'
+import { merge3 } from '@gitgoose/shared'
 import { describe, expect, it } from 'vitest'
 import { applyNonConflicting, applySide, ignoreSide, initialResult, isResolved, mergeField, sourceClass } from './mergeState'
 

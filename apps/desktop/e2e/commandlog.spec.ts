@@ -1,8 +1,8 @@
-import { initRepo } from '@gitsquid/fixtures'
+import { initRepo } from '@gitgoose/fixtures'
 import { expect, test } from '@playwright/test'
 import { launch } from './app'
 
-test('the command log lists what GitSquid ran, failures with what git said', async () => {
+test('the command log lists what GitGoose ran, failures with what git said', async () => {
   const r = initRepo()
   r.commit('root', { 'a.txt': 'a\n' })
   r.git('branch', 'taken')

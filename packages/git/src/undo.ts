@@ -1,4 +1,4 @@
-import type { UndoEntry } from '@gitsquid/shared'
+import type { UndoEntry } from '@gitgoose/shared'
 
 /**
  * Undo, Tower style.

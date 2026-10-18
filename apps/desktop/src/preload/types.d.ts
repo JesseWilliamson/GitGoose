@@ -1,10 +1,10 @@
-import type { GitSquidApi, GitSquidEvent } from '@gitsquid/shared'
+import type { GitGooseApi, GitGooseEvent } from '@gitgoose/shared'
 
 declare global {
   interface Window {
-    gitsquid: GitSquidApi & {
+    gitgoose: GitGooseApi & {
       platform: string
-      onEvent(listener: (event: GitSquidEvent) => void): () => void
+      onEvent(listener: (event: GitGooseEvent) => void): () => void
     }
   }
 }

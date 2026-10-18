@@ -1,4 +1,4 @@
-import { FAKE_AVATAR_PNG, initRepo } from '@gitsquid/fixtures'
+import { FAKE_AVATAR_PNG, initRepo } from '@gitgoose/fixtures'
 import { expect, test } from '@playwright/test'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'

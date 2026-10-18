@@ -1,4 +1,4 @@
-import type { AskThread } from '@gitsquid/shared'
+import type { AskThread } from '@gitgoose/shared'
 import { MessageCircleQuestion, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { askInThread, closeAsk } from '../lib/ask'

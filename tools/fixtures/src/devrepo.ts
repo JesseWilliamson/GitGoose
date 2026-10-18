@@ -176,7 +176,7 @@ export function makeDevRepo(opts: DevRepoOptions = {}): DevRepoInfo {
   const total = opts.commits ?? 3000
   const iconCount = opts.icons ?? 2400
   const r = new Rand(opts.seed ?? 42)
-  const dir = opts.dir ?? tempDir('gitsquid-dev-')
+  const dir = opts.dir ?? tempDir('gitgoose-dev-')
   rmSync(dir, { recursive: true, force: true })
   mkdirSync(dir, { recursive: true })
   const repo = initRepo(dir)
@@ -228,12 +228,12 @@ export function makeDevRepo(opts: DevRepoOptions = {}): DevRepoInfo {
     base.set(name, newSourceFile(r))
   }
   base.set('src/utils/format.ts', ['export function format(value: string) {', '  // keep this short', '  const trimmed = value.trim()', '  return trimmed', '}', ''])
-  base.set('src/config.ts', ['export const config = {', "  name: 'gitsquid-dev',", '  retries: 3,', '  timeoutMs: 5000,', '}', ''])
+  base.set('src/config.ts', ['export const config = {', "  name: 'gitgoose-dev',", '  retries: 3,', '  timeoutMs: 5000,', '}', ''])
   base.set('README.md', newDocFile(r, 'Dev project'))
   base.set('docs/Design Notes.md', newDocFile(r, 'Design notes'))
   base.set('docs/résumé-ünïcode.md', newDocFile(r, 'Unicode in paths'))
   base.set('scripts/windows-setup.bat', ['@echo off', 'echo Setting up', 'npm install', 'echo Done'])
-  base.set('package.json', ['{', '  "name": "gitsquid-dev",', '  "version": "0.1.0",', '  "private": true', '}'])
+  base.set('package.json', ['{', '  "name": "gitgoose-dev",', '  "version": "0.1.0",', '  "private": true', '}'])
   base.set('src/api/client.ts', ['export async function request(url: string, init?: RequestInit) {', '  const res = await fetch(url, init)',
     "  if (!res.ok) throw new Error(`${res.status} ${url}`)", '  return res.json()', '}', ''])
   base.set('.gitignore', GITIGNORE)
@@ -469,7 +469,7 @@ function makeIcons(r: Rand, count: number): Map<string, string[]> {
  */
 function finishWorkingState(repo: FixtureRepo, r: Rand, remotesDir?: string): number {
   const remoteDir = (name: string) => {
-    if (!remotesDir) return tempDir(`gitsquid-dev-${name}-`)
+    if (!remotesDir) return tempDir(`gitgoose-dev-${name}-`)
     const d = join(remotesDir, name)
     rmSync(d, { recursive: true, force: true })
     mkdirSync(remotesDir, { recursive: true })
@@ -480,7 +480,7 @@ function finishWorkingState(repo: FixtureRepo, r: Rand, remotesDir?: string): nu
 
   // A branch that conflicts with develop: it renames format.ts and edits the same lines develop edits.
   g('checkout', '-q', '-b', CONFLICT_BRANCH)
-  repo.write('src/config.ts', "export const config = {\n  name: 'gitsquid-dev',\n  retries: 5,\n  timeoutMs: 10000,\n}\n")
+  repo.write('src/config.ts', "export const config = {\n  name: 'gitgoose-dev',\n  retries: 5,\n  timeoutMs: 10000,\n}\n")
   g('mv', 'src/utils/format.ts', 'src/utils/formatting.ts')
   repo.write('src/utils/formatting.ts', 'export function format(value: string) {\n  // keep this short\n  const trimmed = value.trim().toLowerCase()\n  return trimmed\n}\n')
   repo.commit('refactor(utils): rename format to formatting, lower-case values')
@@ -498,7 +498,7 @@ function finishWorkingState(repo: FixtureRepo, r: Rand, remotesDir?: string): nu
   g('checkout', '-q', 'develop')
 
   // develop moves on and changes the same things in its own way.
-  repo.write('src/config.ts', "export const config = {\n  name: 'gitsquid-dev',\n  retries: 2,\n  timeoutMs: 3000,\n}\n")
+  repo.write('src/config.ts', "export const config = {\n  name: 'gitgoose-dev',\n  retries: 2,\n  timeoutMs: 3000,\n}\n")
   repo.write('src/utils/format.ts', 'export function format(value: string) {\n  // keep this short\n  const trimmed = value.trim().replace(/\\s+/g, " ")\n  return trimmed\n}\n')
   repo.commit('fix(config): fewer retries, shorter timeout; collapse whitespace in format')
   repo.write('src/api/client.ts', 'export async function request(url: string, init?: RequestInit) {\n' +
@@ -517,7 +517,7 @@ function finishWorkingState(repo: FixtureRepo, r: Rand, remotesDir?: string): nu
   g('fetch', '-q', 'origin')
   g('branch', '-q', '--set-upstream-to=origin/develop', 'develop')
   g('branch', '-q', '--set-upstream-to=origin/main', 'main')
-  const other = initRepo(tempDir('gitsquid-dev-other-'))
+  const other = initRepo(tempDir('gitgoose-dev-other-'))
   rmSync(other.dir, { recursive: true, force: true })
   execFileSync('git', ['clone', '-q', '-b', 'develop', origin, other.dir])
   other.tick = repo.tick + 100

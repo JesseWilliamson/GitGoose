@@ -1,4 +1,4 @@
-import type { BlameLine } from '@gitsquid/shared'
+import type { BlameLine } from '@gitgoose/shared'
 
 /**
  * Parse `git blame --porcelain`.

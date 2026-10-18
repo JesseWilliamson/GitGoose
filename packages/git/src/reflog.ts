@@ -1,4 +1,4 @@
-import type { ReflogEntry } from '@gitsquid/shared'
+import type { ReflogEntry } from '@gitgoose/shared'
 
 /**
  * `git log -g` walks a reflog instead of history: one line per time the ref moved. With

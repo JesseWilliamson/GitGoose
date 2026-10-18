@@ -1,4 +1,4 @@
-import { makeFixture } from '@gitsquid/fixtures'
+import { makeFixture } from '@gitgoose/fixtures'
 import { expect, test } from '@playwright/test'
 import { launch } from './app'
 

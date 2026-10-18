@@ -1,4 +1,4 @@
-import { makeFixture, tempDir } from '@gitsquid/fixtures'
+import { makeFixture, tempDir } from '@gitgoose/fixtures'
 import { expect, test } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { chmodSync, writeFileSync } from 'node:fs'
@@ -55,7 +55,7 @@ test('a rejected push lands in the attention bar with the hook output, one row p
 
 test('a push behind the remote offers to pull first', async () => {
   const r = makeFixture('with-remote')
-  const other = tempDir('gitsquid-other-')
+  const other = tempDir('gitgoose-other-')
   execFileSync('git', ['clone', '-q', r.git('remote', 'get-url', 'origin').trim(), other])
   execFileSync('git', ['-c', 'user.name=B', '-c', 'user.email=b@x', 'commit', '-q', '--allow-empty', '-m', 'Theirs'], { cwd: other })
   execFileSync('git', ['push', '-q'], { cwd: other })

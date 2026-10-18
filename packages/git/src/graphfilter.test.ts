@@ -1,4 +1,4 @@
-import { initRepo } from '@gitsquid/fixtures'
+import { initRepo } from '@gitgoose/fixtures'
 import { describe, expect, it } from 'vitest'
 import { graphRevs, graphShowsRef } from './log'
 import { Repo } from './repo'

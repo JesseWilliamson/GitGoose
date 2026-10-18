@@ -1,4 +1,4 @@
-import { AI_AUTH_REQUIRED, type AgentAuthMethod, type AiPermissionRequest, type AiResult, type AiTask, type RecomposeProposal } from '@gitsquid/shared'
+import { AI_AUTH_REQUIRED, type AgentAuthMethod, type AiPermissionRequest, type AiResult, type AiTask, type RecomposeProposal } from '@gitgoose/shared'
 import { create } from 'zustand'
 import { api, toUiError } from './api'
 import { attention, choose, useStore } from './store'

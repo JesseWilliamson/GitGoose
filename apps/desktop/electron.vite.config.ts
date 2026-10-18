@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 import { defineConfig } from 'electron-vite'
 
 // Workspace packages ship TypeScript source, so they must be bundled, never left as externals.
-const workspace = ['@gitsquid/codegraph', '@gitsquid/git', '@gitsquid/graph', '@gitsquid/shared']
+const workspace = ['@gitgoose/codegraph', '@gitgoose/git', '@gitgoose/graph', '@gitgoose/shared']
 
 export default defineConfig({
   main: {

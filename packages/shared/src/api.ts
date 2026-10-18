@@ -63,7 +63,7 @@ export interface ConflictVersions {
  * from API_METHODS below and the main process registers one handler per method, so adding a
  * method here without implementing it is a type error in both places.
  */
-export interface GitSquidApi {
+export interface GitGooseApi {
   // App
   getSettings(): Promise<Settings>
   setSettings(patch: Partial<Settings>): Promise<Settings>
@@ -190,7 +190,7 @@ export interface GitSquidApi {
   /** Network: asks the LFS server. */
   lfsLocks(repoId: string): Promise<LfsLock[]>
   lfsLock(repoId: string, path: string, lock: boolean, force?: boolean): Promise<void>
-  /** Git commands GitSquid ran for this repository, newest first (only newer than `afterId`). */
+  /** Git commands GitGoose ran for this repository, newest first (only newer than `afterId`). */
   commandLog(repoId: string, afterId?: number): Promise<CommandRecord[]>
   /** Mark a commit for bisect (starts one if needed); git checks out the next commit to test. */
   bisectMark(repoId: string, rev: string, term: 'good' | 'bad' | 'skip'): Promise<void>
@@ -311,7 +311,7 @@ export interface GitSquidApi {
   redoList(repoId: string): Promise<UndoEntry[]>
 }
 
-export type ApiMethod = keyof GitSquidApi
+export type ApiMethod = keyof GitGooseApi
 
 /** The runtime list of method names. The type below fails to compile if it misses one. */
 export const API_METHODS = [
@@ -338,7 +338,7 @@ const _exhaustive: [Missing] extends [never] ? true : Missing = true
 void _exhaustive
 
 /** Pushed from main to renderer. */
-export type GitSquidEvent =
+export type GitGooseEvent =
   | { type: 'snapshot'; snapshot: RepoSnapshot }
   /** Files changed on disk (sent even when the snapshot did not change, so open diffs reload). */
   | { type: 'worktree'; repoId: string }
@@ -366,5 +366,5 @@ export interface SerializedError {
 
 export type IpcResult<T> = { ok: true; value: T } | { ok: false; error: SerializedError }
 
-export const IPC_INVOKE = 'gitsquid:invoke'
-export const IPC_EVENT = 'gitsquid:event'
+export const IPC_INVOKE = 'gitgoose:invoke'
+export const IPC_EVENT = 'gitgoose:event'

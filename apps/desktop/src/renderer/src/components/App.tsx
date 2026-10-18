@@ -1,4 +1,4 @@
-import { DEFAULT_LAYOUT, setCollapsed } from '@gitsquid/shared'
+import { DEFAULT_LAYOUT, setCollapsed } from '@gitgoose/shared'
 import { useEffect } from 'react'
 import { applyPatchFile, applyPatchFromClipboard, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, redo, stash, undo } from '../lib/actions'
 import { comboOf, keymap } from '../lib/keys'
@@ -60,7 +60,7 @@ function useCommands() {
         case 'new-branch': return newBranch(id)
         case 'stash': return stash(id)
         case 'pop': return pop(id)
-        case 'reveal': return void window.gitsquid.revealPath(s.repos[id]!.snapshot.path)
+        case 'reveal': return void window.gitgoose.revealPath(s.repos[id]!.snapshot.path)
         case 'terminal': return void openTerminal(id)
         case 'apply-patch': return void applyPatchFile(id)
         case 'apply-patch-clipboard': return void applyPatchFromClipboard(id)

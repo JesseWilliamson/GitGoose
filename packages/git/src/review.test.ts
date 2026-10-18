@@ -2,7 +2,7 @@
  * Regression tests for bugs found by the code review (one per finding, numbered as in the review).
  * Each reproduces the original failure against real git.
  */
-import { initRepo, makeFixture, tempDir, type FixtureRepo } from '@gitsquid/fixtures'
+import { initRepo, makeFixture, tempDir, type FixtureRepo } from '@gitgoose/fixtures'
 import { chmodSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -166,7 +166,7 @@ describe('review findings', () => {
   // the first snapshot reads status before a commit but finishes after a second snapshot.
   it.skipIf(process.platform === 'win32')('#12 overlapping snapshots never leave an older result in place', async () => {
     const r = makeFixture('linear')
-    const dir = tempDir('gitsquid-slowgit-')
+    const dir = tempDir('gitgoose-slowgit-')
     const wrapper = join(dir, 'git')
     writeFileSync(wrapper, `#!/bin/sh
 case "$*" in

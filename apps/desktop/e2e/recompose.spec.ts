@@ -1,4 +1,4 @@
-import { initRepo } from '@gitsquid/fixtures'
+import { initRepo } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import { join } from 'node:path'
 import { launch } from './app'
@@ -23,7 +23,7 @@ test('recompose: the AI proposes, you reorder and edit, Create commits rewrites,
   const { r, C1, C2, C3 } = setup()
   const tree = r.git('rev-parse', 'HEAD^{tree}').trim()
   const { app, page } = await launch(r.dir)
-  await page.evaluate((p) => window.gitsquid.setSettings(p as never), AGENT)
+  await page.evaluate((p) => window.gitgoose.setSettings(p as never), AGENT)
   await row(page, C2).click()
   await row(page, C1).click({ modifiers: ['Shift'] })
   await row(page, C1).click({ button: 'right' })
@@ -79,7 +79,7 @@ test('recompose: the AI proposes, you reorder and edit, Create commits rewrites,
 test('squashing in the review, and refusing a selection that is not a range', async () => {
   const { r, C1, C3 } = setup()
   const { app, page } = await launch(r.dir)
-  await page.evaluate((p) => window.gitsquid.setSettings(p as never), AGENT)
+  await page.evaluate((p) => window.gitgoose.setSettings(p as never), AGENT)
   // C1 and C3 do not follow each other: main refuses before asking the AI anything.
   await row(page, C3).click()
   await row(page, C1).click({ modifiers: ['ControlOrMeta'] })
@@ -115,7 +115,7 @@ test('squashing in the review, and refusing a selection that is not a range', as
 test('move a change to another commit or a new one; empty commits block until removed', async () => {
   const { r, C1, C2 } = setup()
   const { app, page } = await launch(r.dir)
-  await page.evaluate((p) => window.gitsquid.setSettings(p as never), AGENT)
+  await page.evaluate((p) => window.gitgoose.setSettings(p as never), AGENT)
   await row(page, C2).click()
   await row(page, C1).click({ modifiers: ['Shift'] })
   await row(page, C1).click({ button: 'right' })
@@ -162,7 +162,7 @@ async function drag(page: Page, from: ReturnType<Page['locator']>, to: ReturnTyp
 test('drag: a hunk onto a commit, a hunk into the open space for a new commit, a commit to reorder', async () => {
   const { r } = setup()
   const { app, page } = await launch(r.dir)
-  await page.evaluate((p) => window.gitsquid.setSettings(p as never), AGENT)
+  await page.evaluate((p) => window.gitgoose.setSettings(p as never), AGENT)
   const [C1, C2] = [r.git('rev-parse', 'HEAD~2').trim(), r.git('rev-parse', 'HEAD~1').trim()]
   await row(page, C2).click()
   await row(page, C1).click({ modifiers: ['Shift'] })

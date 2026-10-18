@@ -1,6 +1,6 @@
-import { Repo } from '@gitsquid/git'
-import { fakeAnthropic, makeFixture, tempDir, type FakeAnthropic } from '@gitsquid/fixtures'
-import { defaultSettings, type GitSquidEvent, type Settings } from '@gitsquid/shared'
+import { Repo } from '@gitgoose/git'
+import { fakeAnthropic, makeFixture, tempDir, type FakeAnthropic } from '@gitgoose/fixtures'
+import { defaultSettings, type GitGooseEvent, type Settings } from '@gitgoose/shared'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -28,7 +28,7 @@ async function setup(patch: Partial<Settings> = {}, anthropic?: FakeAnthropic) {
   r.write('widgets.ts', 'export const widgets = new Map()\n')
   r.git('add', 'widgets.ts')
   const repo = await Repo.open(r.dir, {})
-  const events: GitSquidEvent[] = []
+  const events: GitGooseEvent[] = []
   const ai = new AiService({
     settings: () => settings,
     setSettings: (p) => (settings = { ...settings, ...p }),

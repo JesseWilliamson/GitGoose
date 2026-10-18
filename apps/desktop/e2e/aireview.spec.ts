@@ -1,4 +1,4 @@
-import { initRepo, tempDir } from '@gitsquid/fixtures'
+import { initRepo, tempDir } from '@gitgoose/fixtures'
 import { expect, test } from '@playwright/test'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -13,7 +13,7 @@ test('AI review: verified findings in the review view and the diff gutter; inven
   r.commit('root', { 'src/calc.ts': 'export function total(a: number, b: number) {\n  return a + b\n}\n' })
   r.write('src/calc.ts', 'export function total(a: number, b: number) {\n  return a - b\n}\n')
   const { app, page } = await launch(r.dir)
-  await page.evaluate((p) => window.gitsquid.setSettings(p as never), AGENT)
+  await page.evaluate((p) => window.gitgoose.setSettings(p as never), AGENT)
 
   await page.getByTestId('review-menu').click()
   await page.getByRole('menuitem', { name: 'Review all uncommitted changes' }).click()
@@ -53,7 +53,7 @@ test('apply a suggestion (undoable); fix with AI shows the change before writing
   r.write('src/calc.ts', broken)
   const file = () => readFileSync(join(r.dir, 'src/calc.ts'), 'utf8')
   const { app, page } = await launch(r.dir)
-  await page.evaluate((p) => window.gitsquid.setSettings(p as never), AGENT)
+  await page.evaluate((p) => window.gitgoose.setSettings(p as never), AGENT)
 
   let finding = await reviewed(page)
   await finding.getByTestId('apply-suggestion').click()
@@ -80,7 +80,7 @@ test('the review follows the project: guideline files shown; a remembered dismis
   r.commit('root', { 'src/calc.ts': 'export function total(a: number, b: number) {\n  return a + b\n}\n', 'CLAUDE.md': 'Prefer small functions.\n' })
   r.write('src/calc.ts', 'export function total(a: number, b: number) {\n  return a - b\n}\n')
   const { app, page } = await launch(r.dir)
-  await page.evaluate((p) => window.gitsquid.setSettings(p as never), AGENT)
+  await page.evaluate((p) => window.gitgoose.setSettings(p as never), AGENT)
   const finding = await reviewed(page)
   await expect(page.getByTestId('review-context')).toContainText('Followed CLAUDE.md')
   await expect(page.getByTestId('review-context')).toContainText('0 learnings')
@@ -105,7 +105,7 @@ test('review again: unchanged findings stay open, changed code counts as address
   r.commit('root', { 'src/calc.ts': 'export function total(a: number, b: number) {\n  return a + b\n}\n' })
   r.write('src/calc.ts', 'export function total(a: number, b: number) {\n  return a - b\n}\n')
   const { app, page } = await launch(r.dir)
-  await page.evaluate((p) => window.gitsquid.setSettings(p as never), AGENT)
+  await page.evaluate((p) => window.gitgoose.setSettings(p as never), AGENT)
   await reviewed(page)
   const review = page.getByTestId('review')
 
@@ -132,7 +132,7 @@ test('secrets are never sent as they are; linters run once allowed; tool finding
   const script = join(tempDir(), 'todo-lint.mjs')
   writeFileSync(script, 'import { readFileSync } from "node:fs"\nfor (const f of process.argv.slice(2)) readFileSync(f, "utf8").split("\\n").forEach((l, i) => { if (l.includes("TODO")) console.log(`${f}:${i + 1}:1: unfinished work [Warning/no-todo]`) })\n')
   const { app, page } = await launch(r.dir)
-  await page.evaluate((p) => window.gitsquid.setSettings(p as never), { ...AGENT, reviewLinter: `"${process.execPath}" "${script}" {files}` })
+  await page.evaluate((p) => window.gitgoose.setSettings(p as never), { ...AGENT, reviewLinter: `"${process.execPath}" "${script}" {files}` })
 
   await page.getByTestId('review-menu').click()
   await page.getByRole('menuitem', { name: 'Review all uncommitted changes' }).click()

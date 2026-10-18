@@ -1,4 +1,4 @@
-import { makeFixture, makeLargeRepo } from '@gitsquid/fixtures'
+import { makeFixture, makeLargeRepo } from '@gitgoose/fixtures'
 import { expect, test } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { launch } from './app'
@@ -157,7 +157,7 @@ test('the gear in the graph header shows and hides columns; the author column ha
   // The graph node is the author's avatar, so the author column is just the name.
   await expect(row.getByTestId('author-cell')).toHaveText('Ada Lovelace')
   await expect(row.getByTestId('author-cell').locator('img, svg')).toHaveCount(0)
-  await expect.poll(async () => (await page.evaluate(() => window.gitsquid.getSettings())).graphColumns)
+  await expect.poll(async () => (await page.evaluate(() => window.gitgoose.getSettings())).graphColumns)
     .toEqual({ refs: true, graph: true, author: true, date: false, sha: true })
   await page.getByTestId('graph-columns').click()
   await page.getByRole('menuitem', { name: 'Reset columns' }).click()

@@ -1,4 +1,4 @@
-import type { FileDiff } from '@gitsquid/shared'
+import type { FileDiff } from '@gitgoose/shared'
 import { describe, expect, it } from 'vitest'
 import { addedLines, lintFindings, parseLintOutput, secretFindings } from './lint'
 
