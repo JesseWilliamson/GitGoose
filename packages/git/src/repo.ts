@@ -15,11 +15,11 @@ import { changedSymbols, isTestPath, testsByName } from './impact'
 import { globToRegExp, parseCustomChecks, parsePathInstructions, relevantGuidelines } from './reviewrules'
 import { CatFile } from './catfile'
 import { parseChangedFiles, parseDiff, untrackedDiff } from './diff'
-import { graphRevs, LOG_FORMAT, LogStream, parseLog } from './log'
+import { graphRevs, graphShowsRef, LOG_FORMAT, LogStream, parseLog } from './log'
 import { searchLog } from './search'
 import { checkPlan, patchFor, splitUnits, type PlannedCommit, type RecomposeUnit } from './recompose'
 import { buildPatch } from './patch'
-import { parseRefs, REFS_FORMAT } from './refs'
+import { parseRefs, REFS_FORMAT, trunkRefs } from './refs'
 import { GitRunner } from './runner'
 import { parseReflog, REFLOG_FORMAT } from './reflog'
 import { parseStashList, STASH_FORMAT } from './stash'
@@ -152,8 +152,10 @@ export class Repo {
     ])
     const status = parseStatus(statusOut)
     const refs = parseRefs(refsOut)
+    // Only trunk refs the graph walks: one it leaves out would hold lane 0 empty all the way down.
+    const trunk = trunkRefs(refsOut, refs).filter((r) => graphShowsRef(r, this.filter))
     const stashes = this.showStashes ? await this.stashHashes() : []
-    const key = `${status.head.branch}|${status.head.hash}|` + refs.map((r) => `${r.name}=${r.hash}`).join(',') + `|${stashes.join(',')}`
+    const key = `${status.head.branch}|${status.head.hash}|` + refs.map((r) => `${r.name}=${r.hash}`).join(',') + `|${stashes.join(',')}|${trunk.join(',')}`
     if (key !== this.refsKey) {
       this.refsKey = key
       this.refsVersion++
@@ -163,7 +165,7 @@ export class Repo {
     this.last = {
       id: this.id, path: this.path, name: this.name,
       head: status.head, refs, status: status.entries,
-      operation: this.operation(), refsVersion: this.refsVersion, filter: this.filter,
+      operation: this.operation(), refsVersion: this.refsVersion, filter: this.filter, trunk,
       bisect: existsSync(join(this.gitDir, 'BISECT_START')) ? await this.bisectState() : undefined,
     }
     return this.last

@@ -108,6 +108,11 @@ export interface RepoSnapshot {
   refsVersion: number
   /** Hidden and soloed refs for this repository's graph. */
   filter: GraphFilter
+  /**
+   * The main line's refs (full names) that the graph shows: the remote's default branch and its
+   * local namesake, else main or master. The graph keeps them in the leftmost lane.
+   */
+  trunk: string[]
   /** Set while a bisect is running. */
   bisect?: BisectState
 }

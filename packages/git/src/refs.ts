@@ -2,9 +2,10 @@ import type { Ref, RefKind } from '@gitsquid/shared'
 
 /**
  * for-each-ref fields, NUL separated, one ref per line:
- * refname, objectname, *objectname (peeled tag target, empty for non-tags), upstream, upstream:track
+ * refname, objectname, *objectname (peeled tag target, empty for non-tags), upstream, upstream:track,
+ * committerdate, symref (the target of a symbolic ref such as origin/HEAD)
  */
-export const REFS_FORMAT = '%(refname)%00%(objectname)%00%(*objectname)%00%(upstream)%00%(upstream:track,nobracket)%00%(committerdate:unix)'
+export const REFS_FORMAT = '%(refname)%00%(objectname)%00%(*objectname)%00%(upstream)%00%(upstream:track,nobracket)%00%(committerdate:unix)%00%(symref)'
 
 export function parseRefs(output: string): Ref[] {
   const refs: Ref[] = []
@@ -38,4 +39,24 @@ export function refKind(name: string): RefKind | null {
 
 export function shortRefName(name: string): string {
   return name.replace(/^refs\/(heads|remotes|tags)\//, '')
+}
+
+/**
+ * The main line, as full ref names: the branch origin/HEAD points at (the remote's default
+ * branch) and the local branch of the same name. Without origin/HEAD, main, else master. Only
+ * refs that exist. `output` is for-each-ref with REFS_FORMAT, `refs` its parsed form.
+ */
+export function trunkRefs(output: string, refs: readonly Ref[]): string[] {
+  const names = new Set(refs.map((r) => r.name))
+  let remoteDefault: string | undefined
+  for (const line of output.split('\n')) {
+    const f = line.split('\x00')
+    if (f[0] === 'refs/remotes/origin/HEAD' && f[6]?.startsWith('refs/remotes/origin/')) remoteDefault = f[6].slice('refs/remotes/origin/'.length)
+  }
+  for (const b of [remoteDefault, 'main', 'master']) {
+    if (!b) continue
+    const found = [`refs/heads/${b}`, `refs/remotes/origin/${b}`].filter((n) => names.has(n))
+    if (found.length) return found
+  }
+  return []
 }

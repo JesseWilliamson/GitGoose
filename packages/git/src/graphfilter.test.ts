@@ -1,6 +1,6 @@
 import { initRepo } from '@gitsquid/fixtures'
 import { describe, expect, it } from 'vitest'
-import { graphRevs } from './log'
+import { graphRevs, graphShowsRef } from './log'
 import { Repo } from './repo'
 
 describe('hiding and soloing branches', () => {
@@ -13,6 +13,25 @@ describe('hiding and soloing branches', () => {
       'refs/heads/a', '--glob=refs/remotes/up/*', 'HEAD',
     ])
     expect(graphRevs(undefined, { hidden: [], solo: ['refs/heads/a'] })).toEqual(['refs/heads/a'])
+  })
+
+  it('tells whether the walk includes a ref', () => {
+    expect(graphShowsRef('refs/heads/main')).toBe(true)
+    expect(graphShowsRef('refs/heads/main', { hidden: ['refs/heads/main'], solo: [] })).toBe(false)
+    expect(graphShowsRef('refs/remotes/origin/main', { hidden: ['refs/remotes/origin/*'], solo: [] })).toBe(false)
+    expect(graphShowsRef('refs/heads/main', { hidden: ['refs/remotes/origin/*'], solo: [] })).toBe(true)
+    expect(graphShowsRef('refs/heads/main', { hidden: [], solo: ['refs/heads/other'] })).toBe(false)
+    expect(graphShowsRef('refs/remotes/up/main', { hidden: [], solo: ['refs/remotes/up/*'] })).toBe(true)
+  })
+
+  it('reports only the trunk refs the graph shows', async () => {
+    const r = initRepo()
+    r.commit('root', { 'a.txt': 'a\n' })
+    const repo = await Repo.open(r.dir, {})
+    expect((await repo.snapshot()).trunk).toEqual(['refs/heads/main'])
+    repo.setGraphFilter({ hidden: ['refs/heads/main'], solo: [] })
+    expect((await repo.snapshot()).trunk).toEqual([])
+    repo.dispose()
   })
 
   it('leaves out commits only hidden branches reach; solo shows one branch and HEAD', async () => {
