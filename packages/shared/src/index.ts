@@ -10,6 +10,7 @@ export * from './command'
 export * from './avatars'
 export * from './layout'
 export * from './merge3'
+export * from './version'
 
 /** A commit as the graph needs it. Bodies and file lists are fetched lazily (see CommitDetails). */
 /** Enough of a commit to show it in a list of results. */

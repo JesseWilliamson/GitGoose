@@ -13,6 +13,7 @@
     "e2e": "pnpm --filter @gitgoose/desktop e2e",
     "bench": "pnpm --filter @gitgoose/bench bench",
     "dist": "pnpm --filter @gitgoose/desktop dist",
+    "install:local": "pnpm --filter @gitgoose/install install:local",
     "dev:repo": "pnpm --filter @gitgoose/fixtures dev:repo"
   },
   "devDependencies": {

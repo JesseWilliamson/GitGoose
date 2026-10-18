@@ -164,7 +164,7 @@ export const SETTINGS = {
 
   // ---------------------------------------------------------------- Startup
   reopenTabs: bool(true, { label: 'Reopen last session’s tabs', section: 'Startup' }),
-  checkForUpdates: bool(true, { label: 'Check for updates', section: 'Startup', description: 'Packaged builds only.' }),
+  checkForUpdates: bool(true, { label: 'Check for updates', section: 'Startup', description: 'Installed releases only; local builds update with pnpm install:local.' }),
   openDevRepo: bool(true, { label: 'Open the development repository', section: 'Startup', description: 'Development builds only (pnpm dev): opens .fixtures/dev-repo when no other tab is open. Build it with pnpm dev:repo.' }),
 
   // ---------------------------------------------------------------- Keyboard

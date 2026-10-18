@@ -1,0 +1,16 @@
+{
+  "name": "@gitgoose/install",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "install:local": "tsx src/install-local.ts"
+  },
+  "dependencies": {
+    "@gitgoose/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.15"
+  }
+}
