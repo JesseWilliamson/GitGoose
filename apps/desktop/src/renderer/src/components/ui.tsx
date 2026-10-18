@@ -29,18 +29,22 @@ export const Button = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLBut
   },
 )
 
-export function ToolbarButton({ icon, label, onClick, disabled, title, badge }: {
-  icon: ReactNode; label: string; onClick?: () => void; disabled?: boolean; title?: string; badge?: ReactNode
+/**
+ * An icon-only toolbar button. The label is its accessible name and (unless a richer title is
+ * given) its tooltip, so screen readers and tests still see "Push", not an arrow.
+ */
+export function ToolbarButton({ icon, label, onClick, disabled, title, badge, className }: {
+  icon: ReactNode; label: string; onClick?: () => void; disabled?: boolean; title?: string; badge?: ReactNode; className?: string
 }) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
+      aria-label={label}
       title={title ?? label}
-      className="no-drag relative flex flex-col items-center justify-center gap-0.5 rounded-md px-2.5 py-1 text-muted hover:bg-hover hover:text-fg disabled:opacity-40 disabled:pointer-events-none"
+      className={clsx('no-drag relative flex size-8 shrink-0 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-fg disabled:opacity-40 disabled:pointer-events-none', className)}
     >
       {icon}
-      <span className="text-[11px] leading-none">{label}</span>
       {badge}
     </button>
   )

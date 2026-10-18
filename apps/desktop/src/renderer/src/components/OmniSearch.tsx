@@ -1,7 +1,7 @@
-import { SETTINGS, type CommitSummary, type DiffTarget, type SearchField } from '@gitgoose/shared'
+import { SETTINGS, type CommitSummary, type DiffTarget } from '@gitgoose/shared'
 import clsx from 'clsx'
 import { Command } from 'cmdk'
-import { Archive, CornerDownLeft, File, FileDiff, GitBranch, GitCommitHorizontal, History, Search, Settings2, SquareTerminal, Tag } from 'lucide-react'
+import { Archive, CornerDownLeft, File, FileDiff, GitBranch, GitCommitHorizontal, Search, Settings2, SquareTerminal, Tag } from 'lucide-react'
 import { Dialog } from 'radix-ui'
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { checkout, openInEditor } from '../lib/actions'
@@ -14,7 +14,7 @@ import {
   KIND_WEIGHT, kindsOf, loadRecent, parseQuery, rankAll, rememberRecent, SCOPE_LABEL, SCOPES,
   type OmniEntry, type OmniKind, type OmniResult, type OmniScope,
 } from '../lib/omni'
-import { ensureLoaded, reportError, updateRepo, useStore, type RepoView } from '../lib/store'
+import { ensureLoaded, updateRepo, useStore, type RepoView } from '../lib/store'
 import { Spinner } from './ui'
 
 /**
@@ -37,7 +37,7 @@ const SUGGESTED = ['Repository:Fetch all remotes', 'Repository:Pull', 'Repositor
 
 const ICON: Record<OmniKind, ReactNode> = {
   command: <SquareTerminal size={15} />, branch: <GitBranch size={15} />, tag: <Tag size={15} />, change: <FileDiff size={15} />, file: <File size={15} />,
-  stash: <Archive size={15} />, setting: <Settings2 size={15} />, commit: <GitCommitHorizontal size={15} />, action: <History size={15} />,
+  stash: <Archive size={15} />, setting: <Settings2 size={15} />, commit: <GitCommitHorizontal size={15} />,
 }
 
 interface Group {
@@ -120,16 +120,6 @@ function OmniPanel({ initial, close }: { initial: string; close: () => void }) {
       const best = Math.max(...results.map((r) => r.score)) + KIND_WEIGHT.commit
       const at = ranked.findIndex((g) => (g.results[0]?.score ?? 0) + KIND_WEIGHT[g.id as OmniKind] < best)
       ranked.splice(at < 0 ? ranked.length : at, 0, { id: 'commit', label: 'Commits', results, total: commits.total })
-    }
-    if (inScope('action') && view && query.length >= 2) {
-      const matches = commits?.query === query ? commits.total : null
-      ranked.push({
-        id: 'action', label: 'Search history', total: 3, results: [
-          { kind: 'action', key: 'all', title: matches === null ? 'Show matching commits in the graph' : `Show all ${matches} matching commit${matches === 1 ? '' : 's'} in the graph`, sub: 'Everything else greys out; Enter steps through them', score: 0, ranges: [] },
-          { kind: 'action', key: 'path', title: `Commits that changed files matching “${query}”`, sub: 'In the graph', score: 0, ranges: [] },
-          { kind: 'action', key: 'content', title: `Commits that added or removed “${query}”`, sub: 'In the graph (searches every diff; slower)', score: 0, ranges: [] },
-        ],
-      })
     }
     return ranked
   }, [local, sources, scope, commits, query, view])
@@ -283,7 +273,6 @@ function openLabel(r: OmniResult): string {
     case 'change': return 'show changes'
     case 'file': return 'show history'
     case 'setting': return 'open settings'
-    case 'action': return 'search'
   }
 }
 
@@ -373,17 +362,6 @@ async function runResult(r: OmniResult, alt: boolean, view: RepoView | null, que
     case 'file': {
       if (alt || !view.snapshot.head.hash) return openInEditor(`${view.snapshot.path}/${r.key}`)
       return updateRepo(id, { center: { kind: 'file', target: { kind: 'commit', hash: view.snapshot.head.hash, path: r.key }, mode: 'history' } })
-    }
-    case 'action': {
-      // The graph view of a search: matches stay bright, the rest greys out (see SearchBar).
-      const field = r.key as SearchField
-      try {
-        const hits = await api.search(id, field, query)
-        updateRepo(id, (v) => ({ search: { field, query, hits, index: 0 }, searchOpen: true, searchFocus: v.searchFocus + 1, center: { kind: 'graph' } }))
-        if (hits[0]) await show(hits[0])
-      } catch (e) {
-        reportError('Search failed', e)
-      }
     }
   }
 }

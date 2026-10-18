@@ -12,7 +12,6 @@ import { formatDate, laneColor, relativeTime, shortHash, stashLabel } from '../l
 import { ensureLoaded, getLog, loadMore, saveSettings, selectCommit, selectedHashes, selectionCursor, updateRepo, useSetting, useStore, type RepoView } from '../lib/store'
 import { GraphCell, LANE_W, ROW_H, ROW_H_COMPACT, WipCell } from './GraphCell'
 import { GraphMenu } from './menus'
-import { SearchBar } from './SearchBar'
 import { bisectMark, bisectReset, showAllInGraph } from '../lib/actions'
 import { DM, Spinner } from './ui'
 
@@ -139,7 +138,6 @@ function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
     return m
   }, [snap.refs])
 
-  const hits = useMemo(() => (view.search ? new Set(view.search.hits) : null), [view.search])
   // Real histories can have dozens of lanes open at once (old release branches, tags). Sizing the
   // column to fit them all would crush the commit messages, so we default to a few
   // lanes, clip the rest, and let the user drag the column wider.
@@ -195,7 +193,6 @@ function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
     // so the commit message never gets squeezed out (container queries, not window size,
     // because the side panels decide how wide this pane is).
     <div className="@container relative flex min-h-0 min-w-0 flex-1 flex-col">
-      {view.searchOpen && <SearchBar view={view} />}
       <BisectBar view={view} />
       <FilterBar view={view} />
       <div className="flex h-7 shrink-0 items-center border-b border-line bg-panel text-[11px] font-semibold tracking-wide whitespace-nowrap text-faint uppercase"
@@ -253,7 +250,6 @@ function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
                     selected={selectedSet.has(commit.hash)}
                     editable={editableSet.has(commit.hash)}
                     stash={commit.stash ? stashByHash.get(commit.hash) : undefined}
-                    hit={hits ? hits.has(commit.hash) : null}
                     bisect={bisectMarks?.get(commit.hash)}
                     showPending={showWip}
                     graphW={graphW}
@@ -384,7 +380,6 @@ const CommitRow = memo(function CommitRow(props: {
   editable: boolean
   /** Set when this row is a stash (its entry, for the label and the menu). */
   stash?: StashEntry
-  hit: boolean | null
   showPending: boolean
   graphW: number
   look: RowLook
@@ -478,7 +473,6 @@ const CommitRow = memo(function CommitRow(props: {
         'flex items-center text-[13px]',
         props.selected ? 'bg-select' : 'hover:bg-hover',
         dropping && 'outline outline-2 -outline-offset-2 outline-accent',
-        props.hit === false && 'opacity-35',
       )}
       // The selected row takes its lane's colour (bg-select stays as the class).
       style={{ position: 'absolute', top: 0, left: 0, right: 0, height: look.rowH, transform: `translateY(${props.top}px)`,
@@ -512,7 +506,7 @@ const CommitRow = memo(function CommitRow(props: {
         <GraphCell row={row} width={props.graphW} showPending={props.showPending} isHead={props.isHead} h={look.rowH} author={author}
           stash={!!commit.stash} refLine={labelled} />
       )}
-      <div className={clsx('flex min-w-0 flex-1 items-center gap-2 px-2', props.hit && 'font-semibold text-fg', props.stash && 'text-muted italic')}>
+      <div className={clsx('flex min-w-0 flex-1 items-center gap-2 px-2', props.stash && 'text-muted italic')}>
         <span className="min-w-0 flex-1 truncate">{props.stash ? stashLabel(props.stash.message) : commit.subject}</span>
         {recent && <span className="shrink-0 text-[11px] text-faint" data-testid="row-time">{relativeTime(commit.authorDate)}</span>}
       </div>
