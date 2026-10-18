@@ -1,4 +1,4 @@
-import { enclosingDefinition, findDefinitions } from '@gitgoose/codegraph'
+import { enclosingDefinition, findDefinitions, type Definition } from '@gitgoose/codegraph'
 import type { FileDiff, ReadingLayer, SequenceDiagram, WalkthroughHunk } from '@gitgoose/shared'
 
 /**
@@ -26,11 +26,11 @@ const ORDER: ReadingLayer[] = ['contract', 'implementation', 'tests', 'config', 
  * file, then top to bottom. A hunk is trivial when its changed lines are only whitespace,
  * imports or comments.
  */
-export function walkthroughHunks(files: FileDiff[], textAfter: (path: string) => string | null): WalkthroughHunk[] {
+export function walkthroughHunks(files: FileDiff[], textAfter: (path: string) => string | null, defsOf: (path: string, text: string) => Definition[] = findDefinitions): WalkthroughHunk[] {
   const out: WalkthroughHunk[] = []
   for (const f of files) {
     const text = f.binary || f.change === 'deleted' ? null : textAfter(f.path)
-    const defs = text ? findDefinitions(f.path, text) : []
+    const defs = text ? defsOf(f.path, text) : []
     const units = f.binary || !f.hunks.length ? [null] : f.hunks
     for (const h of units) {
       const changed = h ? h.lines.filter((l) => l.kind !== ' ') : []

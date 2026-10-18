@@ -1,7 +1,7 @@
 import { GitError, Repo, secretPushCheck } from '@gitgoose/git'
 import {
   API_METHODS, IPC_EVENT, IPC_INVOKE,
-  type ApiMethod, type GitGooseApi, type GitGooseEvent, type IpcResult, type PushCheckPlan, type SerializedError,
+  type ApiMethod, type GitGooseApi, type GitGooseEvent, type IpcResult, type PushCheckPlan, type ReviewScope, type SerializedError,
 } from '@gitgoose/shared'
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises'
@@ -16,6 +16,11 @@ import type { CodeGraphService } from './codegraph'
 import type { RepoManager } from './repos'
 import { decisionKey, linters } from './ai/linters'
 import { forgetOpenRepo, getSettings, rememberRepo, setSettings } from './settings'
+
+/** The revision a review scope's line numbers refer to, for the code graph: null the working tree, '' the index. */
+function scopeRev(scope: ReviewScope): string | null {
+  return scope.kind === 'working' ? null : scope.kind === 'staged' ? '' : scope.kind === 'commits' ? scope.hashes[0]! : scope.kind === 'branch' ? scope.branch : (scope.branch ?? 'HEAD')
+}
 
 export function broadcast(event: GitGooseEvent): void {
   for (const w of BrowserWindow.getAllWindows()) w.webContents.send(IPC_EVENT, event)
@@ -94,7 +99,15 @@ export function createHandlers(
 
     aiStatus: async () => ai.status(),
     aiConsent: async () => ai.consent(),
-    aiRun: (requestId, repoId, task, opts) => ai.run(requestId, repoId, task, opts),
+    aiRun: async (requestId, repoId, task, opts) => {
+      // Review, walkthrough and ask read the code graph for context. The tree they need is
+      // usually indexed already (HEAD, the index, the working tree); a commit costs only its
+      // changed blobs. A first index of a big repository is not waited for: a slightly poorer
+      // context beats a blocked review (ADR-008).
+      const rev = task.kind === 'review' || task.kind === 'walkthrough' ? scopeRev(task.scope) : task.kind === 'ask' ? task.rev : undefined
+      if (rev !== undefined && repoId) await Promise.race([codegraph.ensure(repoId, rev).catch(() => {}), new Promise((r) => setTimeout(r, 3000))])
+      return ai.run(requestId, repoId, task, opts)
+    },
     aiCancel: async (requestId) => ai.cancel(requestId),
     aiRespondPermission: async (id, optionId) => ai.respondPermission(id, optionId),
     aiAgentInfo: () => ai.agentInfo(),
@@ -156,8 +169,7 @@ export function createHandlers(
     reindexCode: (id) => codegraph.reindex(id),
     changeInsights: (id) => r(id).changeInsights(),
     impact: async (id, scope) => {
-      const rev = scope.kind === 'working' ? null : scope.kind === 'staged' ? '' : scope.kind === 'commits' ? scope.hashes[0]! : scope.kind === 'branch' ? scope.branch : (scope.branch ?? 'HEAD')
-      await codegraph.ensure(id, rev).catch(() => {})
+      await codegraph.ensure(id, scopeRev(scope)).catch(() => {})
       return r(id).impact(scope)
     },
     askThreads: async (id) => getSettings().askThreads[r(id).path] ?? [],

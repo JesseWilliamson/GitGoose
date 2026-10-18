@@ -11,3 +11,4 @@ The specs below describe what shipped in the first build and are the baseline fo
 | [002](002-working-tree.md) | status, diffs, staging files/hunks/lines, commit, amend |
 | [003](003-branches-and-remotes.md) | checkout, branches, tags, merge/rebase/reset, cherry-pick, revert, drag and drop, fetch/pull/push, credentials |
 | [004](004-undo-and-conflicts.md) | undo journal, conflict wizard |
+| [008](008-code-context.md) | what the AI is told besides the diff: intent (commit messages) and the code graph's context, budgeted |

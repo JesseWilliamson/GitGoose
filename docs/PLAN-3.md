@@ -218,4 +218,10 @@ Part B:
       Push, Push branch, Push to…, and the push before Create pull request. Also: "Review what
       will be pushed" in the palette
 
+- [x] 42 code context for the AI (spec 008): reviews and walkthroughs are told the change's
+      intent (its commit messages) and its surroundings from the code graph (changed definitions
+      with their uses outside the change, old and new signatures, removed-but-still-used ones
+      first; definitions of names the added lines use; the tests that cover it), ranked and
+      budgeted in proportion to the diff; the Review view says what was sent
+
 Part B is complete.

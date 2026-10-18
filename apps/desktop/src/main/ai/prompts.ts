@@ -1,6 +1,6 @@
 import type { Repo } from '@gitgoose/git'
-import { addedLines, carryOver, textKey, describeHunks, globToRegExp, hunkKey, numberedDiff, onlyChanged, reviewableLines, secretFindings, walkthroughHunks, type AddedLines, type ReviewableLines } from '@gitgoose/git'
-import type { AiTask, ImpactResult, LinterRun, ReviewFinding, ReviewLearning, ReviewProfile, WalkthroughResult } from '@gitgoose/shared'
+import { addedLines, carryOver, codeContextInfo, contextBudget, textKey, describeHunks, globToRegExp, hunkKey, numberedDiff, onlyChanged, renderCodeContext, reviewableLines, secretFindings, walkthroughHunks, type AddedLines, type ReviewableLines } from '@gitgoose/git'
+import type { AiTask, ImpactResult, LinterRun, ReviewContextInfo, ReviewFinding, ReviewLearning, ReviewProfile, WalkthroughResult } from '@gitgoose/shared'
 import { join } from 'node:path'
 
 /**
@@ -42,7 +42,7 @@ export interface BuiltPrompt {
   /** For review: what the findings are checked against. */
   review?: {
     lines: ReviewableLines; texts: Map<string, string>; label: string; head: string; base?: string; skipped: string[]
-    context: { guidelines: string[]; pathInstructions: string[]; learnings: number; linters?: LinterRun[] }
+    context: ReviewContextInfo
     /** Findings from tools, not the model: the secret scan and linters (see lint.ts). */
     local: ReviewFinding[]
     hunkKeys: string[]
@@ -191,6 +191,20 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: Pro
           ...secrets.map((f) => `- ${f.path}:${f.startLine} ${f.title}`), ''] : []),
         ...(linted.report.length ? ['Linters already reported these; do not repeat them, and do not comment on style the linters cover:', ...linted.report, ''] : []),
       ]
+      // Three kinds of context, as CodeRabbit frames them: intent (why: the commit messages),
+      // environment (what around the change: the code graph), standards (the guidance above).
+      const commits = await repo.scopeCommits(input).catch(() => [])
+      const intent = commits.length
+        ? ['The commit messages, newest first (what the author meant to do; judge the change against them):',
+          ...commits.map((c) => `- ${c.subject}${c.body ? `\n  ${truncate(c.body, 600).replace(/\n/g, '\n  ')}` : ''}`), '']
+        : []
+      const diff = numberedDiff(files, (p) => input.texts.get(p) ?? null, (p, t) => repo.definitionsOf(p, t))
+      const code = await repo.codeContext({ ...input, files })
+      const rendered = renderCodeContext(code, contextBudget(diff.length))
+      const environment = rendered.text
+        ? ['Around the change (from the code graph; not part of the change, there to judge it by). Findings may not point at these lines, but do report when the change breaks them: a call that no longer matches a changed signature, a removed definition still in use, a test that should have changed.',
+          rendered.text, '']
+        : []
       return {
         system: 'You are a careful senior engineer reviewing a code change.',
         review: {
@@ -198,6 +212,8 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: Pro
           context: {
             guidelines: project.guidelines.map((g) => g.path), pathInstructions: project.pathInstructions.map((pi) => pi.path), learnings: learnings.length,
             ...(linted.runs.length ? { linters: linted.runs } : {}),
+            ...(commits.length ? { commits: commits.length } : {}),
+            ...(rendered.text ? { code: codeContextInfo(code, rendered.truncated) } : {}),
           },
           // With their lines as they are, like the model's findings: a re-review finds them again by those.
           local: [...secrets, ...linted.findings].map((f) => ({ ...f, original: input.texts.get(f.path)?.split(/\r?\n/).slice(f.startLine - 1, f.endLine) })),
@@ -215,8 +231,11 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: Pro
           '',
           ...guidance,
           ...already,
+          ...intent,
+          ...environment,
           ...(again ? [`This is a re-review: only the ${files.length === 1 ? 'piece' : 'pieces'} that changed since the last review ${files.length === 1 ? 'is' : 'are'} shown.`, ''] : []),
-          numberedDiff(files, (p) => input.texts.get(p) ?? null),
+          'The change:',
+          diff,
           ...(input.skipped.length ? [`(Not shown, over the size limit: ${input.skipped.join(', ')})`] : []),
         ].join('\n'),
       }
@@ -224,9 +243,11 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: Pro
     case 'walkthrough': {
       const input = await repo.reviewInput(task.scope)
       if (!input.files.length) throw new Error('There is nothing to explain in that change.')
-      const hunks = walkthroughHunks(input.files, (p) => input.texts.get(p) ?? null)
+      const hunks = walkthroughHunks(input.files, (p) => input.texts.get(p) ?? null, (p, t) => repo.definitionsOf(p, t))
       const paths = input.files.map((f) => f.path)
       const history = await repo.relatedHistory(paths, input.base ?? 'HEAD').catch(() => [])
+      // Who uses what changed, and what the new code calls: the flows a sequence diagram draws.
+      const around = renderCodeContext(await repo.codeContext(input, { symbols: 12, callers: 4, used: 8 }), 8_000).text
       // Shrink each hunk until the list fits, as recompose does.
       let maxLines = 40
       let text = describeHunks(input.files, hunks, maxLines)
@@ -247,6 +268,7 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: Pro
           NO_TOOLS,
           '',
           ...(history.length ? ['Recent commits that touched these files, newest first:', ...history.map((h) => `- ${h.subject}`), ''] : []),
+          ...(around ? ['Around the change (from the code graph; not part of the change):', around, ''] : []),
           'The pieces:',
           text,
         ].join('\n'),
@@ -273,7 +295,7 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: Pro
           'The commits, newest first:',
           ...out.commits.map((c) => `- ${c.subject}${c.body ? `\n  ${truncate(c.body, 600).replace(/\n/g, '\n  ')}` : ''}`),
           '',
-          numberedDiff(input.files, (p) => input.texts.get(p) ?? null),
+          numberedDiff(input.files, (p) => input.texts.get(p) ?? null, (p, t) => repo.definitionsOf(p, t)),
           ...(input.skipped.length ? [`(Not shown, over the size limit: ${input.skipped.join(', ')}. Say "inconclusive" for rules that depend on them.)`] : []),
         ].join('\n'),
       }
@@ -300,7 +322,7 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: Pro
           ...impact.callers.map((c) => `[${c.id}] ${c.path}:${c.line}${c.within ? ` in ${c.within}` : ''}${c.test ? ' (test)' : ''}: ${c.text}`),
           '',
           'The change:',
-          truncate(numberedDiff(input.files, (p) => input.texts.get(p) ?? null), 40_000),
+          truncate(numberedDiff(input.files, (p) => input.texts.get(p) ?? null, (p, t) => repo.definitionsOf(p, t)), 40_000),
         ].join('\n'),
       }
     }

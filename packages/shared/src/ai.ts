@@ -134,6 +134,47 @@ export interface LinterRun {
   note?: string
 }
 
+/** A summary of what a review was told besides the diff. */
+export interface ReviewContextInfo {
+  guidelines: string[]
+  pathInstructions: string[]
+  learnings: number
+  linters?: LinterRun[]
+  /** Commit messages sent as the change's intent (commit, branch and outgoing scopes). */
+  commits?: number
+  /** What the code graph added (see CodeContext); absent when the change defines nothing and uses nothing known. */
+  code?: { source: CodeContext['source']; symbols: number; uses: number; used: number; tests: number; truncated: boolean }
+}
+
+/**
+ * What the code graph adds to a review or walkthrough besides the diff: the definitions the
+ * change touches and who uses them outside it, the definitions of names its added lines use,
+ * and the tests that cover it. Built locally by Repo.codeContext; the model only reads it.
+ */
+export interface CodeContext {
+  /** 'graph': parsed by tree-sitter (ADR-008). 'patterns': line patterns and git grep, while the graph is not ready. */
+  source: 'graph' | 'patterns'
+  symbols: {
+    name: string
+    kind: string
+    path: string
+    line: number
+    change: 'changed' | 'added' | 'removed'
+    /** The defining line now (before the change, for a removed definition). */
+    signature: string
+    /** The defining line before the change, when it differs. */
+    oldSignature?: string
+    /** Uses outside the change, in all and in tests, and a sample of them (non-test first). */
+    uses: number
+    testUses: number
+    callers: { path: string; line: number; text: string; within?: string; test: boolean }[]
+  }[]
+  /** Definitions, outside the change, of names the added lines use; most used first. */
+  used: { name: string; kind: string; path: string; line: number; endLine: number; preview: string[]; uses: number }[]
+  /** Tests for the changed files (by name) or using the changed definitions. */
+  tests: { path: string; inChange: boolean }[]
+}
+
 export interface ReviewResult {
   scope: ReviewScope
   profile: ReviewProfile
@@ -153,7 +194,7 @@ export interface ReviewResult {
   /** Files that were in the change but not sent (over the size budget). */
   skipped: string[]
   /** What the model was told besides the diff (shown, so a review is never a black box). */
-  context: { guidelines: string[]; pathInstructions: string[]; learnings: number; linters?: LinterRun[] }
+  context: ReviewContextInfo
   /** Keys of the hunks reviewed (and of unchanged ones carried over): what a re-review can skip. */
   hunkKeys: string[]
   /** A key of what the model was told besides the diff: a re-review with other guidance starts over. */
