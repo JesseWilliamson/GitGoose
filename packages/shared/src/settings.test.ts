@@ -29,10 +29,9 @@ describe('settings schema', () => {
     expect('fontSize' in s).toBe(false)
   })
 
-  it('migrates a v2 file: compact rows become the compact graph layout, and junk columns fall back', () => {
-    const on = migrateSettings({ settingsVersion: 2, compactRows: true, graphColumns: { sha: true, author: 'yes', bogus: true } })
+  it('migrates a v2 file: compact rows become the compact graph layout', () => {
+    const on = migrateSettings({ settingsVersion: 2, compactRows: true })
     expect(on.graphStyle).toBe('compact')
-    expect(on.graphColumns).toEqual({ refs: true, graph: true, author: false, date: false, sha: true })
     expect('compactRows' in on).toBe(false)
     const off = migrateSettings({ settingsVersion: 2, compactRows: false })
     expect(off.graphStyle).toBe('comfortable')
@@ -44,6 +43,5 @@ describe('settings schema', () => {
     expect(d.contextLines).toBe(3)
     expect(d.avatars).toBe('initials')
     expect(d.graphStyle).toBe('comfortable')
-    expect(d.graphColumns).toEqual({ refs: true, graph: true, author: false, date: false, sha: false })
   })
 })

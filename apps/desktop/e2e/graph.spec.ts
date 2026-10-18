@@ -138,7 +138,7 @@ test('Tower look: two-line rows beside hollow nodes, text indented by the lanes,
   await app.close()
 })
 
-test('GitKraken look: one-line rows in fixed columns, avatar nodes, pills joined to the node, a column menu', async () => {
+test('one-line rows: the same graph, branch pills in a column on the left joined to their node', async () => {
   const r = makeFixture('linear')
   for (let i = 0; i < 12; i++) {
     r.checkout('-b', `b${i}`, 'main~4')
@@ -147,48 +147,32 @@ test('GitKraken look: one-line rows in fixed columns, avatar nodes, pills joined
   r.checkout('main')
   const { app, page } = await launch(r.dir)
   await page.evaluate(() => window.gitgoose.setSettings({ graphStyle: 'compact' }))
-  // A header names the columns; the gear at its end picks them (message always shows).
-  const header = page.getByTestId('graph-header')
-  await expect(header).toContainText('Branch / Tag')
-  await expect(header).toContainText('Graph')
-  await expect(header).toContainText('Commit message')
   const head = page.locator(`[data-testid="commit-row"][data-hash="${r.head()}"]`)
-  await expect.poll(async () => (await head.boundingBox())!.height).toBe(32)
-  // The node is the author's avatar (initials until an image loads), ringed in the lane colour;
-  // the branch pill sits in the first column, joined to the node by a line.
-  await expect(head.locator('[data-testid="avatar-node"] text')).toHaveText('AL')
+  await expect.poll(async () => (await head.boundingBox())!.height).toBe(28)
+  await expect(page.getByTestId('month-header')).toHaveCount(0)
+  // The pill is in the column on the left, joined to the node by a line; the node is the same
+  // hollow ring as in two-line rows, and the avatar, hash, author and date share the one line.
   await expect(head.getByTestId('refs-cell').locator('[data-testid="ref-pill"][data-ref="refs/heads/main"]')).toBeVisible()
   await expect(head.locator('svg [data-testid="ref-line"]')).toHaveCount(1)
-  // A commit without refs has no connector, and its first column is empty.
+  await expect(head.locator('[data-testid="commit-node"] circle').last()).toHaveAttribute('fill', 'var(--gs-bg)')
+  await expect(head.getByTestId('row-avatar')).toContainText('AL')
+  await expect(head.getByTestId('row-sha')).toHaveText(r.head().slice(0, 7))
+  // The author is on the row but yields to the subject when the pane is narrow, as in this window.
+  await expect(head.getByTestId('row-author')).toHaveText('Ada Lovelace')
+  await expect(head.getByTestId('row-author')).toBeHidden()
+  // A commit without refs has an empty column and no connector.
   const plain = page.getByTestId('commit-row').filter({ hasText: 'Commit 3' })
   await expect(plain.locator('svg [data-testid="ref-line"]')).toHaveCount(0)
-  await expect(plain.getByTestId('row-avatar')).toHaveCount(0)
-  // Fixed columns: the message starts at the same x on a busy row as on a quiet one.
-  const busy = page.getByTestId('commit-row').filter({ hasText: 'work on b0' })
-  expect((await busy.getByTestId('row-message').boundingBox())!.x).toBe((await plain.getByTestId('row-message').boundingBox())!.x)
-  // The graph column fits eight lanes by default (8 * 24 + 12 = 204); thirteen are open, so
-  // the header says some are hidden, and dragging its edge widens the column.
-  const graphSvg = plain.locator('svg[data-node]')
-  await expect(graphSvg).toHaveAttribute('width', '204')
-  await expect(header.getByTitle('Some lanes are hidden; drag the edge to widen')).toBeVisible()
-  const grip = (await page.getByTestId('graph-resizer').boundingBox())!
-  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(grip.x + grip.width / 2 + 100, grip.y + grip.height / 2, { steps: 4 })
-  await page.mouse.up()
-  await expect(graphSvg).toHaveAttribute('width', '304')
-  // The column menu: turning the first column off removes the pills' column and their connector.
-  await page.getByTestId('graph-columns').click()
-  await page.getByTestId('col-refs').click()
-  await page.keyboard.press('Escape')
-  await expect(head.getByTestId('refs-cell')).toHaveCount(0)
-  await expect(head.locator('svg [data-testid="ref-line"]')).toHaveCount(0)
-  await expect(header).not.toContainText('Branch / Tag')
-  // Back to two-line rows from the same menu.
-  await page.getByTestId('graph-columns').click()
-  await page.getByRole('menuitem', { name: 'Two-line rows (Tower)' }).click()
-  await expect(header).toHaveCount(0)
-  await expect(head.getByTestId('row-avatar')).toContainText('AL')
+  await expect(plain.getByTestId('refs-cell').locator('[data-testid="ref-pill"]')).toHaveCount(0)
+  // The text still indents by the lanes open at that point, as in two-line rows: the first tip
+  // listed has two lanes open beside it, the last has every other tip's line passing through.
+  // (HEAD itself is no quieter: the branches fork from the root, so their lines cross every
+  // older row.) The quietest row's text starts past the branch column: 160 + cellWidth(2) = 214.
+  const xs = await page.locator('[data-testid="commit-row"]:has-text("work on b") [data-testid="row-body"]')
+    .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().x))
+  expect(Math.max(...xs)).toBeGreaterThan(Math.min(...xs) + 100)
+  const pane = (await page.getByTestId('graph-scroll').boundingBox())!
+  expect(Math.min(...xs) - pane.x).toBe(160 + 54)
   await app.close()
 })
 

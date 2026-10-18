@@ -81,7 +81,7 @@ export function commandEntries(): CommandEntry[] {
   add('App', 'Keyboard shortcuts', () => useStore.setState({ dialog: { kind: 'shortcuts' } }), '?')
   if (settings) {
     const compact = settings.graphStyle === 'compact'
-    add('Layout', compact ? 'Graph: two-line rows (Tower)' : 'Graph: compact columns (GitKraken)',
+    add('Layout', compact ? 'Graph: two-line rows' : 'Graph: one-line rows',
       () => void saveSettings({ graphStyle: compact ? 'comfortable' : 'compact' }), 'Also in Settings → Appearance')
     add('App', `Theme: ${settings.theme === 'light' ? 'dark' : 'light'}`, () => void saveSettings({ theme: settings.theme === 'light' ? 'dark' : 'light' }))
     for (const p of settings.recentRepos) add('Recent', p.split(/[\\/]/).pop() ?? p, () => reopen(p), p)

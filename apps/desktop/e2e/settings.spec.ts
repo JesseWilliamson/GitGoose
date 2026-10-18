@@ -132,18 +132,16 @@ test('discard asks first when the confirmation setting is on', async () => {
   await app.close()
 })
 
-test('the compact graph layout and hiding tags change the graph', async () => {
+test('one-line graph rows and hiding tags change the graph', async () => {
   const r = makeFixture('tags')
   const { app, page } = await launch(r.dir)
   await expect(page.locator('[data-testid="ref-pill"][data-ref="refs/tags/v0.2"]')).toBeVisible()
-  // The first row carries its month's heading (26px) over a two-line row (52px); compact rows are
-  // one line (32px) under a column header, with no headings.
+  // The first row carries its month's heading (26px) over a two-line row (52px); one-line rows
+  // are 28px with no headings.
   expect((await page.getByTestId('commit-row').first().boundingBox())!.height).toBe(52 + 26)
-  await expect(page.getByTestId('graph-header')).toHaveCount(0)
   await set(page, { graphStyle: 'compact', showTags: false })
   await expect(page.locator('[data-testid="ref-pill"][data-ref="refs/tags/v0.2"]')).toHaveCount(0)
-  await expect(page.getByTestId('graph-header')).toBeVisible()
-  await expect.poll(async () => (await page.getByTestId('commit-row').first().boundingBox())!.height).toBe(32)
+  await expect.poll(async () => (await page.getByTestId('commit-row').first().boundingBox())!.height).toBe(28)
   await expect(page.getByTestId('month-header')).toHaveCount(0)
   await app.close()
 })
