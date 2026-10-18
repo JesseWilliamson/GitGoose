@@ -190,6 +190,10 @@ test('compact look: pills joined to their node, recent times inline, far lanes p
   await expect(far.locator('g[opacity="0.45"] [data-testid="avatar-node"]')).toHaveCount(1)
   await expect(far.locator('[stroke-dasharray]')).toHaveCount(0)
   await expect(plain.getByTestId('lane-band')).toHaveCount(1)
+  // Band and strip stop 2px short of the row's top and bottom, so stacked commits read as separate blocks.
+  await expect(plain.getByTestId('lane-band')).toHaveAttribute('y', '2')
+  await expect(plain.getByTestId('lane-band')).toHaveAttribute('height', '28')
+  await expect(plain.getByTestId('lane-strip')).toHaveAttribute('y', '2')
   await expect(page.getByTestId('sidebar-viewing')).toHaveText('Viewing 13/13')
   await page.locator('[data-testid="sidebar-ref"][data-ref="refs/heads/b3"]').hover()
   await page.locator('[data-testid="sidebar-ref"][data-ref="refs/heads/b3"]').getByTestId('toggle-hidden').click()

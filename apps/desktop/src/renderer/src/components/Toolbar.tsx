@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { Archive, ArchiveRestore, ArrowDown, ArrowUp, ChevronDown, GitBranch, RefreshCw, Redo2, Search, Settings, Undo2 } from 'lucide-react'
+import { Archive, ArchiveRestore, ArrowDown, ArrowUp, ChevronDown, ChevronRight, GitBranch, RefreshCw, Redo2, Search, Settings, Undo2 } from 'lucide-react'
 import { DropdownMenu } from 'radix-ui'
 import { fetchAll, newBranch, pop, pull, push, redo, stash, undo } from '../lib/actions'
 import { runCommand, useStore, type RepoView } from '../lib/store'
@@ -13,6 +13,8 @@ export function Toolbar({ view }: { view: RepoView }) {
   const lastUndo = view.undo[0]
   return (
     <div className="drag flex h-14 shrink-0 items-center gap-1 border-b border-line bg-panel px-2" data-testid="toolbar">
+      <Location view={view} />
+      <span className="mx-1 h-8 w-px bg-line" />
       <ToolbarButton icon={<Undo2 size={17} />} label="Undo" disabled={!lastUndo || !!view.busy}
         title={lastUndo ? `Undo: ${lastUndo.label} (${modName()}+Z)` : 'Nothing to undo'} onClick={() => void undo(id)} />
       <ToolbarButton icon={<Redo2 size={17} />} label="Redo" disabled={!view.redo[0] || !!view.busy}
@@ -63,6 +65,31 @@ export function Toolbar({ view }: { view: RepoView }) {
         <kbd className="shrink-0 rounded border border-line px-1 text-[10px]">{shortcutOf('search', useStore.getState().settings?.keybindings)}</kbd>
       </button>
       <ToolbarButton icon={<Settings size={17} />} label="Settings" onClick={() => useStore.setState({ page: 'settings' })} />
+    </div>
+  )
+}
+
+/**
+ * Where you are: the repository, then what HEAD is on. That is the branch name,
+ * or the short commit hash when HEAD is detached (a checked-out tag or commit, mid-rebase).
+ */
+function Location({ view }: { view: RepoView }) {
+  const { name, path, head } = view.snapshot
+  const [label, value] = head.branch ? ['branch', head.branch] : head.hash ? ['commit', head.hash.slice(0, 7)] : ['branch', 'no commits']
+  return (
+    <div className="flex min-w-0 shrink items-center gap-2 px-2" data-testid="location">
+      <Field label="repository" value={name} title={path} testId="location-repo" />
+      <ChevronRight size={16} className="shrink-0 text-faint" />
+      <Field label={label} value={value} title={head.hash} testId="location-head" mono={!head.branch && !!head.hash} />
+    </div>
+  )
+}
+
+function Field({ label, value, title, testId, mono }: { label: string; value: string; title?: string; testId: string; mono?: boolean }) {
+  return (
+    <div className="flex min-w-0 flex-col leading-tight" title={title}>
+      <span className="text-[11px] text-faint">{label}</span>
+      <span className={clsx('max-w-48 truncate text-[14px] font-semibold text-fg', mono && 'font-mono')} data-testid={testId}>{value}</span>
     </div>
   )
 }
