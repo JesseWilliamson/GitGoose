@@ -2,7 +2,7 @@ import { addedLines, Repo } from '@gitsquid/git'
 import { makeFixture, tempDir } from '@gitsquid/fixtures'
 import { defaultSettings, type Settings } from '@gitsquid/shared'
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { decisionKey, detectLinters, linters, lintForReview, runLinter, toolName } from './linters'
 
@@ -62,7 +62,7 @@ describe('linters in reviews', () => {
       const res = await lintForReview(repo.path, settings, ['a.ts'], input.texts, addedLines(input.files))
       expect(res.findings).toEqual([])
       expect(res.runs[0]).toMatchObject({ status: 'skipped', note: allow === null ? 'not allowed yet' : 'you chose not to run it here' })
-      expect(linters(repo.path, settings).find((l) => l.source === 'settings')!.decision).toBe(allow === null ? null : 'deny')
+      expect(linters(repo.path, settings, ['a.ts']).find((l) => l.source === 'settings')!.decision).toBe(allow === null ? null : 'deny')
     }
   })
 
@@ -94,12 +94,29 @@ describe('linters in reviews', () => {
   it('detects ESLint only when the repository has it installed', () => {
     const dir = tempDir()
     writeFileSync(join(dir, 'package.json'), '{"devDependencies": {"eslint": "^9.0.0"}}')
-    expect(detectLinters(dir).map((l) => l.name)).not.toContain('ESLint')
+    expect(detectLinters(dir, []).map((l) => l.name)).not.toContain('ESLint')
     mkdirSync(join(dir, 'node_modules', 'eslint', 'bin'), { recursive: true })
     writeFileSync(join(dir, 'node_modules', 'eslint', 'bin', 'eslint.js'), 'console.log("[]")\n')
-    const eslint = detectLinters(dir).find((l) => l.name === 'ESLint')
+    const eslint = detectLinters(dir, []).find((l) => l.name === 'ESLint')
     expect(eslint).toMatchObject({ command: expect.stringContaining('--format json {files}') })
     expect(toolName(eslint!.command)).toBe('eslint')
+  })
+
+  it('offers ShellCheck only where there are shell scripts, not just because it is installed', () => {
+    const bin = tempDir()
+    writeFileSync(join(bin, process.platform === 'win32' ? 'shellcheck.exe' : 'shellcheck'), '')
+    const saved = process.env.PATH
+    process.env.PATH = [bin, saved].join(delimiter)
+    try {
+      const dir = tempDir()
+      const names = (files: string[]) => detectLinters(dir, files).map((l) => l.name)
+      expect(names(['src/a.ts', 'README.md'])).not.toContain('ShellCheck')
+      expect(names(['src/a.ts', 'scripts/build.sh'])).toContain('ShellCheck')
+      writeFileSync(join(dir, '.shellcheckrc'), 'disable=SC2086\n')
+      expect(names(['src/a.ts'])).toContain('ShellCheck')
+    } finally {
+      process.env.PATH = saved
+    }
   })
 
   it('runs a detected ESLint without a shell, on every platform', async () => {
@@ -108,7 +125,7 @@ describe('linters in reviews', () => {
     mkdirSync(join(dir, 'node_modules', 'eslint', 'bin'), { recursive: true })
     writeFileSync(join(dir, 'node_modules', 'eslint', 'bin', 'eslint.js'), 'console.log(JSON.stringify(process.argv.slice(2)))\n')
     writeFileSync(join(dir, 'a b.ts'), '')
-    const res = await runLinter(dir, detectLinters(dir).find((l) => l.name === 'ESLint')!.command, ['a b.ts'])
+    const res = await runLinter(dir, detectLinters(dir, []).find((l) => l.name === 'ESLint')!.command, ['a b.ts'])
     expect(res).toMatchObject({ ok: true })
     expect(JSON.parse(res.output)).toEqual(['--format', 'json', 'a b.ts'])
   })

@@ -15,7 +15,7 @@ test('the command log lists what GitSquid ran, failures with what git said', asy
   await page.getByTestId('dialog-submit').click()
   await expect(page.getByTestId('attention-row')).toContainText('Rename main failed')
 
-  await page.keyboard.press('Control+p')
+  await page.keyboard.press('ControlOrMeta+p')
   await page.keyboard.type('Show git command log')
   await page.keyboard.press('Enter')
   const log = page.getByTestId('command-log')

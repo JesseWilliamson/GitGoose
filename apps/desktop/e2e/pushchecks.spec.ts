@@ -13,7 +13,7 @@ const remoteMain = (bare: string) => execFileSync('git', ['rev-parse', 'main'], 
 
 async function palette(page: Page, command: string) {
   await page.getByTestId('commit-row').first().click()
-  await page.keyboard.press('Control+p')
+  await page.keyboard.press('ControlOrMeta+p')
   await page.getByTestId('palette-input').fill(command)
   await page.keyboard.press('Enter')
 }

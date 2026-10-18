@@ -11,9 +11,10 @@ test('the search box names its shortcuts with the real modifier, no ⌘ glyph el
   const toolbar = page.getByTestId('toolbar')
   await expect(toolbar.locator('.lucide-command')).toHaveCount(0)
   const search = page.getByTestId('omni-open')
-  const mod = process.platform === 'darwin' ? '⌘' : 'Ctrl'
-  await expect(search).toContainText(`${mod}+K`)
-  await expect(search).toHaveAttribute('title', new RegExp(`commands only: ${mod.replace('+', '')}\\+P`))
+  // macOS writes shortcuts as glyphs (⌘K), elsewhere as words (Ctrl+K).
+  const key = (k: string) => (process.platform === 'darwin' ? `⌘${k}` : `Ctrl+${k}`)
+  await expect(search).toContainText(key('K'))
+  await expect(search).toHaveAttribute('title', `Search everything (${key('K')}); commands only: ${key('P')}`)
   await app.close()
 })
 

@@ -38,7 +38,7 @@ test('select lines in a diff and ask about them; follow up; the thread stays wit
   await expect(panel).toContainText('src/price.ts:3')
   await expect(panel).toContainText('return net * (1 + taxRate(country))')
   await panel.getByTestId('ask-input').fill('Why add one?')
-  await panel.getByTestId('ask-input').press('Control+Enter')
+  await panel.getByTestId('ask-input').press('ControlOrMeta+Enter')
   await expect(panel.getByTestId('ask-answer')).toHaveText('You asked "Why add one?". The lines are in function gross; they use taxRate (src/tax.ts).')
 
   await panel.getByTestId('ask-input').fill('And for NZ?')

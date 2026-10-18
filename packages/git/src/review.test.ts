@@ -46,7 +46,7 @@ describe('review findings', () => {
     expect(read(r, 'x.md')).toBe('changed\n')
     expect(read(r, 'a[1].txt')).toBe('one\n')
     await repo.stagePaths(['a[1].txt'])
-    await repo.stagePaths(['*.md'])
+    if (star) await repo.stagePaths(['*.md'])
     expect(r.git('diff', '--cached', '--name-only').trim()).toBe('')
     // Path search still uses glob matching on purpose.
     expect((await repo.search('path', '.md')).length).toBeGreaterThan(0)

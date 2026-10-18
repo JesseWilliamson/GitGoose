@@ -68,7 +68,7 @@ test('squashing in the review, and refusing a selection that is not a range', as
   await page.evaluate((p) => window.gitsquid.setSettings(p as never), AGENT)
   // C1 and C3 do not follow each other: main refuses before asking the AI anything.
   await row(page, C3).click()
-  await row(page, C1).click({ modifiers: ['Control'] })
+  await row(page, C1).click({ modifiers: ['ControlOrMeta'] })
   await page.getByTestId('multi-recompose').click()
   await expect(page.getByTestId('recompose-error')).toContainText('follow each other')
   await page.getByRole('button', { name: 'Close' }).click()

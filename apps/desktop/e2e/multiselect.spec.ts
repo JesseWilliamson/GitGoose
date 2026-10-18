@@ -27,7 +27,7 @@ test('shift-click selects a range, ctrl-click adds and removes; cherry-pick them
   await expect(selected(page)).toHaveCount(3)
   await expect(page.getByTestId('multi-panel')).toContainText('3 commits selected')
   // Ctrl-click takes Y out of the selection.
-  await row(page, Y).click({ modifiers: ['Control'] })
+  await row(page, Y).click({ modifiers: ['ControlOrMeta'] })
   await expect(selected(page)).toHaveCount(2)
   await expect(page.getByTestId('multi-panel')).toContainText('2 commits selected')
 

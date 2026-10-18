@@ -51,7 +51,7 @@ test('discards a file and brings it back with Ctrl+Z', async () => {
   await row.getByTitle('Discard changes (undoable)').click()
   await expect(page.getByTestId('wip-row')).toHaveCount(0)
   await page.getByTestId('graph-scroll').focus()
-  await page.keyboard.press('Control+z')
+  await page.keyboard.press('ControlOrMeta+z')
   await expect(page.getByTestId('wip-row')).toBeVisible()
   expect(r.git('diff').includes('precious edit')).toBe(true)
   await app.close()
