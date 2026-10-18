@@ -20,7 +20,9 @@ export const REF_MIME = 'application/x-gitgoose-ref'
 export const COMMITS_MIME = 'application/x-gitgoose-commits'
 /** Avatar beside the text: two lines tall, or one. */
 const AVATAR = 30
-const AVATAR_COMPACT = 16
+const AVATAR_COMPACT = 18
+/** The one-line layout's branch / tag column, left of the graph. */
+const REFS_W = 160
 
 /** A local and a remote branch with the same name share one pill. */
 interface Pill {
@@ -60,14 +62,21 @@ function pillsFor(refs: Ref[], headBranch: string | undefined, show: { remotes: 
   return out.sort((a, b) => Number(b.isHead) - Number(a.isHead) || Number(!!a.tag) - Number(!!b.tag))
 }
 
-/** Remounted when row height changes (compact rows), so the virtualizer re-measures from scratch. */
+/**
+ * Two layouts (Settings → Appearance → Graph layout), the same graph in both. Comfortable is
+ * two-line rows beside the nodes: author and branch pills over hash and subject. Compact is one
+ * shorter line per commit, with the branch and tag pills moved to a column on the left of the
+ * graph, joined to their node by a line, so the line of text is just avatar, hash, subject,
+ * author and date. Remounted when the layout changes, so the virtualizer re-measures from scratch.
+ */
 export function Graph({ view }: { view: RepoView }) {
-  const compact = useSetting('compactRows')
-  return <GraphList key={compact ? 'compact' : 'normal'} view={view} rowH={compact ? ROW_H_COMPACT : ROW_H} />
+  const style = useSetting('graphStyle')
+  return <GraphList key={style} view={view} compact={style === 'compact'} />
 }
 
 /** Settings that change how rows render, read once per list and passed down (rows are memoized). */
 export interface RowLook {
+  compact: boolean
   rowH: number
   dateFormat: string
   avatars: AvatarSource
@@ -102,22 +111,23 @@ function useMonthStarts(log: LogData): Uint8Array {
   return c.flags
 }
 
-function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
+function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
+  const rowH = compact ? ROW_H_COMPACT : ROW_H
   const dateFormat = useSetting('dateFormat')
   const showRemotes = useSetting('showRemoteBranches')
   const showTags = useSetting('showTags')
   const avatars = useSetting('avatars')
   const avatarVariant = useAvatarVariant()
-  const look = useMemo<RowLook>(() => ({ rowH, dateFormat, showRemotes, showTags, avatars, avatarVariant }),
-    [rowH, dateFormat, showRemotes, showTags, avatars, avatarVariant])
   const log = getLog(view.id)
+  const look = useMemo<RowLook>(() => ({ compact, rowH, dateFormat, showRemotes, showTags, avatars, avatarVariant }),
+    [compact, rowH, dateFormat, showRemotes, showTags, avatars, avatarVariant])
   const snap = view.snapshot
   const showWip = snap.status.length > 0 || !snap.head.hash
   const offset = showWip ? 1 : 0
   const count = log.commits.length + offset + (log.done ? 0 : 1)
   const monthStarts = useMonthStarts(log)
-  // Compact rows are a dense list: no month headings.
-  const headers = rowH >= ROW_H
+  // One-line rows are a dense list: no month headings.
+  const headers = !compact
   const scrollRef = useRef<HTMLDivElement>(null)
   const virt = useVirtualizer({
     count,
@@ -203,7 +213,9 @@ function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
   const wipLanes = log.rows[0]?.width ?? 1
 
   return (
-    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+    // @container: one-line rows drop the author when the pane is narrow (container queries, not
+    // window size, because the side panels decide how wide this pane is).
+    <div className="@container relative flex min-h-0 min-w-0 flex-1 flex-col">
       <BisectBar view={view} />
       <FilterBar view={view} />
       <ContextMenu.Root>
@@ -220,7 +232,7 @@ function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
                 const i = item.index
                 const style = { position: 'absolute' as const, top: 0, left: 0, right: 0, height: item.size, transform: `translateY(${item.start}px)` }
                 if (showWip && i === 0) {
-                  return <WipRow key="wip" style={style} view={view} cellW={cellWidth(wipLanes)} rowH={rowH} selected={view.selected.kind === 'wip'}
+                  return <WipRow key="wip" style={style} view={view} cellW={cellWidth(wipLanes)} look={look} selected={view.selected.kind === 'wip'}
                     lane={log.layout.headLane} color={log.layout.headColor} />
                 }
                 const ci = i - offset
@@ -262,14 +274,24 @@ function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
   )
 }
 
-function WipRow({ style, view, cellW, rowH, selected, lane, color }: {
-  style: React.CSSProperties; view: RepoView; cellW: number; rowH: number; selected: boolean
+function WipRow({ style, view, cellW, look, selected, lane, color }: {
+  style: React.CSSProperties; view: RepoView; cellW: number; look: RowLook; selected: boolean
   /** HEAD's lane and colour, where the dashed line down to HEAD runs. */
   lane: number; color: number
 }) {
   const st = view.snapshot.status
   const staged = st.filter((e) => e.kind !== 'untracked' && e.kind !== 'unmerged' && e.index !== '.').length
   const conflicts = st.filter((e) => e.kind === 'unmerged').length
+  const counts = (
+    <>
+      {st.length > 0 && <span className="shrink-0 rounded bg-raised px-1.5 text-[11px] not-italic">{st.length} changed</span>}
+      {staged > 0 && <span className="shrink-0 rounded bg-add-bg px-1.5 text-[11px] text-add not-italic">{staged} staged</span>}
+      {conflicts > 0 && <span className="shrink-0 rounded bg-del-bg px-1.5 text-[11px] text-del not-italic">{conflicts} conflicts</span>}
+    </>
+  )
+  const label = view.snapshot.head.hash ? 'Uncommitted changes' : 'No commits yet'
+  // One-line rows have the branch column on the left; the WIP row leaves it empty.
+  const refsW = look.compact ? REFS_W : 0
   return (
     <div
       style={style}
@@ -278,13 +300,12 @@ function WipRow({ style, view, cellW, rowH, selected, lane, color }: {
       data-selected={selected || undefined}
       className="group flex items-center text-[13px]"
     >
-      <div className={clsx('pointer-events-none absolute inset-y-0.5 right-2 rounded-md', selected ? 'bg-select' : 'group-hover:bg-hover')} style={{ left: cellW - 2 }} />
-      <WipCell width={cellW} hasHead={!!view.snapshot.head.hash} h={rowH} lane={lane} color={color} />
+      <div className={clsx('pointer-events-none absolute inset-y-0.5 right-2 rounded-md', selected ? 'bg-select' : 'group-hover:bg-hover')} style={{ left: refsW + cellW - 2 }} />
+      {look.compact && <div style={{ width: REFS_W }} className="shrink-0" />}
+      <WipCell width={cellW} hasHead={!!view.snapshot.head.hash} h={look.rowH} lane={lane} color={color} />
       <div className="relative flex h-full min-w-0 flex-1 items-center gap-2 border-b border-line/50 pr-5 pl-1 whitespace-nowrap text-muted italic">
-        <span className="min-w-0 truncate">{view.snapshot.head.hash ? 'Uncommitted changes' : 'No commits yet'}</span>
-        {st.length > 0 && <span className="shrink-0 rounded bg-raised px-1.5 text-[11px] not-italic">{st.length} changed</span>}
-        {staged > 0 && <span className="shrink-0 rounded bg-add-bg px-1.5 text-[11px] text-add not-italic">{staged} staged</span>}
-        {conflicts > 0 && <span className="shrink-0 rounded bg-del-bg px-1.5 text-[11px] text-del not-italic">{conflicts} conflicts</span>}
+        <span className="min-w-0 truncate">{label}</span>
+        {counts}
       </div>
     </div>
   )
@@ -319,7 +340,6 @@ const CommitRow = memo(function CommitRow(props: {
   look: RowLook
 }) {
   const { commit, row, repoId, look } = props
-  const compact = look.rowH < ROW_H
   /** The author, then any co-authors from the commit's trailers: one avatar each, stacked. */
   const people = useMemo<StackedAuthor[]>(
     () => [{ name: commit.authorName, email: commit.authorEmail }, ...(commit.coAuthors ?? [])]
@@ -338,6 +358,10 @@ const CommitRow = memo(function CommitRow(props: {
   const header = props.month ? HEADER_H : 0
   const height = look.rowH + header
   const cellW = cellWidth(row.width)
+  /** One-line rows: pills (or a stash or bisect mark) in the column on the left, joined to the node by a line. */
+  const labelled = look.compact && (pills.length > 0 || !!props.stash || !!props.bisect)
+  /** Where the row's text starts: past the branch column (one-line rows) and the graph. */
+  const textX = (look.compact ? REFS_W : 0) + cellW
 
   const onDragStart = (e: DragEvent) => {
     // A branch pill inside the row starts its own drag.
@@ -382,7 +406,8 @@ const CommitRow = memo(function CommitRow(props: {
     useStore.setState({ drop: { x: e.clientX, y: e.clientY, source: JSON.parse(raw) as Ref, target: { ref, hash: commit.hash } } })
   }
 
-  const marks = (
+  /** The pills and marks, at most `max` branch pills before a "+N". */
+  const marks = (max: number) => (
     <>
       {props.bisect && (
         <span className={clsx('flex h-[18px] shrink-0 items-center rounded border px-1.5 text-[11px] font-medium', BISECT_PILL[props.bisect])} data-testid="bisect-pill">{props.bisect}</span>
@@ -392,12 +417,12 @@ const CommitRow = memo(function CommitRow(props: {
           <Archive size={10} /> {props.stash.ref}
         </span>
       )}
-      {pills.slice(0, 3).map((p) => (
+      {pills.slice(0, max).map((p) => (
         <RefPill key={p.key} pill={p} color={row.color} repoId={repoId} hash={commit.hash} onDrop={onDrop} />
       ))}
-      {pills.length > 3 && (
-        <span className="shrink-0 rounded-[4px] bg-raised px-1.5 text-[11px] font-medium text-muted" title={pills.slice(3).map((p) => p.label).join('\n')}>
-          +{pills.length - 3}
+      {pills.length > max && (
+        <span className="shrink-0 rounded-[4px] bg-raised px-1.5 text-[11px] font-medium text-muted" title={pills.slice(max).map((p) => p.label).join('\n')}>
+          +{pills.length - max}
         </span>
       )}
     </>
@@ -407,32 +432,42 @@ const CommitRow = memo(function CommitRow(props: {
   const authors = authorLine(commit.authorName, commit.coAuthors)
   const authorsTitle = commit.coAuthors ? people.map((p) => `${p.name} <${p.email}>`).join('\n') : undefined
 
+  /** Everything a row does, whichever way it is drawn: select, menu, drag commits, take drops. */
+  const rowProps = {
+    'data-testid': 'commit-row',
+    'data-hash': commit.hash,
+    // Shift-click would otherwise also select the text between the two rows.
+    onMouseDown: (e: React.MouseEvent) => e.shiftKey && e.preventDefault(),
+    onClick: (e: React.MouseEvent) => selectCommit(repoId, commit.hash, { range: e.shiftKey, toggle: isMac ? e.metaKey : e.ctrlKey }),
+    onContextMenu: (e: React.MouseEvent) => {
+      // A right-click on a branch pill bubbles up to here; the pill already set the menu target.
+      // (The pill must not stopPropagation: the menu's trigger is the list container above us.)
+      if ((e.target as HTMLElement).closest('[data-testid="ref-pill"]')) return
+      // On one of several selected commits, the menu acts on all of them.
+      const sel = useStore.getState().repos[repoId]?.selected
+      if (props.stash) useStore.setState({ menu: { kind: 'stash', stash: props.stash } })
+      else if (sel?.kind === 'commits' && sel.hashes.includes(commit.hash)) useStore.setState({ menu: { kind: 'commits', hashes: sel.hashes } })
+      else useStore.setState({ menu: { kind: 'commit', hash: commit.hash } })
+    },
+    draggable: props.editable,
+    onDragStart,
+    onDragOver,
+    onDragLeave: () => {
+      setDropping(false)
+      setDropAt(null)
+    },
+    onDrop: (e: DragEvent) => onDrop(e),
+    'data-selected': props.selected || undefined,
+  }
+  const dropMarks = dropAt === 'onto' ? (
+    <div data-testid="drop-onto" className="pointer-events-none absolute inset-x-0 bottom-0 rounded-sm outline outline-2 -outline-offset-2 outline-accent" style={{ top: header }} title="Squash into this commit" />
+  ) : dropAt && (
+    <div data-testid="drop-line" className={clsx('pointer-events-none absolute inset-x-0 h-0.5 bg-accent', dropAt === 'above' ? '' : 'bottom-0')} style={dropAt === 'above' ? { top: header } : undefined} />
+  )
+
   return (
     <div
-      data-testid="commit-row"
-      data-hash={commit.hash}
-      // Shift-click would otherwise also select the text between the two rows.
-      onMouseDown={(e) => e.shiftKey && e.preventDefault()}
-      onClick={(e) => selectCommit(repoId, commit.hash, { range: e.shiftKey, toggle: isMac ? e.metaKey : e.ctrlKey })}
-      onContextMenu={(e) => {
-        // A right-click on a branch pill bubbles up to here; the pill already set the menu target.
-        // (The pill must not stopPropagation: the menu's trigger is the list container above us.)
-        if ((e.target as HTMLElement).closest('[data-testid="ref-pill"]')) return
-        // On one of several selected commits, the menu acts on all of them.
-        const sel = useStore.getState().repos[repoId]?.selected
-        if (props.stash) useStore.setState({ menu: { kind: 'stash', stash: props.stash } })
-        else if (sel?.kind === 'commits' && sel.hashes.includes(commit.hash)) useStore.setState({ menu: { kind: 'commits', hashes: sel.hashes } })
-        else useStore.setState({ menu: { kind: 'commit', hash: commit.hash } })
-      }}
-      draggable={props.editable}
-      onDragStart={onDragStart}
-      onDragOver={onDragOver}
-      onDragLeave={() => {
-        setDropping(false)
-        setDropAt(null)
-      }}
-      onDrop={(e) => onDrop(e)}
-      data-selected={props.selected || undefined}
+      {...rowProps}
       className={clsx('group flex items-stretch text-[13px]', dropping && 'outline outline-2 -outline-offset-2 outline-accent')}
       style={{ position: 'absolute', top: 0, left: 0, right: 0, height, transform: `translateY(${props.top}px)` }}
     >
@@ -440,9 +475,17 @@ const CommitRow = memo(function CommitRow(props: {
           row's edges: consecutive selected rows stay distinct, and the lines on the left stay clean. */}
       <div
         className={clsx('pointer-events-none absolute right-2 rounded-md', !props.selected && 'group-hover:bg-hover')}
-        style={{ left: cellW - 2, top: header + 2, bottom: 2, ...(props.selected ? { background: `color-mix(in srgb, ${lane} 22%, var(--gs-bg))` } : {}) }}
+        style={{ left: textX - 2, top: header + 2, bottom: 2, ...(props.selected ? { background: `color-mix(in srgb, ${lane} 22%, var(--gs-bg))` } : {}) }}
         data-testid="row-tint"
       />
+      {/* One-line rows: the branch and tag pills in a column of their own, left of the graph, with
+          a line in the lane colour running from them to the node (GraphCell draws the rest). */}
+      {look.compact && (
+        <div style={{ width: REFS_W }} className="flex h-full min-w-0 shrink-0 items-center gap-1 overflow-hidden pl-2" data-testid="refs-cell">
+          {marks(2)}
+          {labelled && <span className="h-0.5 min-w-2 flex-1" style={{ background: lane, opacity: 0.85 }} />}
+        </div>
+      )}
       {/* Centred across the row, not tucked against the lanes: the heading then sits in the gap
           above the row's own text and clear of the lines running up the left. */}
       {props.month && (
@@ -451,27 +494,29 @@ const CommitRow = memo(function CommitRow(props: {
           {props.month}
         </div>
       )}
-      <GraphCell row={row} width={cellW} showPending={props.showPending} isHead={props.isHead} h={look.rowH} offset={header} stash={!!commit.stash} />
+      <GraphCell row={row} width={cellW} showPending={props.showPending} isHead={props.isHead} h={look.rowH} offset={header} stash={!!commit.stash} refLine={labelled} />
       <div
         className="relative flex min-w-0 flex-1 items-center gap-2.5 border-b border-line/50 pr-5 pl-1"
         style={{ marginTop: header }}
         data-testid="row-body"
       >
         <span data-testid="row-avatar" className="flex shrink-0">
-          <AvatarStack people={people} size={compact ? AVATAR_COMPACT : AVATAR} max={compact ? 2 : 3} />
+          <AvatarStack people={people} size={look.compact ? AVATAR_COMPACT : AVATAR} max={look.compact ? 2 : 3} />
         </span>
-        {compact ? (
+        {look.compact ? (
+          // One line: the pills are already in the column on the left. The subject is the one
+          // thing that must not be squeezed out, so the rest keeps a fixed width or goes.
           <>
-            <span className="flex min-w-0 shrink-0 items-center gap-1">{marks}</span>
+            <span className="shrink-0 font-mono text-[12px] text-faint" data-testid="row-sha">{shortHash(commit.hash)}</span>
             <span className={clsx('min-w-0 flex-1 truncate', props.stash && 'text-muted italic')}>{subject}</span>
-            <span className="max-w-40 shrink-0 truncate text-[12px] text-muted" data-testid="row-author" title={authorsTitle}>{authors}</span>
+            <span className="hidden w-32 shrink-0 truncate text-[12px] text-muted @xl:block" data-testid="row-author" title={authorsTitle}>{authors}</span>
             <span className="shrink-0 text-[12px] text-faint" data-testid="row-date">{formatDate(commit.authorDate, look.dateFormat)}</span>
           </>
         ) : (
           <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
             <div className="flex min-w-0 items-center gap-1.5 text-[12px] leading-4">
               <span className="min-w-0 max-w-64 shrink truncate text-muted" data-testid="row-author" title={authorsTitle}>{authors}</span>
-              {marks}
+              {marks(3)}
               <span className="min-w-0 flex-1" />
               <span className="shrink-0 text-faint" data-testid="row-date">{formatDate(commit.authorDate, look.dateFormat)}</span>
             </div>
@@ -482,11 +527,7 @@ const CommitRow = memo(function CommitRow(props: {
           </div>
         )}
       </div>
-      {dropAt === 'onto' ? (
-        <div data-testid="drop-onto" className="pointer-events-none absolute inset-x-0 bottom-0 rounded-sm outline outline-2 -outline-offset-2 outline-accent" style={{ top: header }} title="Squash into this commit" />
-      ) : dropAt && (
-        <div data-testid="drop-line" className={clsx('pointer-events-none absolute inset-x-0 h-0.5 bg-accent', dropAt === 'above' ? '' : 'bottom-0')} style={dropAt === 'above' ? { top: header } : undefined} />
-      )}
+      {dropMarks}
     </div>
   )
 })

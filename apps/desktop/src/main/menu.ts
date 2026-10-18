@@ -66,6 +66,7 @@ export function installMenu(): void {
         { label: 'Toggle Details', accelerator: 'CmdOrCtrl+Alt+B', click: cmd('toggle-details'), registerAccelerator: false },
         { label: 'Hide Side Panels', click: cmd('layout-wide-graph') },
         { label: 'Reset Panel Sizes', click: cmd('layout-default') },
+        { label: 'Toggle Compact Graph', click: cmd('toggle-graph-style') },
         { type: 'separator' },
         { label: 'Git Command Log', click: cmd('command-log') },
         { type: 'separator' },

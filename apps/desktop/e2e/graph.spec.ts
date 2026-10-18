@@ -122,15 +122,57 @@ test('comfy look: two-line rows beside hollow nodes, text indented by the lanes,
   await expect(far).toBeVisible()
   await expect(far.locator('[data-testid="commit-node"]')).toHaveCount(0)
   // Text starts further right where more lanes are open: cellWidth(lanes) = 6 + min(12, max(2, lanes)) * 24.
-  const busy = page.getByTestId('commit-row').filter({ hasText: 'work on b0' })
-  const quiet = page.getByTestId('commit-row').filter({ hasText: 'Commit 1' })
-  expect((await busy.getByTestId('row-body').boundingBox())!.x).toBeGreaterThan((await quiet.getByTestId('row-body').boundingBox())!.x + 100)
+  // The busiest row is the last of the twelve branch tips the log lists (every other tip's line
+  // passes through it); which tip that is depends on the log order, so take the widest. The
+  // quiet row is HEAD: newest, so above every tip, with nothing open beside it. (The branches
+  // fork from the root, so every older row has their lines running through it.)
+  const busyX = Math.max(...await page.locator('[data-testid="commit-row"]:has-text("work on b") [data-testid="row-body"]')
+    .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().x)))
+  expect(busyX).toBeGreaterThan((await head.getByTestId('row-body').boundingBox())!.x + 100)
   await expect(page.getByTestId('sidebar-viewing')).toHaveText('Viewing 13/13')
   await page.locator('[data-testid="sidebar-ref"][data-ref="refs/heads/b3"]').hover()
   await page.locator('[data-testid="sidebar-ref"][data-ref="refs/heads/b3"]').getByTestId('toggle-hidden').click()
   await expect(page.getByTestId('sidebar-viewing')).toContainText('Viewing 12/13')
   await page.getByTestId('sidebar-viewing').getByRole('button', { name: 'Show all' }).click()
   await expect(page.getByTestId('sidebar-viewing')).toHaveText('Viewing 13/13')
+  await app.close()
+})
+
+test('one-line rows: the same graph, branch pills in a column on the left joined to their node', async () => {
+  const r = makeFixture('linear')
+  for (let i = 0; i < 12; i++) {
+    r.checkout('-b', `b${i}`, 'main~4')
+    r.commit(`work on b${i}`, { [`b${i}.txt`]: 'x\n' })
+  }
+  r.checkout('main')
+  const { app, page } = await launch(r.dir)
+  await page.evaluate(() => window.gitgoose.setSettings({ graphStyle: 'compact' }))
+  const head = page.locator(`[data-testid="commit-row"][data-hash="${r.head()}"]`)
+  await expect.poll(async () => (await head.boundingBox())!.height).toBe(28)
+  await expect(page.getByTestId('month-header')).toHaveCount(0)
+  // The pill is in the column on the left, joined to the node by a line; the node is the same
+  // hollow ring as in two-line rows, and the avatar, hash, author and date share the one line.
+  await expect(head.getByTestId('refs-cell').locator('[data-testid="ref-pill"][data-ref="refs/heads/main"]')).toBeVisible()
+  await expect(head.locator('svg [data-testid="ref-line"]')).toHaveCount(1)
+  await expect(head.locator('[data-testid="commit-node"] circle').last()).toHaveAttribute('fill', 'var(--gs-bg)')
+  await expect(head.getByTestId('row-avatar')).toContainText('AL')
+  await expect(head.getByTestId('row-sha')).toHaveText(r.head().slice(0, 7))
+  // The author is on the row but yields to the subject when the pane is narrow, as in this window.
+  await expect(head.getByTestId('row-author')).toHaveText('Ada Lovelace')
+  await expect(head.getByTestId('row-author')).toBeHidden()
+  // A commit without refs has an empty column and no connector.
+  const plain = page.getByTestId('commit-row').filter({ hasText: 'Commit 3' })
+  await expect(plain.locator('svg [data-testid="ref-line"]')).toHaveCount(0)
+  await expect(plain.getByTestId('refs-cell').locator('[data-testid="ref-pill"]')).toHaveCount(0)
+  // The text still indents by the lanes open at that point, as in two-line rows: the first tip
+  // listed has two lanes open beside it, the last has every other tip's line passing through.
+  // (HEAD itself is no quieter: the branches fork from the root, so their lines cross every
+  // older row.) The quietest row's text starts past the branch column: 160 + cellWidth(2) = 214.
+  const xs = await page.locator('[data-testid="commit-row"]:has-text("work on b") [data-testid="row-body"]')
+    .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().x))
+  expect(Math.max(...xs)).toBeGreaterThan(Math.min(...xs) + 100)
+  const pane = (await page.getByTestId('graph-scroll').boundingBox())!
+  expect(Math.min(...xs) - pane.x).toBe(160 + 54)
   await app.close()
 })
 
