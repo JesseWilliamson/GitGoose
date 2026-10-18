@@ -2,7 +2,7 @@
  * The plan being edited in the recompose dialog: an ordered list of commits, each a message and
  * the changes ("units": one hunk, or one whole file) it contains. Every edit here keeps the one
  * rule that makes recomposing safe: each unit is in exactly one commit. Moving a unit takes it
- * out of where it was; squashing joins two lists; a commit is only deleted once it is empty.
+ * out of where it was; squashing joins several lists; a commit is only deleted once it is empty.
  * Main checks the rule again before writing anything (checkPlan in @gitsquid/git).
  */
 
@@ -22,13 +22,21 @@ export function moveCommit(d: Draft, from: number, to: number): Draft {
   return next
 }
 
-/** Squash commit `i` into the one after it: its changes and its message go with that commit. */
-export function squashIntoNext(d: Draft, i: number): Draft {
-  if (i < 0 || i >= d.length - 1) return d
-  const a = d[i]!
-  const b = d[i + 1]!
-  const message = [b.message.trim(), a.message.trim()].filter(Boolean).join('\n\n')
-  return [...d.slice(0, i), { message, units: [...a.units, ...b.units] }, ...d.slice(i + 2)]
+/**
+ * Squash the commits at `indexes` into one, where the earliest of them was. Messages follow in
+ * commit order, oldest first (as git's own squash writes them); units go back into diff order.
+ */
+export function squashCommits(d: Draft, indexes: number[], order: string[]): Draft {
+  const picked = [...new Set(indexes)].filter((i) => i >= 0 && i < d.length).sort((a, b) => a - b)
+  if (picked.length < 2) return d
+  const parts = picked.map((i) => d[i]!)
+  const rank = new Map(order.map((id, i) => [id, i]))
+  const merged: DraftCommit = {
+    message: parts.map((c) => c.message.trim()).filter(Boolean).join('\n\n'),
+    units: parts.flatMap((c) => c.units).sort((a, b) => (rank.get(a) ?? 0) - (rank.get(b) ?? 0)),
+  }
+  const set = new Set(picked)
+  return d.flatMap((c, i) => (i === picked[0] ? [merged] : set.has(i) ? [] : [c]))
 }
 
 /**

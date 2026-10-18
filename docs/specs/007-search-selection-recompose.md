@@ -30,9 +30,17 @@ For a run of non-merge commits on the current branch with only non-merge commits
    without hunks (binary, mode change). The AI gets the original messages and the numbered
    units and answers with JSON: commits, oldest first, each with a message and unit ids.
 2. The answer is repaired (unknown ids dropped, duplicates kept once, forgotten units added to
-   the last commit and reported) and shown for review: reorder, squash into next, edit
-   messages, reset, preview a unit. Nothing has changed yet. A warning names remote branches
-   that already have the commits.
+   the last commit and reported) and shown for review: commits on the left, the selected one's
+   hunks on the right. Drag a commit to reorder it (the list makes room live, the slot it left
+   stays empty until it lands); drag a hunk onto a commit to move it there, or into the open
+   space below the commits to start a new one — while a hunk is in the air the hunks column dims
+   so the commits are the only target. Shift/Ctrl-click several commits and right-click to
+   squash them (messages kept, oldest first). Edit messages, preview a unit. Every edit is one
+   undo step (Ctrl+Z / Ctrl+Shift+Z inside the dialog; typing in a message or one drag counts
+   once), and "Reset to proposal" is itself undoable. Esc ends what is in progress (leaves the message
+   field, cancels a drag) and only closes the dialog from rest. Nothing has changed yet. A warning names remote branches that already have the commits.
+   The same right-click squash works on a selection in the main graph (`squashOnto`: the newer
+   commits fold into the oldest).
 3. Create commits: in a throwaway index (`GIT_INDEX_FILE`), each commit's units are applied with
    `git apply --cached`, then `write-tree` and `commit-tree`. **The last tree must equal the
    newest original's tree** or nothing changes. So the commits after the range keep their trees
@@ -48,4 +56,6 @@ Authors: one original author keeps authorship; several make you the author with 
 - Why can the commits after the range never conflict, when a normal rebase could?
 - A unit moved to an earlier commit than its neighbour in the same file: why does `git apply`
   still find where it goes? When would it not?
-- What would it take to let the user drag a single unit from one proposed commit to another?
+- Hunks are dragged with pointer events and a floating clone rather than HTML5 drag-and-drop.
+  What does that buy (the empty slot, live reorder, the settle animation), and what does it
+  cost (keyboard users, dragging out of the window)?

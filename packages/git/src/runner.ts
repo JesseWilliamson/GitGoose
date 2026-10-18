@@ -53,6 +53,45 @@ export interface RunnerOptions {
   gitPath?: string
   /** Base environment additions for every call (askpass variables, for example). */
   env?: Record<string, string>
+  /** Run git on the host through flatpak-spawn. Defaults to whether we are in a sandbox. */
+  hostSpawn?: boolean
+}
+
+/**
+ * Are we running inside a flatpak sandbox? Flatpak sets FLATPAK_ID for the app it starts.
+ *
+ * We ship an AppImage on Linux and no flatpak (ADR-007), so this is false in every artifact we
+ * build today. It stays because running the user's own git, with their hooks and credential
+ * helpers, is the hard part of any future flatpak.
+ */
+export function inFlatpakSandbox(env: NodeJS.ProcessEnv = process.env): boolean {
+  return !!env.FLATPAK_ID
+}
+
+/**
+ * Rewrite a git invocation to run on the host instead of inside the sandbox (ADR-007).
+ *
+ * flatpak-spawn asks the Flatpak portal to start a process outside the sandbox. It does not
+ * inherit our environment or our working directory, so both are passed explicitly: only the
+ * variables GitRunner sets go across, never the whole sandbox environment, whose paths mean
+ * nothing on the other side.
+ */
+export function flatpakCommandLine(
+  gitPath: string,
+  args: string[],
+  cwd: string,
+  env: Record<string, string>,
+): { command: string; args: string[] } {
+  return {
+    command: 'flatpak-spawn',
+    args: [
+      '--host',
+      `--directory=${cwd}`,
+      ...Object.entries(env).map(([k, v]) => `--env=${k}=${v}`),
+      gitPath,
+      ...args,
+    ],
+  }
 }
 
 /** How many commands the log keeps (oldest dropped first). */
@@ -71,26 +110,29 @@ export class GitRunner {
   /** Every process this runner started, oldest first (the command log). */
   readonly history: CommandRecord[] = []
   private nextId = 1
+  private readonly hostSpawn: boolean
 
   constructor(opts: RunnerOptions) {
     this.cwd = opts.cwd
     this.gitPath = opts.gitPath ?? 'git'
     this.env = opts.env ?? {}
+    this.hostSpawn = opts.hostSpawn ?? inFlatpakSandbox()
   }
 
   private buildArgs(args: string[], readOnly: boolean | undefined): string[] {
     return [...(readOnly ? ['--no-optional-locks'] : []), ...STABLE_CONFIG, ...args]
   }
 
-  private buildEnv(args: string[], extra?: Record<string, string>): NodeJS.ProcessEnv {
+  /** The variables we set for git, without the rest of the environment. */
+  private gitEnv(args: string[], extra?: Record<string, string>): Record<string, string> {
     // File names are data, not patterns: without this, discarding "a[1].txt" also matches
     // "a1.txt". It applies only to commands that pass paths after `--`; setting it globally
     // breaks git internals (`stash push -u` then stops removing untracked files).
     // A caller that wants pathspec magic (path search) passes GIT_LITERAL_PATHSPECS=0.
     const dashdash = args.indexOf('--')
-    const literal = dashdash >= 0 && dashdash < args.length - 1 ? { GIT_LITERAL_PATHSPECS: '1' } : {}
+    const literal: Record<string, string> =
+      dashdash >= 0 && dashdash < args.length - 1 ? { GIT_LITERAL_PATHSPECS: '1' } : {}
     return {
-      ...process.env,
       LC_ALL: 'C',
       LANG: 'C',
       GIT_TERMINAL_PROMPT: '0',
@@ -104,9 +146,17 @@ export class GitRunner {
     }
   }
 
+  private buildEnv(args: string[], extra?: Record<string, string>): NodeJS.ProcessEnv {
+    return { ...process.env, ...this.gitEnv(args, extra) }
+  }
+
   /** Spawn git and return the process, for streaming output (see LogStream, CatFile). */
   spawn(args: string[], opts: { readOnly?: boolean; env?: Record<string, string> } = {}): ChildProcess {
-    const child = spawn(this.gitPath, this.buildArgs(args, opts.readOnly), {
+    const gitArgs = this.buildArgs(args, opts.readOnly)
+    const line = this.hostSpawn
+      ? flatpakCommandLine(this.gitPath, gitArgs, this.cwd, this.gitEnv(args, opts.env))
+      : { command: this.gitPath, args: gitArgs }
+    const child = spawn(line.command, line.args, {
       cwd: this.cwd,
       env: this.buildEnv(args, opts.env),
       windowsHide: true,
