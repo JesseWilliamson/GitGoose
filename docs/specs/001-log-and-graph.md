@@ -4,8 +4,10 @@
 
 ## Behaviour
 
-- Opening a repository shows the graph: branch/tag pills, lanes, message, author, date, SHA
-  (author/date/SHA columns appear as the pane widens).
+- Opening a repository shows the graph, Tower-style: hollow nodes on coloured lanes, and beside
+  them two-line rows (avatar; author, branch/tag pills and date; short SHA and subject). A row's
+  text starts just past the lanes open at that point in history, so busy stretches indent. The
+  first commit of each month carries a heading. Compact rows are one line with no headings.
 - The main line (the remote's default branch from origin/HEAD and its local namesake, else main or
   master) is always the leftmost lane, whatever is checked out, so a checkout does not reshuffle
   the graph. HEAD sits on it when HEAD is a trunk tip, otherwise in the lane next to it.
