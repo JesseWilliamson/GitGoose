@@ -70,7 +70,7 @@ also pass `pnpm bench --check`.
 
 ```
 pnpm install          # also downloads the Electron binary (postinstall)
-pnpm dev:repo         # build .fixtures/dev-repo: ~3,000 realistic commits, branches, remotes, a conflict
+pnpm dev:repo         # build .fixtures/dev-repo: ~3,000 realistic commits, branches, remotes, conflicts, bulk stash
 pnpm dev              # run the app with hot reload (opens the dev repo when it exists)
 pnpm test             # vitest: parsers, git operations, layout
 pnpm typecheck

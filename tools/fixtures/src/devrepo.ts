@@ -1,14 +1,22 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, rmSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { FixtureRepo, initRepo, tempDir } from './index'
 
 /**
  * A realistic repository for developing and eyeballing the UI: ~3,000 commits over two years
  * from 8 authors, 25-ish branches, 40 annotated tags, real file edits (not appends), renames,
- * squash merges, an orphan gh-pages branch, two remotes, stashes, a ready-made conflict and a
- * dirty working tree. Everything comes from a seeded random generator, so the same options always
- * produce the same hashes (and the same screenshots).
+ * squash merges, two remotes, stashes and a dirty working tree. Like a real project, every branch
+ * (gh-pages included) grows from the one root commit. Everything comes from a seeded random
+ * generator, so the same options always produce the same hashes (and the same screenshots).
+ *
+ * Ready-made scenarios, so a feature can be tried without setting anything up:
+ * - one `conflict/*` branch per kind of merge conflict (see CONFLICT_BRANCHES), each conflicting
+ *   with develop;
+ * - a committed .gitignore with ignored files on disk, and an unstaged edit to it that changes
+ *   which files are untracked: discard it and the untracked list changes;
+ * - 2,400 tracked icons, and a stash (stash@{0}) that changes all of them and adds more: apply it
+ *   for thousands of unstaged files, discard them, apply again.
  *
  * The history is written with `git fast-import`, which is fast but makes us supply each merge's
  * tree ourselves. The trick that keeps that simple: a feature branch *claims* its files when it
@@ -23,6 +31,8 @@ export interface DevRepoOptions {
   dir?: string
   /** Where the bare "origin" and "upstream" repositories go (default: temp dirs). */
   remotesDir?: string
+  /** Size of the icon set: the tracked files the bulk stash changes (default 2,400). */
+  icons?: number
 }
 
 export interface DevRepoInfo {
@@ -30,6 +40,8 @@ export interface DevRepoInfo {
   /** Branch that has a guaranteed conflict with develop. */
   conflictBranch: string
   authors: { name: string; email: string }[]
+  /** Files the bulk stash (stash@{0}) changes or adds when applied. */
+  bulkStashFiles: number
 }
 
 // ---------------------------------------------------------------- deterministic randomness
@@ -152,15 +164,17 @@ interface Branch {
   squash?: boolean
 }
 
-/** Files the generator never deletes or renames: the conflict setup and the odd-path examples rely on them. */
-const PROTECTED = new Set(['src/config.ts', 'src/utils/format.ts', 'docs/Design Notes.md', 'docs/résumé-ünïcode.md',
-  'scripts/windows-setup.bat', 'package.json', 'README.md'])
+/** Files random commits never touch: the conflict branches and the working-tree setup change them on purpose. */
+const RESERVED = new Set(['src/config.ts', 'src/utils/format.ts', 'src/api/client.ts', '.gitignore', '.env.example'])
+/** Files the generator never deletes or renames: the odd-path examples rely on them. */
+const PROTECTED = new Set(['docs/Design Notes.md', 'docs/résumé-ünïcode.md', 'scripts/windows-setup.bat', 'package.json', 'README.md'])
 
 const HOUR = 3600
 const START = 1_700_000_000
 
 export function makeDevRepo(opts: DevRepoOptions = {}): DevRepoInfo {
   const total = opts.commits ?? 3000
+  const iconCount = opts.icons ?? 2400
   const r = new Rand(opts.seed ?? 42)
   const dir = opts.dir ?? tempDir('gitsquid-dev-')
   rmSync(dir, { recursive: true, force: true })
@@ -220,16 +234,23 @@ export function makeDevRepo(opts: DevRepoOptions = {}): DevRepoInfo {
   base.set('docs/résumé-ünïcode.md', newDocFile(r, 'Unicode in paths'))
   base.set('scripts/windows-setup.bat', ['@echo off', 'echo Setting up', 'npm install', 'echo Done'])
   base.set('package.json', ['{', '  "name": "gitsquid-dev",', '  "version": "0.1.0",', '  "private": true', '}'])
+  base.set('src/api/client.ts', ['export async function request(url: string, init?: RequestInit) {', '  const res = await fetch(url, init)',
+    "  if (!res.ok) throw new Error(`${res.status} ${url}`)", '  return res.json()', '}', ''])
+  base.set('.gitignore', GITIGNORE)
+  base.set('.env.example', ['API_URL=http://localhost:3000', 'API_TOKEN='])
+  base.set('assets/brand.woff2', randomBytes(r, 16 * 1024))
   // A 2 MB binary asset, generated from the seed.
-  const bin = Buffer.alloc(2 * 1024 * 1024)
-  for (let i = 0; i < bin.length; i += 4) bin.writeUInt32LE(Math.floor(r.float() * 0xffffffff), i)
-  base.set('assets/hero.bin', bin)
+  base.set('assets/hero.bin', randomBytes(r, 2 * 1024 * 1024))
 
   const init = new Map<string, string[] | Buffer | null>(base)
   const rootMark = writeCommit('refs/heads/main', 'Initial commit', AUTHORS[0], null, null, init)
-  const main: Branch = { name: 'main', tip: rootMark, files: cloneFiles(base), claimed: new Set(), touched: new Set(), commits: 1 }
-  const develop: Branch = { name: 'develop', tip: rootMark, files: cloneFiles(base), claimed: new Set(), touched: new Set(), commits: 0 }
-  out.push('reset refs/heads/develop', `from :${rootMark}`, '')
+  // The icon set is most of the tracked files. It stays out of `base` so random commits leave it
+  // alone, and a commit only lists what it changes, so every later tree still has it.
+  const iconsMark = writeCommit('refs/heads/main', `chore(assets): import the icon set (${iconCount.toLocaleString('en-US')} icons)`,
+    AUTHORS[3], rootMark, null, makeIcons(r, iconCount))
+  const main: Branch = { name: 'main', tip: iconsMark, files: cloneFiles(base), claimed: new Set(), touched: new Set(), commits: 2 }
+  const develop: Branch = { name: 'develop', tip: iconsMark, files: cloneFiles(base), claimed: new Set(), touched: new Set(), commits: 0 }
+  out.push('reset refs/heads/develop', `from :${iconsMark}`, '')
 
   const features: Branch[] = []
   const finished: Branch[] = []
@@ -237,6 +258,7 @@ export function makeDevRepo(opts: DevRepoOptions = {}): DevRepoInfo {
   let version = { major: 1, minor: 0, patch: 0 }
   let tags = 0
   let squashes = 0
+  let firstRelease = 0
   const claimedAll = () => new Set(features.flatMap((f) => [...f.claimed]))
 
   const message = (type: string, scope: string) => `${type}(${scope}): ${r.pick(VERBS)} ${r.pick(WORDS)} ${r.pick(['handling', 'state', 'logic', 'layout', 'errors', 'tests'])}`
@@ -244,7 +266,7 @@ export function makeDevRepo(opts: DevRepoOptions = {}): DevRepoInfo {
   /** One ordinary commit on `b`, editing 1-6 files (only `allowed` ones, if given). */
   const workOn = (b: Branch, allowed: (p: string) => boolean) => {
     const changes = new Map<string, string[] | Buffer | null>()
-    const textFiles = [...b.files.keys()].filter((p) => !Buffer.isBuffer(b.files.get(p)) && allowed(p))
+    const textFiles = [...b.files.keys()].filter((p) => !Buffer.isBuffer(b.files.get(p)) && !RESERVED.has(p) && allowed(p))
     for (let n = r.int(1, 6); n > 0 && textFiles.length; n--) {
       const roll = r.float()
       if (roll < 0.05) {
@@ -281,7 +303,6 @@ export function makeDevRepo(opts: DevRepoOptions = {}): DevRepoInfo {
         if (b !== develop && b !== main) b.claimed.add(to)
       } else {
         const path = r.pick(textFiles)
-        if (path === 'src/config.ts' || path === 'src/utils/format.ts') continue // reserved for the conflict branch
         if (!path.endsWith('.ts') && !path.endsWith('.md') && r.chance(0.7)) continue // mostly edit code
         const edited = editLines(r, b.files.get(path) as string[])
         b.files.set(path, edited)
@@ -329,6 +350,7 @@ export function makeDevRepo(opts: DevRepoOptions = {}): DevRepoInfo {
     main.files = cloneFiles(develop.files)
     const tag = `v${version.major}.${version.minor}.${version.patch}`
     main.tip = writeCommit('refs/heads/main', `Release ${tag}`, r.pick(AUTHORS), main.tip, develop.tip, changes)
+    firstRelease ||= main.tip
     out.push(`tag ${tag}`, `from :${main.tip}`, `tagger ${AUTHORS[2].name} <${AUTHORS[2].email}> ${time} +0000`)
     // A tag's message is its last part: only one optional newline may follow (unlike a commit).
     data(`Release ${tag}\n`)
@@ -352,8 +374,7 @@ export function makeDevRepo(opts: DevRepoOptions = {}): DevRepoInfo {
     if (roll < 0.08 && features.length < 7) {
       const claimed = new Set<string>()
       const taken = claimedAll()
-      const candidates = [...develop.files.keys()].filter((p) => !taken.has(p) && !Buffer.isBuffer(develop.files.get(p)) &&
-        p !== 'src/config.ts' && p !== 'src/utils/format.ts')
+      const candidates = [...develop.files.keys()].filter((p) => !taken.has(p) && !Buffer.isBuffer(develop.files.get(p)) && !RESERVED.has(p))
       for (let i = r.int(2, 6); i > 0 && candidates.length; i--) claimed.add(r.pick(candidates))
       const name = `feature/${r.pick(VERBS)}-${r.pick(WORDS)}-${mark}`
       const f: Branch = { name, tip: develop.tip, files: cloneFiles(develop.files), claimed, touched: new Set(), commits: 0, squash: squashes < 2 && r.chance(0.08) }
@@ -381,8 +402,10 @@ export function makeDevRepo(opts: DevRepoOptions = {}): DevRepoInfo {
     }
   }
 
-  // gh-pages: an orphan branch with a few commits of its own.
-  let pages = writeCommit('refs/heads/gh-pages', 'Publish site', AUTHORS[6], null, null, new Map([['index.html', ['<!doctype html>', '<h1>Docs</h1>']]]), true)
+  // gh-pages: branched from the first release, then emptied and replaced by the built site
+  // (`git checkout -b gh-pages && git rm -r .`), so it shares history with everything else.
+  let pages = writeCommit('refs/heads/gh-pages', 'Publish site', AUTHORS[6], firstRelease || main.tip, null,
+    new Map([['index.html', ['<!doctype html>', '<h1>Docs</h1>']]]), true)
   for (let i = 0; i < 3; i++) pages = writeCommit('refs/heads/gh-pages', `Publish site (${i + 2})`, AUTHORS[6], pages, null, new Map([['index.html', ['<!doctype html>', `<h1>Docs v${i + 2}</h1>`]]]))
 
   out.push(`reset refs/heads/develop`, `from :${develop.tip}`, '')
@@ -395,14 +418,56 @@ export function makeDevRepo(opts: DevRepoOptions = {}): DevRepoInfo {
   }
 
   repo.tick = commitCount
-  finishWorkingState(repo, r, opts.remotesDir)
-  return { dir, conflictBranch: CONFLICT_BRANCH, authors: [...AUTHORS] }
+  const bulkStashFiles = finishWorkingState(repo, r, opts.remotesDir)
+  return { dir, conflictBranch: CONFLICT_BRANCH, authors: [...AUTHORS], bulkStashFiles }
 }
 
-export const CONFLICT_BRANCH = 'conflict/renames-vs-edits'
+/** One branch per kind of merge conflict. Merging any of them into develop stops on conflicts. */
+export const CONFLICT_BRANCHES = {
+  /** Both sides edit the same lines of src/config.ts; theirs also renames src/utils/format.ts, which ours edits. */
+  renameVsEdit: 'conflict/renames-vs-edits',
+  /** Theirs deletes src/api/client.ts, ours edits it. */
+  deleteVsEdit: 'conflict/delete-vs-edit',
+  /** Both sides add src/utils/retry.ts with different contents. */
+  bothAdded: 'conflict/both-added',
+  /** Both sides change the binary assets/brand.woff2. */
+  binary: 'conflict/binary-asset',
+} as const
 
-/** The parts fast-import cannot express: a real conflict, remotes, stashes, a dirty working tree. */
-function finishWorkingState(repo: FixtureRepo, r: Rand, remotesDir?: string): void {
+export const CONFLICT_BRANCH = CONFLICT_BRANCHES.renameVsEdit
+
+const GITIGNORE = ['# dependencies', 'node_modules/', '', '# build output', 'dist/', 'coverage/', '',
+  '# local configuration', '.env', '.env.*', '!.env.example', '', '# logs', '*.log', '', '.DS_Store']
+
+function randomBytes(r: Rand, size: number): Buffer {
+  const b = Buffer.alloc(size)
+  for (let i = 0; i < size; i += 4) b.writeUInt32LE(Math.floor(r.float() * 0xffffffff), i)
+  return b
+}
+
+const ICON_GROUPS = ['actions', 'arrows', 'devices', 'editor', 'files', 'git', 'media', 'navigation', 'social', 'status']
+
+/** `count` small SVG icons in assets/icons/<group>/, each a path or two from the seed. */
+function makeIcons(r: Rand, count: number): Map<string, string[]> {
+  const icons = new Map<string, string[]>()
+  const pt = () => `${r.int(2, 22)} ${r.int(2, 22)}`
+  for (let i = 0; i < count; i++) {
+    const path = `assets/icons/${ICON_GROUPS[i % ICON_GROUPS.length]}/${r.pick(VERBS)}-${r.pick(WORDS)}-${i}.svg`
+    icons.set(path, [
+      '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">',
+      `  <path d="M${pt()} L${pt()} L${pt()}" />`,
+      ...(r.chance(0.5) ? [`  <circle cx="${r.int(6, 18)}" cy="${r.int(6, 18)}" r="${r.int(1, 5)}" />`] : []),
+      '</svg>',
+    ])
+  }
+  return icons
+}
+
+/**
+ * The parts fast-import cannot express: real conflicts, remotes, stashes, ignored files and a
+ * dirty working tree. Returns how many files the bulk stash changes or adds.
+ */
+function finishWorkingState(repo: FixtureRepo, r: Rand, remotesDir?: string): number {
   const remoteDir = (name: string) => {
     if (!remotesDir) return tempDir(`gitsquid-dev-${name}-`)
     const d = join(remotesDir, name)
@@ -420,9 +485,29 @@ function finishWorkingState(repo: FixtureRepo, r: Rand, remotesDir?: string): vo
   repo.write('src/utils/formatting.ts', 'export function format(value: string) {\n  // keep this short\n  const trimmed = value.trim().toLowerCase()\n  return trimmed\n}\n')
   repo.commit('refactor(utils): rename format to formatting, lower-case values')
   g('checkout', '-q', 'develop')
+
+  // The other kinds of conflict, each on its own branch from the same develop commit.
+  g('checkout', '-q', '-b', CONFLICT_BRANCHES.deleteVsEdit, 'develop')
+  g('rm', '-q', 'src/api/client.ts')
+  repo.commit('refactor(api): drop the hand-rolled client')
+  g('checkout', '-q', '-b', CONFLICT_BRANCHES.bothAdded, 'develop')
+  repo.commit('feat(utils): retry with a fixed delay', { 'src/utils/retry.ts': RETRY_FIXED })
+  g('checkout', '-q', '-b', CONFLICT_BRANCHES.binary, 'develop')
+  writeFileSync(join(repo.dir, 'assets/brand.woff2'), randomBytes(r, 12 * 1024))
+  repo.commit('chore(assets): subset the brand font')
+  g('checkout', '-q', 'develop')
+
+  // develop moves on and changes the same things in its own way.
   repo.write('src/config.ts', "export const config = {\n  name: 'gitsquid-dev',\n  retries: 2,\n  timeoutMs: 3000,\n}\n")
   repo.write('src/utils/format.ts', 'export function format(value: string) {\n  // keep this short\n  const trimmed = value.trim().replace(/\\s+/g, " ")\n  return trimmed\n}\n')
   repo.commit('fix(config): fewer retries, shorter timeout; collapse whitespace in format')
+  repo.write('src/api/client.ts', 'export async function request(url: string, init?: RequestInit) {\n' +
+    '  const res = await fetch(url, { ...init, signal: AbortSignal.timeout(10_000) })\n' +
+    '  if (!res.ok) throw new Error(`${res.status} ${url}`)\n  return res.json()\n}\n')
+  repo.commit('fix(api): time out stalled requests')
+  repo.commit('feat(utils): retry with exponential backoff', { 'src/utils/retry.ts': RETRY_BACKOFF })
+  writeFileSync(join(repo.dir, 'assets/brand.woff2'), randomBytes(r, 20 * 1024))
+  repo.commit('chore(assets): update the brand font')
 
   // origin: a bare copy. Then someone else pushes 3 commits to develop, and we make 2 of our own.
   const origin = remoteDir('origin')
@@ -453,8 +538,8 @@ function finishWorkingState(repo: FixtureRepo, r: Rand, remotesDir?: string): vo
   g('remote', 'add', 'upstream', upstream)
   g('fetch', '-q', 'upstream')
 
-  // Three stashes.
-  const tracked = g('ls-files', 'src').split('\n').filter((p) => p.endsWith('.ts') && !p.includes('format') && !p.includes('config'))
+  // Three small stashes.
+  const tracked = g('ls-files', 'src').split('\n').filter((p) => p.endsWith('.ts') && !RESERVED.has(p))
   for (let i = 1; i <= 3; i++) {
     const path = tracked[r.int(0, tracked.length - 1)]!
     repo.write(path, `// stashed experiment ${i}\n` + g('show', `HEAD:${path}`))
@@ -462,12 +547,64 @@ function finishWorkingState(repo: FixtureRepo, r: Rand, remotesDir?: string): vo
     g('stash', 'push', '-q', '-m', `experiment ${i}`)
   }
 
-  // A dirty working tree: 3 modified, 1 staged, 2 untracked, 1 deleted.
+  // And a big one on top (stash@{0}): every icon restyled, plus a filled variant of every fourth.
+  // Applying it gives thousands of unstaged changes and untracked files.
+  const icons = g('ls-files', 'assets/icons').split('\n').filter(Boolean)
+  for (const [i, path] of icons.entries()) {
+    const svg = readFileSync(join(repo.dir, path), 'utf8')
+    repo.write(path, svg.replace('stroke-width="1.5"', 'stroke-width="2"'))
+    if (i % 4 === 0) repo.write(path.replace(/\.svg$/, '-filled.svg'), svg.replace('fill="none"', 'fill="currentColor"'))
+  }
+  const bulkStashFiles = icons.length + Math.ceil(icons.length / 4)
+  repo.tick++
+  g('stash', 'push', '-q', '--include-untracked', '-m', `icons: stroke-width 2 and filled variants (${bulkStashFiles.toLocaleString('en-US')} files)`)
+
+  // A dirty working tree: 3 modified, 2 untracked, 1 deleted. Nothing staged: git refuses to
+  // merge while the index differs from HEAD, and the conflict branches should merge as they are.
   const pickFile = (i: number) => tracked[(i * 7) % tracked.length]!
   for (let i = 0; i < 3; i++) repo.write(pickFile(i), g('show', `HEAD:${pickFile(i)}`) + `// edited in the working tree ${i}\n`)
-  repo.write(pickFile(3), g('show', `HEAD:${pickFile(3)}`) + '// staged change\n')
-  g('add', '--', pickFile(3))
   repo.write('notes/todo.md', '- [ ] try the three-pane merge\n')
   repo.write('scratch.ts', 'export const scratch = 1\n')
-  rmSync(join(repo.dir, pickFile(4)))
+  rmSync(join(repo.dir, pickFile(3)))
+
+  // What a real checkout has lying around, hidden by the committed .gitignore.
+  for (const pkg of ['react', 'react-dom', 'zustand', 'vite', 'typescript', 'left-pad']) {
+    repo.write(`node_modules/${pkg}/package.json`, `{ "name": "${pkg}", "version": "1.0.0" }\n`)
+    repo.write(`node_modules/${pkg}/index.js`, `module.exports = require('./dist/${pkg}.js')\n`)
+  }
+  repo.write('dist/index.js', 'console.log("built")\n')
+  repo.write('coverage/lcov.info', 'TN:\nend_of_record\n')
+  repo.write('.env', 'API_URL=http://localhost:3000\nAPI_TOKEN=dev-only-not-a-secret\n')
+  repo.write('npm-debug.log', 'npm ERR! code ELIFECYCLE\n')
+  repo.write('.idea/workspace.xml', '<project version="4" />\n')
+  // An unstaged edit to .gitignore that changes what is untracked: .idea/ becomes ignored, and
+  // *.log narrows to logs/, so npm-debug.log shows up. Discarding it flips both back.
+  repo.write('.gitignore', [...GITIGNORE.map((l) => (l === '*.log' ? 'logs/' : l)), '', '# editors', '.idea/', ''].join('\n'))
+  return bulkStashFiles
 }
+
+const RETRY_FIXED = `export async function retry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
+  for (let i = 1; ; i++) {
+    try {
+      return await fn()
+    } catch (e) {
+      if (i >= attempts) throw e
+      await new Promise((r) => setTimeout(r, 500))
+    }
+  }
+}
+`
+
+const RETRY_BACKOFF = `export async function retry<T>(fn: () => Promise<T>, attempts = 5): Promise<T> {
+  let delay = 100
+  for (let i = 1; ; i++) {
+    try {
+      return await fn()
+    } catch (e) {
+      if (i >= attempts) throw e
+      await new Promise((r) => setTimeout(r, delay))
+      delay *= 2
+    }
+  }
+}
+`
