@@ -1,4 +1,4 @@
-import { countConflicts } from '@gitsquid/shared'
+import { countConflicts } from '@gitgoose/shared'
 import clsx from 'clsx'
 import { Copy, ShieldQuestion, Sparkles, SquareTerminal } from 'lucide-react'
 import { useState } from 'react'
@@ -37,7 +37,7 @@ function ConsentDialog() {
     <Modal open onClose={() => answer(false)} title={`Send to ${c.label}?`}>
       <div className="text-[13px]" data-testid="ai-consent">
         <p className="text-muted">
-          To do this, GitSquid sends {c.what} to <b className="text-fg">{c.label}</b>.
+          To do this, GitGoose sends {c.what} to <b className="text-fg">{c.label}</b>.
           {c.label === 'Anthropic API' ? ' It goes to Anthropic with your API key.' : ' The agent runs on this computer with its own login, and may send it to its provider.'}
         </p>
         <p className="mt-2 text-xs text-faint">You are asked once for each agent or provider. Settings → AI turns AI features off.</p>
@@ -75,7 +75,7 @@ function LoginDialog() {
   return (
     <Modal open onClose={() => done(false)} title={`Log in to ${l.agent}`} width={500}>
       <div className="space-y-3 text-[13px]" data-testid="ai-login">
-        <p className="text-muted">The agent needs you to log in. It keeps its own credentials; GitSquid never sees them.</p>
+        <p className="text-muted">The agent needs you to log in. It keeps its own credentials; GitGoose never sees them.</p>
         {l.methods.map((m) => (
           <div key={m.id} className="rounded-md border border-line p-2.5">
             <div className="font-medium">{m.name}</div>

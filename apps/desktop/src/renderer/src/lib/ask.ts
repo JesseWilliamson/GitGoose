@@ -1,4 +1,4 @@
-import type { AskThread } from '@gitsquid/shared'
+import type { AskThread } from '@gitgoose/shared'
 import { api, toUiError } from './api'
 import { startAi } from './ai'
 import { updateRepo } from './store'

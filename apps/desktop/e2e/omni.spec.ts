@@ -1,4 +1,4 @@
-import { FixtureRepo, initRepo, makeLargeRepo } from '@gitsquid/fixtures'
+import { FixtureRepo, initRepo, makeLargeRepo } from '@gitgoose/fixtures'
 import { expect, test } from '@playwright/test'
 import { launch } from './app'
 
@@ -82,7 +82,7 @@ test('a stash hidden from the graph opens without loading the whole history', as
   r.write('main.txt', 'work in progress\n')
   r.git('stash', 'push', '-m', 'half-done pricing')
   const { app, page } = await launch(dir)
-  await page.evaluate(() => window.gitsquid.setSettings({ showStashes: false }))
+  await page.evaluate(() => window.gitgoose.setSettings({ showStashes: false }))
   const count = page.getByTestId('commit-count')
   await expect(count).toContainText('+')
 

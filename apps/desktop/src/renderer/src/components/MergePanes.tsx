@@ -1,6 +1,6 @@
 import { EditorState, RangeSet, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state'
 import { Decoration, EditorView, GutterMarker, gutter, lineNumbers, type DecorationSet } from '@codemirror/view'
-import { countConflicts, merge3, type Merge3, type Range } from '@gitsquid/shared'
+import { countConflicts, merge3, type Merge3, type Range } from '@gitgoose/shared'
 import clsx from 'clsx'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { basicSetup } from 'codemirror'
@@ -18,7 +18,7 @@ import { Button } from './ui'
  * has one colour everywhere (yours blue, theirs amber): its pane header, its changed lines, its
  * buttons, and the lines of the result that came from it.
  *
- * Both sides are diffed against the common ancestor (merge3 in @gitsquid/shared), so every
+ * Both sides are diffed against the common ancestor (merge3 in @gitgoose/shared), so every
  * change knows whether the other side touched the same lines. The bookkeeping (block positions,
  * applied/ignored, undo) lives in lib/mergeState.ts.
  */

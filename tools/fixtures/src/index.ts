@@ -92,7 +92,7 @@ function nullDevice(): string {
   return process.platform === 'win32' ? 'NUL' : '/dev/null'
 }
 
-export function tempDir(prefix = 'gitsquid-'): string {
+export function tempDir(prefix = 'gitgoose-'): string {
   return mkdtempSync(join(tmpdir(), prefix))
 }
 
@@ -206,10 +206,10 @@ export function makeFixture(shape: Shape): FixtureRepo {
 
     case 'with-remote': {
       // A bare "origin" plus a clone of it with one unpushed commit.
-      const origin = initRepo(tempDir('gitsquid-origin-'))
+      const origin = initRepo(tempDir('gitgoose-origin-'))
       origin.commit('initial', { 'readme.md': '# hi\n' })
       origin.commit('second', { 'readme.md': '# hi\nthere\n' })
-      const bare = tempDir('gitsquid-bare-')
+      const bare = tempDir('gitgoose-bare-')
       execFileSync('git', ['clone', '-q', '--bare', origin.dir, bare])
       rmSync(r.dir, { recursive: true, force: true })
       execFileSync('git', ['clone', '-q', bare, r.dir])
@@ -228,7 +228,7 @@ export function makeFixture(shape: Shape): FixtureRepo {
  * without touching the working tree. 100k commits take a few seconds instead of minutes.
  * Every 50 commits a side branch of 5 commits is merged back, so the graph has real lanes.
  */
-export function makeLargeRepo(commits: number, dir: string = tempDir('gitsquid-large-')): string {
+export function makeLargeRepo(commits: number, dir: string = tempDir('gitgoose-large-')): string {
   initRepo(dir)
   const lines: string[] = []
   let mark = 0

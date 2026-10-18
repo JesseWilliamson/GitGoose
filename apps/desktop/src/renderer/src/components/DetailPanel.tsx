@@ -1,5 +1,5 @@
-import type { ChangedFile, CommitDetails, DiffTarget, StatusEntry } from '@gitsquid/shared'
-import type { Identity, Person, Signature } from '@gitsquid/shared'
+import type { ChangedFile, CommitDetails, DiffTarget, StatusEntry } from '@gitgoose/shared'
+import type { Identity, Person, Signature } from '@gitgoose/shared'
 import { Archive, Check, ChevronDown, Copy, Minus, MoreHorizontal, Plus, ShieldAlert, ShieldCheck, Sparkles, Undo2, X } from 'lucide-react'
 import clsx from 'clsx'
 import { DropdownMenu } from 'radix-ui'

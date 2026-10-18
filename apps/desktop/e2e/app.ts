@@ -1,5 +1,5 @@
 import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
-import { tempDir } from '@gitsquid/fixtures'
+import { tempDir } from '@gitgoose/fixtures'
 import { join } from 'node:path'
 
 export interface Launched {
@@ -34,9 +34,9 @@ export async function launch(repo?: string, env: Record<string, string> = {}, op
     args,
     env: {
       ...process.env,
-      GITSQUID_USER_DATA: tempDir('gitsquid-profile-'),
-      GITSQUID_NO_UPDATE: '1',
-      ...(repo ? { GITSQUID_OPEN: repo } : {}),
+      GITGOOSE_USER_DATA: tempDir('gitgoose-profile-'),
+      GITGOOSE_NO_UPDATE: '1',
+      ...(repo ? { GITGOOSE_OPEN: repo } : {}),
       ...env,
     } as Record<string, string>,
   })

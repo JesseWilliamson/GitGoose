@@ -1,6 +1,6 @@
-import type { Repo } from '@gitsquid/git'
-import { addedLines, carryOver, textKey, describeHunks, globToRegExp, hunkKey, numberedDiff, onlyChanged, reviewableLines, secretFindings, walkthroughHunks, type AddedLines, type ReviewableLines } from '@gitsquid/git'
-import type { AiTask, ImpactResult, LinterRun, ReviewFinding, ReviewLearning, ReviewProfile, WalkthroughResult } from '@gitsquid/shared'
+import type { Repo } from '@gitgoose/git'
+import { addedLines, carryOver, textKey, describeHunks, globToRegExp, hunkKey, numberedDiff, onlyChanged, reviewableLines, secretFindings, walkthroughHunks, type AddedLines, type ReviewableLines } from '@gitgoose/git'
+import type { AiTask, ImpactResult, LinterRun, ReviewFinding, ReviewLearning, ReviewProfile, WalkthroughResult } from '@gitgoose/shared'
 import { join } from 'node:path'
 
 /**

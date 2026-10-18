@@ -35,7 +35,7 @@ function mutate(lines: string[], r: () => number, tag: string): string[] {
 
 /** git merge-file -p: the merged text and how many conflicts git found. */
 function gitMerge(base: string, ours: string, theirs: string): { text: string; conflicts: number } {
-  const dir = mkdtempSync(join(tmpdir(), 'gitsquid-merge3-'))
+  const dir = mkdtempSync(join(tmpdir(), 'gitgoose-merge3-'))
   mkdirSync(dir, { recursive: true })
   for (const [n, t] of [['base', base], ['ours', ours], ['theirs', theirs]]) writeFileSync(join(dir, n!), t!)
   const res = spawnSync('git', ['merge-file', '-p', join(dir, 'ours'), join(dir, 'base'), join(dir, 'theirs')], { encoding: 'utf8' })

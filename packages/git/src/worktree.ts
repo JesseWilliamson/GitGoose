@@ -1,4 +1,4 @@
-import type { Worktree } from '@gitsquid/shared'
+import type { Worktree } from '@gitgoose/shared'
 import { realpath } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 

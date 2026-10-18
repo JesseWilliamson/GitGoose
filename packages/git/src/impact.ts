@@ -1,5 +1,5 @@
-import { findDefinitions, type Definition } from '@gitsquid/codegraph'
-import type { FileDiff } from '@gitsquid/shared'
+import { findDefinitions, type Definition } from '@gitgoose/codegraph'
+import type { FileDiff } from '@gitgoose/shared'
 import { layerOf } from './walkthrough'
 
 /**

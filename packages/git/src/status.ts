@@ -1,4 +1,4 @@
-import type { Head, StatusEntry } from '@gitsquid/shared'
+import type { Head, StatusEntry } from '@gitgoose/shared'
 
 export interface ParsedStatus {
   head: Head

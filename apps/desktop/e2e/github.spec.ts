@@ -1,4 +1,4 @@
-import { fakeGitHub, makeFixture, tempDir } from '@gitsquid/fixtures'
+import { fakeGitHub, makeFixture, tempDir } from '@gitgoose/fixtures'
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -28,14 +28,14 @@ test('signs in with the device flow, finds avatars through GitHub, and signs out
   r.git('remote', 'add', 'origin', 'https://github.com/acme/widgets.git')
   r.git('update-ref', 'refs/remotes/origin/main', grace)
   const gh = await fakeGitHub({ pendingPolls: 1, commits: { [grace]: 'ghopper' } })
-  const profile = tempDir('gitsquid-profile-')
+  const profile = tempDir('gitgoose-profile-')
   const { app, page } = await launch(r.dir, {
-    GITSQUID_USER_DATA: profile,
-    GITSQUID_GITHUB_URL: gh.url,
-    GITSQUID_GITHUB_CLIENT_ID: 'test-client',
+    GITGOOSE_USER_DATA: profile,
+    GITGOOSE_GITHUB_URL: gh.url,
+    GITGOOSE_GITHUB_CLIENT_ID: 'test-client',
   })
   const opened = await captureOpened(app)
-  await page.evaluate(() => window.gitsquid.setSettings({ avatars: 'github' }))
+  await page.evaluate(() => window.gitgoose.setSettings({ avatars: 'github' }))
   // Signed out: GitHub is never contacted, whatever the graph shows.
   await expect(page.getByTestId('commit-row').first().locator('image')).toHaveCount(1)
   expect(gh.hits).toEqual([])
@@ -68,7 +68,7 @@ test('signs in with the device flow, finds avatars through GitHub, and signs out
 
 test('a sign-in denied on GitHub says so, and leaves you signed out', async () => {
   const gh = await fakeGitHub({ outcome: 'access_denied' })
-  const { app, page } = await launch(makeFixture('linear').dir, { GITSQUID_GITHUB_URL: gh.url, GITSQUID_GITHUB_CLIENT_ID: 'test-client' })
+  const { app, page } = await launch(makeFixture('linear').dir, { GITGOOSE_GITHUB_URL: gh.url, GITGOOSE_GITHUB_CLIENT_ID: 'test-client' })
   await openAccounts(page)
   await page.getByTestId('github-sign-in').click()
   await expect(page.getByTestId('github-error')).toContainText('cancelled on GitHub', { timeout: 15_000 })
@@ -80,7 +80,7 @@ test('a sign-in denied on GitHub says so, and leaves you signed out', async () =
 
 test('without a client id, sign-in is explained instead of offered', async () => {
   const r = makeFixture('linear')
-  const { app, page } = await launch(r.dir, { GITSQUID_GITHUB_CLIENT_ID: '' })
+  const { app, page } = await launch(r.dir, { GITGOOSE_GITHUB_CLIENT_ID: '' })
   await openAccounts(page)
   await expect(page.getByTestId('github-account')).toContainText('not set up in this build')
   await expect(page.getByTestId('github-sign-in')).toHaveCount(0)
@@ -89,12 +89,12 @@ test('without a client id, sign-in is explained instead of offered', async () =>
 
 test('turning on HTTPS push asks GitHub for repository access in a second, separate grant', async () => {
   const gh = await fakeGitHub({ pendingPolls: 0 })
-  const { app, page } = await launch(makeFixture('linear').dir, { GITSQUID_GITHUB_URL: gh.url, GITSQUID_GITHUB_CLIENT_ID: 'test-client' })
+  const { app, page } = await launch(makeFixture('linear').dir, { GITGOOSE_GITHUB_URL: gh.url, GITGOOSE_GITHUB_CLIENT_ID: 'test-client' })
   await openAccounts(page)
   await page.getByTestId('github-sign-in').click()
   await expect(page.getByTestId('github-login')).toContainText('profile only', { timeout: 15_000 })
   await expect(page.getByTestId('github-grant-repo')).toHaveCount(0)
-  await page.evaluate(() => window.gitsquid.setSettings({ githubHttps: true }))
+  await page.evaluate(() => window.gitgoose.setSettings({ githubHttps: true }))
   await page.getByTestId('github-grant-repo').click()
   await expect(page.getByTestId('github-dialog')).toContainText('scope "repo"')
   await expect(page.getByTestId('github-login')).toContainText('profile and repositories', { timeout: 15_000 })

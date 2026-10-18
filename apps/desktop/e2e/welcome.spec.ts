@@ -1,4 +1,4 @@
-import { makeFixture, tempDir } from '@gitsquid/fixtures'
+import { makeFixture, tempDir } from '@gitgoose/fixtures'
 import { expect, test, type ElectronApplication } from '@playwright/test'
 import { existsSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
@@ -24,7 +24,7 @@ test('opens a repository from the welcome screen and lists it as recent', async 
 })
 
 test('offers to initialize a folder that is not a repository', async () => {
-  const dir = tempDir('gitsquid-plain-')
+  const dir = tempDir('gitgoose-plain-')
   const { app, page } = await launch()
   await pickReturns(app, dir)
   await page.getByTestId('welcome').getByRole('button', { name: 'Open' }).click()
@@ -36,7 +36,7 @@ test('offers to initialize a folder that is not a repository', async () => {
 
 test('clones a repository', async () => {
   const src = makeFixture('branches')
-  const parent = tempDir('gitsquid-clones-')
+  const parent = tempDir('gitgoose-clones-')
   const { app, page } = await launch()
   await pickReturns(app, parent)
   await page.getByTestId('welcome').getByRole('button', { name: 'Clone' }).click()

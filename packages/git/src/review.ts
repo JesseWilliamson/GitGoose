@@ -1,5 +1,5 @@
-import { enclosingDefinition, findDefinitions } from '@gitsquid/codegraph'
-import { FINDING_TYPES, SEVERITIES, type FileDiff, type FindingSeverity, type Hunk, type ReviewFinding, type ReviewProfile } from '@gitsquid/shared'
+import { enclosingDefinition, findDefinitions } from '@gitgoose/codegraph'
+import { FINDING_TYPES, SEVERITIES, type FileDiff, type FindingSeverity, type Hunk, type ReviewFinding, type ReviewProfile } from '@gitgoose/shared'
 
 /**
  * The deterministic half of AI review: what the model is shown, and what is done with its

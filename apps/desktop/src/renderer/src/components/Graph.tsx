@@ -1,11 +1,11 @@
-import type { Row } from '@gitsquid/graph'
-import { DEFAULT_GRAPH_COLUMNS, GRAPH_COLUMNS, type Commit, type GraphColumns, type Ref, type StashEntry } from '@gitsquid/shared'
+import type { Row } from '@gitgoose/graph'
+import { DEFAULT_GRAPH_COLUMNS, GRAPH_COLUMNS, type Commit, type GraphColumns, type Ref, type StashEntry } from '@gitgoose/shared'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import clsx from 'clsx'
 import { Archive, Cloud, Laptop, Settings2, Tag } from 'lucide-react'
 import { ContextMenu, DropdownMenu } from 'radix-ui'
 import { memo, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
-import type { AvatarSource } from '@gitsquid/shared'
+import type { AvatarSource } from '@gitgoose/shared'
 import { checkout, moveCommits, squashOnto } from '../lib/actions'
 import { avatarSrc, useAvatarVariant } from '../lib/avatar'
 import { formatDate, laneColor, relativeTime, shortHash, stashLabel } from '../lib/format'
@@ -16,7 +16,7 @@ import { SearchBar } from './SearchBar'
 import { bisectMark, bisectReset, showAllInGraph } from '../lib/actions'
 import { DM, Spinner } from './ui'
 
-const isMac = window.gitsquid?.platform === 'darwin'
+const isMac = window.gitgoose?.platform === 'darwin'
 const REFS_W = 160
 const AUTHOR_W = 140
 const DATE_W: Record<string, number> = { relative: 100, absolute: 110, both: 200 }
@@ -25,9 +25,9 @@ const SHA_W = 68
 const AUTO_LANES = 8
 const MIN_GRAPH_W = 64
 const MAX_GRAPH_W = 800
-export const REF_MIME = 'application/x-gitsquid-ref'
+export const REF_MIME = 'application/x-gitgoose-ref'
 /** Commits being dragged to a new place in the branch (JSON list of hashes). */
-export const COMMITS_MIME = 'application/x-gitsquid-commits'
+export const COMMITS_MIME = 'application/x-gitgoose-commits'
 const COL_AUTHOR = 'hidden @2xl:flex'
 const COL_DATE = 'hidden @xl:block'
 const COL_SHA = 'hidden @3xl:block'

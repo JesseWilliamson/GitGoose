@@ -22,8 +22,13 @@ macOS auto-update only works for signed builds.
 ## Local builds
 
 `pnpm dist` builds every installer for your current OS into `apps/desktop/release/`, the same set
-the Release workflow publishes. `pnpm --filter @gitsquid/desktop exec electron-builder --dir`
+the Release workflow publishes. `pnpm --filter @gitgoose/desktop exec electron-builder --dir`
 builds an unpacked app (fastest) for testing.
+
+The app icon is `apps/desktop/build/icon.svg`; `icon.png` next to it is what electron-builder
+reads (and derives the .icns and .ico from), regenerated with
+`rsvg-convert -w 1024 -h 1024 build/icon.svg -o build/icon.png`. On Linux and Windows the window
+carries the same file (copied to `resources/` by `extraResources`).
 
 On Linux that is a single AppImage — see [ADR-007](adr/007-linux-packaging.md) for why there is no
 deb, rpm or flatpak. It is also the only Linux format electron-updater can update in place, so the

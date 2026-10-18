@@ -8,10 +8,10 @@
   imports). The renderer never touches Node.
 - The window uses `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`. The preload
   script is emitted as CommonJS because sandboxed preloads cannot be ES modules.
-- One IPC channel (`gitsquid:invoke`) carries `(method, args)`. The method list is
-  `API_METHODS` in `packages/shared/src/api.ts`, checked against the `GitSquidApi` interface at
+- One IPC channel (`gitgoose:invoke`) carries `(method, args)`. The method list is
+  `API_METHODS` in `packages/shared/src/api.ts`, checked against the `GitGooseApi` interface at
   compile time. Results and errors both travel as data (`IpcResult`), so git's stderr survives.
-- Main pushes events on `gitsquid:event`: snapshots, worktree changes, credential prompts,
+- Main pushes events on `gitgoose:event`: snapshots, worktree changes, credential prompts,
   progress, menu commands.
 
 ## Why

@@ -1,4 +1,4 @@
-import type { GraphFilter, Ref } from '@gitsquid/shared'
+import type { GraphFilter, Ref } from '@gitgoose/shared'
 
 /**
  * Whether a branch shows in the graph under the repository's filter: not hidden (by name, or with

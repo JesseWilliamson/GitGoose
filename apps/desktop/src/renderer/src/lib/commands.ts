@@ -1,4 +1,4 @@
-import { DEFAULT_LAYOUT, setCollapsed } from '@gitsquid/shared'
+import { DEFAULT_LAYOUT, setCollapsed } from '@gitgoose/shared'
 import {
   lfsPull, lfsTrack, snapshot, addRemote, addSubmodule, applyPatchFile, updateSubmodules, addWorktree, applyPatchFromClipboard, cleanupBranches, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, reopen, stash, undo,
 } from './actions'
@@ -16,7 +16,7 @@ export interface CommandEntry {
 }
 
 /**
- * Every action GitSquid has, for the omni search (Ctrl+P shows only these). Built fresh each time
+ * Every action GitGoose has, for the omni search (Ctrl+P shows only these). Built fresh each time
  * from the current state, so it always fits the active repository: an operation in progress
  * offers "Resolve conflicts", a repository with submodules "Update submodules", and so on.
  * Branches are not here: they are search results of their own (Ctrl+Enter checks one out).
@@ -66,7 +66,7 @@ export function commandEntries(): CommandEntry[] {
     add('Repository', 'Pop latest stash', () => pop(id))
     add('Repository', 'Show uncommitted changes', () => useStore.setState((s) => ({ repos: { ...s.repos, [id]: { ...s.repos[id]!, selected: { kind: 'wip' }, center: { kind: 'graph' } } } })))
     if (active.snapshot.operation) add('Repository', `Resolve conflicts (${active.snapshot.operation})`, () => useStore.setState((s) => ({ repos: { ...s.repos, [id]: { ...s.repos[id]!, center: { kind: 'conflicts' } } } })))
-    add('Repository', 'Reveal in file manager', () => void window.gitsquid.revealPath(active.snapshot.path))
+    add('Repository', 'Reveal in file manager', () => void window.gitgoose.revealPath(active.snapshot.path))
   }
   for (const t of tabs) {
     const r = repos[t]

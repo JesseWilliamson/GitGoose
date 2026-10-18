@@ -34,7 +34,7 @@ export const COMMANDS: KeyCommand[] = [
   { id: 'toggle-details', label: 'Show or hide the details panel', defaults: ['mod+alt+b'] },
 ]
 
-const mac = typeof window !== 'undefined' && window.gitsquid?.platform === 'darwin'
+const mac = typeof window !== 'undefined' && window.gitgoose?.platform === 'darwin'
 
 /** The combination a key event represents, or null for keys without a modifier. */
 export function comboOf(e: KeyboardEvent): string | null {

@@ -36,8 +36,8 @@ format that isolates the app has to punch a hole back out to all of it.
 ## Consequences
 
 - Flathub presence is off the table until someone finishes the askpass bridge and settles the
-  app id. `appId` is `dev.gitsquid.app`, which claims the domain `gitsquid.dev`; Flathub requires
+  app id. `appId` is `dev.gitgoose.app`, which claims the domain `gitgoose.dev`; Flathub requires
   an id matching a domain you control, so submitting means owning it or renaming to
-  `io.github.JesseWilliamson.GitSquid`, and a rename moves where the app keeps its settings.
+  `io.github.JesseWilliamson.GitGoose`, and a rename moves where the app keeps its settings.
 - Users on Debian or Fedora who expect a native package get the AppImage instead. Distribution
   packaging, if it ever happens, is better done by those distributions than by this repository.

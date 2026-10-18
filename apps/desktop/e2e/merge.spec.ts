@@ -1,4 +1,4 @@
-import { CONFLICT_BRANCH, FixtureRepo, initRepo, makeDevRepo } from '@gitsquid/fixtures'
+import { CONFLICT_BRANCH, FixtureRepo, initRepo, makeDevRepo } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import { launch } from './app'
 

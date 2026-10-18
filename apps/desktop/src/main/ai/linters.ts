@@ -1,5 +1,5 @@
-import { lintFindings, parseLintOutput, type AddedLines } from '@gitsquid/git'
-import { commandArgv, type LinterInfo, type LinterRun, type ReviewFinding, type Settings } from '@gitsquid/shared'
+import { lintFindings, parseLintOutput, type AddedLines } from '@gitgoose/git'
+import { commandArgv, type LinterInfo, type LinterRun, type ReviewFinding, type Settings } from '@gitgoose/shared'
 import { spawn } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { delimiter, join } from 'node:path'

@@ -1,4 +1,4 @@
-import { initRepo } from '@gitsquid/fixtures'
+import { initRepo } from '@gitgoose/fixtures'
 import { expect, test } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'

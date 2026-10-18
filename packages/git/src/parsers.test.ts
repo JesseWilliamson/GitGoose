@@ -1,4 +1,4 @@
-import { makeFixture } from '@gitsquid/fixtures'
+import { makeFixture } from '@gitgoose/fixtures'
 import { describe, expect, it } from 'vitest'
 import { parseBlame } from './blame'
 import { parseChangedFiles, parseDiff, untrackedDiff } from './diff'

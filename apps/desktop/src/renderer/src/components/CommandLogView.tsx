@@ -1,4 +1,4 @@
-import type { CommandRecord } from '@gitsquid/shared'
+import type { CommandRecord } from '@gitgoose/shared'
 import clsx from 'clsx'
 import { Terminal } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -10,7 +10,7 @@ import { Button } from './ui'
 const KEEP = 500
 
 /**
- * Every git command GitSquid ran for this repository (GitKraken's activity log): what it ran,
+ * Every git command GitGoose ran for this repository (GitKraken's activity log): what it ran,
  * how long it took, how it ended, and what git said on stderr. Reads (status, log, for-each-ref
  * on every refresh) are hidden by default; they are most of the traffic and rarely the question.
  */
@@ -51,7 +51,7 @@ export function CommandLogView({ view }: { view: RepoView }) {
         <Terminal size={18} className="text-muted" />
         <div className="min-w-0 flex-1">
           <div className="text-[14px] font-semibold">Git command log</div>
-          <div className="truncate text-xs text-muted">Every git command GitSquid ran here, newest first. Click one to see what git printed.</div>
+          <div className="truncate text-xs text-muted">Every git command GitGoose ran here, newest first. Click one to see what git printed.</div>
         </div>
         <label className="flex items-center gap-1.5 text-xs text-muted">
           <input type="checkbox" checked={reads} onChange={(e) => setReads(e.target.checked)} /> Show reads

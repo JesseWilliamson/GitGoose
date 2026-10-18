@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import type { CommandRecord } from '@gitsquid/shared'
+import type { CommandRecord } from '@gitgoose/shared'
 
 /**
  * Every git invocation goes through here. The rules from ADR-001 live in this file:

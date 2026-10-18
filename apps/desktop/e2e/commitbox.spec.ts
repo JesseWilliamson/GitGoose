@@ -1,4 +1,4 @@
-import { initRepo, tempDir } from '@gitsquid/fixtures'
+import { initRepo, tempDir } from '@gitgoose/fixtures'
 import { expect, test } from '@playwright/test'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -6,7 +6,7 @@ import { launch } from './app'
 
 /** Keep the real ~/.gitconfig out of it. */
 function isolatedGlobal() {
-  const file = join(tempDir('gitsquid-global-'), 'gitconfig')
+  const file = join(tempDir('gitgoose-global-'), 'gitconfig')
   writeFileSync(file, '[user]\n\tname = Global Person\n\temail = global@example.com\n')
   return { GIT_CONFIG_GLOBAL: file }
 }

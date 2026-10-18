@@ -116,7 +116,7 @@ export function parseQuery(raw: string, scope: OmniScope): { query: string; scop
 
 // ------------------------------------------------------------------ recent
 
-const RECENT_KEY = 'gitsquid.omni.recent'
+const RECENT_KEY = 'gitgoose.omni.recent'
 const RECENT_MAX = 6
 
 /** What was chosen lately, newest first (this window's local storage; a convenience, nothing more). */

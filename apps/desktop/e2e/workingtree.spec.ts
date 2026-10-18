@@ -1,4 +1,4 @@
-import { makeFixture, tempDir } from '@gitsquid/fixtures'
+import { makeFixture, tempDir } from '@gitgoose/fixtures'
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
 import { launch } from './app'
@@ -79,7 +79,7 @@ test('pushes, then pulls a commit someone else pushed', async () => {
   expect(r.git('rev-parse', 'origin/main').trim()).toBe(r.head())
 
   // A second clone pushes a commit; Pull brings it in.
-  const other = tempDir('gitsquid-other-')
+  const other = tempDir('gitgoose-other-')
   execFileSync('git', ['clone', '-q', r.git('remote', 'get-url', 'origin').trim(), other])
   execFileSync('git', ['-c', 'user.name=B', '-c', 'user.email=b@x', 'commit', '-q', '--allow-empty', '-m', 'From another machine'], { cwd: other })
   execFileSync('git', ['push', '-q'], { cwd: other })

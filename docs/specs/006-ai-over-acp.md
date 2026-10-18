@@ -38,7 +38,7 @@ to a real agent or API.
 - **Files.** `fs/read_text_file` only inside the session's repository. `fs/write_text_file`
   only for the one file a conflict request names, and the content is captured as a proposal,
   never written; accepting it goes through `resolveConflict` like a hand resolution.
-  `terminal: false`: the agent gets no shell from GitSquid.
+  `terminal: false`: the agent gets no shell from GitGoose.
 - **Login.** `auth_required` (-32000) comes back as error code `ai-auth`; the renderer shows
   the agent's login methods: agent-handled ones call `authenticate`, terminal ones show the
   exact command (the agent's own command plus the method's args) with Copy / Open terminal /

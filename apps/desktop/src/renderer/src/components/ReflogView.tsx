@@ -1,4 +1,4 @@
-import type { ReflogEntry } from '@gitsquid/shared'
+import type { ReflogEntry } from '@gitgoose/shared'
 import clsx from 'clsx'
 import { History } from 'lucide-react'
 import { ContextMenu } from 'radix-ui'

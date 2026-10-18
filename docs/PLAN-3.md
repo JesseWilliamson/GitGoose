@@ -3,7 +3,7 @@
 Jesse's brief: stashes in the graph; then everything GitKraken and Tower have that a git client
 should have; then AI-native features inspired by CodeRabbit (explainability, code graph, code
 review). The gap list and the CodeRabbit survey came from two research passes over the vendors'
-own docs and GitSquid's code; their findings are summarised here, with what we build and how.
+own docs and GitGoose's code; their findings are summarised here, with what we build and how.
 
 Rules that carry over: the renderer never blocks; cost follows what is on screen; every write
 goes through `exclusive()` and records undo when it can; no network nobody asked for; AI sends
@@ -54,7 +54,7 @@ Grouped by area; each item names its git plumbing. "(GK)" GitKraken, "(T)" Tower
 24. Identity per repository and globally; commit templates and co-author trailers (GK, T).
 25. Signatures: show and verify (`%G?`), sign tags (GK, T).
 26. Bisect from the graph: good / bad / skip, a banner while it runs.
-27. Git command log: every command GitSquid ran, with duration and stderr (GK activity log).
+27. Git command log: every command GitGoose ran, with duration and stderr (GK activity log).
 28. Commit options: skip hooks, hook output on failure; file tree view and filter in change lists.
 
 **Hosting** (network only when used; the GitHub sign-in already exists)

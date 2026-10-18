@@ -1,4 +1,4 @@
-# GitSquid
+# GitGoose
 
 A fast git client with GitKraken's commit graph and Tower's power features.
 

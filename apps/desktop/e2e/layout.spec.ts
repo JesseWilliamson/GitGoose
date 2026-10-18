@@ -1,13 +1,13 @@
-import { makeFixture, tempDir } from '@gitsquid/fixtures'
+import { makeFixture, tempDir } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import { launch } from './app'
 
 const width = async (page: Page, id: string) => (await page.getByTestId(id).boundingBox())?.width ?? 0
 
 test('dragging a divider resizes a side panel, and the size survives a restart', async () => {
-  const profile = tempDir('gitsquid-profile-')
+  const profile = tempDir('gitgoose-profile-')
   const r = makeFixture('linear')
-  const first = await launch(r.dir, { GITSQUID_USER_DATA: profile })
+  const first = await launch(r.dir, { GITGOOSE_USER_DATA: profile })
   const page = first.page
   await expect(page.getByTestId('slot-left')).toBeVisible()
   const before = await width(page, 'slot-left')
@@ -18,10 +18,10 @@ test('dragging a divider resizes a side panel, and the size survives a restart',
   await page.mouse.up()
   await expect.poll(() => width(page, 'slot-left')).toBeGreaterThan(before + 100)
   const after = await width(page, 'slot-left')
-  await expect.poll(async () => (await page.evaluate(() => window.gitsquid.getSettings())).layout.left.size).toBeGreaterThan(before + 100)
+  await expect.poll(async () => (await page.evaluate(() => window.gitgoose.getSettings())).layout.left.size).toBeGreaterThan(before + 100)
   await first.app.close()
 
-  const second = await launch(r.dir, { GITSQUID_USER_DATA: profile })
+  const second = await launch(r.dir, { GITGOOSE_USER_DATA: profile })
   await expect(second.page.getByTestId('slot-left')).toBeVisible()
   expect(Math.abs((await width(second.page, 'slot-left')) - after)).toBeLessThan(3)
   await second.app.close()

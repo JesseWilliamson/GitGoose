@@ -1,4 +1,4 @@
-import { countConflicts, parseConflicts, resolveBlocks, type ConflictBlock, type ConflictChoice, type ConflictFile, type ConflictVersions } from '@gitsquid/shared'
+import { countConflicts, parseConflicts, resolveBlocks, type ConflictBlock, type ConflictChoice, type ConflictFile, type ConflictVersions } from '@gitgoose/shared'
 import clsx from 'clsx'
 import { ArrowLeft, CheckCircle2, CircleAlert, ExternalLink, GitMerge, Sparkles, Wrench } from 'lucide-react'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
