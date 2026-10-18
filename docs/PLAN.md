@@ -92,7 +92,10 @@ add the trampoline in M3.
 ### 2.4 Watching for changes
 
 `@parcel/watcher` on the worktree and on `.git/{HEAD,index,packed-refs,refs/,logs/}`. Debounce
-100 ms. On change: re-run `status` and `for-each-ref`; only re-run `log` if refs changed.
+100 ms. On change: re-run `status` and `for-each-ref`; only re-run `log` if refs changed. While
+one of our own writes runs, the watcher is held back and one refresh follows the write: a rebase
+is many ref moves, and the renderer should see only where it ends. When the log is re-run, the
+rows on screen stay until the new first page is in, then swap in one render.
 
 ### 2.5 The commit graph (the thing we are keeping from GitKraken)
 

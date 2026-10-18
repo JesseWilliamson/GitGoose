@@ -82,6 +82,10 @@ export const SETTINGS = {
   autoFetchMinutes: num(0, 0, 60, 5, { label: 'Fetch automatically every', section: 'Git', unit: 'min', description: '0 turns it off.' }),
   pruneOnFetch: bool(true, { label: 'Prune deleted remote branches on fetch', section: 'Git' }),
   signOff: bool(false, { label: 'Add Signed-off-by to commits', section: 'Git', keywords: 'dco' }),
+  codeGraph: bool(true, {
+    label: 'Index code for Peek and Impact', section: 'Git', keywords: 'code graph tree-sitter symbols index parse',
+    description: 'Parses the repository in the background when it opens; a commit or checkout re-indexes only what changed. Off: Peek and Impact fall back to text search.',
+  }),
   gpgSign: bool(false, { label: 'Sign commits (-S)', section: 'Git', keywords: 'gpg ssh signing', description: 'Uses the signing key from your git config.' }),
   changeHints: bool(true, { label: 'Hints from history before committing', section: 'Git', keywords: 'co-change owners blame insights', description: 'Above the commit box: files that usually change with yours but are missing, and whose lines you are changing. Computed locally from history.' }),
   signTags: bool(false, { label: 'Sign tags (-s)', section: 'Git', keywords: 'gpg ssh signing', description: 'New tags are signed (and annotated) with the signing key from your git config.' }),

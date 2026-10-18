@@ -6,6 +6,7 @@ import { delimiter, join, resolve } from 'node:path'
 import { AiService } from './ai/service'
 import { SecretFile } from './ai/keyStore'
 import { AvatarCache } from './avatars'
+import { CodeGraphService } from './codegraph'
 import { githubEndpoints } from './github/config'
 import { GitHubService } from './github/service'
 import { TokenStore } from './github/tokenStore'
@@ -133,11 +134,28 @@ const ai = new AiService({
   anthropicBaseURL: process.env.GITGOOSE_ANTHROPIC_BASE_URL,
 })
 
+// The code graph (ADR-008): parsed in a utility process, one database per repository.
+const codegraph = new CodeGraphService({
+  dir: join(app.getPath('userData'), 'codegraph'),
+  modulePath: join(here, 'indexer.js'),
+  grammarDir: app.isPackaged ? join(process.resourcesPath, 'grammars') : null,
+  gitOpts,
+  enabled: () => getSettings().codeGraph,
+  emit: (repoId, status) => broadcast({ type: 'codegraph', repoId, status }),
+})
+
 const repos = new RepoManager(
   gitOpts,
-  (snapshot) => broadcast({ type: 'snapshot', snapshot }),
+  (snapshot) => {
+    broadcast({ type: 'snapshot', snapshot })
+    codegraph.onSnapshot(snapshot.id, snapshot)
+  },
   (repoId, text) => broadcast({ type: 'progress', repoId, text }),
-  (repoId) => broadcast({ type: 'worktree', repoId }),
+  (repoId) => {
+    broadcast({ type: 'worktree', repoId })
+    codegraph.onWorktree(repoId)
+  },
+  { opened: (repo) => codegraph.open(repo), closed: (id) => codegraph.close(id) },
 )
 
 // ------------------------------------------------------------ window
@@ -188,9 +206,17 @@ function createWindow(): BrowserWindow {
 }
 
 let lastShowStashes = getSettings().showStashes
+let lastCodeGraph = getSettings().codeGraph
 onSettingsChanged((settings) => {
   refreshCredentialEnv()
   ai.onSettings()
+  if (settings.codeGraph !== lastCodeGraph) {
+    lastCodeGraph = settings.codeGraph
+    for (const repo of repos.all()) {
+      codegraph.close(repo.id)
+      codegraph.open(repo)
+    }
+  }
   if (settings.showStashes !== lastShowStashes) {
     lastShowStashes = settings.showStashes
     for (const repo of repos.all()) repo.setShowStashes(settings.showStashes)
@@ -224,7 +250,7 @@ app.whenReady().then(async () => {
     return new Response(new Uint8Array(img.body), { headers: { 'content-type': img.type, 'cache-control': 'max-age=3600' } })
   })
   refreshCredentialEnv()
-  registerIpc(createHandlers(repos, prompts, gitOpts, github, ai), repos)
+  registerIpc(createHandlers(repos, prompts, gitOpts, github, ai, codegraph), repos)
   installMenu()
   createWindow()
   scheduleUpdateCheck()
@@ -238,6 +264,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('will-quit', () => {
+  codegraph.dispose()
   askpass.stop()
   ai.stop()
   void repos.closeAll()

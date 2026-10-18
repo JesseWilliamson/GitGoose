@@ -1,9 +1,10 @@
 import { GraphLayout, type Row } from '@gitgoose/graph'
-import { SETTINGS, type PullRequestList, type Commit, type DiffTarget, type GitHubStatus, type GitGooseEvent, type AskThread, type LfsInfo, type PushCheckResult, type Ref, type Remote, type RepoSnapshot, type Submodule, type Worktree, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitgoose/shared'
+import { SETTINGS, type PullRequestList, type CodeGraphStatus, type Commit, type DiffTarget, type GitHubStatus, type GitGooseEvent, type AskThread, type LfsInfo, type PushCheckResult, type Ref, type Remote, type RepoSnapshot, type Submodule, type Worktree, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitgoose/shared'
 import { create } from 'zustand'
 import { api, toUiError, type UiError } from './api'
 import { onAiEvent } from './ai'
 import { opName } from './format'
+import { followRewrite } from './rewrite'
 import type { ReviewState } from './review'
 import type { WalkthroughState } from './walkthrough'
 import type { ImpactState } from './impact'
@@ -68,6 +69,8 @@ export interface RepoView {
   busy: string | null
   /** Bumped whenever files change on disk; open diffs reload on it. */
   worktreeTick: number
+  /** The code graph (ADR-008): Peek and Impact wait while it indexes. */
+  codegraph: CodeGraphStatus
 }
 
 /** Toasts are for outcomes that need nothing from the user: successes and notes. */
@@ -251,6 +254,11 @@ export interface LogData {
 }
 
 const logs = new Map<string, LogData>()
+/**
+ * A log being rebuilt because the refs changed, until its first page is in. The old one stays on
+ * screen meanwhile (see resetLog), so `getLog` keeps returning it.
+ */
+const pending = new Map<string, LogData>()
 
 export function getLog(id: string): LogData {
   let l = logs.get(id)
@@ -270,9 +278,58 @@ function emptyLog(snap: RepoSnapshot | undefined, generation: number): LogData {
   }
 }
 
+/** The generation the log on its way (or on screen) was walked from. */
+function logGeneration(id: string): number {
+  return (pending.get(id) ?? logs.get(id))?.generation ?? -1
+}
+
+/**
+ * The refs changed: walk the history again from this snapshot.
+ *
+ * When rows are on screen they stay there until the new walk's first page is in, and the two
+ * are swapped in one render (see swapIn). Emptying the list first would collapse it to a
+ * "Loading…" row for a frame or two and drop the scroll position, which reads as a flicker on
+ * every commit, checkout or reorder. The first page is as big as what was loaded before (up to
+ * one regular page), so the swap does not shorten the list under the scrollbar.
+ */
 function resetLog(id: string, snap: RepoSnapshot): void {
-  logs.set(id, emptyLog(snap, snap.refsVersion))
-  updateRepo(id, (v) => ({ logVersion: v.logVersion + 1 }))
+  const next = emptyLog(snap, snap.refsVersion)
+  const live = logs.get(id)
+  if (!live || live.commits.length === 0) {
+    pending.delete(id)
+    logs.set(id, next)
+    updateRepo(id, (v) => ({ logVersion: v.logVersion + 1 }))
+    void loadInto(id, next)
+    return
+  }
+  pending.set(id, next)
+  void loadInto(id, next, Math.max(FIRST_PAGE, Math.min(live.commits.length, PAGE)))
+}
+
+/**
+ * The new log's first page is in: it replaces the one on screen. A selection that pointed at
+ * commits the rewrite replaced (a rebase gives every replayed commit a new hash) follows them to
+ * their new hashes, so the detail panel shows the commit the user just moved, not a stale copy.
+ * A selected commit that is gone (dropped, or folded into another) gives way to HEAD.
+ */
+function swapIn(id: string, log: LogData): void {
+  const old = logs.get(id)
+  pending.delete(id)
+  logs.set(id, log)
+  const v = get().repos[id]
+  if (!old || !v) return
+  const sel = v.selected
+  const hashes = selectedHashes(sel)
+  if (!hashes.length || hashes.every((h) => log.index.has(h))) return
+  const next = followRewrite(hashes, old, log)
+  const head = v.snapshot.head.hash
+  let selected: Selection = next[0] ? { kind: 'commit', hash: next[0] } : head ? { kind: 'commit', hash: head } : { kind: 'wip' }
+  if (sel.kind === 'commits' && next.length > 1) {
+    const [anchor] = followRewrite([sel.anchor], old, log)
+    const [cursor] = followRewrite([sel.cursor], old, log)
+    selected = { kind: 'commits', hashes: next, anchor: anchor ?? next[0]!, cursor: cursor ?? next[next.length - 1]! }
+  }
+  updateRepo(id, { selected })
 }
 
 /** First page small so the first screen paints fast; later pages large to cut round trips. */
@@ -280,38 +337,52 @@ const FIRST_PAGE = 300
 const PAGE = 3000
 
 export function loadMore(id: string): Promise<void> {
-  const log = getLog(id)
+  // The log on screen is being replaced: its pages would now come from the new walk, in the new
+  // order, so it must not grow. Callers wait for the swap instead; the new log pages as usual.
+  const next = pending.get(id)
+  if (next) return next.loading ?? Promise.resolve()
+  return loadInto(id, getLog(id))
+}
+
+function loadInto(id: string, log: LogData, firstPage = FIRST_PAGE): Promise<void> {
   if (log.loading) return log.loading
   if (log.done) return Promise.resolve()
   const offset = log.commits.length
-  const count = offset === 0 ? FIRST_PAGE : PAGE
-  log.loading = api.logPage(id, offset, count).then(
-    async (page) => {
+  const count = offset === 0 ? firstPage : PAGE
+  const current = () => logs.get(id) === log || pending.get(id) === log
+  log.loading = api.logPage(id, offset, count)
+    .then(
+      async (page) => {
+        if (!current()) return // reset while we were waiting
+        if (page.generation !== log.generation) {
+          // Refs moved since our snapshot: fetch a fresh one, which resets and reloads.
+          onSnapshot(await api.snapshot(id))
+          return
+        }
+        const rows = log.layout.push(page.commits)
+        for (let i = 0; i < page.commits.length; i++) {
+          const c = page.commits[i]!
+          log.index.set(c.hash, log.commits.length)
+          log.commits.push(c)
+          log.rows.push(rows[i]!)
+          if (rows[i]!.width > log.maxWidth) log.maxWidth = rows[i]!.width
+        }
+        log.done = page.done
+        if (pending.get(id) === log) swapIn(id, log)
+        else if (offset === 0) performance.mark('gitgoose:first-page')
+        updateRepo(id, (v) => ({ logVersion: v.logVersion + 1 }))
+      },
+      (e) => {
+        log.done = true
+        if (pending.get(id) === log) swapIn(id, log)
+        reportError('Could not read history', e)
+      },
+    )
+    // Cleared last (not before the swap): `loadMore` on a pending log hands out this promise, and
+    // a caller looping on it (ensureLoaded) must not see a pending log with nothing in flight.
+    .finally(() => {
       log.loading = null
-      if (logs.get(id) !== log) return // reset while we were waiting
-      if (page.generation !== log.generation) {
-        // Refs moved since our snapshot: fetch a fresh one, which resets and reloads.
-        onSnapshot(await api.snapshot(id))
-        return
-      }
-      const rows = log.layout.push(page.commits)
-      for (let i = 0; i < page.commits.length; i++) {
-        const c = page.commits[i]!
-        log.index.set(c.hash, log.commits.length)
-        log.commits.push(c)
-        log.rows.push(rows[i]!)
-        if (rows[i]!.width > log.maxWidth) log.maxWidth = rows[i]!.width
-      }
-      log.done = page.done
-      if (offset === 0) performance.mark('gitgoose:first-page')
-      updateRepo(id, (v) => ({ logVersion: v.logVersion + 1 }))
-    },
-    (e) => {
-      log.loading = null
-      log.done = true
-      reportError('Could not read history', e)
-    },
-  )
+    })
   return log.loading
 }
 
@@ -393,6 +464,7 @@ function newView(snap: RepoSnapshot): RepoView {
     selected: snap.status.length ? { kind: 'wip' } : snap.head.hash ? { kind: 'commit', hash: snap.head.hash } : { kind: 'wip' },
     center: snap.operation && snap.status.some((e) => e.kind === 'unmerged') ? { kind: 'conflicts' } : { kind: 'graph' },
     editable: [], redo: [], stashes: [], undo: [], remotes: [], merged: [], worktrees: [], submodules: [], lfs: null, pulls: null, pullsLoading: false, review: null, walkthrough: null, impact: null, ask: null, askThreads: [], remoteTags: null, progress: null, busy: null, worktreeTick: 0,
+    codegraph: { state: 'indexing', done: 0, total: 0 },
   }
 }
 
@@ -404,9 +476,9 @@ export function addRepo(snap: RepoSnapshot): void {
   }
   set({ repos: { ...s.repos, [snap.id]: newView(snap) }, tabs: [...s.tabs, snap.id], active: snap.id })
   resetLog(snap.id, snap)
-  void loadMore(snap.id)
   void refreshAux(snap.id)
   void api.askThreads(snap.id).then((askThreads) => updateRepo(snap.id, { askThreads }), () => {})
+  void api.codeGraphStatus(snap.id).then((codegraph) => updateRepo(snap.id, { codegraph }), () => {})
   if (setting('fetchOnOpen')) void import('./actions').then((a) => a.fetchAll(snap.id, { quiet: true }))
 }
 
@@ -445,6 +517,7 @@ export async function closeTab(id: string): Promise<void> {
   const active = s.active === id ? (tabs[Math.min(i, tabs.length - 1)] ?? null) : s.active
   set({ tabs, repos, active })
   logs.delete(id)
+  pending.delete(id)
   await api.closeRepo(id)
   set({ settings: await api.getSettings() })
 }
@@ -462,10 +535,7 @@ export function onSnapshot(snap: RepoSnapshot): void {
   }))
   if (hasConflicts && !hadConflicts) alertConflicts(snap.id, snap)
   else if (!hasConflicts) dismissAttentionKey(`conflicts-${snap.id}`)
-  if (snap.refsVersion !== getLog(snap.id).generation) {
-    resetLog(snap.id, snap)
-    void loadMore(snap.id)
-  }
+  if (snap.refsVersion !== logGeneration(snap.id)) resetLog(snap.id, snap)
   void refreshAux(snap.id)
 }
 
@@ -488,6 +558,9 @@ function onEvent(e: GitGooseEvent): void {
       break
     case 'worktree':
       updateRepo(e.repoId, (v) => ({ worktreeTick: v.worktreeTick + 1 }))
+      break
+    case 'codegraph':
+      updateRepo(e.repoId, { codegraph: e.status })
       break
     case 'prompt':
       set({ prompt: { promptId: e.promptId, message: e.message, secret: e.secret } })
