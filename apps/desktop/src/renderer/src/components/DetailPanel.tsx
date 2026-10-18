@@ -4,7 +4,7 @@ import { Archive, Check, ChevronDown, Copy, Minus, MoreHorizontal, Plus, ShieldA
 import clsx from 'clsx'
 import { DropdownMenu } from 'radix-ui'
 import { useEffect, useRef, useState } from 'react'
-import { cherryPickMany, compare, copy, copyCommits, discard as discardFiles, lfsLock, lfsPatternFor, lfsTrack, openDiffTool, openInEditor, pop, restoreFileFrom, run, snapshot, stashApply, stashDrop, stashToBranch, stashWith, stashWithMessage } from '../lib/actions'
+import { copy, discard as discardFiles, lfsLock, lfsPatternFor, lfsTrack, openDiffTool, openInEditor, pop, restoreFileFrom, run, snapshot, stashApply, stashDrop, stashToBranch, stashWith, stashWithMessage } from '../lib/actions'
 import { cancelAi, startAi, useAiEnabled } from '../lib/ai'
 import { api, toUiError } from '../lib/api'
 import { dateTime, opName, sentence, shortHash, stashLabel } from '../lib/format'
@@ -14,10 +14,9 @@ import { startReview } from '../lib/review'
 import { openAsk } from '../lib/ask'
 import { startWalkthrough } from '../lib/walkthrough'
 import { showImpact } from '../lib/impact'
-import { ensureLoaded, getLog, reportError, selectCommit, setting, toast, updateRepo, useSetting, useStore, type FileMode, type RepoView } from '../lib/store'
+import { chainBase, ensureLoaded, getLog, reportError, selectCommit, setting, toast, updateRepo, useSetting, useStore, type FileMode, type RepoView } from '../lib/store'
 import { Avatar } from './Avatar'
 import { ChangeHints } from './ChangeHints'
-import { recomposeWithAi } from './RecomposeDialog'
 import { FileListTools, FileListView, FileRow, statusKind } from './FileList'
 import { modName } from '../lib/keys'
 import { Button, CM, DM, SectionHeader, Spinner } from './ui'
@@ -503,49 +502,107 @@ function ComparePanel({ view, sel }: { view: RepoView; sel: Extract<RepoView['se
 
 // ------------------------------------------------------------------ several commits
 
-/** Shift- or Ctrl-click selected several commits: what can be done with all of them. */
+/** A file in the several-commits list, and where clicking it shows its changes. */
+type MultiFile = ChangedFile & { target: DiffTarget; commits: number }
+
+/** Beyond this many commits that do not follow each other, the panel does not gather their files. */
+const MAX_GATHERED = 100
+
+/**
+ * Shift- or Ctrl-click selected several commits: what they are and what they change. What can be
+ * done with them lives in the right-click menu, like for one commit.
+ */
 function MultiPanel({ view, hashes }: { view: RepoView; hashes: string[] }) {
+  const avatarSource = useSetting('avatars')
+  const avatarVariant = useAvatarVariant()
+  const [fileFilter, setFileFilter] = useState('')
   const log = getLog(view.id)
   const commits = hashes.map((h) => log.commits[log.index.get(h) ?? -1]).filter((c): c is NonNullable<typeof c> => !!c)
-  const headName = view.snapshot.head.branch ?? 'HEAD'
-  const aiOn = useAiEnabled()
-  // A chain (each commit's parent is the next one down): its combined change is one diff.
-  const isChain = commits.length === hashes.length && commits.every((c, i) => i === commits.length - 1 || c.parents[0] === commits[i + 1]!.hash)
-  const chainBase = isChain ? commits[commits.length - 1]!.parents[0] : undefined
+  const base = chainBase(view.id, hashes)
+  const key = hashes.join()
+  const [files, setFiles] = useState<{ key: string; list: MultiFile[] | null } | null>(null)
+  useEffect(() => {
+    let live = true
+    const done = (list: MultiFile[] | null) => live && setFiles({ key, list })
+    const fail = (e: unknown) => reportError('Could not load the changes', e)
+    if (base !== undefined) {
+      // Consecutive commits: one diff from before the oldest to the newest, as if they were one commit.
+      const to = hashes[0]!
+      api.compareFiles(view.id, base, to).then((f) => done(f.map((x) => ({ ...x, commits: 1, target: { kind: 'range', from: base, to, path: x.path, oldPath: x.oldPath } }))), fail)
+    } else if (hashes.length <= MAX_GATHERED) {
+      // Not a chain: no single diff holds them, so list every file any of them touched. A click shows
+      // the newest selected commit's change to it; the count says how many touched it.
+      const isStash = (h: string) => view.stashes.some((st) => st.hash === h)
+      Promise.all(hashes.map((h) => detailsCache.get(h) ?? api.commitDetails(view.id, h, { stash: isStash(h) }).then((d) => {
+        detailsCache.set(h, d)
+        return d
+      }))).then((all) => {
+        const byPath = new Map<string, MultiFile>()
+        for (const d of all) {
+          for (const f of d.files) {
+            const seen = byPath.get(f.path)
+            if (seen) {
+              seen.commits++
+              seen.additions += f.additions
+              seen.deletions += f.deletions
+            } else byPath.set(f.path, { ...f, commits: 1, target: { kind: 'commit', hash: d.hash, path: f.path } })
+          }
+        }
+        done([...byPath.values()].sort((a, b) => a.path.localeCompare(b.path)))
+      }, fail)
+    } else done(null)
+    return () => {
+      live = false
+    }
+  }, [view.id, key, base])
+  const list = files?.key === key ? files.list : undefined
+  const counts = new Map<string, number>()
+  for (const f of list ?? []) counts.set(f.change, (counts.get(f.change) ?? 0) + 1)
+  const adds = list?.reduce((n, f) => n + f.additions, 0) ?? 0
+  const dels = list?.reduce((n, f) => n + f.deletions, 0) ?? 0
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="multi-panel">
-      <div className="border-b border-line p-3">
+      <div className="border-b border-line px-3 pt-3 pb-2">
         <div className="text-[14px] font-semibold">{hashes.length} commits selected</div>
-        <div className="mt-0.5 text-xs text-muted">Shift-click selects a range, {modName()}-click adds or removes one.</div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Button size="sm" variant="primary" onClick={() => void cherryPickMany(view.id, hashes)} disabled={!!view.busy} data-testid="multi-cherry-pick">
-            Cherry-pick onto {headName}
-          </Button>
-          <Button size="sm" onClick={() => void copyCommits(view.id, hashes, 'diff')} data-testid="multi-copy-diff">Copy as diff</Button>
-          <Button size="sm" onClick={() => void copyCommits(view.id, hashes, 'patch')} data-testid="multi-copy-patch">Copy as patch</Button>
-          {hashes.length === 2 && (
-            <Button size="sm" onClick={() => compare(view.id, hashes[1]!, hashes[0]!)} data-testid="multi-compare" title="What differs between the older and the newer commit">Compare the two</Button>
-          )}
-          {chainBase !== undefined && (
-            <Button size="sm" onClick={() => compare(view.id, chainBase, hashes[0]!, `before ${shortHash(hashes[hashes.length - 1]!)}`, shortHash(hashes[0]!))}
-              data-testid="multi-combined" title="Everything these commits changed together">Combined changes</Button>
-          )}
-          {aiOn && (
-            <Button size="sm" onClick={() => recomposeWithAi(view.id, hashes)} data-testid="multi-recompose" title="Let the AI propose a cleaner set of commits; you review before anything changes">
-              <Sparkles size={12} /> Recompose with AI
-            </Button>
-          )}
-        </div>
+        <div className="mt-0.5 text-xs text-muted">Right-click the selection for what you can do with them. Shift-click selects a range, {modName()}-click adds or removes one.</div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto py-1">
+      <div className="max-h-[40%] shrink-0 overflow-y-auto border-b border-line py-1" data-testid="multi-commits">
         {commits.map((c) => (
-          <button key={c.hash} className="flex w-full items-center gap-2 px-3 py-1 text-left text-[13px] hover:bg-hover"
+          <button key={c.hash} className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-hover" data-testid="multi-commit"
             onClick={() => selectCommit(view.id, c.hash)} title="Select only this commit">
-            <span className="shrink-0 font-mono text-xs text-faint">{shortHash(c.hash)}</span>
-            <span className="min-w-0 flex-1 truncate">{c.subject}</span>
-            <span className="shrink-0 truncate text-xs text-muted">{c.authorName}</span>
+            <Avatar name={c.authorName} email={c.authorEmail} src={avatarSrc(c.authorEmail, avatarSource, avatarVariant)} size={24} />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[13px]">{c.subject}</div>
+              <div className="truncate text-[11px] text-muted">{dateTime(c.authorDate)} by {c.authorName}</div>
+            </div>
+            <span className="shrink-0 self-start font-mono text-xs text-faint">{shortHash(c.hash)}</span>
           </button>
         ))}
+      </div>
+      <SectionHeader right={list ? <span className="font-mono normal-case"><span className="text-add">+{adds}</span> <span className="text-del">−{dels}</span></span> : undefined}>
+        {base !== undefined ? 'Combined changes' : 'Files they touch'}
+      </SectionHeader>
+      {list && list.length > 0 && (
+        <div className="px-3 pb-1 text-xs text-muted" data-testid="multi-summary">
+          {[...counts].map(([kind, n]) => `${n} ${kind}`).join(' · ')}
+          {base === undefined && <div className="text-faint">Not consecutive, so there is no single diff: a file shows the newest selected commit's change.</div>}
+        </div>
+      )}
+      {list && list.length > 1 && <FileListTools filter={fileFilter} onFilter={setFileFilter} />}
+      <div className="min-h-0 flex-1 overflow-y-auto pb-2">
+        {list === undefined ? <div className="p-3"><Spinner /></div>
+          : list === null ? <div className="p-3 text-sm text-faint">Too many commits that do not follow each other to gather their files.</div>
+          : list.length === 0 ? <div className="p-3 text-sm text-faint">No file changes.</div>
+          : <FileListView items={list} pathOf={(f) => f.path} filter={fileFilter} testId="multi" renderFile={(f, layout) => (
+            <FileRow key={f.path} {...layout} path={f.path} oldPath={f.oldPath} kind={f.change} selected={isOpen(view, f.target)} testId="multi-file"
+              onClick={() => openFile(view, f.target)} menu={<FileMenu view={view} target={f.target} />}
+              stats={f.binary ? <span className="text-[11px] text-faint">bin</span> : (
+                <span className="shrink-0 font-mono text-[11px]">
+                  {f.commits > 1 && <span className="mr-1 text-faint" title={`Touched by ${f.commits} of the selected commits`}>×{f.commits}</span>}
+                  <span className="text-add">+{f.additions}</span> <span className="text-del">−{f.deletions}</span>
+                </span>
+              )} />
+          )} />}
       </div>
     </div>
   )
