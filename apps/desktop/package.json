@@ -4,6 +4,12 @@
   "private": true,
   "description": "A fast git client with a GitKraken-style graph",
   "author": "Jesse Williamson",
+  "homepage": "https://github.com/JesseWilliamson/GitSquidElectron",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JesseWilliamson/GitSquidElectron.git"
+  },
+  "desktopName": "gitsquid.desktop",
   "type": "module",
   "main": "out/main/index.js",
   "scripts": {
