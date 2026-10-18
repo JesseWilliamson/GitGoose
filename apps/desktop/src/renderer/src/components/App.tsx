@@ -37,6 +37,7 @@ function useCommands() {
         case 'zoom-in': return void saveSettings({ uiScale: setting('uiScale') + 0.1 })
         case 'zoom-out': return void saveSettings({ uiScale: setting('uiScale') - 0.1 })
         case 'zoom-reset': return void saveSettings({ uiScale: 1 })
+        case 'toggle-graph-style': return void saveSettings({ graphStyle: setting('graphStyle') === 'compact' ? 'comfortable' : 'compact' })
         case 'toggle-sidebar': return toggleSlot('left')
         case 'toggle-details': return toggleSlot('right')
         case 'layout-default': return void saveSettings({ layout: structuredClone(DEFAULT_LAYOUT) })

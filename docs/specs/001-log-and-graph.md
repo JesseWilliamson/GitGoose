@@ -8,8 +8,12 @@
   them two-line rows (avatar; author, branch/tag pills and date; short SHA and subject). A row's
   text starts just past the lanes open at that point in history, so busy stretches indent, up to
   twelve lanes; a node in a lane past that is left out rather than pinned on another branch's
-  line. The first commit of each month carries a heading, centred over the row. Compact rows are
-  one line with no headings.
+  line. The first commit of each month carries a heading, centred over the row.
+- Settings → Appearance → Graph layout also offers one-line rows: the same graph and nodes,
+  each commit on one 28px line (avatar, short SHA, subject, author, date), with the branch and
+  tag pills moved to a 160px column on the left of the graph and joined to their node by a line
+  in the lane colour. No month headings. The View menu and the command palette switch between
+  the two layouts.
 - A commit with `Co-authored-by:` trailers shows one avatar per person, stacked as on GitHub, and
   names them beside the author ("Ada Lovelace and Grace Hopper"; more than two are counted).
 - The main line (the remote's default branch from origin/HEAD and its local namesake, else main or
