@@ -262,13 +262,47 @@ describe('prompts', () => {
     t.ai.setApiKey('sk-test')
     t.ai.consent()
     const res = await t.ai.run('r1', 'x', { kind: 'review', scope: { kind: 'staged' }, profile: 'chill' })
-    expect(res.review!.context).toEqual({ guidelines: ['CLAUDE.md'], pathInstructions: ['**/*.ts'], learnings: 1 })
+    expect(res.review!.context).toEqual({ guidelines: ['CLAUDE.md'], pathInstructions: ['**/*.ts'], learnings: 1, code: { source: 'patterns', symbols: 1, uses: 0, used: 0, tests: 0, truncated: false } })
     const sent = (fake.requests[0] as unknown as { messages: { content: string }[] }).messages[0]!.content
     expect(sent).toContain('--- CLAUDE.md (applies to every file) ---\nUse tabs.')
     expect(sent).not.toContain('Only for docs.')
     expect(sent).toContain('- **/*.ts: No default exports.')
     expect(sent).toContain('- Maps without types are fine here')
     expect(sent).not.toContain('Only for css')
+  })
+
+  it('tells the review what is around the change (callers, used definitions, tests) and what the commits meant', async () => {
+    const fake = await fakeAnthropic(['{"summary": "ok", "findings": []}'])
+    cleanup.push(() => fake.close())
+    const t = await setup({ aiProvider: 'anthropic' }, fake)
+    t.r.git('reset', '-q') // widgets.ts is not part of this
+    t.r.commit('lib', {
+      'lib.ts': 'export function helper(x: number) {\n  return x + 1\n}\n',
+      'use.ts': "import { helper } from './lib'\nexport function run() {\n  return helper(1)\n}\n",
+      'lib.test.ts': "import { helper } from './lib'\ntest('helper', () => expect(helper(1)).toBe(2))\n",
+    })
+    // The staged change alters helper's signature and calls widgets; use.ts and the test still call the old one.
+    t.r.write('lib.ts', "import { widgets } from './widgets'\nexport function helper(x: number, y: number) {\n  return x + y + widgets.size\n}\n")
+    t.r.git('add', 'lib.ts')
+    t.ai.setApiKey('sk-test')
+    t.ai.consent()
+    const res = await t.ai.run('r1', 'x', { kind: 'review', scope: { kind: 'staged' }, profile: 'chill' })
+    expect(res.review!.context.code).toEqual({ source: 'patterns', symbols: 1, uses: 4, used: 1, tests: 1, truncated: false })
+    const sent = (fake.requests[0] as unknown as { messages: { content: string }[] }).messages[0]!.content
+    expect(sent).toContain('Around the change (from the code graph')
+    expect(sent).toContain('- function helper (lib.ts:2) changed\n  was: export function helper(x: number) {\n  now: export function helper(x: number, y: number) {\n  used in 4 places outside the change (2 in tests):\n    use.ts:1: import { helper }')
+    expect(sent).toContain('use.ts:3 in function run: return helper(1)')
+    expect(sent).toContain('Tests that cover the change:\n- not changed: lib.test.ts')
+    expect(sent).toContain('Definitions of names the added lines use (outside the change):\n- const widgets (widgets.ts:1), used 1 time:\n  ```\n  export const widgets = new Map()\n  ```')
+    expect(sent).toContain('The change:\n=== lib.ts (modified) ===')
+    expect(sent).not.toContain('The commit messages')
+
+    // A committed change brings its messages along as the intent.
+    const hash = t.r.git('rev-parse', 'HEAD').trim()
+    const res2 = await t.ai.run('r2', 'x', { kind: 'review', scope: { kind: 'commits', hashes: [hash] }, profile: 'chill' })
+    expect(res2.review!.context.commits).toBe(1)
+    const sent2 = (fake.requests[1] as unknown as { messages: { content: string }[] }).messages[0]!.content
+    expect(sent2).toContain('The commit messages, newest first (what the author meant to do; judge the change against them):\n- lib\n')
   })
 
   it('re-reviews incrementally: an unchanged change is not sent again, its findings stay open', async () => {

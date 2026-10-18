@@ -216,6 +216,12 @@ export class GraphStore {
     return rows.map((r) => ({ name: r.name, kind: r.kind, line: r.line, endLine: r.end_line, signature: r.signature, ...(r.parent ? { parent: r.parent } : {}) }))
   }
 
+  /** Every reference in a blob, by position: what a file's lines call, type and import. */
+  referencesIn(blob: string): Reference[] {
+    const rows = this.stmt('SELECT name, kind, line, col, within FROM refs WHERE blob = ? ORDER BY line, col').all(blob) as { name: string; kind: ReferenceKind; line: number; col: number; within: string | null }[]
+    return rows.map((r) => ({ name: r.name, kind: r.kind, line: r.line, column: r.col, ...(r.within ? { within: r.within } : {}) }))
+  }
+
   /** The blob a path has in a tree, if listed. */
   blobOf(rev: string, path: string): string | null {
     const row = this.stmt('SELECT blob FROM trees WHERE rev = ? AND path = ?').get(rev, path) as { blob: string } | undefined

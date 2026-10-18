@@ -29,6 +29,8 @@ describe('GraphStore', () => {
     expect(s.definitions('total', 'nowhere')).toEqual([])
     expect(s.blobOf('HEAD', 'src/cart.ts')).toBe('b2')
     expect(s.symbolsIn('b2').map((x) => x.name)).toEqual(['checkout'])
+    expect(s.referencesIn('b2').map((r) => `${r.kind} ${r.name}:${r.line}${r.within ? ` in ${r.within}` : ''}`)).toEqual(['import total:1', 'call total:3 in function checkout'])
+    expect(s.referencesIn('b9')).toEqual([])
     expect(s.stats()).toMatchObject({ blobs: 3, symbols: 2, refs: 2 })
     expect(s.stats().trees.sort()).toEqual(['HEAD', 'old'])
     s.close()
