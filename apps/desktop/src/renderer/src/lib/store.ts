@@ -1,5 +1,5 @@
 import { GraphLayout, type Row } from '@gitgoose/graph'
-import { SETTINGS, type PullRequestList, type Commit, type DiffTarget, type GitHubStatus, type GitGooseEvent, type AskThread, type LfsInfo, type PushCheckResult, type Ref, type Remote, type RepoSnapshot, type Submodule, type Worktree, type SearchField, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitgoose/shared'
+import { SETTINGS, type PullRequestList, type Commit, type DiffTarget, type GitHubStatus, type GitGooseEvent, type AskThread, type LfsInfo, type PushCheckResult, type Ref, type Remote, type RepoSnapshot, type Submodule, type Worktree, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitgoose/shared'
 import { create } from 'zustand'
 import { api, toUiError, type UiError } from './api'
 import { onAiEvent } from './ai'
@@ -31,14 +31,6 @@ export type CenterView =
   | { kind: 'walkthrough' }
   | { kind: 'impact' }
 
-export interface SearchState {
-  field: SearchField
-  query: string
-  hits: string[]
-  /** Position in hits of the current match. */
-  index: number
-}
-
 export interface RepoView {
   id: string
   snapshot: RepoSnapshot
@@ -46,11 +38,6 @@ export interface RepoView {
   logVersion: number
   selected: Selection
   center: CenterView
-  search: SearchState | null
-  /** The search bar over the graph is open (it can be open with no query yet). */
-  searchOpen: boolean
-  /** Bumped to focus the search bar again (Ctrl+F while it is open). */
-  searchFocus: number
   /** Commits that drop / move / drag can edit: the current branch back to its last merge, newest first. */
   editable: string[]
   /** Undone operations that can be redone, newest first. */
@@ -398,7 +385,7 @@ function newView(snap: RepoSnapshot): RepoView {
     id: snap.id, snapshot: snap, logVersion: 0,
     selected: snap.status.length ? { kind: 'wip' } : snap.head.hash ? { kind: 'commit', hash: snap.head.hash } : { kind: 'wip' },
     center: snap.operation && snap.status.some((e) => e.kind === 'unmerged') ? { kind: 'conflicts' } : { kind: 'graph' },
-    search: null, searchOpen: false, searchFocus: 0, editable: [], redo: [], stashes: [], undo: [], remotes: [], merged: [], worktrees: [], submodules: [], lfs: null, pulls: null, pullsLoading: false, review: null, walkthrough: null, impact: null, ask: null, askThreads: [], remoteTags: null, progress: null, busy: null, worktreeTick: 0,
+    editable: [], redo: [], stashes: [], undo: [], remotes: [], merged: [], worktrees: [], submodules: [], lfs: null, pulls: null, pullsLoading: false, review: null, walkthrough: null, impact: null, ask: null, askThreads: [], remoteTags: null, progress: null, busy: null, worktreeTick: 0,
   }
 }
 

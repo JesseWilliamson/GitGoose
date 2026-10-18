@@ -6,7 +6,7 @@ import { fuzzy } from './fuzzy'
  * stored as "recent" without dragging closures along.
  */
 
-export type OmniKind = 'command' | 'branch' | 'tag' | 'change' | 'file' | 'stash' | 'setting' | 'commit' | 'action'
+export type OmniKind = 'command' | 'branch' | 'tag' | 'change' | 'file' | 'stash' | 'setting' | 'commit'
 
 export interface OmniEntry {
   kind: OmniKind
@@ -33,7 +33,7 @@ export interface OmniGroup {
 
 export const GROUP_LABEL: Record<OmniKind, string> = {
   command: 'Commands', branch: 'Branches', tag: 'Tags', change: 'Changed files', file: 'Files', stash: 'Stashes',
-  setting: 'Settings', commit: 'Commits', action: 'Search history',
+  setting: 'Settings', commit: 'Commits',
 }
 
 /** The filter chips, in Tab order. 'all' searches everything. */
@@ -44,10 +44,9 @@ export const SCOPE_LABEL: Record<OmniScope, string> = { all: 'All', command: 'Co
 /** Which kinds a scope shows (tags and stashes travel with branches; changed files with files). */
 export function kindsOf(scope: OmniScope): OmniKind[] {
   switch (scope) {
-    case 'all': return ['command', 'branch', 'tag', 'change', 'file', 'stash', 'setting', 'commit', 'action']
+    case 'all': return ['command', 'branch', 'tag', 'change', 'file', 'stash', 'setting', 'commit']
     case 'branch': return ['branch', 'tag', 'stash']
     case 'file': return ['change', 'file']
-    case 'commit': return ['commit', 'action']
     default: return [scope]
   }
 }
@@ -57,10 +56,10 @@ export function kindsOf(scope: OmniScope): OmniKind[] {
  * A git client is mostly asked about branches, commits and commands; a setting or a file that
  * matches as well should come after them.
  */
-export const KIND_WEIGHT: Record<OmniKind, number> = { branch: 25, command: 20, commit: 20, change: 15, tag: 10, stash: 5, file: 0, setting: -15, action: -1000 }
+export const KIND_WEIGHT: Record<OmniKind, number> = { branch: 25, command: 20, commit: 20, change: 15, tag: 10, stash: 5, file: 0, setting: -15 }
 
 /** How many of each kind to show when searching everything; a scope shows many more. */
-const LIMIT: Record<OmniKind, number> = { command: 6, branch: 6, tag: 4, change: 5, file: 8, stash: 3, setting: 4, commit: 8, action: 3 }
+const LIMIT: Record<OmniKind, number> = { command: 6, branch: 6, tag: 4, change: 5, file: 8, stash: 3, setting: 4, commit: 8 }
 export const SCOPED_LIMIT = 50
 
 /**
@@ -130,8 +129,6 @@ export function loadRecent(): OmniEntry[] {
 }
 
 export function rememberRecent(e: OmniEntry): void {
-  // Actions run a search with a query; replaying one later would be surprising.
-  if (e.kind === 'action') return
   try {
     const list = [{ kind: e.kind, key: e.key, title: e.title, sub: e.sub }, ...loadRecent().filter((x) => !(x.kind === e.kind && x.key === e.key))]
     localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, RECENT_MAX)))
