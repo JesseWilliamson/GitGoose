@@ -1,35 +1,26 @@
 import type { Row } from '@gitgoose/graph'
-import { DEFAULT_GRAPH_COLUMNS, GRAPH_COLUMNS, type Commit, type GraphColumns, type Ref, type StashEntry } from '@gitgoose/shared'
+import type { AvatarSource, Commit, Ref, StashEntry } from '@gitgoose/shared'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import clsx from 'clsx'
-import { Archive, Cloud, Laptop, Settings2, Tag } from 'lucide-react'
-import { ContextMenu, DropdownMenu } from 'radix-ui'
+import { Archive, Cloud, Laptop, Tag } from 'lucide-react'
+import { ContextMenu } from 'radix-ui'
 import { memo, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
-import type { AvatarSource } from '@gitgoose/shared'
-import { checkout, moveCommits, squashOnto } from '../lib/actions'
+import { bisectMark, bisectReset, checkout, moveCommits, showAllInGraph, squashOnto } from '../lib/actions'
 import { avatarSrc, useAvatarVariant } from '../lib/avatar'
-import { formatDate, laneColor, relativeTime, shortHash, stashLabel } from '../lib/format'
-import { ensureLoaded, getLog, loadMore, saveSettings, selectCommit, selectedHashes, selectionCursor, updateRepo, useSetting, useStore, type RepoView } from '../lib/store'
-import { GraphCell, LANE_W, ROW_H, ROW_H_COMPACT, WipCell } from './GraphCell'
+import { formatDate, laneColor, monthLabel, sameMonth, shortHash, stashLabel } from '../lib/format'
+import { ensureLoaded, getLog, loadMore, selectCommit, selectedHashes, selectionCursor, updateRepo, useSetting, useStore, type LogData, type RepoView } from '../lib/store'
+import { Avatar } from './Avatar'
+import { cellWidth, GraphCell, HEADER_H, LANE_W, ROW_H, ROW_H_COMPACT, WipCell } from './GraphCell'
 import { GraphMenu } from './menus'
-import { bisectMark, bisectReset, showAllInGraph } from '../lib/actions'
-import { DM, Spinner } from './ui'
+import { Spinner } from './ui'
 
 const isMac = window.gitgoose?.platform === 'darwin'
-const REFS_W = 160
-const AUTHOR_W = 140
-const DATE_W: Record<string, number> = { relative: 100, absolute: 110, both: 200 }
-const SHA_W = 68
-/** Automatic width shows at most this many lanes; wider histories are clipped until the user widens the column. */
-const AUTO_LANES = 8
-const MIN_GRAPH_W = 64
-const MAX_GRAPH_W = 800
 export const REF_MIME = 'application/x-gitgoose-ref'
 /** Commits being dragged to a new place in the branch (JSON list of hashes). */
 export const COMMITS_MIME = 'application/x-gitgoose-commits'
-const COL_AUTHOR = 'hidden @2xl:flex'
-const COL_DATE = 'hidden @xl:block'
-const COL_SHA = 'hidden @3xl:block'
+/** Avatar beside the text: two lines tall, or one. */
+const AVATAR = 30
+const AVATAR_COMPACT = 16
 
 /** A local and a remote branch with the same name share one pill, like GitKraken. */
 interface Pill {
@@ -79,13 +70,34 @@ export function Graph({ view }: { view: RepoView }) {
 export interface RowLook {
   rowH: number
   dateFormat: string
-  dateW: number
   avatars: AvatarSource
   avatarVariant: string
   showRemotes: boolean
   showTags: boolean
-  /** Which optional columns show (gear menu in the header). */
-  cols: GraphColumns
+}
+
+/**
+ * Which rows open a new month, as a flag per commit, grown as pages arrive. Kept outside React
+ * state and extended rather than rebuilt: the virtualizer asks for every row's height when the
+ * count changes, and that must cost a lookup, not a Date per row.
+ */
+function useMonthStarts(log: LogData): Uint8Array {
+  const cache = useRef<{ commits: Commit[]; flags: Uint8Array; n: number }>({ commits: log.commits, flags: new Uint8Array(0), n: 0 })
+  const c = cache.current
+  if (c.commits !== log.commits) Object.assign(c, { commits: log.commits, flags: new Uint8Array(0), n: 0 })
+  const total = log.commits.length
+  if (c.n < total) {
+    if (c.flags.length < total) {
+      const grown = new Uint8Array(Math.max(total, c.flags.length * 2))
+      grown.set(c.flags)
+      c.flags = grown
+    }
+    for (let i = c.n; i < total; i++) {
+      c.flags[i] = i === 0 || !sameMonth(log.commits[i - 1]!.authorDate, log.commits[i]!.authorDate) ? 1 : 0
+    }
+    c.n = total
+  }
+  return c.flags
 }
 
 function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
@@ -94,19 +106,21 @@ function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
   const showTags = useSetting('showTags')
   const avatars = useSetting('avatars')
   const avatarVariant = useAvatarVariant()
-  const cols = useSetting('graphColumns')
-  const look = useMemo<RowLook>(() => ({ rowH, dateFormat, dateW: DATE_W[dateFormat] ?? 100, showRemotes, showTags, avatars, avatarVariant, cols }),
-    [rowH, dateFormat, showRemotes, showTags, avatars, avatarVariant, cols])
+  const look = useMemo<RowLook>(() => ({ rowH, dateFormat, showRemotes, showTags, avatars, avatarVariant }),
+    [rowH, dateFormat, showRemotes, showTags, avatars, avatarVariant])
   const log = getLog(view.id)
   const snap = view.snapshot
   const showWip = snap.status.length > 0 || !snap.head.hash
   const offset = showWip ? 1 : 0
   const count = log.commits.length + offset + (log.done ? 0 : 1)
+  const monthStarts = useMonthStarts(log)
+  // Compact rows are a dense list: no month headings.
+  const headers = rowH >= ROW_H
   const scrollRef = useRef<HTMLDivElement>(null)
   const virt = useVirtualizer({
     count,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => rowH,
+    estimateSize: (i) => rowH + (headers && monthStarts[i - offset] ? HEADER_H : 0),
     overscan: 15,
   })
 
@@ -138,16 +152,10 @@ function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
     return m
   }, [snap.refs])
 
-  // Real histories can have dozens of lanes open at once (old release branches, tags). Sizing the
-  // column to fit them all would crush the commit messages, so like GitKraken we default to a few
-  // lanes, clip the rest, and let the user drag the column wider.
-  const userW = useStore((s) => s.settings?.graphWidth ?? null)
-  const graphW = userW ?? Math.max(MIN_GRAPH_W, Math.min(log.maxWidth, AUTO_LANES) * LANE_W + 12)
-
   const selectedSet = useMemo(() => new Set(selectedHashes(view.selected)), [view.selected])
   const editableSet = useMemo(() => new Set(view.editable), [view.editable])
   const stashByHash = useMemo(() => new Map(view.stashes.map((s) => [s.hash, s])), [view.stashes])
-  // Keep the selected row in view when it changes (keyboard navigation, search, jumping to a parent).
+  // Keep the selected row in view when it changes (keyboard navigation, jumping to a parent).
   let selectedIndex = -1
   const cursor = selectionCursor(view.selected)
   if (view.selected.kind === 'wip') selectedIndex = showWip ? 0 : -1
@@ -188,28 +196,14 @@ function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
     else if (e.key === 'End') { e.preventDefault(); select(lastSelectable) }
   }
 
+  // The WIP row and the first commit share HEAD's lane; the WIP row makes room for as many
+  // lanes as the first commit does, so its text lines up with the row below.
+  const wipLanes = log.rows[0]?.width ?? 1
+
   return (
-    // @container: the author, date and SHA columns appear only when the pane is wide enough,
-    // so the commit message never gets squeezed out (container queries, not window size,
-    // because the side panels decide how wide this pane is).
-    <div className="@container relative flex min-h-0 min-w-0 flex-1 flex-col">
+    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
       <BisectBar view={view} />
       <FilterBar view={view} />
-      <div className="flex h-7 shrink-0 items-center border-b border-line bg-panel text-[11px] font-semibold tracking-wide whitespace-nowrap text-faint uppercase"
-        data-testid="graph-header">
-        {cols.refs && <div style={{ width: REFS_W }} className="shrink-0 truncate px-3">Branch / Tag</div>}
-        {cols.graph && (
-          <div style={{ width: graphW }} className="relative shrink-0 truncate px-1">
-            Graph{log.maxWidth * LANE_W + 12 > graphW && <span className="ml-1 font-normal normal-case" title="Some lanes are hidden; drag the edge to widen">›</span>}
-            <ColumnResizer width={graphW} />
-          </div>
-        )}
-        <div className="min-w-0 flex-1 truncate px-2">Commit message</div>
-        {cols.author && <div style={{ width: AUTHOR_W }} className={clsx('shrink-0 truncate px-2', COL_AUTHOR)}>Author</div>}
-        {cols.date && <div style={{ width: look.dateW }} className={clsx('shrink-0 truncate px-2', COL_DATE)}>Date</div>}
-        {cols.sha && <div style={{ width: SHA_W }} className={clsx('shrink-0 truncate px-2', COL_SHA)}>SHA</div>}
-        <ColumnsMenu cols={cols} />
-      </div>
       <ContextMenu.Root>
         <ContextMenu.Trigger asChild>
           <div
@@ -222,9 +216,9 @@ function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
             <div style={{ height: virt.getTotalSize(), position: 'relative' }}>
               {items.map((item) => {
                 const i = item.index
-                const style = { position: 'absolute' as const, top: 0, left: 0, right: 0, height: rowH, transform: `translateY(${item.start}px)` }
+                const style = { position: 'absolute' as const, top: 0, left: 0, right: 0, height: item.size, transform: `translateY(${item.start}px)` }
                 if (showWip && i === 0) {
-                  return <WipRow key="wip" style={style} view={view} graphW={graphW} rowH={rowH} cols={cols} selected={view.selected.kind === 'wip'}
+                  return <WipRow key="wip" style={style} view={view} cellW={cellWidth(wipLanes)} rowH={rowH} selected={view.selected.kind === 'wip'}
                     lane={log.layout.headLane} color={log.layout.headColor} />
                 }
                 const ci = i - offset
@@ -241,6 +235,7 @@ function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
                   <CommitRow
                     key={commit.hash}
                     top={item.start}
+                    month={headers && monthStarts[ci] ? monthLabel(commit.authorDate) : null}
                     repoId={view.id}
                     commit={commit}
                     row={row}
@@ -252,7 +247,6 @@ function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
                     stash={commit.stash ? stashByHash.get(commit.hash) : undefined}
                     bisect={bisectMarks?.get(commit.hash)}
                     showPending={showWip}
-                    graphW={graphW}
                     look={look}
                   />
                 )
@@ -266,72 +260,8 @@ function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
   )
 }
 
-/**
- * The gear at the end of the header: which columns show, like GitKraken's. The message column
- * always shows (there would be nothing left to click). Container queries still hide the
- * optional columns when the pane gets narrow, so these are a ceiling, not a promise.
- */
-function ColumnsMenu({ cols }: { cols: GraphColumns }) {
-  const compact = useSetting('compactRows')
-  return (
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger asChild>
-        <button className="mr-1 ml-auto flex h-5 w-6 shrink-0 items-center justify-center rounded text-faint normal-case hover:bg-hover hover:text-fg"
-          title="Columns" data-testid="graph-columns">
-          <Settings2 size={13} />
-        </button>
-      </DropdownMenu.Trigger>
-      <DM.Content align="end">
-        <DM.Label>Columns</DM.Label>
-        {GRAPH_COLUMNS.slice(0, 2).map((c) => (
-          <DM.Check key={c.id} checked={cols[c.id]} testId={`col-${c.id}`} onChange={(v) => void saveSettings({ graphColumns: { ...cols, [c.id]: v } })}>{c.label}</DM.Check>
-        ))}
-        <DM.Check checked disabled onChange={() => {}}>Commit message</DM.Check>
-        {GRAPH_COLUMNS.slice(2).map((c) => (
-          <DM.Check key={c.id} checked={cols[c.id]} testId={`col-${c.id}`} onChange={(v) => void saveSettings({ graphColumns: { ...cols, [c.id]: v } })}>{c.label}</DM.Check>
-        ))}
-        <DM.Separator />
-        <DM.Check checked={compact} onChange={(v) => void saveSettings({ compactRows: v })}>Compact rows</DM.Check>
-        <DM.Item onSelect={() => void saveSettings({ graphColumns: { ...DEFAULT_GRAPH_COLUMNS }, graphWidth: null })}>Reset columns</DM.Item>
-      </DM.Content>
-    </DropdownMenu.Root>
-  )
-}
-
-/** Drag the right edge of the Graph header to resize; double-click to go back to automatic. */
-function ColumnResizer({ width }: { width: number }) {
-  const onPointerDown = (e: React.PointerEvent) => {
-    e.preventDefault()
-    const startX = e.clientX
-    const el = e.currentTarget as HTMLElement
-    el.setPointerCapture(e.pointerId)
-    let w = width
-    const move = (ev: PointerEvent) => {
-      w = Math.min(MAX_GRAPH_W, Math.max(MIN_GRAPH_W, width + ev.clientX - startX))
-      // Update the store directly while dragging (smooth); persist once on release.
-      useStore.setState((s) => (s.settings ? { settings: { ...s.settings, graphWidth: w } } : s))
-    }
-    const up = () => {
-      el.removeEventListener('pointermove', move)
-      el.removeEventListener('pointerup', up)
-      void saveSettings({ graphWidth: w })
-    }
-    el.addEventListener('pointermove', move)
-    el.addEventListener('pointerup', up)
-  }
-  return (
-    <span
-      onPointerDown={onPointerDown}
-      onDoubleClick={() => void saveSettings({ graphWidth: null })}
-      data-testid="graph-resizer"
-      title="Drag to resize; double-click for automatic width"
-      className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-accent/50"
-    />
-  )
-}
-
-function WipRow({ style, view, graphW, rowH, cols, selected, lane, color }: {
-  style: React.CSSProperties; view: RepoView; graphW: number; rowH: number; cols: GraphColumns; selected: boolean
+function WipRow({ style, view, cellW, rowH, selected, lane, color }: {
+  style: React.CSSProperties; view: RepoView; cellW: number; rowH: number; selected: boolean
   /** HEAD's lane and colour, where the dashed line down to HEAD runs. */
   lane: number; color: number
 }) {
@@ -343,12 +273,11 @@ function WipRow({ style, view, graphW, rowH, cols, selected, lane, color }: {
       style={style}
       data-testid="wip-row"
       onClick={() => updateRepo(view.id, { selected: { kind: 'wip' } })}
-      className={clsx('flex items-center border-b border-line/40 text-[13px]', selected ? 'bg-select' : 'hover:bg-hover')}
+      className={clsx('flex items-center text-[13px]', selected ? 'bg-select' : 'hover:bg-hover')}
     >
-      {cols.refs && <div style={{ width: REFS_W }} className="shrink-0 px-3" />}
-      {cols.graph && <WipCell width={graphW} hasHead={!!view.snapshot.head.hash} h={rowH} lane={lane} color={color} />}
-      <div className="flex min-w-0 flex-1 items-center gap-2 px-2 whitespace-nowrap text-muted italic">
-        <span className="min-w-0 truncate">{view.snapshot.head.hash ? '// WIP: uncommitted changes' : '// No commits yet'}</span>
+      <WipCell width={cellW} hasHead={!!view.snapshot.head.hash} h={rowH} lane={lane} color={color} />
+      <div className="flex h-full min-w-0 flex-1 items-center gap-2 border-b border-line/50 pr-3 pl-1 whitespace-nowrap text-muted italic">
+        <span className="min-w-0 truncate">{view.snapshot.head.hash ? 'Uncommitted changes' : 'No commits yet'}</span>
         {st.length > 0 && <span className="shrink-0 rounded bg-raised px-1.5 text-[11px] not-italic">{st.length} changed</span>}
         {staged > 0 && <span className="shrink-0 rounded bg-add-bg px-1.5 text-[11px] text-add not-italic">{staged} staged</span>}
         {conflicts > 0 && <span className="shrink-0 rounded bg-del-bg px-1.5 text-[11px] text-del not-italic">{conflicts} conflicts</span>}
@@ -369,6 +298,8 @@ const BISECT_PILL: Record<BisectMark, string> = {
 const CommitRow = memo(function CommitRow(props: {
   bisect?: BisectMark
   top: number
+  /** "March 2026" when this row is the first of its month: the row grows by HEADER_H for the heading. */
+  month: string | null
   repoId: string
   commit: Commit
   row: Row
@@ -381,12 +312,11 @@ const CommitRow = memo(function CommitRow(props: {
   /** Set when this row is a stash (its entry, for the label and the menu). */
   stash?: StashEntry
   showPending: boolean
-  graphW: number
   look: RowLook
 }) {
   const { commit, row, repoId, look } = props
+  const compact = look.rowH < ROW_H
   const src = avatarSrc(commit.authorEmail, look.avatars, look.avatarVariant)
-  const author = useMemo(() => ({ name: commit.authorName, email: commit.authorEmail, src }), [commit.authorName, commit.authorEmail, src])
   const [dropping, setDropping] = useState(false)
   /**
    * Where dragged commits would land: just above (newer than) this one, just below it, or onto
@@ -396,10 +326,9 @@ const CommitRow = memo(function CommitRow(props: {
   const pills = useMemo(() => (props.refs ? pillsFor(props.refs, props.headBranch, { remotes: look.showRemotes, tags: look.showTags }) : []),
     [props.refs, props.headBranch, look.showRemotes, look.showTags])
   const lane = laneColor(row.color)
-  /** Pills (or a stash or bisect mark) in the first column: joined to the node by a line. */
-  const labelled = look.cols.refs && (pills.length > 0 || !!props.stash || !!props.bisect)
-  // Like GitKraken: without a Date column, recent commits still say when, inside the message cell.
-  const recent = !look.cols.date && Date.now() / 1000 - commit.authorDate < 86_400
+  const header = props.month ? HEADER_H : 0
+  const height = look.rowH + header
+  const cellW = cellWidth(row.width)
 
   const onDragStart = (e: DragEvent) => {
     // A branch pill inside the row starts its own drag.
@@ -415,7 +344,7 @@ const CommitRow = memo(function CommitRow(props: {
       e.preventDefault()
       e.dataTransfer.dropEffect = 'move'
       const box = (e.currentTarget as HTMLElement).getBoundingClientRect()
-      const y = (e.clientY - box.top) / box.height
+      const y = (e.clientY - box.top - header) / (box.height - header)
       setDropAt(y < 1 / 3 ? 'above' : y > 2 / 3 ? 'below' : 'onto')
       return
     }
@@ -444,6 +373,28 @@ const CommitRow = memo(function CommitRow(props: {
     useStore.setState({ drop: { x: e.clientX, y: e.clientY, source: JSON.parse(raw) as Ref, target: { ref, hash: commit.hash } } })
   }
 
+  const marks = (
+    <>
+      {props.bisect && (
+        <span className={clsx('flex h-[18px] shrink-0 items-center rounded border px-1.5 text-[11px] font-medium', BISECT_PILL[props.bisect])} data-testid="bisect-pill">{props.bisect}</span>
+      )}
+      {props.stash && (
+        <span className="flex h-[18px] shrink-0 items-center gap-1 rounded border border-dashed border-line px-1.5 text-[11px] text-muted" data-testid="stash-pill">
+          <Archive size={10} /> {props.stash.ref}
+        </span>
+      )}
+      {pills.slice(0, 3).map((p) => (
+        <RefPill key={p.key} pill={p} color={row.color} repoId={repoId} hash={commit.hash} onDrop={onDrop} />
+      ))}
+      {pills.length > 3 && (
+        <span className="shrink-0 rounded-[4px] bg-raised px-1.5 text-[11px] font-medium text-muted" title={pills.slice(3).map((p) => p.label).join('\n')}>
+          +{pills.length - 3}
+        </span>
+      )}
+    </>
+  )
+  const subject = props.stash ? stashLabel(props.stash.message) : commit.subject
+
   return (
     <div
       data-testid="commit-row"
@@ -469,61 +420,51 @@ const CommitRow = memo(function CommitRow(props: {
         setDropAt(null)
       }}
       onDrop={(e) => onDrop(e)}
-      className={clsx(
-        'flex items-center text-[13px]',
-        props.selected ? 'bg-select' : 'hover:bg-hover',
-        dropping && 'outline outline-2 -outline-offset-2 outline-accent',
-      )}
-      // The selected row takes its lane's colour, as in GitKraken (bg-select stays as the class).
-      style={{ position: 'absolute', top: 0, left: 0, right: 0, height: look.rowH, transform: `translateY(${props.top}px)`,
-        ...(props.selected ? { background: `color-mix(in srgb, ${lane} 24%, var(--gs-bg))` } : {}) }}
+      className={clsx('flex items-stretch text-[13px]', dropping && 'outline outline-2 -outline-offset-2 outline-accent')}
+      style={{ position: 'absolute', top: 0, left: 0, right: 0, height, transform: `translateY(${props.top}px)` }}
     >
-      {look.cols.refs && (
-        <div style={{ width: REFS_W, ...(labelled && !props.selected ? { background: `color-mix(in srgb, ${lane} 9%, transparent)` } : {}) }}
-          className="flex h-full min-w-0 shrink-0 items-center gap-1 overflow-hidden pl-2">
-          {props.bisect && (
-            <span className={clsx('flex h-5 shrink-0 items-center rounded border px-1.5 text-[11px] font-medium', BISECT_PILL[props.bisect])} data-testid="bisect-pill">{props.bisect}</span>
-          )}
-          {props.stash && (
-            <span className="flex h-5 shrink-0 items-center gap-1 rounded border border-dashed border-line px-1.5 text-[11px] text-muted" data-testid="stash-pill">
-              <Archive size={10} /> {props.stash.ref}
-            </span>
-          )}
-          {pills.slice(0, 2).map((p) => (
-            <RefPill key={p.key} pill={p} color={row.color} repoId={repoId} hash={commit.hash} onDrop={onDrop} />
-          ))}
-          {pills.length > 2 && (
-            <span className="shrink-0 rounded-[3px] px-1 text-[11px] font-medium" title={pills.slice(2).map((p) => p.label).join('\n')}
-              style={{ background: `color-mix(in srgb, ${lane} 30%, transparent)` }}>
-              +{pills.length - 2}
-            </span>
-          )}
-          {/* The line from the pills to the node; GraphCell continues it up to the node. */}
-          {labelled && <span className="h-0.5 min-w-2 flex-1" style={{ background: lane, opacity: 0.85 }} />}
+      {props.month && (
+        <div className="pointer-events-none absolute top-0 flex items-end pb-1 text-[11px] font-semibold tracking-wider text-faint uppercase"
+          style={{ left: cellWidth(0) + 4, height: HEADER_H }} data-testid="month-header">
+          {props.month}
         </div>
       )}
-      {look.cols.graph && (
-        <GraphCell row={row} width={props.graphW} showPending={props.showPending} isHead={props.isHead} h={look.rowH} author={author}
-          stash={!!commit.stash} refLine={labelled} />
-      )}
-      <div className={clsx('flex min-w-0 flex-1 items-center gap-2 px-2', props.stash && 'text-muted italic')}>
-        <span className="min-w-0 flex-1 truncate">{props.stash ? stashLabel(props.stash.message) : commit.subject}</span>
-        {recent && <span className="shrink-0 text-[11px] text-faint" data-testid="row-time">{relativeTime(commit.authorDate)}</span>}
+      <GraphCell row={row} width={cellW} showPending={props.showPending} isHead={props.isHead} h={look.rowH} offset={header} stash={!!commit.stash} />
+      {/* The selected row takes its lane's colour; the tint stops at the text so the lines stay clean. */}
+      <div
+        className={clsx('flex min-w-0 flex-1 items-center gap-2.5 rounded-l-md border-b border-line/50 pr-3 pl-1', !props.selected && 'hover:bg-hover')}
+        style={{ marginTop: header, ...(props.selected ? { background: `color-mix(in srgb, ${lane} 22%, var(--gs-bg))` } : {}) }}
+        data-testid="row-body"
+      >
+        <span data-testid="row-avatar" className="flex shrink-0">
+          <Avatar name={commit.authorName} email={commit.authorEmail} src={src} size={compact ? AVATAR_COMPACT : AVATAR} />
+        </span>
+        {compact ? (
+          <>
+            <span className="flex min-w-0 shrink-0 items-center gap-1">{marks}</span>
+            <span className={clsx('min-w-0 flex-1 truncate', props.stash && 'text-muted italic')}>{subject}</span>
+            <span className="max-w-32 shrink-0 truncate text-[12px] text-muted" data-testid="row-author">{commit.authorName}</span>
+            <span className="shrink-0 text-[12px] text-faint" data-testid="row-date">{formatDate(commit.authorDate, look.dateFormat)}</span>
+          </>
+        ) : (
+          <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
+            <div className="flex min-w-0 items-center gap-1.5 text-[12px] leading-4">
+              <span className="min-w-0 max-w-48 shrink truncate text-muted" data-testid="row-author">{commit.authorName}</span>
+              {marks}
+              <span className="min-w-0 flex-1" />
+              <span className="shrink-0 text-faint" data-testid="row-date">{formatDate(commit.authorDate, look.dateFormat)}</span>
+            </div>
+            <div className="flex min-w-0 items-center gap-2 leading-4">
+              <span className="shrink-0 font-mono text-[12px] text-faint" data-testid="row-sha">{shortHash(commit.hash)}</span>
+              <span className={clsx('min-w-0 flex-1 truncate', props.stash && 'text-muted italic')}>{subject}</span>
+            </div>
+          </div>
+        )}
       </div>
-      {/* No avatar here: the graph node already is one. */}
-      {look.cols.author && (
-        <div style={{ width: AUTHOR_W }} className={clsx('min-w-0 shrink-0 items-center px-2 text-muted', COL_AUTHOR)} data-testid="author-cell">
-          <span className="truncate">{commit.authorName}</span>
-        </div>
-      )}
-      {look.cols.date && <div style={{ width: look.dateW }} className={clsx('shrink-0 truncate px-2 text-muted', COL_DATE)}>{formatDate(commit.authorDate, look.dateFormat)}</div>}
-      {look.cols.sha && <div style={{ width: SHA_W }} className={clsx('shrink-0 px-2 font-mono text-xs text-faint', COL_SHA)}>{shortHash(commit.hash)}</div>}
-      {/* Lines up with the header's gear. */}
-      <div className="w-7 shrink-0" />
       {dropAt === 'onto' ? (
-        <div data-testid="drop-onto" className="pointer-events-none absolute inset-0 rounded-sm outline outline-2 -outline-offset-2 outline-accent" title="Squash into this commit" />
+        <div data-testid="drop-onto" className="pointer-events-none absolute inset-x-0 bottom-0 rounded-sm outline outline-2 -outline-offset-2 outline-accent" style={{ top: header }} title="Squash into this commit" />
       ) : dropAt && (
-        <div data-testid="drop-line" className={clsx('pointer-events-none absolute inset-x-0 h-0.5 bg-accent', dropAt === 'above' ? 'top-0' : 'bottom-0')} />
+        <div data-testid="drop-line" className={clsx('pointer-events-none absolute inset-x-0 h-0.5 bg-accent', dropAt === 'above' ? '' : 'bottom-0')} style={dropAt === 'above' ? { top: header } : undefined} />
       )}
     </div>
   )
@@ -558,17 +499,17 @@ function RefPill({ pill, color, repoId, hash, onDrop }: {
       onDoubleClick={() => void checkout(repoId, ref.name)}
       title={[pill.local?.name, ...pill.remotes.map((r) => r.name), pill.tag?.name].filter(Boolean).join('\n')}
       className={clsx(
-        'flex h-5 max-w-full min-w-0 shrink cursor-grab items-center gap-1 rounded-[3px] px-1.5 text-[11px] font-medium',
-        pill.isHead ? 'text-white' : 'text-fg',
+        'flex h-[18px] max-w-44 min-w-0 shrink cursor-grab items-center gap-1 rounded-[4px] px-1.5 text-[11px] font-semibold',
+        pill.isHead ? 'bg-accent text-accent-fg' : pill.tag ? 'bg-warn text-black' : 'text-fg',
         over && 'ring-2 ring-accent',
       )}
-      // Like GitKraken: a filled tab in the lane's colour; the checked-out branch is solid.
-      style={{ background: pill.isHead ? laneColor(color) : `color-mix(in srgb, ${laneColor(color)} 30%, transparent)` }}
+      // The checked-out branch is solid accent and tags solid amber, as in Tower; other branches
+      // take a tint of their lane so the pill still says which line of history it sits on.
+      style={pill.isHead || pill.tag ? undefined : { background: `color-mix(in srgb, ${laneColor(color)} 28%, transparent)` }}
     >
-      {pill.isHead && <span className="text-[10px]">✓</span>}
       {pill.tag ? <Tag size={10} className="shrink-0" /> : null}
       <span className="truncate">{pill.label}</span>
-      {pill.local && <Laptop size={10} className="shrink-0 opacity-70" />}
+      {pill.local && !pill.isHead && <Laptop size={10} className="shrink-0 opacity-70" />}
       {pill.remotes.length > 0 && <Cloud size={10} className="shrink-0 opacity-70" />}
     </span>
   )

@@ -25,7 +25,7 @@ test('keeps main in the leftmost lane whatever is checked out', async () => {
   const main = r.git('rev-parse', 'main').trim()
   const { app, page } = await launch(r.dir)
   // laneX(n) = PAD + n * LANE_W + LANE_W / 2 = 6 + 24n + 12: lane 0 is x 18, lane 1 is x 42.
-  const nodeX = (hash: string) => page.locator(`[data-testid="commit-row"][data-hash="${hash}"] [data-testid="avatar-node"] circle`).first()
+  const nodeX = (hash: string) => page.locator(`[data-testid="commit-row"][data-hash="${hash}"] [data-testid="commit-node"] circle`).last()
   await expect(nodeX(main)).toHaveAttribute('cx', '18')
   // HEAD sits next to main, and the WIP row above it in the same lane.
   await expect(nodeX(r.head())).toHaveAttribute('cx', '42')
@@ -71,84 +71,41 @@ test('Ctrl+F is the omni search; a commit result selects it, and there is no sec
   await app.close()
 })
 
-test('caps the graph column on wide histories and lets the user resize it', async () => {
-  // Twelve branches whose lanes are all open at once.
+test('Tower look: two-line rows beside hollow nodes, text indented by the lanes, month headings', async () => {
   const r = makeFixture('linear')
   for (let i = 0; i < 12; i++) {
     r.checkout('-b', `b${i}`, 'main~4')
     r.commit(`work on b${i}`, { [`b${i}.txt`]: 'x\n' })
   }
   r.checkout('main')
-  const { app, page } = await launch(r.dir)
-  const header = page.getByTestId('graph-resizer').locator('..')
-  await expect(header).toBeVisible()
-  const auto = (await header.boundingBox())!.width
-  expect(auto).toBeLessThanOrEqual(8 * 24 + 12 + 1) // AUTO_LANES * LANE_W + padding
-  const handle = (await page.getByTestId('graph-resizer').boundingBox())!
-  await page.mouse.move(handle.x + 2, handle.y + 5)
-  await page.mouse.down()
-  await page.mouse.move(handle.x + 102, handle.y + 5, { steps: 5 })
-  await page.mouse.up()
-  await expect.poll(async () => (await header.boundingBox())!.width).toBeGreaterThan(auto + 90)
-  await page.getByTestId('graph-resizer').dblclick()
-  await expect.poll(async () => (await header.boundingBox())!.width).toBeCloseTo(auto, 0)
-  await app.close()
-})
-
-test('the gear in the graph header shows and hides columns; the author column has no avatar', async () => {
-  const r = makeFixture('linear')
-  const { app, page } = await launch(r.dir)
-  const header = page.getByTestId('graph-header')
-  const row = page.getByTestId('commit-row').first()
-  // GitKraken's defaults: branch / tag, graph and message.
-  await expect(header).toContainText('Commit message')
-  await expect(header).not.toContainText('SHA')
-  await expect(row.getByTestId('author-cell')).toHaveCount(0)
-  await page.getByTestId('graph-columns').click()
-  await page.getByTestId('col-sha').click()
-  await page.getByTestId('col-author').click()
-  await page.keyboard.press('Escape')
-  await expect(header).toContainText('SHA')
-  // The graph node is the author's avatar, so the author column is just the name.
-  await expect(row.getByTestId('author-cell')).toHaveText('Ada Lovelace')
-  await expect(row.getByTestId('author-cell').locator('img, svg')).toHaveCount(0)
-  await expect.poll(async () => (await page.evaluate(() => window.gitgoose.getSettings())).graphColumns)
-    .toEqual({ refs: true, graph: true, author: true, date: false, sha: true })
-  await page.getByTestId('graph-columns').click()
-  await page.getByRole('menuitem', { name: 'Reset columns' }).click()
-  await expect(header).not.toContainText('SHA')
-  await app.close()
-})
-
-test('GitKraken look: pills joined to their node, recent times inline, far lanes pinned, viewing count', async () => {
-  const r = makeFixture('linear')
-  for (let i = 0; i < 12; i++) {
-    r.checkout('-b', `b${i}`, 'main~4')
-    r.commit(`work on b${i}`, { [`b${i}.txt`]: 'x\n' })
-  }
-  r.checkout('main')
-  // A commit made now (fixture commits are from 2023): its time shows in the message cell.
+  // A commit made now (fixture commits are from 2023): it opens a month of its own.
   execFileSync('git', ['commit', '-q', '--allow-empty', '-m', 'just now'], {
     cwd: r.dir, env: { ...process.env, GIT_AUTHOR_NAME: 'Ada Lovelace', GIT_AUTHOR_EMAIL: 'ada@example.com', GIT_COMMITTER_NAME: 'Ada Lovelace', GIT_COMMITTER_EMAIL: 'ada@example.com' },
   })
   const { app, page } = await launch(r.dir)
   const head = page.locator(`[data-testid="commit-row"][data-hash="${r.head()}"]`)
-  await expect(head.getByTestId('row-time')).toHaveText(/just now|min ago/)
-  await expect(head.getByTestId('ref-line')).toHaveCount(1)
+  // Author and refs on the first line, hash and subject on the second; the avatar is HTML beside them.
+  await expect(head.getByTestId('row-author')).toHaveText('Ada Lovelace')
+  await expect(head.getByTestId('row-sha')).toHaveText(r.head().slice(0, 7))
+  await expect(head.getByTestId('row-avatar')).toContainText('AL')
+  await expect(head.locator('[data-testid="ref-pill"][data-ref="refs/heads/main"]')).toBeVisible()
+  // The newest commit opens this month; the 2023 commits open another heading further down.
+  await expect(head.getByTestId('month-header')).toHaveText(new RegExp(String(new Date().getFullYear())))
   const plain = page.getByTestId('commit-row').filter({ hasText: 'Commit 4' })
-  await expect(plain.getByTestId('ref-line')).toHaveCount(0)
-  await expect(plain.getByTestId('row-time')).toHaveCount(0)
-  // Thirteen lanes in a column sized for eight: the far nodes stay visible at the edge.
+  await expect(plain.getByTestId('month-header')).toHaveCount(0)
+  // A row with a heading is taller by the heading, and its node sits in the lower part.
+  expect((await head.boundingBox())!.height).toBe(52 + 26)
+  await expect(head.locator('[data-testid="commit-node"] circle').last()).toHaveAttribute('cy', String(26 + 26))
+  // Nodes are hollow: the page colour inside, the lane colour as the ring.
+  await expect(plain.locator('[data-testid="commit-node"] circle').last()).toHaveAttribute('fill', 'var(--gs-bg)')
+  // Thirteen lanes where the text moves aside for eight: the far nodes stay visible at the edge, faded.
   const far = page.locator('[data-testid="commit-row"] svg[data-offscreen]').first()
   await expect(far).toBeVisible()
-  // Faded rather than ringed with dashes; every row also gets its lane band.
-  await expect(far.locator('g[opacity="0.45"] [data-testid="avatar-node"]')).toHaveCount(1)
-  await expect(far.locator('[stroke-dasharray]')).toHaveCount(0)
-  await expect(plain.getByTestId('lane-band')).toHaveCount(1)
-  // Band and strip stop 2px short of the row's top and bottom, so stacked commits read as separate blocks.
-  await expect(plain.getByTestId('lane-band')).toHaveAttribute('y', '2')
-  await expect(plain.getByTestId('lane-band')).toHaveAttribute('height', '28')
-  await expect(plain.getByTestId('lane-strip')).toHaveAttribute('y', '2')
+  await expect(far.locator('g[opacity="0.45"] [data-testid="commit-node"]')).toHaveCount(1)
+  // Text starts further right where more lanes are open: cellWidth(lanes) = 6 + min(8, max(2, lanes)) * 24.
+  const busy = page.getByTestId('commit-row').filter({ hasText: 'work on b0' })
+  const quiet = page.getByTestId('commit-row').filter({ hasText: 'Commit 1' })
+  expect((await busy.getByTestId('row-body').boundingBox())!.x).toBeGreaterThan((await quiet.getByTestId('row-body').boundingBox())!.x + 100)
   await expect(page.getByTestId('sidebar-viewing')).toHaveText('Viewing 13/13')
   await page.locator('[data-testid="sidebar-ref"][data-ref="refs/heads/b3"]').hover()
   await page.locator('[data-testid="sidebar-ref"][data-ref="refs/heads/b3"]').getByTestId('toggle-hidden').click()
