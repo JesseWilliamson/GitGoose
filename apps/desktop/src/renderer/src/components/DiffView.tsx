@@ -7,6 +7,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { AskPanel } from './AskPanel'
 import { CodePeekPanel, identifierFromClick } from './CodePeek'
 import { ImageDiff, imageMime } from './ImageDiff'
+
+type SvgView = 'image' | 'text'
+/** The last choice for SVGs, kept while the app runs: it tends to hold across files. */
+let lastSvgView: SvgView = 'image'
 import { discard, openDiffTool, openInEditor, restoreFileFrom, run } from '../lib/actions'
 import { api } from '../lib/api'
 import { formatDate, hashColor, laneColor, relativeTime, shortHash, splitPath } from '../lib/format'
@@ -197,6 +201,9 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
   )
   /** The name Code Peek shows (Ctrl/Cmd+click in the diff), or null. */
   const [peek, setPeek] = useState<string | null>(null)
+  /** An SVG is text to git but a picture to its author: shown rendered, or as a text diff. */
+  const [svgView, setSvgView] = useState<SvgView>(lastSvgView)
+  const pickSvgView = (v: SvgView) => { lastSvgView = v; setSvgView(v) }
   const peekRev = target.kind === 'commit' ? target.hash : target.kind === 'range' ? target.to : null
   // Text selected in the diff, as a range of new-side lines: what "Ask about these lines" covers.
   const aiOn = useAiEnabled()
@@ -290,18 +297,31 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
     </div>
   )
 
+  const isSvg = !diff.binary && /\.svg$/i.test(target.path)
+  const asImage = (diff.binary && !!imageMime(target.path)) || (isSvg && svgView === 'image')
+
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      {(fileActions || diff.oldPath) && (
+      {(fileActions || diff.oldPath || isSvg) && (
         <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-line px-3 text-xs">
-          <span className="truncate text-muted" data-testid="diff-hint">
-            {diff.oldPath ? `Renamed from ${diff.oldPath}` : diff.binary ? '' : editable ? `Click lines to select them; shift-click for a range; ${modName()}+click a name to peek.`
+          {isSvg && (
+            <div className="flex shrink-0 items-center gap-1" data-testid="svg-view">
+              {(['image', 'text'] as SvgView[]).map((v) => (
+                <button key={v} onClick={() => pickSvgView(v)} aria-pressed={svgView === v}
+                  className={clsx('rounded px-2 py-1', svgView === v ? 'bg-select font-medium' : 'text-muted hover:bg-hover')}>
+                  {v === 'image' ? 'Image' : 'Text'}
+                </button>
+              ))}
+            </div>
+          )}
+          <span className="min-w-0 flex-1 truncate text-muted" data-testid="diff-hint">
+            {diff.oldPath ? `Renamed from ${diff.oldPath}` : asImage ? '' : editable ? `Click lines to select them; shift-click for a range; ${modName()}+click a name to peek.`
               : editable === false && ignoreWhitespace && target.kind !== 'commit' && target.kind !== 'range' ? 'Whitespace changes are hidden, so line and hunk staging are off (Settings → Diff).' : ''}
           </span>
           {fileActions}
         </div>
       )}
-      {diff.binary && imageMime(target.path) ? (
+      {asImage ? (
         <ImageDiff repoId={view.id} target={target} path={target.path} />
       ) : diff.binary ? (
         <div className="flex flex-1 items-center justify-center text-sm text-faint">Binary file</div>
