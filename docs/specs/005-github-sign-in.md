@@ -2,7 +2,7 @@
 
 PLAN-2 §9a. Code: `apps/desktop/src/main/github/` (main process only), `packages/shared/src/github.ts`
 (pure rules), `components/AccountsPanel.tsx`. Tests: `main/github/github.test.ts`,
-`shared/src/github.test.ts`, `e2e/github.spec.ts`, all against `fakeGitHub` from `@gitsquid/fixtures`.
+`shared/src/github.test.ts`, `e2e/github.spec.ts`, all against `fakeGitHub` from `@gitgoose/fixtures`.
 
 ## Behaviour
 
@@ -16,7 +16,7 @@ PLAN-2 §9a. Code: `apps/desktop/src/main/github/` (main process only), `package
   fetch* shows **Grant access**, a second device flow for `repo`.
 - **Sign out** forgets the token on this computer. GitHub's revoke API needs the client secret,
   which a desktop app cannot keep, so the panel links to github.com's authorized-apps page.
-- Without an OAuth client id (`main/github/config.ts`, or `GITSQUID_GITHUB_CLIENT_ID`) the panel
+- Without an OAuth client id (`main/github/config.ts`, or `GITGOOSE_GITHUB_CLIENT_ID`) the panel
   says sign-in is not set up.
 
 ## What the token is used for

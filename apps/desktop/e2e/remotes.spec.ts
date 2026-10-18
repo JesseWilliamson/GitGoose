@@ -1,4 +1,4 @@
-import { initRepo, makeFixture, tempDir } from '@gitsquid/fixtures'
+import { initRepo, makeFixture, tempDir } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { launch, pickFromSubmenu } from './app'
@@ -11,7 +11,7 @@ const lsRemote = (bare: string, ...args: string[]) => execFileSync('git', ['ls-r
 
 test('add, rename, re-point and remove a remote from the sidebar; removing is undoable', async () => {
   const r = makeFixture('with-remote')
-  const other = tempDir('gitsquid-other-')
+  const other = tempDir('gitgoose-other-')
   execFileSync('git', ['clone', '-q', '--bare', r.git('remote', 'get-url', 'origin').trim(), other])
   const { app, page } = await launch(r.dir)
 

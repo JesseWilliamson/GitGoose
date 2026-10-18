@@ -29,9 +29,51 @@ importers:
       '@parcel/watcher':
         specifier: ^2.6.0
         version: 2.6.0
+      '@tree-sitter-grammars/tree-sitter-kotlin':
+        specifier: ^1.1.0
+        version: 1.1.0
       electron-updater:
         specifier: ^6.8.9
         version: 6.8.9
+      tree-sitter-c:
+        specifier: ^0.24.1
+        version: 0.24.1
+      tree-sitter-c-sharp:
+        specifier: ^0.23.5
+        version: 0.23.5
+      tree-sitter-cpp:
+        specifier: ^0.23.4
+        version: 0.23.4
+      tree-sitter-go:
+        specifier: ^0.25.0
+        version: 0.25.0
+      tree-sitter-java:
+        specifier: ^0.23.5
+        version: 0.23.5
+      tree-sitter-javascript:
+        specifier: ^0.25.0
+        version: 0.25.0
+      tree-sitter-php:
+        specifier: ^0.24.2
+        version: 0.24.2
+      tree-sitter-python:
+        specifier: ^0.25.0
+        version: 0.25.0
+      tree-sitter-ruby:
+        specifier: ^0.23.1
+        version: 0.23.1
+      tree-sitter-rust:
+        specifier: ^0.24.0
+        version: 0.24.0
+      tree-sitter-typescript:
+        specifier: ^0.23.2
+        version: 0.23.2
+      web-tree-sitter:
+        specifier: ^0.27.1
+        version: 0.27.1
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       '@codemirror/commands':
         specifier: ^6.11.1
@@ -42,19 +84,19 @@ importers:
       '@codemirror/view':
         specifier: ^6.43.14
         version: 6.43.14
-      '@gitsquid/codegraph':
+      '@gitgoose/codegraph':
         specifier: workspace:*
         version: link:../../packages/codegraph
-      '@gitsquid/fixtures':
+      '@gitgoose/fixtures':
         specifier: workspace:*
         version: link:../../tools/fixtures
-      '@gitsquid/git':
+      '@gitgoose/git':
         specifier: workspace:*
         version: link:../../packages/git
-      '@gitsquid/graph':
+      '@gitgoose/graph':
         specifier: workspace:*
         version: link:../../packages/graph
-      '@gitsquid/shared':
+      '@gitgoose/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@playwright/test':
@@ -121,24 +163,64 @@ importers:
         specifier: ^5.0.15
         version: 5.0.15(@types/react@19.3.0)(react@19.3.1)
 
-  packages/codegraph: {}
+  packages/codegraph:
+    dependencies:
+      '@tree-sitter-grammars/tree-sitter-kotlin':
+        specifier: ^1.1.0
+        version: 1.1.0
+      tree-sitter-c:
+        specifier: ^0.24.1
+        version: 0.24.1
+      tree-sitter-c-sharp:
+        specifier: ^0.23.5
+        version: 0.23.5
+      tree-sitter-cpp:
+        specifier: ^0.23.4
+        version: 0.23.4
+      tree-sitter-go:
+        specifier: ^0.25.0
+        version: 0.25.0
+      tree-sitter-java:
+        specifier: ^0.23.5
+        version: 0.23.5
+      tree-sitter-javascript:
+        specifier: ^0.25.0
+        version: 0.25.0
+      tree-sitter-php:
+        specifier: ^0.24.2
+        version: 0.24.2
+      tree-sitter-python:
+        specifier: ^0.25.0
+        version: 0.25.0
+      tree-sitter-ruby:
+        specifier: ^0.23.1
+        version: 0.23.1
+      tree-sitter-rust:
+        specifier: ^0.24.0
+        version: 0.24.0
+      tree-sitter-typescript:
+        specifier: ^0.23.2
+        version: 0.23.2
+      web-tree-sitter:
+        specifier: ^0.27.1
+        version: 0.27.1
 
   packages/git:
     dependencies:
-      '@gitsquid/codegraph':
+      '@gitgoose/codegraph':
         specifier: workspace:*
         version: link:../codegraph
-      '@gitsquid/shared':
+      '@gitgoose/shared':
         specifier: workspace:*
         version: link:../shared
     devDependencies:
-      '@gitsquid/fixtures':
+      '@gitgoose/fixtures':
         specifier: workspace:*
         version: link:../../tools/fixtures
 
   packages/graph:
     devDependencies:
-      '@gitsquid/fixtures':
+      '@gitgoose/fixtures':
         specifier: workspace:*
         version: link:../../tools/fixtures
 
@@ -146,13 +228,13 @@ importers:
 
   tools/bench:
     devDependencies:
-      '@gitsquid/fixtures':
+      '@gitgoose/fixtures':
         specifier: workspace:*
         version: link:../fixtures
-      '@gitsquid/git':
+      '@gitgoose/git':
         specifier: workspace:*
         version: link:../../packages/git
-      '@gitsquid/graph':
+      '@gitgoose/graph':
         specifier: workspace:*
         version: link:../../packages/graph
       '@playwright/test':
@@ -170,7 +252,7 @@ importers:
 
   tools/install:
     dependencies:
-      '@gitsquid/shared':
+      '@gitgoose/shared':
         specifier: workspace:*
         version: link:../../packages/shared
     devDependencies:
@@ -1589,6 +1671,14 @@ packages:
   '@tanstack/virtual-core@3.19.6':
     resolution: {integrity: sha512-CsTW892z23gy7IyxYTTorVu1uZWB+0N349rSMgKz4rFLPpLza7F7TpcCKeI5iUAwYQCt8QUlOU67J+KXCxtpGw==}
 
+  '@tree-sitter-grammars/tree-sitter-kotlin@1.1.0':
+    resolution: {integrity: sha512-vlVXaxEE8t2kpJgfZpa8XVvxcnKw9AYtRTgy7KWjsDmAsadk06RxAT80IXOgGQnmM9i/orQn1nD84gPNUHu6DQ==}
+    peerDependencies:
+      tree-sitter: ^0.22.4
+    peerDependenciesMeta:
+      tree-sitter:
+        optional: true
+
   '@types/cacheable-request@6.0.3':
     resolution: {integrity: sha512-IQ3EbTzGxIigb1I3qPZc1rWJnH0BmSKv5QYTalEwweFvyBDLSAe24zP0le/hyi7ecGfZVlIVAg4BZqb8WBwKqw==}
 
@@ -2717,8 +2807,16 @@ packages:
   node-addon-api@7.1.1:
     resolution: {integrity: sha512-5m3bsyrjFWE1xf7nz7YXdN4udnVtXK6/Yfgn5qnahL6bCkf2yKt4k3nuTKAtT4r3IG8JNR2ncsIMdZuAzJjHQQ==}
 
+  node-addon-api@8.9.2:
+    resolution: {integrity: sha512-VijLXbi3UACN69I0JVXJsX4tjACjNoQDgv2gTF6sx2wWEi8tkSg2eX8p5gSIFi8z2+DL3oHmY6OyKce38SDolg==}
+    engines: {node: ^18 || ^20 || >= 21}
+
   node-api-version@0.2.1:
     resolution: {integrity: sha512-2xP/IGGMmmSQpI1+O/k72jF/ykvZ89JeuKX3TLJAYPDVLUalrshrLHkeVcCCZqG/eEa635cr8IBYzgnDvM2O8Q==}
+
+  node-gyp-build@4.8.4:
+    resolution: {integrity: sha512-LA4ZjwlnUblHVgq0oBF3Jl/6h/Nvs5fzBLwdEF4nuxnFdsfajde4WfxtJr3CaiH+F6ewcIB/q4jQ4UzPyid+CQ==}
+    hasBin: true
 
   node-gyp@12.4.0:
     resolution: {integrity: sha512-OMcPNvqTCFUnNaBlmdgq+lfNqY7gTiSmNRDjY3uAXRyudeKZEZxu3CLtjMQrx4zZxCX2b/mpNqTtwuCJgXhHkw==}
@@ -2740,6 +2838,11 @@ packages:
   normalize-url@6.1.0:
     resolution: {integrity: sha512-DlL+XwOy3NxAQ8xuC0okPgK46iuVNAK01YN7RueYBqqFeGsBjV9XmCAzAdgt+667bCl5kPh9EqKKDwnaPG1I7A==}
     engines: {node: '>=10'}
+
+  npm-check-updates@17.1.18:
+    resolution: {integrity: sha512-bkUy2g4v1i+3FeUf5fXMLbxmV95eG4/sS7lYE32GrUeVgQRfQEk39gpskksFunyaxQgTIdrvYbnuNbO/pSUSqw==}
+    engines: {node: ^18.18.0 || >=20.0.0, npm: '>=8.12.1'}
+    hasBin: true
 
   object-keys@1.1.1:
     resolution: {integrity: sha512-NuAESUOUMrlIXOfHKzD6bpPu3tYt3xvjNdRIQ+FeT0lNb4K8WR70CaDxhuNguS2XG+GjkyMwOzsN5ZktImfhLA==}
@@ -3109,6 +3212,110 @@ packages:
     resolution: {integrity: sha512-e0votIpp4Uo2AJYSzVHV6xCcawuiez3DzqDAbrTc3YxBkplN6e+dM13ZeIcZnDg/QpSuU2zfZ3rzwY8ukEnaXw==}
     engines: {node: '>=14.14'}
 
+  tree-sitter-c-sharp@0.23.5:
+    resolution: {integrity: sha512-xJGOeXPMmld0nES5+080N/06yY6LQi+KWGWV4LfZaZe6srJPtUtfhIbRSN7EZN6IaauzW28v6W4QHFwmeUW6HQ==}
+    peerDependencies:
+      tree-sitter: ^0.25.0
+    peerDependenciesMeta:
+      tree-sitter:
+        optional: true
+
+  tree-sitter-c@0.23.6:
+    resolution: {integrity: sha512-0dxXKznVyUA0s6PjNolJNs2yF87O5aL538A/eR6njA5oqX3C3vH4vnx3QdOKwuUdpKEcFdHuiDpRKLLCA/tjvQ==}
+    peerDependencies:
+      tree-sitter: ^0.22.1
+    peerDependenciesMeta:
+      tree-sitter:
+        optional: true
+
+  tree-sitter-c@0.24.1:
+    resolution: {integrity: sha512-lkYwWN3SRecpvaeqmFKkuPNR3ZbtnvHU+4XAEEkJdrp3JfSp2pBrhXOtvfsENUneye76g889Y0ddF2DM0gEDpA==}
+    peerDependencies:
+      tree-sitter: ^0.22.4
+    peerDependenciesMeta:
+      tree-sitter:
+        optional: true
+
+  tree-sitter-cpp@0.23.4:
+    resolution: {integrity: sha512-qR5qUDyhZ5jJ6V8/umiBxokRbe89bCGmcq/dk94wI4kN86qfdV8k0GHIUEKaqWgcu42wKal5E97LKpLeVW8sKw==}
+    peerDependencies:
+      tree-sitter: ^0.21.1
+    peerDependenciesMeta:
+      tree-sitter:
+        optional: true
+
+  tree-sitter-go@0.25.0:
+    resolution: {integrity: sha512-APBc/Dq3xz/e35Xpkhb1blu5UgW+2E3RyGWawZSCNcbGwa7jhSQPS8KsUupuzBla8PCo8+lz9W/JDJjmfRa2tw==}
+    peerDependencies:
+      tree-sitter: ^0.25.0
+    peerDependenciesMeta:
+      tree-sitter:
+        optional: true
+
+  tree-sitter-java@0.23.5:
+    resolution: {integrity: sha512-Yju7oQ0Xx7GcUT01mUglPP+bYfvqjNCGdxqigTnew9nLGoII42PNVP3bHrYeMxswiCRM0yubWmN5qk+zsg0zMA==}
+    peerDependencies:
+      tree-sitter: ^0.21.1
+    peerDependenciesMeta:
+      tree-sitter:
+        optional: true
+
+  tree-sitter-javascript@0.23.1:
+    resolution: {integrity: sha512-/bnhbrTD9frUYHQTiYnPcxyHORIw157ERBa6dqzaKxvR/x3PC4Yzd+D1pZIMS6zNg2v3a8BZ0oK7jHqsQo9fWA==}
+    peerDependencies:
+      tree-sitter: ^0.21.1
+    peerDependenciesMeta:
+      tree-sitter:
+        optional: true
+
+  tree-sitter-javascript@0.25.0:
+    resolution: {integrity: sha512-1fCbmzAskZkxcZzN41sFZ2br2iqTYP3tKls1b/HKGNPQUVOpsUxpmGxdN/wMqAk3jYZnYBR1dd/y/0avMeU7dw==}
+    peerDependencies:
+      tree-sitter: ^0.25.0
+    peerDependenciesMeta:
+      tree-sitter:
+        optional: true
+
+  tree-sitter-php@0.24.2:
+    resolution: {integrity: sha512-zwgAePc/HozNaWOOfwRAA+3p8yhuehRw8Fb7vn5qd2XjiIc93uJPryDTMYTSjBRjVIUg/KY6pM3rRzs8dSwKfw==}
+    peerDependencies:
+      tree-sitter: ^0.22.4
+    peerDependenciesMeta:
+      tree-sitter:
+        optional: true
+
+  tree-sitter-python@0.25.0:
+    resolution: {integrity: sha512-eCmJx6zQa35GxaCtQD+wXHOhYqBxEL+bp71W/s3fcDMu06MrtzkVXR437dRrCrbrDbyLuUDJpAgycs7ncngLXw==}
+    peerDependencies:
+      tree-sitter: ^0.25.0
+    peerDependenciesMeta:
+      tree-sitter:
+        optional: true
+
+  tree-sitter-ruby@0.23.1:
+    resolution: {integrity: sha512-d9/RXgWjR6HanN7wTYhS5bpBQLz1VkH048Vm3CodPGyJVnamXMGb8oEhDypVCBq4QnHui9sTXuJBBP3WtCw5RA==}
+    peerDependencies:
+      tree-sitter: ^0.21.1
+    peerDependenciesMeta:
+      tree-sitter:
+        optional: true
+
+  tree-sitter-rust@0.24.0:
+    resolution: {integrity: sha512-NWemUDf629Tfc90Y0Z55zuwPCAHkLxWnMf2RznYu4iBkkrQl2o/CHGB7Cr52TyN5F1DAx8FmUnDtCy9iUkXZEQ==}
+    peerDependencies:
+      tree-sitter: ^0.22.1
+    peerDependenciesMeta:
+      tree-sitter:
+        optional: true
+
+  tree-sitter-typescript@0.23.2:
+    resolution: {integrity: sha512-e04JUUKxTT53/x3Uq1zIL45DoYKVfHH4CZqwgZhPg5qYROl5nQjV+85ruFzFGZxu+QeFVbRTPDRnqL9UbU4VeA==}
+    peerDependencies:
+      tree-sitter: ^0.21.0
+    peerDependenciesMeta:
+      tree-sitter:
+        optional: true
+
   trim-lines@3.0.1:
     resolution: {integrity: sha512-kRj8B+YHZCc9kQYdWfJB2/oUl9rA99qbowYYBtr4ui4mZyAQ2JpvVBd/6U2YloATfqBhBTSMhTpgBHtU0Mf3Rg==}
 
@@ -3299,6 +3506,9 @@ packages:
 
   w3c-keyname@2.2.8:
     resolution: {integrity: sha512-dpojBhNsCNN7T82Tm7k26A6G9ML3NkhDsnw9n/eoxSRlVBB4CEtIQ/KTCLI2Fwf3ataSXRhYFkQi3SlnFwPvPQ==}
+
+  web-tree-sitter@0.27.1:
+    resolution: {integrity: sha512-qtx0VyUyNRHtL3ze7+v0hCKB/sLcAmY7ZAVp/ZK/bCj0yED8ptvNrr7Vd7DwDyKDWN9baqcUx4uaD2r2ql+6IA==}
 
   webcrypto-core@1.9.2:
     resolution: {integrity: sha512-gsXecm82UQNlTBURJGuqOWy1Ww08S3kZUcr3aOJS02Pk0xLtkfeUAVC0u0xhgdonFme80edSJUIJyuvL/7250Q==}
@@ -4806,6 +5016,12 @@ snapshots:
 
   '@tanstack/virtual-core@3.19.6': {}
 
+  '@tree-sitter-grammars/tree-sitter-kotlin@1.1.0':
+    dependencies:
+      node-addon-api: 8.9.2
+      node-gyp-build: 4.8.4
+      npm-check-updates: 17.1.18
+
   '@types/cacheable-request@6.0.3':
     dependencies:
       '@types/http-cache-semantics': 4.2.0
@@ -5940,9 +6156,13 @@ snapshots:
 
   node-addon-api@7.1.1: {}
 
+  node-addon-api@8.9.2: {}
+
   node-api-version@0.2.1:
     dependencies:
       semver: 7.7.4
+
+  node-gyp-build@4.8.4: {}
 
   node-gyp@12.4.0:
     dependencies:
@@ -5966,6 +6186,8 @@ snapshots:
       abbrev: 4.0.0
 
   normalize-url@6.1.0: {}
+
+  npm-check-updates@17.1.18: {}
 
   object-keys@1.1.1:
     optional: true
@@ -6389,6 +6611,73 @@ snapshots:
 
   tmp@0.2.7: {}
 
+  tree-sitter-c-sharp@0.23.5:
+    dependencies:
+      node-addon-api: 8.9.2
+      node-gyp-build: 4.8.4
+
+  tree-sitter-c@0.23.6:
+    dependencies:
+      node-addon-api: 8.9.2
+      node-gyp-build: 4.8.4
+
+  tree-sitter-c@0.24.1:
+    dependencies:
+      node-addon-api: 8.9.2
+      node-gyp-build: 4.8.4
+
+  tree-sitter-cpp@0.23.4:
+    dependencies:
+      node-addon-api: 8.9.2
+      node-gyp-build: 4.8.4
+      tree-sitter-c: 0.23.6
+
+  tree-sitter-go@0.25.0:
+    dependencies:
+      node-addon-api: 8.9.2
+      node-gyp-build: 4.8.4
+
+  tree-sitter-java@0.23.5:
+    dependencies:
+      node-addon-api: 8.9.2
+      node-gyp-build: 4.8.4
+
+  tree-sitter-javascript@0.23.1:
+    dependencies:
+      node-addon-api: 8.9.2
+      node-gyp-build: 4.8.4
+
+  tree-sitter-javascript@0.25.0:
+    dependencies:
+      node-addon-api: 8.9.2
+      node-gyp-build: 4.8.4
+
+  tree-sitter-php@0.24.2:
+    dependencies:
+      node-addon-api: 8.9.2
+      node-gyp-build: 4.8.4
+
+  tree-sitter-python@0.25.0:
+    dependencies:
+      node-addon-api: 8.9.2
+      node-gyp-build: 4.8.4
+
+  tree-sitter-ruby@0.23.1:
+    dependencies:
+      node-addon-api: 8.9.2
+      node-gyp-build: 4.8.4
+
+  tree-sitter-rust@0.24.0:
+    dependencies:
+      node-addon-api: 8.9.2
+      node-gyp-build: 4.8.4
+
+  tree-sitter-typescript@0.23.2:
+    dependencies:
+      node-addon-api: 8.9.2
+      node-gyp-build: 4.8.4
+      tree-sitter-javascript: 0.23.1
+
   trim-lines@3.0.1: {}
 
   truncate-utf8-bytes@1.0.2:
@@ -6547,6 +6836,8 @@ snapshots:
       - msw
 
   w3c-keyname@2.2.8: {}
+
+  web-tree-sitter@0.27.1: {}
 
   webcrypto-core@1.9.2:
     dependencies:

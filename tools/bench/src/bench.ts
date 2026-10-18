@@ -10,9 +10,9 @@
  *   2. layout: lane layout for every commit
  *   3. app:    launch Electron, time to the first painted graph rows, then scroll fps
  */
-import { makeLargeRepo } from '@gitsquid/fixtures'
-import { Repo } from '@gitsquid/git'
-import { layout } from '@gitsquid/graph'
+import { makeLargeRepo } from '@gitgoose/fixtures'
+import { Repo } from '@gitgoose/git'
+import { layout } from '@gitgoose/graph'
 import { _electron as electron } from '@playwright/test'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -84,9 +84,9 @@ async function main() {
       args: launchArgs,
       env: {
         ...process.env,
-        GITSQUID_OPEN: cache,
-        GITSQUID_USER_DATA: mkdtempSync(join(tmpdir(), 'gitsquid-bench-')),
-        GITSQUID_NO_UPDATE: '1',
+        GITGOOSE_OPEN: cache,
+        GITGOOSE_USER_DATA: mkdtempSync(join(tmpdir(), 'gitgoose-bench-')),
+        GITGOOSE_NO_UPDATE: '1',
       } as Record<string, string>,
     })
     const page = await app.firstWindow()

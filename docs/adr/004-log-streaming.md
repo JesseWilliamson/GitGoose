@@ -4,7 +4,7 @@
 
 ## Decision
 
-1. One `git log --topo-order` process per history walk (`LogStream`), read lazily with stream
+1. One `git log --date-order` process per history walk (`LogStream`), read lazily with stream
    backpressure. Pages are slices of what has been read. No `--skip` paging.
 2. If the repository has no commit-graph file, the app writes one in the background after
    opening (`git commit-graph write --reachable --split`), and extends it after fetch and pull.
@@ -14,7 +14,7 @@
 
 - `--skip=N` makes git re-walk N commits for each page: page k costs k times page 1.
   Backpressure costs nothing: when we stop reading, the pipe fills and git blocks on write.
-- `--topo-order` must print children before parents. Without generation numbers git can only
+- `--date-order` (like `--topo-order`) must never print a parent before its children. Without generation numbers git can only
   guarantee that by walking all of history before printing the first commit. The benchmark
   showed it: first page of 100k commits took ~530 ms, and the rest of the log only ~320 ms more.
   With a commit-graph (which stores generation numbers) the first page takes ~15 ms.

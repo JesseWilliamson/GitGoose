@@ -11,7 +11,7 @@ export function Welcome() {
         <div className="mb-6 flex items-center gap-3">
           <FolderGit2 size={34} className="text-accent" />
           <div>
-            <h1 className="text-xl font-semibold">GitSquid</h1>
+            <h1 className="text-xl font-semibold">GitGoose</h1>
             <p className="text-sm text-muted">A fast git client with the graph you like.</p>
           </div>
         </div>

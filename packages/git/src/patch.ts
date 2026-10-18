@@ -1,4 +1,4 @@
-import type { FileDiff, Hunk, HunkSelection } from '@gitsquid/shared'
+import type { FileDiff, Hunk, HunkSelection } from '@gitgoose/shared'
 
 /**
  * Turn a selection of lines in a diff into a patch that `git apply` accepts.

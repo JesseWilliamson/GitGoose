@@ -1,8 +1,9 @@
-import type { ImpactResult } from '@gitsquid/shared'
+import type { ImpactResult } from '@gitgoose/shared'
 import clsx from 'clsx'
 import { Radar, Sparkles } from 'lucide-react'
 import { openInEditor } from '../lib/actions'
 import { useAiEnabled } from '../lib/ai'
+import { indexingText } from '../lib/codegraph'
 import { assessImpact, showImpact } from '../lib/impact'
 import { updateRepo, type RepoView } from '../lib/store'
 import { Button, Spinner } from './ui'
@@ -30,7 +31,7 @@ export function ImpactView({ view }: { view: RepoView }) {
         <div className="min-w-0 flex-1">
           <div className="text-[14px] font-semibold">Impact: {r?.label ?? '…'}</div>
           <div className="truncate text-xs text-muted">
-            {st.loading ? 'Looking for uses…' : r ? `${r.symbols.length} definition${r.symbols.length === 1 ? '' : 's'} touched, used in ${r.callers.length} other place${r.callers.length === 1 ? '' : 's'}` : ''}
+            {st.loading ? (indexingText(view.codegraph) ?? 'Looking for uses…') : r ? `${r.symbols.length} definition${r.symbols.length === 1 ? '' : 's'} touched, used in ${r.callers.length} other place${r.callers.length === 1 ? '' : 's'}` : ''}
           </div>
         </div>
         {aiOn && r && r.callers.length > 0 && (

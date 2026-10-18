@@ -4,8 +4,14 @@
 
 ## Behaviour
 
-- Opening a repository shows the graph: branch/tag pills, lanes, message, author, date, SHA
-  (author/date/SHA columns appear as the pane widens).
+- Opening a repository shows the graph, Tower-style: hollow nodes on coloured lanes, and beside
+  them two-line rows (avatar; author, branch/tag pills and date; short SHA and subject). A row's
+  text starts just past the lanes open at that point in history, so busy stretches indent, up to
+  twelve lanes; a node in a lane past that is left out rather than pinned on another branch's
+  line. The first commit of each month carries a heading, centred over the row. Compact rows are
+  one line with no headings.
+- A commit with `Co-authored-by:` trailers shows one avatar per person, stacked as on GitHub, and
+  names them beside the author ("Ada Lovelace and Grace Hopper"; more than two are counted).
 - The main line (the remote's default branch from origin/HEAD and its local namesake, else main or
   master) is always the leftmost lane, whatever is checked out, so a checkout does not reshuffle
   the graph. HEAD sits on it when HEAD is a trunk tip, otherwise in the lane next to it.
@@ -18,8 +24,9 @@
 
 ## Git commands
 
-- `git log --topo-order --format=%H%x00%P%x00%an%x00%ae%x00%at%x00%ct%x00%s%x1e --branches --remotes --tags HEAD --`
-  streamed by `LogStream` (ADR-004).
+- `git log --date-order --format=%H%x00%P%x00%an%x00%ae%x00%at%x00%ct%x00<co-authors>%x00%s%x1e --branches --remotes --tags HEAD --`
+  streamed by `LogStream` (ADR-004), where `<co-authors>` is
+  `%(trailers:key=Co-authored-by,valueonly,unfold,separator=%x1f)`.
 - `git for-each-ref` with NUL-separated fields for refs; `status --porcelain=v2 -z --branch`.
 - `git commit-graph write --reachable --split` in the background when missing.
 - Search: `log --grep -F -i`, `--author -F -i`, pathspec `:(glob,icase)`, `-S`, `rev-parse --verify`.

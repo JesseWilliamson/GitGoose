@@ -1,4 +1,4 @@
-import { makeFixture } from '@gitsquid/fixtures'
+import { makeFixture } from '@gitgoose/fixtures'
 import { expect, test } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -21,7 +21,7 @@ test('stashes appear in the graph beside their base commit, with their own menu'
   await expect.poll(() => readFileSync(join(r.dir, 'x.txt'), 'utf8')).toBe('changed once\n')
 
   // Settings → Graph can turn them off.
-  await page.evaluate(() => window.gitsquid.setSettings({ showStashes: false }))
+  await page.evaluate(() => window.gitgoose.setSettings({ showStashes: false }))
   await expect(stashRows).toHaveCount(0)
   await expect(page.getByTestId('commit-row')).toHaveCount(1)
   await app.close()

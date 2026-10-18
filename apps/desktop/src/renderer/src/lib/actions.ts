@@ -1,4 +1,4 @@
-import { parseGitHubRemote, type DiffTarget, type GraphFilter, type PullMode, type Ref, type RepoSnapshot, type ResetMode, type Worktree } from '@gitsquid/shared'
+import { parseGitHubRemote, type DiffTarget, type GraphFilter, type PullMode, type Ref, type RepoSnapshot, type ResetMode, type Worktree } from '@gitgoose/shared'
 import { api, toUiError, type UiError } from './api'
 import { withPushChecks } from './pushchecks'
 import { activeRepo, addRepo, alertConflicts, ensureLoaded, choose, onSnapshot, openRepo, refreshAux, reportError, setting, toast, updateRepo, useStore } from './store'
@@ -178,7 +178,7 @@ export const checkout = (id: string, ref: string) =>
           {
             label: 'Stash and check out', variant: 'primary',
             run: () => void run(id, `Check out ${shortRef(ref)}`, async () => [
-              await api.stashPush(id, { includeUntracked: true, message: `GitSquid: before checking out ${shortRef(ref)}` }),
+              await api.stashPush(id, { includeUntracked: true, message: `GitGoose: before checking out ${shortRef(ref)}` }),
               await api.checkout(id, ref),
             ]),
           },
@@ -265,6 +265,10 @@ export const dropCommits = (id: string, hashes: string[]) =>
 
 export const squashOnto = (id: string, hashes: string[], target: string) =>
   run(id, `Squash into ${target.slice(0, 7)}`, () => api.squashOnto(id, hashes, target))
+
+/** Squash several selected commits (graph order, newest first) into one: the rest fold into the oldest. */
+export const squashTogether = (id: string, hashes: string[]) =>
+  run(id, `Squash ${hashes.length} commits`, () => api.squashOnto(id, hashes.slice(0, -1), hashes[hashes.length - 1]!))
 
 export const squashCommit = (id: string, hash: string, mode: 'squash' | 'fixup') =>
   run(id, `${mode === 'squash' ? 'Squash' : 'Fixup'} ${hash.slice(0, 7)}`, () => api.squashCommit(id, hash, mode))

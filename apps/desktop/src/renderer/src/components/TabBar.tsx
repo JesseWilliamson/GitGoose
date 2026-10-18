@@ -8,7 +8,7 @@ export function TabBar() {
   const tabs = useStore((s) => s.tabs)
   const active = useStore((s) => s.active)
   const repos = useStore((s) => s.repos)
-  const mac = window.gitsquid.platform === 'darwin'
+  const mac = window.gitgoose.platform === 'darwin'
   return (
     <div className={clsx('drag flex h-9 shrink-0 items-end gap-px border-b border-line bg-bg', mac ? 'pl-20' : 'pl-1')} data-testid="tabs">
       {tabs.map((id) => {

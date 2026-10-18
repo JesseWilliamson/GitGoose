@@ -1,11 +1,11 @@
-import { initRepo, makeFixture, tempDir } from '@gitsquid/fixtures'
+import { initRepo, makeFixture, tempDir } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { launch } from './app'
 
-const set = (page: Page, patch: Record<string, unknown>) => page.evaluate((p) => window.gitsquid.setSettings(p as never), patch)
+const set = (page: Page, patch: Record<string, unknown>) => page.evaluate((p) => window.gitgoose.setSettings(p as never), patch)
 
 test('opens the settings page, searches it, and closes with Esc', async () => {
   const r = makeFixture('linear')
@@ -23,9 +23,9 @@ test('opens the settings page, searches it, and closes with Esc', async () => {
 })
 
 test('UI scale zooms the whole window, from the keyboard, and persists', async () => {
-  const profile = tempDir('gitsquid-profile-')
+  const profile = tempDir('gitgoose-profile-')
   const r = makeFixture('linear')
-  const first = await launch(r.dir, { GITSQUID_USER_DATA: profile })
+  const first = await launch(r.dir, { GITGOOSE_USER_DATA: profile })
   await first.page.getByTestId('commit-row').first().click()
   await first.page.keyboard.press('ControlOrMeta+=')
   await first.page.keyboard.press('ControlOrMeta+=')
@@ -34,7 +34,7 @@ test('UI scale zooms the whole window, from the keyboard, and persists', async (
   await expect.poll(zoom).toBeCloseTo(1.3, 2)
   await first.app.close()
 
-  const second = await launch(r.dir, { GITSQUID_USER_DATA: profile })
+  const second = await launch(r.dir, { GITGOOSE_USER_DATA: profile })
   await expect(second.page.getByTestId('commit-row').first()).toBeVisible()
   await expect.poll(() => second.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.getZoomFactor())).toBeCloseTo(1.3, 2)
   await second.page.keyboard.press('ControlOrMeta+0')
@@ -43,12 +43,12 @@ test('UI scale zooms the whole window, from the keyboard, and persists', async (
 })
 
 test('migrates the old font size setting to UI scale', async () => {
-  const profile = tempDir('gitsquid-profile-')
+  const profile = tempDir('gitgoose-profile-')
   mkdirSync(profile, { recursive: true })
   writeFileSync(join(profile, 'settings.json'), JSON.stringify({ gitPath: 'git', theme: 'dark', fontSize: 16, recentRepos: [], openRepos: [] }))
-  const { app, page } = await launch(undefined, { GITSQUID_USER_DATA: profile })
+  const { app, page } = await launch(undefined, { GITGOOSE_USER_DATA: profile })
   await expect(page.getByTestId('welcome')).toBeVisible()
-  const s = await page.evaluate(() => window.gitsquid.getSettings())
+  const s = await page.evaluate(() => window.gitgoose.getSettings())
   expect(s.uiScale).toBe(1.25)
   expect(s.theme).toBe('dark')
   await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.getZoomFactor())).toBe(1.25)
@@ -84,7 +84,7 @@ test('code font size sets diff line height; context lines and whitespace reach g
 
 test('Pull uses the mode from settings', async () => {
   const r = makeFixture('with-remote')
-  const other = tempDir('gitsquid-other-')
+  const other = tempDir('gitgoose-other-')
   execFileSync('git', ['clone', '-q', r.git('remote', 'get-url', 'origin').trim(), other])
   execFileSync('git', ['-c', 'user.name=B', '-c', 'user.email=b@x', 'commit', '-q', '--allow-empty', '-m', 'Theirs'], { cwd: other })
   execFileSync('git', ['push', '-q'], { cwd: other })
@@ -136,7 +136,8 @@ test('compact rows and hiding tags change the graph', async () => {
   const r = makeFixture('tags')
   const { app, page } = await launch(r.dir)
   await expect(page.locator('[data-testid="ref-pill"][data-ref="refs/tags/v0.2"]')).toBeVisible()
-  expect((await page.getByTestId('commit-row').first().boundingBox())!.height).toBe(32)
+  // The first row carries its month's heading (26px) over a two-line row (52px); compact rows have neither.
+  expect((await page.getByTestId('commit-row').first().boundingBox())!.height).toBe(52 + 26)
   await set(page, { compactRows: true, showTags: false })
   await expect(page.locator('[data-testid="ref-pill"][data-ref="refs/tags/v0.2"]')).toHaveCount(0)
   await expect.poll(async () => (await page.getByTestId('commit-row').first().boundingBox())!.height).toBe(24)
@@ -147,7 +148,7 @@ test('opens files in the configured editor at a line, and a terminal in the repo
   test.skip(process.platform === 'win32', 'uses a shell script as the fake editor')
   const r = makeFixture('linear')
   r.write('file.txt', 'one\ntwo\nthree\n')
-  const dir = tempDir('gitsquid-tools-')
+  const dir = tempDir('gitgoose-tools-')
   const log = join(dir, 'log.txt')
   const script = join(dir, 'fake-tool.sh')
   writeFileSync(script, `#!/bin/sh\necho "$PWD|$*" >> "${log}"\n`, { mode: 0o755 })

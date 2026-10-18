@@ -1,4 +1,4 @@
-import { initRepo, tempDir } from '@gitsquid/fixtures'
+import { initRepo, tempDir } from '@gitgoose/fixtures'
 import { expect, test } from '@playwright/test'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -12,13 +12,13 @@ test('open a diff in the external diff tool; resolve a conflict in the merge too
   r.checkout('main')
   r.commit('ours', { 'f.txt': 'ours\n' })
   r.write('a.txt', 'two\n')
-  const out = join(tempDir('gitsquid-tool-'), 'seen.txt')
+  const out = join(tempDir('gitgoose-tool-'), 'seen.txt')
   r.git('config', 'difftool.record.cmd', `cat "$LOCAL" "$REMOTE" > '${out}'`)
   r.git('config', 'mergetool.taketheirs.cmd', 'cp "$REMOTE" "$MERGED"')
   r.git('config', 'mergetool.taketheirs.trustExitCode', 'true')
   r.git('config', 'mergetool.keepBackup', 'false')
   const { app, page } = await launch(r.dir)
-  await page.evaluate(() => window.gitsquid.setSettings({ diffTool: 'record', mergeTool: 'taketheirs' }))
+  await page.evaluate(() => window.gitgoose.setSettings({ diffTool: 'record', mergeTool: 'taketheirs' }))
 
   await page.getByTestId('unstaged-file').filter({ hasText: 'a.txt' }).click()
   await page.getByTestId('open-diff-tool').click()

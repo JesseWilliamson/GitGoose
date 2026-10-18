@@ -31,6 +31,13 @@ export interface Commit {
    * records helper commits for the index and untracked files; the log hides those).
    */
   stash?: boolean
+  /**
+   * Co-authors from `Co-authored-by:` trailers, in the order they appear, excluding the author
+   * themselves. Absent (not an empty array) on the ordinary single-author commit, which is most
+   * of them: the log holds every commit in the repository, so an empty array per commit is a
+   * cost worth avoiding.
+   */
+  coAuthors?: Person[]
 }
 
 export interface CommitDetails extends Commit {
@@ -227,6 +234,16 @@ export interface ChangeInsights {
   owners: { name: string; lines: number }[]
 }
 
+/** The state of a repository's code graph (ADR-008): what Peek and Impact wait for. */
+export interface CodeGraphStatus {
+  state: 'off' | 'indexing' | 'ready' | 'error'
+  /** Files parsed so far, and to parse, in the sync under way. */
+  done: number
+  total: number
+  /** Why it failed, when state is 'error'. */
+  message?: string
+}
+
 /** Code Peek: where a name is defined and used, at a revision or in the working tree. */
 export interface CodePeek {
   name: string
@@ -256,10 +273,10 @@ export interface LfsLock {
   lockedAt: string
 }
 
-/** One git process GitSquid ran (the command log). */
+/** One git process GitGoose ran (the command log). */
 export interface CommandRecord {
   id: number
-  /** git's arguments as GitSquid passed them (credentials in URLs masked). */
+  /** git's arguments as GitGoose passed them (credentials in URLs masked). */
   args: string[]
   /** Started at (ms since the epoch). */
   start: number

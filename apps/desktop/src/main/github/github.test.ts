@@ -1,6 +1,6 @@
-import { Repo } from '@gitsquid/git'
-import { fakeGitHub, makeFixture, tempDir, type FakeGitHub, type FakeGitHubOptions } from '@gitsquid/fixtures'
-import { GITHUB_SCOPES, type GitHubStatus } from '@gitsquid/shared'
+import { Repo } from '@gitgoose/git'
+import { fakeGitHub, makeFixture, tempDir, type FakeGitHub, type FakeGitHubOptions } from '@gitgoose/fixtures'
+import { GITHUB_SCOPES, type GitHubStatus } from '@gitgoose/shared'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -103,7 +103,7 @@ describe('token store', () => {
   const account = { login: 'octocat', name: null, avatarUrl: 'x', scopes: ['read:user'] }
 
   it('round-trips through the encryption and never writes the token in clear', () => {
-    const file = join(tempDir('gitsquid-gh-'), 'github.json')
+    const file = join(tempDir('gitgoose-gh-'), 'github.json')
     expect(new TokenStore(file, fakeEncryption()).save(account, 'gho_secret')).toEqual({ persisted: true })
     expect(readFileSync(file, 'utf8')).not.toContain('gho_secret')
     expect(new TokenStore(file, fakeEncryption()).load()).toEqual({ account, token: 'gho_secret' })
@@ -112,7 +112,7 @@ describe('token store', () => {
   })
 
   it('keeps the token in memory only without a real keychain', () => {
-    const file = join(tempDir('gitsquid-gh-'), 'github.json')
+    const file = join(tempDir('gitgoose-gh-'), 'github.json')
     const store = new TokenStore(file, fakeEncryption(false))
     expect(store.save(account, 'gho_secret')).toEqual({ persisted: false })
     expect(existsSync(file)).toBe(false)
@@ -128,7 +128,7 @@ describe('GitHub service', () => {
     const repos: Repo[] = []
     const svc = new GitHubService({
       endpoints: ep,
-      store: new TokenStore(join(tempDir('gitsquid-gh-'), 'github.json'), fakeEncryption()),
+      store: new TokenStore(join(tempDir('gitgoose-gh-'), 'github.json'), fakeEncryption()),
       fetch,
       sleep: instant().sleep,
       repos: () => repos,

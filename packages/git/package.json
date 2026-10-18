@@ -1,11 +1,11 @@
 {
-  "name": "@gitsquid/git",
+  "name": "@gitgoose/git",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": { "typecheck": "tsc -p tsconfig.json" },
-  "dependencies": { "@gitsquid/codegraph": "workspace:*", "@gitsquid/shared": "workspace:*" },
-  "devDependencies": { "@gitsquid/fixtures": "workspace:*" }
+  "dependencies": { "@gitgoose/codegraph": "workspace:*", "@gitgoose/shared": "workspace:*" },
+  "devDependencies": { "@gitgoose/fixtures": "workspace:*" }
 }

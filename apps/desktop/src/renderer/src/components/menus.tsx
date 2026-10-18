@@ -1,7 +1,7 @@
 import { DropdownMenu } from 'radix-ui'
 import {
  checkoutPull, createPull, hasGitHubRemote, openPull, lfsPull, lfsTrack, lfsUntrack, bisectMark, hideInGraph, showInGraph, soloInGraph, unsoloInGraph, addRemote, addSubmodule, addWorktree, removeSubmodule, syncSubmodules, updateSubmodules, lockWorktree, pruneWorktrees, removeWorktree, checkRemoteTags, cleanupBranches, clearPushUrl, deleteRemoteTag, editRemoteUrl, fastForward, fetchAll, fetchRemote, pushBranch, pushTags, pushTo, remoteNames, removeRemote, renameRemote, setUpstream,
- savePatches, stashToBranch, checkout, cherryPick, cherryPickMany, compare, compareSinceFork, copy, fixupInto, pop, reword, squashCommit, stashApply, stashDrop, copyCommits, dropCommits, moveCommits, currentBranchRef, deleteBranch, deleteRemoteBranch, deleteTag, dropOptions,
+ savePatches, stashToBranch, checkout, cherryPick, cherryPickMany, compare, compareSinceFork, copy, fixupInto, pop, reword, squashCommit, squashTogether, stashApply, stashDrop, copyCommits, dropCommits, moveCommits, currentBranchRef, deleteBranch, deleteRemoteBranch, deleteTag, dropOptions,
   merge, newBranch, newTag, push, rebase, renameBranch, reset, revert, shortRef,
 } from '../lib/actions'
 import { shortHash, stashLabel } from '../lib/format'
@@ -9,7 +9,7 @@ import { ask } from '../lib/actions'
 import { chainBase, getLog, openRepo, updateRepo, useStore } from '../lib/store'
 import { api } from '../lib/api'
 import type { ReactNode } from 'react'
-import type { Ref } from '@gitsquid/shared'
+import type { Ref } from '@gitgoose/shared'
 import { recomposeWithAi } from './RecomposeDialog'
 import { startReview } from '../lib/review'
 import { startWalkthrough } from '../lib/walkthrough'
@@ -327,6 +327,7 @@ export function GraphMenu({ repoId }: { repoId: string }) {
         {menu.hashes.every((h) => view.editable.includes(h)) && (
           <>
             <CM.Separator />
+            <CM.Item onSelect={() => void squashTogether(repoId, menu.hashes)}>Squash {n} commits into one</CM.Item>
             <CM.Item danger onSelect={() => void dropCommits(repoId, menu.hashes)}>Drop {n} commits</CM.Item>
           </>
         )}

@@ -1,4 +1,4 @@
-import type { Commit, GraphFilter } from '@gitsquid/shared'
+import type { Commit, GraphFilter, Person } from '@gitgoose/shared'
 import type { ChildProcess } from 'node:child_process'
 import type { GitRunner } from './runner'
 
@@ -6,24 +6,65 @@ import type { GitRunner } from './runner'
  * One commit per record. Fields are separated by NUL (%x00) and records end with RS (%x1e).
  * NUL cannot appear in any of these fields, and %s (the subject) never contains a newline,
  * so this is unambiguous no matter what people put in their commit messages.
+ *
+ * The co-author field asks git for the `Co-authored-by:` trailers only (key matching is
+ * case-insensitive), values without the key, unfolded onto one line, several separated by US
+ * (%x1f). git already read the whole commit object to produce %s, so this costs no extra walk.
  */
-export const LOG_FORMAT = '%H%x00%P%x00%an%x00%ae%x00%at%x00%ct%x00%s%x1e'
+export const LOG_FORMAT = '%H%x00%P%x00%an%x00%ae%x00%at%x00%ct%x00%(trailers:key=Co-authored-by,valueonly,unfold,separator=%x1f)%x00%s%x1e'
 const RS = '\x1e'
+const US = '\x1f'
+
+/**
+ * "Grace Hopper <grace@example.com>" as a trailer writes it. A bare address with no name is
+ * also valid and used (`Co-authored-by: grace@example.com`), and has to parse to the same
+ * address as the bracketed form so the two cannot both show up as separate people.
+ */
+function parsePerson(value: string): Person | null {
+  const v = value.trim()
+  if (!v) return null
+  const m = /^(.*?)\s*<([^>]*)>$/.exec(v)
+  if (m) return { name: m[1]!.trim() || m[2]!, email: m[2]!.trim() }
+  return { name: v, email: /^\S+@\S+$/.test(v) ? v : '' }
+}
+
+/**
+ * Co-authors of one commit, or undefined when it has none (the common case, kept cheap: no
+ * array is allocated). The author's own address and repeated addresses are dropped, so the UI
+ * can show one avatar per person without checking.
+ */
+function parseCoAuthors(field: string, authorEmail: string): Person[] | undefined {
+  if (!field) return undefined
+  const seen = new Set([authorEmail.trim().toLowerCase()])
+  const out: Person[] = []
+  for (const part of field.split(US)) {
+    const p = parsePerson(part)
+    if (!p) continue
+    const key = p.email.toLowerCase() || `name:${p.name.toLowerCase()}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(p)
+  }
+  return out.length ? out : undefined
+}
 
 export function parseLogRecord(record: string): Commit | null {
   // git puts a newline after each formatted record; it ends up at the start of the next one.
   const r = record.startsWith('\n') ? record.slice(1) : record
   if (!r) return null
   const f = r.split('\x00')
-  if (f.length < 7) return null
+  if (f.length < 8) return null
+  const authorEmail = f[3]!
+  const coAuthors = parseCoAuthors(f[6]!, authorEmail)
   return {
     hash: f[0]!,
     parents: f[1] ? f[1].split(' ') : [],
     authorName: f[2]!,
-    authorEmail: f[3]!,
+    authorEmail,
     authorDate: Number(f[4]),
     commitDate: Number(f[5]),
-    subject: f.slice(6).join('\x00'),
+    subject: f.slice(7).join('\x00'),
+    ...(coAuthors ? { coAuthors } : {}),
   }
 }
 
@@ -118,7 +159,7 @@ export class LogStream {
    * A stash is a merge commit: parent 1 is where it was made, parent 2 the staged changes, parent
    * 3 (with -u) the untracked files. In the graph it should look like one node beside its base,
    * so it keeps only parent 1, and the helper commits (reachable from nothing else) are dropped.
-   * --topo-order puts a stash before its parents, so they are known by the time they arrive.
+   * git never prints a parent before its children, so a stash's parents arrive after it.
    */
   private accept(c: Commit): boolean {
     if (this.hidden.has(c.hash)) return false
@@ -132,7 +173,10 @@ export class LogStream {
 
   private start(): void {
     const child = this.runner.spawn(
-      ['log', '--topo-order', `--format=${LOG_FORMAT}`, ...this.revs, '--'],
+      // Date order, as GitKraken and Tower show it: newest commit date first, never a parent
+      // above one of its children. Topological order would keep each branch in one block but
+      // send the dates up and down the list.
+      ['log', '--date-order', `--format=${LOG_FORMAT}`, ...this.revs, '--'],
       { readOnly: true },
     )
     this.child = child

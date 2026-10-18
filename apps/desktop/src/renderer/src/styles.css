@@ -30,14 +30,14 @@
 
 :root,
 :root[data-theme='dark'] {
-  --gs-bg: #16181d;
-  --gs-panel: #1c1f26;
-  --gs-raised: #252932;
-  --gs-hover: #2a2f3a;
-  --gs-line: #2e333d;
-  --gs-fg: #e3e6ec;
-  --gs-muted: #9aa3b2;
-  --gs-faint: #646d7c;
+  --gs-bg: #171719;
+  --gs-panel: #1d1d20;
+  --gs-raised: #252528;
+  --gs-hover: #2c2c30;
+  --gs-line: #343438;
+  --gs-fg: #e7e7e9;
+  --gs-muted: #a3a3a8;
+  --gs-faint: #707075;
   --gs-accent: #4c8dff;
   --gs-accent-fg: #ffffff;
   --gs-add: #5fd18b;
@@ -62,13 +62,13 @@
 
 :root[data-theme='light'] {
   --gs-bg: #ffffff;
-  --gs-panel: #f6f7f9;
+  --gs-panel: #f6f6f7;
   --gs-raised: #ffffff;
-  --gs-hover: #eceef2;
-  --gs-line: #dfe2e8;
-  --gs-fg: #1f2329;
-  --gs-muted: #5b6472;
-  --gs-faint: #8c95a3;
+  --gs-hover: #ececee;
+  --gs-line: #e0e0e2;
+  --gs-fg: #1f2023;
+  --gs-muted: #5e5f64;
+  --gs-faint: #8e8f94;
   --gs-accent: #2f6fe4;
   --gs-accent-fg: #ffffff;
   --gs-add: #1a7f37;
@@ -142,6 +142,40 @@ textarea,
     outline: 2px solid var(--gs-accent);
     outline-offset: -2px;
   }
+}
+
+/*
+ * Pointer-driven drag (recompose dialog). The dragged element stays in place as an empty slot
+ * (.drag-placeholder) while a clone (.drag-float) follows the pointer; .sorting on <body> keeps
+ * the closed hand everywhere until the pointer is released.
+ */
+.drag-placeholder {
+  outline: 1px dashed var(--gs-faint);
+  outline-offset: -1px;
+  background: var(--gs-hover);
+  border-radius: 6px;
+}
+.drag-placeholder > * {
+  visibility: hidden;
+}
+.drag-float {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 1000;
+  pointer-events: none;
+  will-change: transform;
+}
+.drag-float > * {
+  background: var(--gs-raised);
+  border-color: var(--gs-faint);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+  cursor: grabbing;
+}
+.sorting,
+.sorting * {
+  cursor: grabbing !important;
+  user-select: none !important;
 }
 
 /* cmdk */

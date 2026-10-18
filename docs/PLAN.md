@@ -1,4 +1,4 @@
-# GitSquid — plan
+# GitGoose — plan
 
 An Electron git client that keeps the best of GitKraken (the commit graph, drag-and-drop branch
 operations) and Tower (speed, undo, hunk/line staging, a conflict wizard, keyboard-driven quick
@@ -14,7 +14,7 @@ owns the design and learns the interesting parts.
 Electron is not the problem. VS Code is Electron and is fast. GitKraken is slow because of
 how it talks to git and how it renders:
 
-| GitKraken | GitSquid |
+| GitKraken | GitGoose |
 |---|---|
 | libgit2 via nodegit (native module, loads whole repo structures into memory) | Shell out to the `git` binary with stable plumbing formats, stream and parse incrementally |
 | Renders the whole graph into the DOM, re-renders on every state change | Virtualized rows: only visible commits exist in the DOM; graph column drawn per row |
@@ -48,7 +48,7 @@ The two performance rules that every piece of code must follow:
 ```
 
 - `contextIsolation: true`, `nodeIntegration: false`. The preload script exposes a small typed
-  API (`window.gitsquid.repo.openRepo(path)`, `...log.page(cursor)`, etc.). Nothing else.
+  API (`window.gitgoose.repo.openRepo(path)`, `...log.page(cursor)`, etc.). Nothing else.
 - If git work ever makes the main process lag (window moves stutter), move `GitService` into
   an Electron `utilityProcess`. Design the service as a plain class with no Electron imports so
   this move is a one-file change.
@@ -74,7 +74,7 @@ Key commands:
 
 | Need | Command |
 |---|---|
-| Log for the graph | `git log --topo-order --all --format='%H%x00%P%x00%an%x00%ae%x00%aI%x00%cI%x00%s%x00%x1e' -n 2000 [--skip]` (stream stdout, parse per record) |
+| Log for the graph | `git log --date-order --all --format='%H%x00%P%x00%an%x00%ae%x00%aI%x00%cI%x00%s%x00%x1e' -n 2000 [--skip]` (stream stdout, parse per record) |
 | Refs / decorations | `git for-each-ref --format='%(refname)%00%(objectname)%00%(upstream)%00%(upstream:track)' ` |
 | Working tree | `git status --porcelain=v2 -z --branch --untracked-files=all` |
 | Diffs | `git diff [--cached] --no-color -U3 -z -- <path>`; `--numstat -z` for summaries |
@@ -92,7 +92,10 @@ add the trampoline in M3.
 ### 2.4 Watching for changes
 
 `@parcel/watcher` on the worktree and on `.git/{HEAD,index,packed-refs,refs/,logs/}`. Debounce
-100 ms. On change: re-run `status` and `for-each-ref`; only re-run `log` if refs changed.
+100 ms. On change: re-run `status` and `for-each-ref`; only re-run `log` if refs changed. While
+one of our own writes runs, the watcher is held back and one refresh follows the write: a rebase
+is many ref moves, and the renderer should see only where it ends. When the log is re-run, the
+rows on screen stay until the new first page is in, then swap in one render.
 
 ### 2.5 The commit graph (the thing we are keeping from GitKraken)
 

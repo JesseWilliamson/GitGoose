@@ -1,5 +1,5 @@
 {
-  "name": "@gitsquid/graph",
+  "name": "@gitgoose/graph",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,6 +9,6 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
-    "@gitsquid/fixtures": "workspace:*"
+    "@gitgoose/fixtures": "workspace:*"
   }
 }

@@ -11,7 +11,7 @@
 |---|---|---|
 | macOS (Apple silicon) | `.dmg`, `.zip` | signed builds only |
 | Windows (x64) | `.exe` (NSIS installer) | yes |
-| Linux (x64) | `.AppImage`, `.deb` | yes (the deb asks for your password) |
+| Linux (x64) | `.AppImage` ([ADR-007](adr/007-linux-packaging.md)) | yes |
 
 To try the installers without releasing, run the workflow by hand (Actions → Release → Run
 workflow) and download them from the run's artifacts. Pull requests that change packaging do the
@@ -29,7 +29,7 @@ Add these repository secrets; leave them unset for unsigned builds.
 
 Without a Mac certificate the app is signed ad-hoc. macOS then refuses to open a downloaded copy
 until you allow it in System Settings → Privacy & Security (or run
-`xattr -dr com.apple.quarantine /Applications/GitSquid.app`), and it cannot update itself.
+`xattr -dr com.apple.quarantine /Applications/GitGoose.app`), and it cannot update itself.
 Windows shows a SmartScreen warning for unsigned installers ("More info" → "Run anyway").
 
 ## Running your own build
@@ -38,9 +38,9 @@ Windows shows a SmartScreen warning for unsigned installers ("More info" → "Ru
 
 | OS | where |
 |---|---|
-| macOS | `/Applications/GitSquid.app` (or `~/Applications` if that is not writable); quit GitSquid first |
-| Windows | per-user install, silently, into `%LOCALAPPDATA%\Programs\GitSquid` |
-| Linux | `~/.local/share/gitsquid/GitSquid.AppImage`, a `gitsquid` command in `~/.local/bin` and a launcher entry (AppImage only, so the deb trouble below does not apply) |
+| macOS | `/Applications/GitGoose.app` (or `~/Applications` if that is not writable); quit GitGoose first |
+| Windows | per-user install, silently, into `%LOCALAPPDATA%\Programs\GitGoose` |
+| Linux | `~/.local/share/gitgoose/GitGoose.AppImage`, a `gitgoose` command in `~/.local/bin` and a launcher entry |
 
 Run it again to update. The build's version is the release version plus the commit, like
 `0.2.0-dev.1a2b3c4` (`.dirty` with uncommitted changes), and such builds do not update from GitHub
@@ -50,18 +50,15 @@ one over it. `pnpm install:local -- --build-only` stops after building into
 
 ## Other local builds
 
-`pnpm dist` builds every installer for your current OS into `apps/desktop/release/`, the same
-set the Release workflow publishes. `pnpm dist:appimage` builds only the AppImage, and
-`pnpm --filter @gitsquid/desktop exec electron-builder --dir` an unpacked app (fastest) for testing.
+`pnpm dist` builds every installer for your current OS into `apps/desktop/release/`, the same set
+the Release workflow publishes. `pnpm --filter @gitgoose/desktop exec electron-builder --dir`
+builds an unpacked app (fastest) for testing.
 
-### The deb target does not build on Arch
+The app icon is `apps/desktop/build/icon.svg`; `icon.png` next to it is what electron-builder
+reads (and derives the .icns and .ico from), regenerated with
+`rsvg-convert -w 1024 -h 1024 build/icon.svg -o build/icon.png`. On Linux and Windows the window
+carries the same file (copied to `resources/` by `extraResources`).
 
-The `deb` target shells out to fpm, a Ruby tool electron-builder downloads, and that prebuilt Ruby
-is linked against `libcrypt.so.1`. Arch has moved to libxcrypt (`libcrypt.so.2`), so `pnpm dist`
-fails there with `ruby: error while loading shared libraries`. Nothing is wrong with the project
-config, and a symlink does not help — the old glibc symbol versions are genuinely absent.
-
-Use `pnpm dist:appimage` for local Linux builds and let the Release workflow produce the deb; it
-runs on `ubuntu-latest`, which has the library. To build a deb on Arch anyway, install the
-compatibility package (`sudo pacman -S libxcrypt-compat`) or point electron-builder at your own
-fpm (`gem install --user-install fpm`, then `USE_SYSTEM_FPM=true pnpm dist`).
+On Linux that is a single AppImage — see [ADR-007](adr/007-linux-packaging.md) for why there is no
+deb, rpm or flatpak. It is also the only Linux format electron-updater can update in place, so the
+update check described above applies to it and not to anything a distribution might package.

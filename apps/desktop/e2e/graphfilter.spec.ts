@@ -1,4 +1,4 @@
-import { initRepo, tempDir } from '@gitsquid/fixtures'
+import { initRepo, tempDir } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import { launch } from './app'
 
@@ -19,8 +19,8 @@ const ref = (page: Page, name: string) => page.locator(`[data-testid="sidebar-re
 
 test('hide a branch with its eye button, solo another from its menu; remembered after a restart', async () => {
   const { r, wip, other, main } = setup()
-  const profile = tempDir('gitsquid-profile-')
-  let { app, page } = await launch(r.dir, { GITSQUID_USER_DATA: profile })
+  const profile = tempDir('gitgoose-profile-')
+  let { app, page } = await launch(r.dir, { GITGOOSE_USER_DATA: profile })
   await expect(row(page, wip)).toBeVisible()
 
   await ref(page, 'wip').hover()
@@ -30,7 +30,7 @@ test('hide a branch with its eye button, solo another from its menu; remembered 
   await expect(row(page, other)).toBeVisible()
   await app.close()
 
-  ;({ app, page } = await launch(r.dir, { GITSQUID_USER_DATA: profile }))
+  ;({ app, page } = await launch(r.dir, { GITGOOSE_USER_DATA: profile }))
   await expect(row(page, main)).toBeVisible()
   await expect(row(page, wip)).toHaveCount(0)
   await expect(page.getByTestId('graph-filter')).toBeVisible()

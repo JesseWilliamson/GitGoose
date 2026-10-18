@@ -1,26 +1,27 @@
-import { GitError, Repo, secretPushCheck } from '@gitsquid/git'
+import { GitError, Repo, secretPushCheck } from '@gitgoose/git'
 import {
   API_METHODS, IPC_EVENT, IPC_INVOKE,
-  type ApiMethod, type GitSquidApi, type GitSquidEvent, type IpcResult, type PushCheckPlan, type SerializedError,
-} from '@gitsquid/shared'
+  type ApiMethod, type GitGooseApi, type GitGooseEvent, type IpcResult, type PushCheckPlan, type SerializedError,
+} from '@gitgoose/shared'
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { logError } from './diagnostics'
 import { openInEditor, openTerminal } from './launch'
-import { GITHUB_SCOPES } from '@gitsquid/shared'
+import { GITHUB_SCOPES } from '@gitgoose/shared'
 import type { AiService } from './ai/service'
 import type { GitHubService } from './github/service'
+import type { CodeGraphService } from './codegraph'
 import type { RepoManager } from './repos'
 import { decisionKey, linters } from './ai/linters'
 import { forgetOpenRepo, getSettings, rememberRepo, setSettings } from './settings'
 
-export function broadcast(event: GitSquidEvent): void {
+export function broadcast(event: GitGooseEvent): void {
   for (const w of BrowserWindow.getAllWindows()) w.webContents.send(IPC_EVENT, event)
 }
 
-/** Methods that change the repository. After each one we refresh and push a snapshot right away. */
+/** Methods that change the repository. Each runs with the watcher held back, then pushes one snapshot. */
 const WRITES = new Set<ApiMethod>([
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'checkout', 'createBranch',
   'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset', 'cherryPick', 'cherryPickMany', 'recomposeApply', 'dropCommits', 'moveCommits', 'restoreFile', 'applySuggestion', 'writeFileChecked', 'checkoutPullRequest', 'mergeTool', 'lfsInstall', 'lfsTrack', 'lfsPull', 'lfsLock', 'applyPatch', 'setIdentity', 'bisectMark', 'bisectReset', 'setGraphFilter', 'updateSubmodules', 'syncSubmodules', 'addSubmodule', 'removeSubmodule', 'addWorktree', 'removeWorktree', 'lockWorktree', 'pruneWorktrees', 'addRemote', 'removeRemote', 'renameRemote', 'setRemoteUrl', 'pushTags',
@@ -39,7 +40,8 @@ export function createHandlers(
   gitOpts: () => { gitPath: string; env: Record<string, string> },
   github: GitHubService,
   ai: AiService,
-): GitSquidApi {
+  codegraph: CodeGraphService,
+): GitGooseApi {
   const r = (id: string) => repos.get(id)
   const opened = async (repo: Repo) => {
     rememberRepo(repo.path)
@@ -144,9 +146,20 @@ export function createHandlers(
     applySelection: (id, req) => r(id).applySelection(req),
     ignorePaths: (id, paths) => r(id).ignorePaths(paths),
     commit: (id, message, opts) => r(id).commit(message, opts),
-    codePeek: (id, name, rev) => r(id).codePeek(name, rev),
+    // Peek and Impact answer from the code graph once the tree they need is indexed; they wait
+    // for it (the renderer shows the progress). With the graph off they fall back to text search.
+    codePeek: async (id, name, rev) => {
+      await codegraph.ensure(id, rev).catch(() => {})
+      return r(id).codePeek(name, rev)
+    },
+    codeGraphStatus: async (id) => codegraph.status(id),
+    reindexCode: (id) => codegraph.reindex(id),
     changeInsights: (id) => r(id).changeInsights(),
-    impact: (id, scope) => r(id).impact(scope),
+    impact: async (id, scope) => {
+      const rev = scope.kind === 'working' ? null : scope.kind === 'staged' ? '' : scope.kind === 'commits' ? scope.hashes[0]! : scope.kind === 'branch' ? scope.branch : (scope.branch ?? 'HEAD')
+      await codegraph.ensure(id, rev).catch(() => {})
+      return r(id).impact(scope)
+    },
     askThreads: async (id) => getSettings().askThreads[r(id).path] ?? [],
     saveAskThread: async (id, thread) => {
       const path = r(id).path
@@ -242,7 +255,7 @@ export function createHandlers(
     restoreFile: (id, path, rev, opts) => r(id).restoreFile(path, rev, opts),
     openFileAt: async (id, rev, path) => {
       // A read-only copy under the temp folder, named so the editor knows the language.
-      const dir = await mkdtemp(join(tmpdir(), `gitsquid-${rev.slice(0, 7)}-`))
+      const dir = await mkdtemp(join(tmpdir(), `gitgoose-${rev.slice(0, 7)}-`))
       const file = join(dir, basename(path))
       await writeFile(file, await r(id).fileAt(rev, path))
       await chmod(file, 0o444)
@@ -326,19 +339,19 @@ export function serializeError(e: unknown): SerializedError {
  * handler table. Results and errors both come back as data (IpcResult), because Electron turns a
  * thrown error into a generic message and loses git's stderr.
  */
-export function registerIpc(handlers: GitSquidApi, repos: RepoManager): void {
+export function registerIpc(handlers: GitGooseApi, repos: RepoManager): void {
   const known = new Set<string>(API_METHODS)
   ipcMain.handle(IPC_INVOKE, async (_event, method: string, args: unknown[]): Promise<IpcResult<unknown>> => {
     if (!known.has(method)) return { ok: false, error: { message: `Unknown method ${method}` } }
     const fn = handlers[method as ApiMethod] as (...a: unknown[]) => Promise<unknown>
+    // Most write methods take the repo id first. The watcher stays quiet while the write runs, and
+    // one refresh right after it pushes the result, rather than waiting for the watcher.
+    const writes = WRITES.has(method as ApiMethod) && typeof args[0] === 'string' ? args[0] : null
     try {
-      const value = await fn(...args)
+      const value = writes ? await repos.during(writes, () => fn(...args)) : await fn(...args)
       return { ok: true, value }
     } catch (e) {
       return { ok: false, error: serializeError(e) }
-    } finally {
-      // Most write methods take the repo id first; refresh it now rather than waiting for the watcher.
-      if (WRITES.has(method as ApiMethod) && typeof args[0] === 'string') await repos.refresh(args[0])
     }
   })
 }

@@ -1,4 +1,4 @@
-# GitSquid
+# GitGoose
 
 A fast git client with GitKraken's commit graph and Tower's power features.
 
@@ -33,4 +33,4 @@ the decisions behind the architecture. `docs/learn/` has hands-on exercises for 
 | `pnpm e2e` | Playwright drives the built app (`xvfb-run -a pnpm e2e` on headless Linux) |
 | `pnpm bench` | 100k-commit benchmark; `--check` enforces the budgets |
 | `pnpm dist` | build installers for this OS |
-| `pnpm install:local` | build this working tree and install it as your everyday GitSquid; run again to update |
+| `pnpm install:local` | build this working tree and install it as your everyday GitGoose; run again to update |

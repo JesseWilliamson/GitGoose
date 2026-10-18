@@ -3,7 +3,7 @@ import { createServer, type Server } from 'node:http'
 /**
  * A local stand-in for the Anthropic Messages API: answers POST /v1/messages with a streamed
  * reply (server-sent events, the same event sequence the real API sends). Tests point the app
- * at it with GITSQUID_ANTHROPIC_BASE_URL.
+ * at it with GITGOOSE_ANTHROPIC_BASE_URL.
  */
 export interface FakeAnthropic {
   url: string

@@ -1,4 +1,4 @@
-import { initRepo } from '@gitsquid/fixtures'
+import { initRepo } from '@gitgoose/fixtures'
 import { expect, test } from '@playwright/test'
 import { join } from 'node:path'
 import { launch } from './app'
@@ -15,7 +15,7 @@ test('walkthrough of a commit: summary, effort, checked groups, sequence diagram
     'src/calc.test.ts': 'test("t", () => {\n  expect(total(1, 2)).toBe(3)\n})\n',
   })
   const { app, page } = await launch(r.dir)
-  await page.evaluate((p) => window.gitsquid.setSettings(p as never), AGENT)
+  await page.evaluate((p) => window.gitgoose.setSettings(p as never), AGENT)
   await page.locator(`[data-testid="commit-row"][data-hash="${fix}"]`).click({ button: 'right' })
   await page.getByRole('menuitem', { name: 'Walk me through this commit' }).click()
 

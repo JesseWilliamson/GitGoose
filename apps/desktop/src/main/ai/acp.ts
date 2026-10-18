@@ -1,13 +1,13 @@
 import * as acp from '@agentclientprotocol/sdk'
-import { realPathOf } from '@gitsquid/git'
-import { AI_AUTH_REQUIRED, type AgentAuthMethod, type AgentInfo } from '@gitsquid/shared'
+import { realPathOf } from '@gitgoose/git'
+import { AI_AUTH_REQUIRED, type AgentAuthMethod, type AgentInfo } from '@gitgoose/shared'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { isAbsolute, relative, resolve } from 'node:path'
 import { Readable, Writable } from 'node:stream'
 
 /**
- * GitSquid as an Agent Client Protocol *client*: the same role Zed or JetBrains play. We start
+ * GitGoose as an Agent Client Protocol *client*: the same role Zed or JetBrains play. We start
  * the user's agent (Claude, Codex, Gemini CLI, anything that speaks ACP) as a child process and
  * talk JSON-RPC over its stdin/stdout:
  *
@@ -25,7 +25,7 @@ import { Readable, Writable } from 'node:stream'
  *   fs/write_text_file           only the one file a request allows, and even then the content
  *                                is captured as a proposal for the user to review, not written
  *
- * The agent's credentials never pass through GitSquid: it logs in on its own.
+ * The agent's credentials never pass through GitGoose: it logs in on its own.
  */
 
 export interface AgentLaunch {
@@ -114,7 +114,7 @@ export class AcpAgent {
     await spawned
 
     const stream = acp.ndJsonStream(Writable.toWeb(child.stdin!) as WritableStream<Uint8Array>, Readable.toWeb(child.stdout!) as ReadableStream<Uint8Array>)
-    const conn = acp.client({ name: 'gitsquid' })
+    const conn = acp.client({ name: 'gitgoose' })
       .onNotification(acp.methods.client.session.update, (ctx) => this.onUpdate(ctx.params))
       .onRequest(acp.methods.client.session.requestPermission, (ctx) => this.onPermission(ctx.params))
       .onRequest(acp.methods.client.fs.readTextFile, (ctx) => this.onRead(ctx.params))
@@ -144,7 +144,7 @@ export class AcpAgent {
           // We can show a terminal login command to the user (see AgentAuthMethod.terminalCommand).
           auth: { terminal: true },
         },
-        clientInfo: { name: 'gitsquid', version: '0.1.0' },
+        clientInfo: { name: 'gitgoose', version: '0.1.0' },
       }), 60_000, 'The agent did not answer initialize within a minute.')
     } catch (e) {
       // Exiting before initialize means it never started: through the Windows shell a missing
@@ -252,7 +252,7 @@ export class AcpAgent {
   private async onRead(p: acp.ReadTextFileRequest): Promise<acp.ReadTextFileResponse> {
     const entry = this.bySession.get(p.sessionId)
     if (!entry || !(await allInside(entry.cwd, [p.path]))) {
-      throw acp.RequestError.invalidParams(undefined, 'GitSquid only lets the agent read files inside the open repository.')
+      throw acp.RequestError.invalidParams(undefined, 'GitGoose only lets the agent read files inside the open repository.')
     }
     let content = await readFile(p.path, 'utf8').catch(() => {
       throw acp.RequestError.resourceNotFound(p.path)
@@ -268,7 +268,7 @@ export class AcpAgent {
   private async onWrite(p: acp.WriteTextFileRequest): Promise<acp.WriteTextFileResponse> {
     const hooks = this.bySession.get(p.sessionId)?.hooks
     if (!hooks?.writable || resolve(p.path) !== resolve(hooks.writable) || !hooks.onWrite) {
-      throw acp.RequestError.invalidParams(undefined, 'GitSquid did not allow the agent to write this file.')
+      throw acp.RequestError.invalidParams(undefined, 'GitGoose did not allow the agent to write this file.')
     }
     hooks.onWrite(resolve(p.path), p.content)
     return {}

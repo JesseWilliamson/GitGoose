@@ -1,4 +1,4 @@
-import type { ImpactResult, ReviewScope } from '@gitsquid/shared'
+import type { ImpactResult, ReviewScope } from '@gitgoose/shared'
 import { api, toUiError } from './api'
 import { cancelAi, startAi } from './ai'
 import { updateRepo, useStore, type RepoView } from './store'

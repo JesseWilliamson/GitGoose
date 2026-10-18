@@ -1,5 +1,5 @@
 /** The preload bridge (see src/preload/index.ts). Every call is async and goes to the main process. */
-export const api = window.gitsquid
+export const api = window.gitgoose
 
 export interface UiError {
   message: string

@@ -1,10 +1,10 @@
-// `pnpm install:local`: build GitSquid from this working tree and install it like a release, so you
+// `pnpm install:local`: build GitGoose from this working tree and install it like a release, so you
 // can use your own changes day to day. Run it again to update. The build is stamped with the commit
 // (see localBuildVersion), and the app leaves updating it to this script, not to GitHub releases.
 //
 //   --build-only   build the installer into apps/desktop/release/local/ and stop
 
-import { localBuildVersion } from '@gitsquid/shared'
+import { localBuildVersion } from '@gitgoose/shared'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync, accessSync, constants } from 'node:fs'
 import { homedir } from 'node:os'
@@ -37,7 +37,7 @@ function build(version: string): void {
   const args = target[process.platform]
   if (!args) throw new Error(`No local install for ${process.platform}`)
   rmSync(out, { recursive: true, force: true })
-  run('pnpm', ['exec', 'electron-vite', 'build'])
+  run('pnpm', ['build:dist'])
   run('pnpm', ['exec', 'electron-builder', ...args, '--publish', 'never', `-c.extraMetadata.version=${version}`, `-c.directories.output=${out}`])
 }
 
@@ -51,12 +51,12 @@ function writable(dir: string): boolean {
 }
 
 function installMac(): string {
-  const built = readdirSync(out).map((d) => join(out, d, 'GitSquid.app')).find(existsSync)
-  if (!built) throw new Error(`No GitSquid.app under ${out}`)
-  const running = spawnSync('pgrep', ['-f', 'GitSquid.app/Contents/MacOS/GitSquid']).status === 0
-  if (running) throw new Error('GitSquid is running. Quit it, then run this again.')
+  const built = readdirSync(out).map((d) => join(out, d, 'GitGoose.app')).find(existsSync)
+  if (!built) throw new Error(`No GitGoose.app under ${out}`)
+  const running = spawnSync('pgrep', ['-f', 'GitGoose.app/Contents/MacOS/GitGoose']).status === 0
+  if (running) throw new Error('GitGoose is running. Quit it, then run this again.')
   const apps = writable('/Applications') ? '/Applications' : join(homedir(), 'Applications')
-  const dest = join(apps, 'GitSquid.app')
+  const dest = join(apps, 'GitGoose.app')
   mkdirSync(apps, { recursive: true })
   rmSync(dest, { recursive: true, force: true })
   // ditto keeps the bundle's symlinks, permissions and signature intact; a plain copy can break them.
@@ -67,17 +67,17 @@ function installMac(): string {
 function installWindows(): string {
   const setup = readdirSync(out).find((f) => f.endsWith('.exe'))
   if (!setup) throw new Error(`No installer in ${out}`)
-  // Silent, for this user only: no UAC prompt, and it closes a running GitSquid before replacing it.
+  // Silent, for this user only: no UAC prompt, and it closes a running GitGoose before replacing it.
   run(join(out, setup), ['/S', '/currentuser'])
-  return join(process.env.LOCALAPPDATA ?? '', 'Programs', 'GitSquid')
+  return join(process.env.LOCALAPPDATA ?? '', 'Programs', 'GitGoose')
 }
 
 function installLinux(): string {
   const image = readdirSync(out).find((f) => f.endsWith('.AppImage'))
   if (!image) throw new Error(`No AppImage in ${out}`)
   const data = process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share')
-  const home = join(data, 'gitsquid')
-  const app = join(home, 'GitSquid.AppImage')
+  const home = join(data, 'gitgoose')
+  const app = join(home, 'GitGoose.AppImage')
   const icon = join(home, 'icon.png')
   mkdirSync(home, { recursive: true })
   // Replacing the file (not writing into it) is safe while the old version is running.
@@ -88,25 +88,25 @@ function installLinux(): string {
 
   const bin = join(homedir(), '.local', 'bin')
   mkdirSync(bin, { recursive: true })
-  rmSync(join(bin, 'gitsquid'), { force: true })
-  symlinkSync(app, join(bin, 'gitsquid'))
+  rmSync(join(bin, 'gitgoose'), { force: true })
+  symlinkSync(app, join(bin, 'gitgoose'))
 
   // The file name and StartupWMClass match desktopName in package.json, so the window groups
   // with this launcher.
   const applications = join(data, 'applications')
   mkdirSync(applications, { recursive: true })
   writeFileSync(
-    join(applications, 'gitsquid.desktop'),
+    join(applications, 'gitgoose.desktop'),
     [
       '[Desktop Entry]',
       'Type=Application',
-      'Name=GitSquid',
+      'Name=GitGoose',
       'Comment=A fast git client',
       `Exec="${app}" %U`,
       `Icon=${icon}`,
       'Terminal=false',
       'Categories=Development;RevisionControl;',
-      'StartupWMClass=gitsquid',
+      'StartupWMClass=gitgoose',
       '',
     ].join('\n'),
   )
@@ -115,11 +115,11 @@ function installLinux(): string {
 
 const base = (JSON.parse(readFileSync(join(desktop, 'package.json'), 'utf8')) as { version: string }).version
 const version = localBuildVersion(base, git('rev-parse', '--short', 'HEAD'), git('status', '--porcelain') !== '')
-console.log(`Building GitSquid ${version}`)
+console.log(`Building GitGoose ${version}`)
 build(version)
 if (buildOnly) {
   console.log(`Built into ${out}`)
 } else {
   const where = { darwin: installMac, win32: installWindows, linux: installLinux }[process.platform as 'darwin' | 'win32' | 'linux']()
-  console.log(`Installed GitSquid ${version} at ${where}`)
+  console.log(`Installed GitGoose ${version} at ${where}`)
 }

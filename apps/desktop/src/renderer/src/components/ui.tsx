@@ -29,18 +29,22 @@ export const Button = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLBut
   },
 )
 
-export function ToolbarButton({ icon, label, onClick, disabled, title, badge }: {
-  icon: ReactNode; label: string; onClick?: () => void; disabled?: boolean; title?: string; badge?: ReactNode
+/**
+ * An icon-only toolbar button. The label is its accessible name and (unless a richer title is
+ * given) its tooltip, so screen readers and tests still see "Push", not an arrow.
+ */
+export function ToolbarButton({ icon, label, onClick, disabled, title, badge, className }: {
+  icon: ReactNode; label: string; onClick?: () => void; disabled?: boolean; title?: string; badge?: ReactNode; className?: string
 }) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
+      aria-label={label}
       title={title ?? label}
-      className="no-drag relative flex flex-col items-center justify-center gap-0.5 rounded-md px-2.5 py-1 text-muted hover:bg-hover hover:text-fg disabled:opacity-40 disabled:pointer-events-none"
+      className={clsx('no-drag relative flex size-8 shrink-0 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-fg disabled:opacity-40 disabled:pointer-events-none', className)}
     >
       {icon}
-      <span className="text-[11px] leading-none">{label}</span>
       {badge}
     </button>
   )
@@ -116,16 +120,19 @@ export const DM = {
   ),
 }
 
-export function Modal({ open, onClose, title, children, width = 440, tall = false }: {
+export function Modal({ open, onClose, title, children, width = 440, tall = false, onEscapeKeyDown }: {
   open: boolean; onClose: () => void; title: string; children: ReactNode; width?: number
   /** A big dialog (a whole editor): placed near the top so it has the height. */
   tall?: boolean
+  /** Esc closes the dialog unless this calls preventDefault (to end something inside it first). */
+  onEscapeKeyDown?: (e: KeyboardEvent) => void
 }) {
   return (
     <RDialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
       <RDialog.Portal>
         <RDialog.Overlay className="fixed inset-0 z-40 bg-black/40" />
         <RDialog.Content
+          onEscapeKeyDown={onEscapeKeyDown}
           style={{ width }}
           className={clsx('fixed left-1/2 z-50 max-w-[94vw] -translate-x-1/2 rounded-lg border border-line bg-raised p-4 shadow-2xl shadow-black/40', tall ? 'top-[5vh]' : 'top-[18%]')}
         >

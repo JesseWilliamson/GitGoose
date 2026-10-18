@@ -1,4 +1,4 @@
-import { initRepo } from '@gitsquid/fixtures'
+import { initRepo } from '@gitgoose/fixtures'
 import { expect, test } from '@playwright/test'
 import { join } from 'node:path'
 import { launch } from './app'
@@ -27,7 +27,7 @@ test('impact of uncommitted changes: touched definitions, uses elsewhere, tests;
   await expect(view.getByTestId('impact-tests')).toHaveText('src/price.test.ts')
   await expect(view.getByTestId('assess-impact')).toHaveCount(0) // AI is off
 
-  await page.evaluate((p) => window.gitsquid.setSettings(p as never), AGENT)
+  await page.evaluate((p) => window.gitgoose.setSettings(p as never), AGENT)
   await view.getByTestId('assess-impact').click()
   await expect(view.getByTestId('impact-assessment')).toContainText('One caller relies on the old rounding.')
   await expect(view.getByTestId('impact-assessment')).toContainText('1 use at risk · 1 answer ignored')

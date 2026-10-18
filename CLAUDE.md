@@ -1,6 +1,6 @@
-# GitSquid — brief for agent sessions
+# GitGoose — brief for agent sessions
 
-GitSquid is an Electron git client: GitKraken's commit graph and drag-and-drop, Tower's speed,
+GitGoose is an Electron git client: GitKraken's commit graph and drag-and-drop, Tower's speed,
 undo, line staging and conflict wizard. Read `docs/PLAN.md` for the why, `docs/adr/` for decisions
 already made (do not relitigate them in passing), and `docs/specs/` for feature specs.
 
@@ -16,12 +16,16 @@ explanations. `docs/learn/` holds exercises for the four pieces he plans to own.
 apps/desktop/          Electron app (electron-vite)
   src/main/            main process: window, IPC router (ipc.ts), RepoManager + file watcher, settings, menu,
                        avatars, github/ (device-flow sign-in; the only code that holds a token),
-                       ai/ (ACP client for the user's agent, Anthropic API fallback)
-  src/preload/         the only bridge: builds window.gitsquid from API_METHODS
+                       ai/ (ACP client for the user's agent, Anthropic API fallback),
+                       codegraph.ts + indexer.ts (the code graph service and its utility process, ADR-008)
+  src/preload/         the only bridge: builds window.gitgoose from API_METHODS
   src/renderer/src/    React UI: lib/store.ts (zustand + log data), lib/actions.ts (every user action), components/
   e2e/                 Playwright tests that launch the real app (+ fake-agent.mjs, a scripted ACP agent)
 packages/shared/       IPC contract (api.ts), data types, pure conflict-marker parser
-packages/git/          everything that runs git: runner, parsers, LogStream, CatFile, patch builder, undo, askpass, Repo
+packages/git/          everything that runs git: runner, parsers, LogStream, CatFile, patch builder, undo, askpass, Repo,
+                       CodeIndexer (builds the code graph per blob id)
+packages/codegraph/    tree-sitter parsing (official WASM grammars + tags queries) and the SQLite graph store;
+                       the package root is browser-safe, Node-only parts are under `@gitgoose/codegraph/node`
 packages/graph/        lane layout. Pure, zero dependencies.
 tools/fixtures/        deterministic test repositories (+ fast-import generator for big ones)
 tools/bench/           performance benchmark with budgets
@@ -43,7 +47,7 @@ when touching the log, the layout, the graph rendering or the store.
   `--porcelain=v2`), never human-readable output. Read-only commands pass `readOnly: true`.
 - Every `Repo` method that writes goes through `exclusive()` and records an undo entry when it
   can be undone (see ADR-005). New write operations need both.
-- Adding an IPC method: add it to `GitSquidApi` and `API_METHODS` in `packages/shared/src/api.ts`
+- Adding an IPC method: add it to `GitGooseApi` and `API_METHODS` in `packages/shared/src/api.ts`
   (the compiler then demands a handler in `apps/desktop/src/main/ipc.ts`). If it writes, add it
   to `WRITES` in ipc.ts so the renderer gets a fresh snapshot right away.
 - UI actions go through `run()` in `lib/actions.ts`: errors become toasts with git's stderr,
@@ -51,7 +55,7 @@ when touching the log, the layout, the graph rendering or the store.
   reverse (anything that changes a remote).
 - Styling: Tailwind v4 utilities over theme tokens (`bg-panel`, `text-muted`, `border-line`,
   lane colours `var(--lane-N)`), defined in `styles.css` for dark and light.
-- Tests run real git against fixtures from `@gitsquid/fixtures`. Never mock git.
+- Tests run real git against fixtures from `@gitgoose/fixtures`. Never mock git.
 
 ## Definition of done
 

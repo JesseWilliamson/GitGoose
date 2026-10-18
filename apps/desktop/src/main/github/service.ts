@@ -1,5 +1,5 @@
-import type { Repo } from '@gitsquid/git'
-import { githubPromptKind, pickGitHubRemote, type DeviceCodeInfo, type GitHubAccount, type GitHubStatus, type PullRequest, type PullRequestList } from '@gitsquid/shared'
+import type { Repo } from '@gitgoose/git'
+import { githubPromptKind, pickGitHubRemote, type DeviceCodeInfo, type GitHubAccount, type GitHubStatus, type PullRequest, type PullRequestList } from '@gitgoose/shared'
 import { GitHubApi, GitHubAuthError } from './api'
 import { DeviceFlowError, pollForToken, requestDeviceCode, type DeviceCode, type FlowDeps, type GitHubEndpoints } from './deviceFlow'
 import type { TokenStore } from './tokenStore'

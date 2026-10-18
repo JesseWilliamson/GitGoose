@@ -1,4 +1,4 @@
-import { makeFixture } from '@gitsquid/fixtures'
+import { makeFixture } from '@gitgoose/fixtures'
 import { expect, test } from '@playwright/test'
 import { delimiter } from 'node:path'
 import { launch, pickFromSubmenu } from './app'
@@ -90,7 +90,7 @@ test('search finds a branch: Enter shows it in the graph, Ctrl+Enter checks it o
   await expect(page.getByTestId('omni-footer')).toContainText('check out')
   await page.keyboard.press('Enter')
   const tip = r.git('rev-parse', 'feature').trim()
-  await expect(page.locator(`[data-testid="commit-row"][data-hash="${tip}"]`)).toHaveClass(/bg-select/)
+  await expect(page.locator(`[data-testid="commit-row"][data-hash="${tip}"]`)).toHaveAttribute('data-selected', 'true')
   expect(r.git('branch', '--show-current').trim()).toBe('main')
 
   await page.keyboard.press('ControlOrMeta+k')
@@ -116,7 +116,7 @@ test('opens several repositories as tabs', async () => {
   const a = makeFixture('linear')
   const b = makeFixture('branches')
   const { app, page } = await launch([a.dir, b.dir].join(delimiter))
-  const tabs = page.getByTestId('tabs').locator('[title*="gitsquid-"]')
+  const tabs = page.getByTestId('tabs').locator('[title*="gitgoose-"]')
   await expect(tabs).toHaveCount(2)
   // The last one opened is active.
   await expect(page.getByTestId('commit-row')).toHaveCount(7)

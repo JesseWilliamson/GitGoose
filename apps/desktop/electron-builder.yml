@@ -1,8 +1,8 @@
 # Packaging. `pnpm dist` builds installers for the current OS into apps/desktop/release/.
 # Signing and notarization read credentials from the environment (see docs/RELEASING.md);
 # without them, builds are unsigned, which is fine for local use.
-appId: dev.gitsquid.app
-productName: GitSquid
+appId: dev.gitgoose.app
+productName: GitGoose
 copyright: Copyright © 2026 Jesse Williamson
 directories:
   output: release
@@ -10,12 +10,21 @@ directories:
 files:
   - out/**
   - package.json
-# @parcel/watcher ships a native .node binary, which cannot be loaded from inside the asar archive.
-# One name pattern for the installers (the deb spells out its own below): no spaces, since GitHub
-# rewrites them on upload, which breaks the file names electron-updater reads from latest*.yml.
-artifactName: ${productName}-${version}-${arch}.${ext}
+# The window icon on Linux and Windows (main/index.ts reads it from resources/).
+extraResources:
+  - from: build/icon.png
+    to: icon.png
+  # The tree-sitter grammars (WASM) and their queries, laid out by scripts/grammars.mjs.
+  - from: out/grammars
+    to: grammars
+# @parcel/watcher ships a native .node binary, which cannot be loaded from inside the asar archive;
+# web-tree-sitter reads its runtime .wasm with fs, which is faster from a real file too.
 asarUnpack:
   - '**/node_modules/@parcel/watcher*/**'
+  - '**/node_modules/web-tree-sitter/**'
+# One name pattern for the installers: no spaces, since GitHub rewrites them on upload, which
+# breaks the file names electron-updater reads from latest*.yml.
+artifactName: ${productName}-${version}-${arch}.${ext}
 # Apple silicon only. The watcher's native binary is installed for the build machine's CPU, so an
 # Intel build would need its own runner, and its own latest-mac.yml merged into this one.
 # The zip is what electron-updater downloads; the dmg is for first installs.
@@ -34,18 +43,13 @@ nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
 linux:
-  executableName: gitsquid
-  target: [AppImage, deb]
+  executableName: gitgoose
+  target: [AppImage]
   category: Development
   maintainer: Jesse Williamson
   # Name the .desktop entry after package.json's desktopName so its StartupWMClass matches
   # the app_id Electron reports, and window managers group running windows with the launcher.
   syncDesktopName: true
-deb:
-  # The workspace package is @gitsquid/desktop, which is not a legal deb package name and
-  # would put a "@gitsquid" directory in release/. Both are spelled out here instead.
-  packageName: gitsquid
-  artifactName: gitsquid_${version}_${arch}.${ext}
 publish:
   provider: github
   owner: JesseWilliamson

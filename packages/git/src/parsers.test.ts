@@ -1,4 +1,4 @@
-import { makeFixture } from '@gitsquid/fixtures'
+import { makeFixture } from '@gitgoose/fixtures'
 import { describe, expect, it } from 'vitest'
 import { parseBlame } from './blame'
 import { parseChangedFiles, parseDiff, untrackedDiff } from './diff'
@@ -10,14 +10,36 @@ import { parseStatus } from './status'
 describe('log', () => {
   it('parses NUL/RS separated records', () => {
     // Captured from: git log --format=LOG_FORMAT (two commits, the second a root).
-    const raw = 'aaa\x00bbb ccc\x00Ada\x00ada@x\x001700000060\x001700000061\x00Merge it\x1e\n' +
-      'bbb\x00\x00Bob\x00bob@x\x001700000000\x001700000000\x00subject with \x1e? no\x1e\n'
+    const raw = 'aaa\x00bbb ccc\x00Ada\x00ada@x\x001700000060\x001700000061\x00\x00Merge it\x1e\n' +
+      'bbb\x00\x00Bob\x00bob@x\x001700000000\x001700000000\x00\x00subject with \x1e? no\x1e\n'
     const commits = parseLog(raw)
     expect(commits[0]).toEqual({
       hash: 'aaa', parents: ['bbb', 'ccc'], authorName: 'Ada', authorEmail: 'ada@x',
       authorDate: 1700000060, commitDate: 1700000061, subject: 'Merge it',
     })
+    expect(commits[0]).not.toHaveProperty('coAuthors')
     expect(commits[1]!.parents).toEqual([])
+  })
+
+  it('reads Co-authored-by trailers, dropping the author and duplicates', () => {
+    const co = 'Grace Hopper <grace@example.com>\x1fAda <ADA@x>\x1fgrace@example.com\x1fAlan Turing <alan@example.com>'
+    const [c] = parseLog(`aaa\x00bbb\x00Ada\x00ada@x\x001700000060\x001700000061\x00${co}\x00Pair work\x1e\n`)
+    expect(c!.subject).toBe('Pair work')
+    expect(c!.coAuthors).toEqual([
+      { name: 'Grace Hopper', email: 'grace@example.com' },
+      { name: 'Alan Turing', email: 'alan@example.com' },
+    ])
+  })
+
+  it('reads the trailers git actually writes', () => {
+    const r = makeFixture('linear')
+    r.commit('Pair work\n\nCo-authored-by: Grace Hopper <grace@example.com>\nCo-Authored-By: Alan Turing <alan@example.com>')
+    const commits = parseLog(r.git('log', '--topo-order', `--format=${LOG_FORMAT}`, '-n', '2', '--branches'))
+    expect(commits[0]!.coAuthors).toEqual([
+      { name: 'Grace Hopper', email: 'grace@example.com' },
+      { name: 'Alan Turing', email: 'alan@example.com' },
+    ])
+    expect(commits[1]!.coAuthors).toBeUndefined()
   })
 
   it('parses incrementally across arbitrary chunk boundaries', () => {

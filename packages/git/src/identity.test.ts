@@ -1,11 +1,11 @@
-import { initRepo, tempDir } from '@gitsquid/fixtures'
+import { initRepo, tempDir } from '@gitgoose/fixtures'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Repo } from './repo'
 
 // Never touch the real ~/.gitconfig: global config goes to a throwaway file.
-const globalFile = join(tempDir('gitsquid-global-'), 'gitconfig')
+const globalFile = join(tempDir('gitgoose-global-'), 'gitconfig')
 const saved = process.env.GIT_CONFIG_GLOBAL
 beforeAll(() => {
   writeFileSync(globalFile, '[user]\n\tname = Global Person\n\temail = global@example.com\n')

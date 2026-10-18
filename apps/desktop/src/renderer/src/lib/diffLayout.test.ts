@@ -1,4 +1,4 @@
-import type { DiffLine, Hunk } from '@gitsquid/shared'
+import type { DiffLine, Hunk } from '@gitgoose/shared'
 import { describe, expect, it } from 'vitest'
 import { fileDiffRows, pairs, segments, splitRows, wordDiff } from './diffLayout'
 

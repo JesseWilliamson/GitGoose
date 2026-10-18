@@ -1,4 +1,4 @@
-import { FixtureRepo, initRepo, makeLargeRepo } from '@gitsquid/fixtures'
+import { FixtureRepo, initRepo, makeLargeRepo } from '@gitgoose/fixtures'
 import { expect, test } from '@playwright/test'
 import { launch } from './app'
 
@@ -31,7 +31,7 @@ test('one search for commits, files, settings and commands; results open where t
   await expect(commit.locator('mark')).toHaveText(['round', 'totals'])
   await commit.click()
   await expect(page.getByTestId('omni')).toHaveCount(0)
-  await expect(page.locator(`[data-testid="commit-row"][data-hash="${fix}"]`)).toHaveClass(/bg-select/)
+  await expect(page.locator(`[data-testid="commit-row"][data-hash="${fix}"]`)).toHaveAttribute('data-selected', 'true')
 
   // A file by name: its history opens. The highlight follows the best result while results
   // arrive (the file list comes after the first keystroke), so Enter right away picks the file.
@@ -82,7 +82,7 @@ test('a stash hidden from the graph opens without loading the whole history', as
   r.write('main.txt', 'work in progress\n')
   r.git('stash', 'push', '-m', 'half-done pricing')
   const { app, page } = await launch(dir)
-  await page.evaluate(() => window.gitsquid.setSettings({ showStashes: false }))
+  await page.evaluate(() => window.gitgoose.setSettings({ showStashes: false }))
   const count = page.getByTestId('commit-count')
   await expect(count).toContainText('+')
 

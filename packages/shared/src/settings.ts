@@ -2,23 +2,6 @@ import type { GraphFilter } from './index'
 import type { AskThread, PushCheck, ReviewLearning } from './ai'
 import { DEFAULT_LAYOUT, normalizeLayout, type PaneLayout } from './layout'
 
-export type GraphColumn = 'refs' | 'graph' | 'author' | 'date' | 'sha'
-export type GraphColumns = Record<GraphColumn, boolean>
-export const GRAPH_COLUMNS: { id: GraphColumn; label: string }[] = [
-  { id: 'refs', label: 'Branch / Tag' },
-  { id: 'graph', label: 'Graph' },
-  { id: 'author', label: 'Author' },
-  { id: 'date', label: 'Date / Time' },
-  { id: 'sha', label: 'SHA' },
-]
-/** GitKraken's defaults: branch / tag, graph and message. Author, date and SHA are a click away in the gear menu. */
-export const DEFAULT_GRAPH_COLUMNS: GraphColumns = { refs: true, graph: true, author: false, date: false, sha: false }
-
-function normalizeColumns(raw: unknown): GraphColumns {
-  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
-  return Object.fromEntries(GRAPH_COLUMNS.map((c) => [c.id, typeof r[c.id] === 'boolean' ? r[c.id] : DEFAULT_GRAPH_COLUMNS[c.id]])) as GraphColumns
-}
-
 /**
  * Every setting in one table. The settings page, defaults, validation and migration all come
  * from this, so adding a setting is one entry here and nothing else drifts out of sync.
@@ -99,6 +82,10 @@ export const SETTINGS = {
   autoFetchMinutes: num(0, 0, 60, 5, { label: 'Fetch automatically every', section: 'Git', unit: 'min', description: '0 turns it off.' }),
   pruneOnFetch: bool(true, { label: 'Prune deleted remote branches on fetch', section: 'Git' }),
   signOff: bool(false, { label: 'Add Signed-off-by to commits', section: 'Git', keywords: 'dco' }),
+  codeGraph: bool(true, {
+    label: 'Index code for Peek and Impact', section: 'Git', keywords: 'code graph tree-sitter symbols index parse',
+    description: 'Parses the repository in the background when it opens; a commit or checkout re-indexes only what changed. Off: Peek and Impact fall back to text search.',
+  }),
   gpgSign: bool(false, { label: 'Sign commits (-S)', section: 'Git', keywords: 'gpg ssh signing', description: 'Uses the signing key from your git config.' }),
   changeHints: bool(true, { label: 'Hints from history before committing', section: 'Git', keywords: 'co-change owners blame insights', description: 'Above the commit box: files that usually change with yours but are missing, and whose lines you are changing. Computed locally from history.' }),
   signTags: bool(false, { label: 'Sign tags (-s)', section: 'Git', keywords: 'gpg ssh signing', description: 'New tags are signed (and annotated) with the signing key from your git config.' }),
@@ -143,14 +130,14 @@ export const SETTINGS = {
     { value: 'anthropic', label: 'Anthropic API key' },
   ], {
     label: 'AI features', section: 'AI', keywords: 'claude gemini codex llm acp agent',
-    description: 'Commit messages, explanations and conflict help. Nothing is sent anywhere until you use one, and GitSquid asks first.',
+    description: 'Commit messages, explanations and conflict help. Nothing is sent anywhere until you use one, and GitGoose asks first.',
   }),
   aiAgent: choice('claude', [
     { value: 'claude', label: 'Claude' },
     { value: 'codex', label: 'Codex' },
     { value: 'gemini', label: 'Gemini CLI' },
     { value: 'custom', label: 'Custom command' },
-  ], { label: 'Agent', section: 'AI', description: 'Started on first use and kept running until GitSquid quits. It uses its own login.' }),
+  ], { label: 'Agent', section: 'AI', description: 'Started on first use and kept running until GitGoose quits. It uses its own login.' }),
   aiAgentCommand: text('', {
     label: 'Custom agent command', section: 'AI', placeholder: 'my-agent --acp',
     description: 'Used when Agent is "Custom command". It must speak the Agent Client Protocol on stdin/stdout.',
@@ -161,7 +148,7 @@ export const SETTINGS = {
     { label: 'Review style', section: 'AI', keywords: 'code review findings nits coderabbit', description: 'How much AI review says. Findings are always checked against the diff before they are shown.' }),
   reviewLinter: text('', {
     label: 'Extra linter for reviews', section: 'AI', placeholder: 'npx stylelint --formatter unix {files}', keywords: 'lint eslint ruff shellcheck',
-    description: 'Runs on the changed files during an AI review, besides the linters GitSquid finds in the repository (ESLint, Ruff, ShellCheck). {files} is replaced by the files; output as path:line:col: message. Asked for once per repository.',
+    description: 'Runs on the changed files during an AI review, besides the linters GitGoose finds in the repository (ESLint, Ruff, ShellCheck). {files} is replaced by the files; output as path:line:col: message. Asked for once per repository.',
   }),
   aiConsent: internal([] as string[]),
   /** The user's own pre-push checks, per repository path (besides those in .coderabbit.yaml). */
@@ -187,9 +174,6 @@ export const SETTINGS = {
   settingsVersion: internal(2),
   recentRepos: internal<string[]>([]),
   openRepos: internal<string[]>([]),
-  graphWidth: internal<number | null>(null),
-  /** Which optional graph columns show (the commit message always does). From the gear in the graph header. */
-  graphColumns: internal<GraphColumns>({ ...DEFAULT_GRAPH_COLUMNS }),
   /** Questions asked about code, per repository path, newest first (kept to 100). */
   askThreads: internal<Record<string, AskThread[]>>({}),
   /** Review learnings per repository path ("do not flag X"), from dismissed findings. */
@@ -231,7 +215,6 @@ export function validateSetting<K extends SettingKey>(key: K, value: unknown): S
       return Object.fromEntries(Object.entries(value).filter(([, v]) => typeof v === 'string')) as Settings[K]
     case 'internal':
       if (key === 'layout') return normalizeLayout(value) as Settings[K]
-      if (key === 'graphColumns') return normalizeColumns(value) as Settings[K]
       // App state is trusted as long as its JSON shape matches the default's.
       if (value === undefined) return fallback
       if (Array.isArray(spec.default) !== Array.isArray(value)) return fallback

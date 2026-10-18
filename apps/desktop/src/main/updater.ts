@@ -12,7 +12,7 @@ export function scheduleUpdateCheck(): void {
   const check = shouldCheckForUpdates({
     packaged: app.isPackaged,
     version: app.getVersion(),
-    disabledByEnv: !!process.env.GITSQUID_NO_UPDATE,
+    disabledByEnv: !!process.env.GITGOOSE_NO_UPDATE,
     enabled: getSettings().checkForUpdates,
   })
   if (!check) return

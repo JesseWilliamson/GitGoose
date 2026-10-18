@@ -33,6 +33,6 @@ describe('settings schema', () => {
     const d = defaultSettings()
     expect(d.contextLines).toBe(3)
     expect(d.avatars).toBe('initials')
-    expect(d.graphWidth).toBeNull()
+    expect(d.compactRows).toBe(false)
   })
 })

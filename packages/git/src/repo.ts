@@ -2,13 +2,14 @@ import type {
   BisectState, BlameLine, ChangeInsights, CodePeek, ImpactResult, ReviewScope, ImageSide, LfsInfo, LfsLock, ChangedFile, CommandRecord, GraphFilter, Identity, Person, Signature, Commit, CommitSummary, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
   LogPage, Ref, Remote, RepoOperation, ReflogEntry, RepoSnapshot, ResetMode, Resolution, SearchField, SelectionRequest,
   StashEntry, StatusEntry, Submodule, UndoEntry, Worktree,
-} from '@gitsquid/shared'
-import { countConflicts } from '@gitsquid/shared'
+} from '@gitgoose/shared'
+import { countConflicts } from '@gitgoose/shared'
 import { existsSync } from 'node:fs'
 import { lstat, readFile, realpath, rm, writeFile, chmod, mkdir } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
-import { enclosingDefinition, findDefinitions, NOT_NAMES, parseGrep, type Definition } from '@gitsquid/codegraph'
+import { enclosingDefinition, findDefinitions, NOT_NAMES, parseGrep, type Definition } from '@gitgoose/codegraph'
+import type { GraphStore } from '@gitgoose/codegraph/node'
 import { parseBlame } from './blame'
 import { coChanges, oldRanges, parseFilesPerCommit } from './insights'
 import { changedSymbols, isTestPath, testsByName } from './impact'
@@ -205,10 +206,10 @@ export class Repo {
   /**
    * Write git's commit-graph file if the repository lacks one (see ADR-004).
    *
-   * `git log --topo-order` must emit children before parents. Without generation numbers it
-   * can only prove that by walking the entire history first, so the first page of a 100k-commit
-   * log waits ~500 ms for the whole walk. The commit-graph stores generation numbers, letting git
-   * stream topological order incrementally: the same first page takes ~10 ms. It is the same
+   * `git log --date-order` (like --topo-order) must never emit a parent before its children.
+   * Without generation numbers it can only prove that by walking the entire history first, so
+   * the first page of a 100k-commit log waits ~500 ms for the whole walk. The commit-graph stores
+   * generation numbers, letting git stream the order incrementally: the same first page takes ~10 ms. It is the same
    * cache `git gc` and `git maintenance` write; `--split` makes later writes incremental.
    *
    * Returns true if it wrote one. Respects core.commitGraph=false.
@@ -830,7 +831,7 @@ export class Repo {
       const target = refs.find((r) => r.name === ref.upstream)
       if (!target) throw new Error(`${shortName(ref.upstream)} no longer exists.`)
       if (!(await this.isAncestor(ref.hash, target.hash))) throw new Error(`${branch} has commits ${shortName(ref.upstream)} does not: it cannot fast-forward.`)
-      await this.git(['update-ref', '-m', `gitsquid: fast-forward to ${shortName(ref.upstream)}`, ref.name, target.hash, ref.hash])
+      await this.git(['update-ref', '-m', `gitgoose: fast-forward to ${shortName(ref.upstream)}`, ref.name, target.hash, ref.hash])
       return this.record(`Fast-forward ${branch}`, [{ kind: 'update-ref', ref: ref.name, to: ref.hash, from: target.hash }], (await this.currentHead()).hash)
     })
   }
@@ -907,6 +908,27 @@ export class Repo {
   /** Definitions per blob id: a file's definitions only change when its content does. */
   private defsCache = new Map<string, Definition[]>()
 
+  /** The repository's code graph (ADR-008), read-only, once the indexer has built it. */
+  private graph: GraphStore | null = null
+
+  attachGraph(store: GraphStore | null): void {
+    this.graph = store
+  }
+
+  /** The key a revision's tree has in the graph: a commit's full hash, or the two special trees. */
+  private async treeKey(rev: string | null): Promise<string> {
+    if (rev === null) return 'worktree'
+    if (rev === '') return 'index'
+    return (await this.runner.run(['rev-parse', `${rev}^{commit}`], { readOnly: true })).stdout.trim()
+  }
+
+  /** The graph, when it holds this revision's tree. */
+  private async graphFor(rev: string | null): Promise<{ store: GraphStore; key: string } | null> {
+    if (!this.graph) return null
+    const key = await this.treeKey(rev)
+    return this.graph.hasTree(key) ? { store: this.graph, key } : null
+  }
+
   /** A file's text at a revision, or in the working tree (rev null). */
   private async textAt(rev: string | null, path: string): Promise<string | null> {
     if (rev === null) return readFile(join(this.path, path), 'utf8').catch(() => null)
@@ -922,7 +944,8 @@ export class Repo {
     const id = (await this.runner.run(['hash-object', '--stdin'], { readOnly: true, input: text })).stdout.trim()
     let defs = this.defsCache.get(id)
     if (!defs) {
-      defs = findDefinitions(path, text)
+      // Parsed definitions from the graph when it has this content; line patterns otherwise.
+      defs = this.graph?.knownBlobs([id]).has(id) ? this.graph.symbolsIn(id) : findDefinitions(path, text)
       if (this.defsCache.size > 5000) this.defsCache.clear()
       this.defsCache.set(id, defs)
     }
@@ -935,6 +958,8 @@ export class Repo {
    */
   async codePeek(name: string, rev: string | null): Promise<CodePeek> {
     if (!/^[A-Za-z_$][\w$]*$/.test(name)) throw new Error('Peek works on identifiers.')
+    const g = await this.graphFor(rev)
+    if (g) return this.codePeekFromGraph(g.store, g.key, name, rev)
     const MAX_HITS = 400
     const out = await this.runner.run(['grep', '-n', '-z', '--column', '-w', '-I', '-F', '--max-count=30', '-e', name, ...(rev ? [rev] : []), '--'], { readOnly: true, okCodes: [1] })
     const all = parseGrep(out.stdout, rev ?? undefined)
@@ -960,6 +985,32 @@ export class Repo {
       references: hits.filter((h) => !defLines.has(`${h.path}:${h.line}`)).map((h) => ({ path: h.path, line: h.line, column: h.column, text: h.text.trim().slice(0, 300) })),
       truncated: all.length > MAX_HITS,
     }
+  }
+
+  /** Peek from the parsed graph: definitions and uses are what the parser saw, not word matches. */
+  private async codePeekFromGraph(store: GraphStore, key: string, name: string, rev: string | null): Promise<CodePeek> {
+    const MAX_REFS = 400
+    const texts = new Map<string, string[]>()
+    const linesOf = async (path: string) => {
+      let lines = texts.get(path)
+      if (!lines) {
+        lines = (await this.textAt(rev, path))?.split(/\r?\n/) ?? []
+        texts.set(path, lines)
+      }
+      return lines
+    }
+    const definitions: CodePeek['definitions'] = []
+    for (const d of store.definitions(name, key, 60)) {
+      const lines = await linesOf(d.path)
+      definitions.push({ path: d.path, line: d.line, endLine: d.endLine, kind: d.kind, signature: d.signature, preview: lines.slice(d.line - 1, Math.min(d.endLine, d.line + 14)) })
+    }
+    const refs = store.references(name, key, MAX_REFS + 1)
+    const references: CodePeek['references'] = []
+    for (const r of refs.slice(0, MAX_REFS)) {
+      const lines = await linesOf(r.path)
+      references.push({ path: r.path, line: r.line, column: r.column, text: (lines[r.line - 1] ?? '').trim().slice(0, 300) })
+    }
+    return { name, definitions, references, truncated: refs.length > MAX_REFS }
   }
 
   /**
@@ -1215,9 +1266,22 @@ export class Repo {
     const allPaths = listed.split('\0').filter(Boolean)
     const callers: ImpactResult['callers'] = []
     const names = [...new Set(symbols.map((s) => s.name))].slice(0, 15)
+    const g = await this.graphFor(rev)
     for (const name of names) {
       if (callers.length >= 80) break
       const defLines = new Set(symbols.filter((s) => s.name === name).map((s) => `${s.path}:${s.line}`))
+      if (g) {
+        // Parsed uses: calls, type uses, imports. A word in a comment or a string is not one.
+        let n = 0
+        for (const u of g.store.references(name, g.key, 200)) {
+          if (n >= 15 || callers.length >= 80) break
+          if (inChange.get(u.path)?.has(u.line) || defLines.has(`${u.path}:${u.line}`)) continue
+          const text = ((input.texts.get(u.path) ?? (await this.textAt(rev, u.path)) ?? '').split(/\r?\n/)[u.line - 1] ?? '').trim().slice(0, 240)
+          callers.push({ id: `C${callers.length + 1}`, symbol: name, path: u.path, line: u.line, text, within: u.within, test: isTestPath(u.path) })
+          n++
+        }
+        continue
+      }
       const where = rev === null ? [] : rev === '' ? ['--cached'] : [rev]
       const out = await this.runner.run(['grep', '-n', '-z', '--column', '-w', '-I', '-F', '--max-count=20', '-e', name, ...where, '--'], { readOnly: true, okCodes: [1] })
       let n = 0
@@ -1706,7 +1770,7 @@ export class Repo {
    * when `git stash create` refuses (it cannot handle an index with unmerged entries).
    */
   private async worktreeTree(): Promise<string> {
-    const tmp = join(tmpdir(), `gitsquid-index-${process.pid}-${Date.now()}`)
+    const tmp = join(tmpdir(), `gitgoose-index-${process.pid}-${Date.now()}`)
     try {
       await this.git(['add', '-A'], { env: { GIT_INDEX_FILE: tmp } })
       return (await this.git(['write-tree'], { env: { GIT_INDEX_FILE: tmp } })).stdout.trim()
@@ -1848,13 +1912,13 @@ export class Repo {
         lines.push(`${t.action ?? 'pick'} ${t.hash}`)
         if (t.message !== undefined) {
           // Reword: amend the commit just picked with the new message, from a file (any text is safe).
-          const msgFile = join(this.gitDir, `gitsquid-msg-${process.pid}-${files.length}`)
+          const msgFile = join(this.gitDir, `gitgoose-msg-${process.pid}-${files.length}`)
           await writeFile(msgFile, t.message.trim() + '\n')
           files.push(msgFile)
           lines.push(`exec git commit --amend --allow-empty --no-verify -F ${shellQuote(msgFile)}`)
         }
       }
-      const file = join(this.gitDir, `gitsquid-todo-${process.pid}`)
+      const file = join(this.gitDir, `gitgoose-todo-${process.pid}`)
       files.push(file)
       await writeFile(file, (lines.join('\n') || 'noop') + '\n')
       const before = opts.before ?? (await this.currentHead()).hash!
@@ -1981,7 +2045,7 @@ export class Repo {
       const problems = checkPlan(info.units, plan)
       if (problems.length) throw new Error(problems.join(' '))
       const oldHead = (await this.currentHead()).hash!
-      const index = join(this.gitDir, `gitsquid-recompose-${process.pid}.index`)
+      const index = join(this.gitDir, `gitgoose-recompose-${process.pid}.index`)
       const env = { GIT_INDEX_FILE: index }
       // One author keeps the commits theirs; several make you the author, crediting them all.
       const authors = [...new Set(info.messages.map((m) => m.author))]
@@ -2015,7 +2079,7 @@ export class Repo {
           })).stdout.trim()
         }
         const ref = `refs/heads/${info.branch}`
-        await this.git(['update-ref', '-m', 'gitsquid: recompose', ref, parent!, oldHead])
+        await this.git(['update-ref', '-m', 'gitgoose: recompose', ref, parent!, oldHead])
         return this.record(`Recompose ${info.list.length} commits`, [{ kind: 'update-ref', ref, to: oldHead, from: parent! }], parent!)
       } finally {
         await rm(index, { force: true })
@@ -2232,7 +2296,7 @@ export class Repo {
       const parents = (await this.read(['rev-list', '--parents', '-n', '1', w])).trim().split(' ').slice(1)
       let u: string | null = null
       if (untracked.length) {
-        const tmp = join(tmpdir(), `gitsquid-snap-${process.pid}-${Date.now()}`)
+        const tmp = join(tmpdir(), `gitgoose-snap-${process.pid}-${Date.now()}`)
         const env = { GIT_INDEX_FILE: tmp }
         try {
           await this.git(['read-tree', '--empty'], { env })
@@ -2514,7 +2578,7 @@ export class Repo {
         break
       case 'restore-tree': {
         // Check the tree out into the working tree through a throwaway index.
-        const tmp = join(tmpdir(), `gitsquid-index-${process.pid}-${Date.now()}`)
+        const tmp = join(tmpdir(), `gitgoose-index-${process.pid}-${Date.now()}`)
         try {
           await this.git(['read-tree', a.tree], { env: { GIT_INDEX_FILE: tmp } })
           await this.git(['checkout-index', '-a', '-f'], { env: { GIT_INDEX_FILE: tmp } })

@@ -16,7 +16,7 @@ describe('shouldCheckForUpdates', () => {
     expect(shouldCheckForUpdates({ ...release, version: '0.3.0-beta.1' })).toBe(true)
   })
 
-  it('skips unpackaged runs and respects the setting and GITSQUID_NO_UPDATE', () => {
+  it('skips unpackaged runs and respects the setting and GITGOOSE_NO_UPDATE', () => {
     expect(shouldCheckForUpdates({ ...release, packaged: false })).toBe(false)
     expect(shouldCheckForUpdates({ ...release, enabled: false })).toBe(false)
     expect(shouldCheckForUpdates({ ...release, disabledByEnv: true })).toBe(false)

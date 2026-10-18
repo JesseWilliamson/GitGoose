@@ -1,4 +1,4 @@
-import type { SequenceDiagram } from '@gitsquid/shared'
+import type { SequenceDiagram } from '@gitgoose/shared'
 
 /**
  * Where everything in a sequence diagram goes: participants in columns with a lifeline each,

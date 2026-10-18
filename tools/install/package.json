@@ -1,5 +1,5 @@
 {
-  "name": "@gitsquid/install",
+  "name": "@gitgoose/install",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,7 +8,7 @@
     "install:local": "tsx src/install-local.ts"
   },
   "dependencies": {
-    "@gitsquid/shared": "workspace:*"
+    "@gitgoose/shared": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.23.15"

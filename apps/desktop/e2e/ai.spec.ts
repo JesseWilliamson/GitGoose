@@ -1,4 +1,4 @@
-import { fakeAnthropic, makeFixture, tempDir } from '@gitsquid/fixtures'
+import { fakeAnthropic, makeFixture, tempDir } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -8,7 +8,7 @@ import { launch } from './app'
 const FAKE = join(import.meta.dirname, 'fake-agent.mjs')
 const AGENT = { aiProvider: 'agent', aiAgent: 'custom', aiAgentCommand: `"${process.execPath}" "${FAKE}"` }
 
-const set = (page: Page, patch: Record<string, unknown>) => page.evaluate((p) => window.gitsquid.setSettings(p as never), patch)
+const set = (page: Page, patch: Record<string, unknown>) => page.evaluate((p) => window.gitgoose.setSettings(p as never), patch)
 
 test('writes a commit message with the agent, asking once before anything is sent', async () => {
   const r = makeFixture('linear')
@@ -113,7 +113,7 @@ test('an agent that needs a login asks for it, then carries on', async () => {
 test('Settings → AI tests the agent; the API key mode streams from Anthropic', async () => {
   const api = await fakeAnthropic(['A small ', 'linear history.'])
   const r = makeFixture('linear')
-  const { app, page } = await launch(r.dir, { GITSQUID_ANTHROPIC_BASE_URL: api.url })
+  const { app, page } = await launch(r.dir, { GITGOOSE_ANTHROPIC_BASE_URL: api.url })
   await set(page, AGENT)
   await page.getByTestId('toolbar').getByRole('button', { name: 'Settings' }).click()
   await page.getByTestId('ai-test').click()

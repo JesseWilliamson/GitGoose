@@ -1,7 +1,7 @@
 /**
  * Commit graph layout: which column ("lane") each commit sits in, and which lines to draw.
  *
- * Input is commits in topological order (children before parents, as `git log --topo-order`
+ * Input is commits with children before parents (as `git log --date-order` or `--topo-order`
  * gives them). We walk them once, top to bottom, carrying one piece of state: `lanes`, an array
  * where lanes[i] is the hash that the line in column i is travelling down to meet, or null if
  * the column is free.

@@ -1,4 +1,4 @@
-import { makeFixture } from '@gitsquid/fixtures'
+import { makeFixture } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
@@ -25,7 +25,7 @@ test('pre-push checks: a failing blocking check stops the push until Push anyway
   r.commit('feat: say hello', { 'src/log.ts': 'export function hello() {\n  console.log("hi")\n}\n' })
   const before = remoteMain(bare)
   const { app, page } = await launch(r.dir)
-  await page.evaluate((p) => window.gitsquid.setSettings(p as never), AGENT)
+  await page.evaluate((p) => window.gitgoose.setSettings(p as never), AGENT)
 
   // Add a check of your own for this repository.
   await palette(page, 'Edit pre-push checks')
@@ -69,7 +69,7 @@ test('the secret scan stops a push without any AI; its setting turns it off', as
   await page.getByRole('button', { name: 'Cancel' }).click()
   expect(remoteMain(bare)).toBe(before)
 
-  await page.evaluate(() => window.gitsquid.setSettings({ pushSecretCheck: false }))
+  await page.evaluate(() => window.gitgoose.setSettings({ pushSecretCheck: false }))
   await page.getByTestId('toolbar').getByRole('button', { name: 'Push' }).first().click()
   await expect.poll(() => remoteMain(bare)).toBe(r.git('rev-parse', 'main').trim())
   await expect(results).toHaveCount(0)

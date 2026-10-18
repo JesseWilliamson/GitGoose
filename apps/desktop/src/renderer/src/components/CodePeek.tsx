@@ -1,11 +1,13 @@
-import type { CodePeek } from '@gitsquid/shared'
-import { identifierAt } from '@gitsquid/codegraph'
+import type { CodePeek } from '@gitgoose/shared'
+import { identifierAt } from '@gitgoose/codegraph'
 import { X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { openInEditor } from '../lib/actions'
 import { api } from '../lib/api'
+import { indexingText } from '../lib/codegraph'
+import { useStore } from '../lib/store'
 
-const mod = (e: React.MouseEvent) => (window.gitsquid?.platform === 'darwin' ? e.metaKey : e.ctrlKey)
+const mod = (e: React.MouseEvent) => (window.gitgoose?.platform === 'darwin' ? e.metaKey : e.ctrlKey)
 
 /**
  * Ctrl/Cmd+click on a word in a diff: the identifier under the pointer, or null. Uses the
@@ -27,6 +29,9 @@ export function identifierFromClick(e: React.MouseEvent): string | null {
 export function CodePeekPanel({ repoId, repoPath, name, rev, onClose }: { repoId: string; repoPath: string; name: string; rev: string | null; onClose: () => void }) {
   const [peek, setPeek] = useState<CodePeek | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // While the repository is still being indexed the request waits for it; say so.
+  const indexing = useStore((s) => s.repos[repoId]?.codegraph)
+  const waiting = indexing && !peek && !error ? indexingText(indexing) : null
   useEffect(() => {
     let live = true
     setPeek(null)
@@ -59,7 +64,7 @@ export function CodePeekPanel({ repoId, repoPath, name, rev, onClose }: { repoId
       </div>
       <div className="min-h-0 flex-1 overflow-auto font-mono text-[12px]">
         {error && <div className="p-3 font-sans text-xs text-del">{error}</div>}
-        {!peek && !error && <div className="p-3 font-sans text-xs text-faint">Searching…</div>}
+        {!peek && !error && <div className="p-3 font-sans text-xs text-faint" data-testid="peek-waiting">{waiting ?? 'Searching…'}</div>}
         {peek && peek.definitions.length === 0 && <div className="px-3 pt-2 font-sans text-xs text-faint">No definition found (it may come from a dependency).</div>}
         {peek?.definitions.map((d) => (
           <div key={`${d.path}:${d.line}`} className="border-b border-line/60" data-testid="peek-definition">

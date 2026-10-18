@@ -1,4 +1,4 @@
-import { makeFixture, makeLargeRepo, tempDir } from '@gitsquid/fixtures'
+import { makeFixture, makeLargeRepo, tempDir } from '@gitgoose/fixtures'
 import { describe, expect, it } from 'vitest'
 import { Repo } from './repo'
 
@@ -12,7 +12,7 @@ describe('search across every field', () => {
     r.git('commit', '-q', '--allow-empty', '-m', 'by grace', '--author', 'Grace Hopper <grace@navy.mil>')
     r.git('tag', 'v9.9-rc', 'HEAD~1')
     const repo = await Repo.open(r.dir, {})
-    const log = (await repo.runner.run(['log', '--topo-order', '--format=%H', '--branches', '--tags', 'HEAD'], { readOnly: true })).stdout.split('\n').filter(Boolean)
+    const log = (await repo.runner.run(['log', '--date-order', '--format=%H', '--branches', '--tags', 'HEAD'], { readOnly: true })).stdout.split('\n').filter(Boolean)
 
     // Body text, case-insensitively.
     expect(await subjects(repo, await repo.search('all', 'lattice'))).toEqual(['Subject line'])
@@ -32,7 +32,7 @@ describe('search across every field', () => {
   })
 
   it('a newer search cancels the one still running', async () => {
-    const dir = makeLargeRepo(20_000, tempDir('gitsquid-search-'))
+    const dir = makeLargeRepo(20_000, tempDir('gitgoose-search-'))
     const repo = await Repo.open(dir, {})
     const t = performance.now()
     const slow = repo.search('all', 'zzz-not-there')

@@ -1,4 +1,4 @@
-import { diffLines, type Hunk } from '@gitsquid/shared'
+import { diffLines, type Hunk } from '@gitgoose/shared'
 
 /**
  * Layout for the diff view: rows for the side-by-side view, and word-level changes inside

@@ -26,7 +26,7 @@ page 2 later without redoing page 1.
 
 ## Questions to answer before peeking
 
-- Why must input be in topological order, not date order? What breaks if a parent comes first?
+- The input must have every commit before its parents (`--date-order` and `--topo-order` both promise it; plain date sorting does not). What breaks if a parent comes first?
 - When two children share a parent, two lanes wait for the same hash. Where do they meet?
 - Why is `freeSlot(lane)` (excluding the node's own lane) used for extra parents?
 - The benchmark lays out 100k commits in ~90 ms. What is the time complexity, and when would it

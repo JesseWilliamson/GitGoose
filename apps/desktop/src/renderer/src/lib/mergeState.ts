@@ -1,7 +1,7 @@
 import { invertedEffects } from '@codemirror/commands'
 import { Annotation, EditorState, RangeSetBuilder, StateEffect, StateField, type Extension, type TransactionSpec } from '@codemirror/state'
 import { Decoration, EditorView } from '@codemirror/view'
-import { blockText, type Merge3, type MergeBlock, type Range } from '@gitsquid/shared'
+import { blockText, type Merge3, type MergeBlock, type Range } from '@gitgoose/shared'
 
 /**
  * The state behind the three-pane merge view (components/MergePanes.tsx), kept free of React so

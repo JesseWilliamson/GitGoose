@@ -1,5 +1,5 @@
-import type { ChangedFile, CommitDetails, DiffTarget, StatusEntry } from '@gitsquid/shared'
-import type { Identity, Person, Signature } from '@gitsquid/shared'
+import type { ChangedFile, CommitDetails, DiffTarget, StatusEntry } from '@gitgoose/shared'
+import type { Identity, Person, Signature } from '@gitgoose/shared'
 import { Archive, Check, ChevronDown, Copy, Minus, MoreHorizontal, Plus, ShieldAlert, ShieldCheck, Sparkles, Undo2, X } from 'lucide-react'
 import clsx from 'clsx'
 import { DropdownMenu } from 'radix-ui'
@@ -628,13 +628,19 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
       setDetails(cached)
       return
     }
-    setDetails(null)
+    // The previous commit's panel stays up while this one loads, so the two swap in one frame
+    // (a reorder reselects the moved commit, whose details are new). Only a slow load spins:
+    // half a second, so a large commit's file list arriving just after the swap does not blink.
+    const spinner = setTimeout(() => setDetails(null), 500)
     const isStash = view.stashes.some((s) => s.hash === hash)
     api.commitDetails(view.id, hash, { stash: isStash }).then((d) => {
       if (detailsCache.size > 500) detailsCache.clear()
       detailsCache.set(hash, d)
-      if (latest.current === hash) setDetails(d)
+      if (latest.current !== hash) return
+      clearTimeout(spinner)
+      setDetails(d)
     }, (e) => reportError('Could not load commit', e))
+    return () => clearTimeout(spinner)
   }, [hash, view.id])
 
   if (!details) return <div className="flex flex-1 items-center justify-center text-faint"><Spinner /></div>

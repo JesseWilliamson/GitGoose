@@ -1,4 +1,4 @@
-import { isLocalBuild } from '@gitsquid/shared'
+import { isLocalBuild } from '@gitgoose/shared'
 
 /**
  * Whether to ask GitHub for a newer release. Dev runs (`pnpm dev`) are not packaged, and a local

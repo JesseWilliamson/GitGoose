@@ -1,5 +1,5 @@
-import { enclosingDefinition, findDefinitions } from '@gitsquid/codegraph'
-import type { FileDiff, ReadingLayer, SequenceDiagram, WalkthroughHunk } from '@gitsquid/shared'
+import { enclosingDefinition, findDefinitions } from '@gitgoose/codegraph'
+import type { FileDiff, ReadingLayer, SequenceDiagram, WalkthroughHunk } from '@gitgoose/shared'
 
 /**
  * The deterministic half of a walkthrough: cut the change into hunks, place each in a reading

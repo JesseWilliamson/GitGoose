@@ -1,4 +1,4 @@
-# Learning GitSquid by rebuilding its core
+# Learning GitGoose by rebuilding its core
 
 The plans reserved these pieces for you to build yourself. They are already implemented, so the app
 works, but each one is small, self-contained and fully specified by tests. That makes them good

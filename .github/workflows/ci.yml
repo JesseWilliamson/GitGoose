@@ -4,9 +4,8 @@ on:
   push:
     branches: [master, main]
   pull_request:
-  # Nightly, so slow performance drift shows up even on quiet days.
-  schedule:
-    - cron: '17 3 * * *'
+  # On demand too (there is no nightly: a quiet day costs nothing).
+  workflow_dispatch:
 
 jobs:
   test:
@@ -31,7 +30,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
-      # End-to-end on Linux only: macOS and Windows run it on a schedule (e2e-desktop.yml),
+      # End-to-end on Linux only: macOS and Windows run it on demand (e2e-desktop.yml),
       # since process starts there make the suite several times slower.
       - name: End-to-end (Linux, virtual display)
         if: runner.os == 'Linux'

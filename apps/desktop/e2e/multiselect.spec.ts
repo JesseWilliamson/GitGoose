@@ -1,4 +1,4 @@
-import { initRepo } from '@gitsquid/fixtures'
+import { initRepo, makeFixture } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import { launch } from './app'
 
@@ -16,7 +16,7 @@ function setup() {
 }
 
 const row = (page: Page, hash: string) => page.locator(`[data-testid="commit-row"][data-hash="${hash}"]`)
-const selected = (page: Page) => page.locator('[data-testid="commit-row"].bg-select')
+const selected = (page: Page) => page.locator('[data-testid="commit-row"][data-selected]')
 
 test('shift-click selects a range, ctrl-click adds and removes; cherry-pick them all, undoably', async () => {
   const { r, X, Y, Z } = setup()
@@ -71,5 +71,41 @@ test('the right-click menu acts on the whole selection; patches copy to the clip
   await row(page, Y).click()
   await expect(selected(page)).toHaveCount(1)
   await expect(page.getByTestId('multi-panel')).toHaveCount(0)
+  await app.close()
+})
+
+test('right-click on a selection squashes the commits into one, undoably', async () => {
+  const r = initRepo()
+  r.commit('A', { 'a.txt': 'a\n' })
+  const B = r.commit('B', { 'b.txt': 'b\n' })
+  r.commit('C', { 'c.txt': 'c\n' })
+  const D = r.commit('D', { 'd.txt': 'd\n' })
+  const { app, page } = await launch(r.dir)
+  await row(page, D).click()
+  await row(page, B).click({ modifiers: ['Shift'] })
+  await row(page, B).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Squash 3 commits into one' }).click()
+  await expect.poll(() => r.git('log', '--format=%s', '-2').trim().split('\n')[1]).toBe('A')
+  // The newer commits folded into the oldest; every message survives, oldest first.
+  const message = r.git('log', '--format=%B', '-1')
+  expect(message.indexOf('B')).toBeLessThan(message.indexOf('C'))
+  expect(message.indexOf('C')).toBeLessThan(message.indexOf('D'))
+  expect(r.git('ls-tree', '--name-only', 'HEAD').trim().split('\n')).toEqual(['a.txt', 'b.txt', 'c.txt', 'd.txt'])
+  await page.getByTestId('toolbar').getByRole('button', { name: 'Undo' }).click()
+  await expect.poll(() => r.head()).toBe(D)
+  await app.close()
+})
+
+test('shift-click across a merge keeps only the commits on the anchor\'s line', async () => {
+  // main: A - B - M(feature) - E, with feature C - D merged at M and wip F off B.
+  const r = makeFixture('branches')
+  const { app, page } = await launch(r.dir)
+  const E = r.head()
+  const A = r.git('rev-parse', 'main~3').trim()
+  await row(page, E).click()
+  await row(page, A).click({ modifiers: ['Shift'] })
+  // Not C, D or F: they sit on other lanes between E and A.
+  await expect(selected(page)).toHaveCount(4)
+  for (const name of ['main', 'main~1', 'main~2', 'main~3']) await expect(row(page, r.git('rev-parse', name).trim())).toHaveAttribute('data-selected', 'true')
   await app.close()
 })
