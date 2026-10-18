@@ -29,7 +29,7 @@ test('find a deleted branch in the reflog and restore it under its old name', as
   await page.getByRole('menuitem', { name: 'Restore as a branch…' }).click()
   await expect(page.getByTestId('dialog-input')).toHaveValue('experiment')
   await page.getByTestId('dialog-submit').click()
-  await expect.poll(() => r.git('rev-parse', 'experiment').trim()).toBe(tip)
+  await expect.poll(() => r.gitOrNull('rev-parse', 'experiment')?.trim()).toBe(tip)
   await expect(reflog).toContainText('Nothing is lost')
   await expect(page.locator('[data-testid="sidebar-ref"][data-ref="refs/heads/experiment"]')).toHaveCount(1)
   await app.close()

@@ -265,6 +265,7 @@ function RefItem({ r, label, view, onJump, head, depth = 0, children }: {
       onContextMenu={() => useStore.setState({ menu: { kind: 'ref', ref: r, hash: r.hash } })}
       data-testid="sidebar-ref"
       data-ref={r.name}
+      data-upstream={r.upstream ?? ''}
       title={`${r.name}\nDouble-click to check out`}
       style={{ paddingLeft: 32 + depth * 16 }}
       className={clsx('group flex h-6 cursor-default items-center gap-1.5 pr-3 text-[13px]', selected ? 'bg-select' : 'hover:bg-hover', head && 'font-semibold')}

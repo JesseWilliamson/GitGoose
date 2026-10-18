@@ -1,6 +1,6 @@
 import { initRepo } from '@gitsquid/fixtures'
 import { expect, test, type Page } from '@playwright/test'
-import { launch } from './app'
+import { launch, pickFromSubmenu } from './app'
 
 /** root - A - B - C - D (main), each commit adding its own file. */
 function setup() {
@@ -140,8 +140,7 @@ test('squash merge stages the changes and prepares the message', async () => {
   r.checkout('main')
   const { app, page } = await launch(r.dir)
   await page.locator('[data-testid="sidebar-ref"][data-ref="refs/heads/topic"]').click({ button: 'right' })
-  await page.getByRole('menuitem', { name: 'Merge options' }).click()
-  await page.getByRole('menuitem', { name: 'Squash topic into main' }).click()
+  await pickFromSubmenu(page, 'Merge options', 'Squash topic into main')
   await expect(page.getByTestId('commit-summary')).toHaveValue(/Squashed commit/)
   await expect(page.getByTestId('staged-file')).toHaveCount(1)
   await app.close()
