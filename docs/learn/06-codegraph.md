@@ -7,7 +7,8 @@
 **Tests:** `packages/codegraph/src/extract.test.ts`, `store.test.ts`, `packages/git/src/codeindex.test.ts`,
 `codegraph.test.ts` (`pnpm test packages/codegraph packages/git/src/code`)
 **Used by:** Code Peek (Ctrl/Cmd+click a name in a diff), Impact ("What could this affect?"),
-and the AI's context for review, walkthrough and ask. Decision record: `docs/adr/008-code-graph.md`.
+and the AI's context for review, walkthrough and ask (`Repo.codeContext`, spec 008).
+Decision record: `docs/adr/008-code-graph.md`.
 
 ## The idea in one paragraph
 
@@ -45,6 +46,22 @@ status (`indexing` with progress, `ready`) and Peek and Impact wait for it.
 - A `reference.call` for `k` shows up in Ruby for a method parameter. Why can a tags query not
   tell a local variable from a method call there, and would you fix it?
 
+## The graph as the AI's eyes (spec 008)
+
+`Repo.codeContext` (repo.ts) and `renderCodeContext` (codecontext.ts) turn the graph into the
+"environment" part of a review prompt. Three things to notice:
+
+- `definitionsOf(path, text)` needs no tree and no git call: a blob id is just
+  `sha1("blob <size>\0" + text)` (`blobId`), and the graph is keyed by blob id. Any text the
+  indexer has ever parsed is found, whichever revision it came from.
+- "Which names do the added lines use?" is `referencesIn(blob)` filtered to the added line
+  numbers. No regex: a word in a comment or a string is not a reference, and a name with no
+  definition in the repository (a built-in, a library) disappears when `definitions()` finds
+  nothing.
+- The renderer has a budget and a priority order, and shrinks a block before dropping it.
+  Compare the text with and without the graph in `codecontext.test.ts`: the README's sentence
+  "Call total to add things up" is a use in one and not the other.
+
 ## Extensions
 
 - Add a language: a `grammars.json` entry (the npm grammar package with its `.wasm` and
@@ -52,5 +69,9 @@ status (`indexing` with progress, `ready`) and Peek and Impact wait for it.
   package ships no tags query, write one in `packages/codegraph/queries/` (Kotlin is the
   example) and check its node names against the package's `src/node-types.json`.
 - Imports narrow references: `cart.ts` imports `total` from `./price`, so a `total` called in
-  `cart.ts` is the one in `price.ts`. The store has both facts; resolve them.
+  `cart.ts` is the one in `price.ts`. The store has both facts; resolve them. `codeContext`
+  would then stop listing a same-named method of another class as a use.
+- Check the model with the graph: a review finding that says a definition is unused while
+  `references()` finds uses is wrong. Drop or downgrade such findings in `verifyFindings`
+  before they are shown (spec 008, next steps).
 - Swift has no prebuilt WASM yet. Build one with `tree-sitter build --wasm` and add it.

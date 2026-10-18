@@ -67,6 +67,12 @@ export function ReviewView({ view }: { view: RepoView }) {
             {result.context.pathInstructions.length ? ` · path instructions for ${result.context.pathInstructions.join(', ')}` : ''}
             {` · ${result.context.learnings} learning${result.context.learnings === 1 ? '' : 's'} · `}
             <button className="text-accent hover:underline" onClick={() => useStore.setState({ dialog: { kind: 'learnings', repoId: view.id } })}>Manage learnings</button>
+            {result.context.commits ? ` · ${result.context.commits} commit message${result.context.commits === 1 ? '' : 's'}` : ''}
+            {result.context.code && (
+              <span data-testid="review-code-context" title={result.context.code.source === 'graph' ? 'Parsed by the code graph' : 'The code graph was not ready: line patterns and text search were used'}>
+                {` · ${result.context.code.source === 'graph' ? 'code graph' : 'code (no graph yet)'}: ${result.context.code.symbols} changed definition${result.context.code.symbols === 1 ? '' : 's'}, ${result.context.code.uses} use${result.context.code.uses === 1 ? '' : 's'} outside, ${result.context.code.used} definition${result.context.code.used === 1 ? '' : 's'} used, ${result.context.code.tests} test file${result.context.code.tests === 1 ? '' : 's'}${result.context.code.truncated ? ' (cut for size)' : ''}`}
+              </span>
+            )}
             {result.context.linters?.map((l) => (
               <span key={l.command} data-testid="review-linter">
                 {` · ${l.name} `}
