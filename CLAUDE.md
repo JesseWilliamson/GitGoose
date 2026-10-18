@@ -16,12 +16,16 @@ explanations. `docs/learn/` holds exercises for the four pieces he plans to own.
 apps/desktop/          Electron app (electron-vite)
   src/main/            main process: window, IPC router (ipc.ts), RepoManager + file watcher, settings, menu,
                        avatars, github/ (device-flow sign-in; the only code that holds a token),
-                       ai/ (ACP client for the user's agent, Anthropic API fallback)
+                       ai/ (ACP client for the user's agent, Anthropic API fallback),
+                       codegraph.ts + indexer.ts (the code graph service and its utility process, ADR-008)
   src/preload/         the only bridge: builds window.gitgoose from API_METHODS
   src/renderer/src/    React UI: lib/store.ts (zustand + log data), lib/actions.ts (every user action), components/
   e2e/                 Playwright tests that launch the real app (+ fake-agent.mjs, a scripted ACP agent)
 packages/shared/       IPC contract (api.ts), data types, pure conflict-marker parser
-packages/git/          everything that runs git: runner, parsers, LogStream, CatFile, patch builder, undo, askpass, Repo
+packages/git/          everything that runs git: runner, parsers, LogStream, CatFile, patch builder, undo, askpass, Repo,
+                       CodeIndexer (builds the code graph per blob id)
+packages/codegraph/    tree-sitter parsing (official WASM grammars + tags queries) and the SQLite graph store;
+                       the package root is browser-safe, Node-only parts are under `@gitgoose/codegraph/node`
 packages/graph/        lane layout. Pure, zero dependencies.
 tools/fixtures/        deterministic test repositories (+ fast-import generator for big ones)
 tools/bench/           performance benchmark with budgets

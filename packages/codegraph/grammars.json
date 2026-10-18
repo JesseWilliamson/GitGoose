@@ -1,0 +1,82 @@
+{
+  "typescript": {
+    "wasm": "tree-sitter-typescript/tree-sitter-typescript.wasm",
+    "queries": [
+      "tree-sitter-javascript/queries/tags.scm",
+      "tree-sitter-typescript/queries/tags.scm"
+    ]
+  },
+  "tsx": {
+    "wasm": "tree-sitter-typescript/tree-sitter-tsx.wasm",
+    "queries": [
+      "tree-sitter-javascript/queries/tags.scm",
+      "tree-sitter-typescript/queries/tags.scm"
+    ]
+  },
+  "javascript": {
+    "wasm": "tree-sitter-javascript/tree-sitter-javascript.wasm",
+    "queries": [
+      "tree-sitter-javascript/queries/tags.scm"
+    ]
+  },
+  "python": {
+    "wasm": "tree-sitter-python/tree-sitter-python.wasm",
+    "queries": [
+      "tree-sitter-python/queries/tags.scm"
+    ]
+  },
+  "go": {
+    "wasm": "tree-sitter-go/tree-sitter-go.wasm",
+    "queries": [
+      "tree-sitter-go/queries/tags.scm"
+    ]
+  },
+  "rust": {
+    "wasm": "tree-sitter-rust/tree-sitter-rust.wasm",
+    "queries": [
+      "tree-sitter-rust/queries/tags.scm"
+    ]
+  },
+  "java": {
+    "wasm": "tree-sitter-java/tree-sitter-java.wasm",
+    "queries": [
+      "tree-sitter-java/queries/tags.scm"
+    ]
+  },
+  "kotlin": {
+    "wasm": "@tree-sitter-grammars/tree-sitter-kotlin/tree-sitter-kotlin.wasm",
+    "queries": [
+      "@gitgoose/codegraph/queries/kotlin.scm"
+    ]
+  },
+  "c_sharp": {
+    "wasm": "tree-sitter-c-sharp/tree-sitter-c_sharp.wasm",
+    "queries": [
+      "tree-sitter-c-sharp/queries/tags.scm"
+    ]
+  },
+  "c": {
+    "wasm": "tree-sitter-c/tree-sitter-c.wasm",
+    "queries": [
+      "tree-sitter-c/queries/tags.scm"
+    ]
+  },
+  "cpp": {
+    "wasm": "tree-sitter-cpp/tree-sitter-cpp.wasm",
+    "queries": [
+      "tree-sitter-cpp/queries/tags.scm"
+    ]
+  },
+  "ruby": {
+    "wasm": "tree-sitter-ruby/tree-sitter-ruby.wasm",
+    "queries": [
+      "tree-sitter-ruby/queries/tags.scm"
+    ]
+  },
+  "php": {
+    "wasm": "tree-sitter-php/tree-sitter-php.wasm",
+    "queries": [
+      "tree-sitter-php/queries/tags.scm"
+    ]
+  }
+}

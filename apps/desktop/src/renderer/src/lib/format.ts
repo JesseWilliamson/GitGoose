@@ -96,6 +96,18 @@ export function sameMonth(a: number, b: number): boolean {
 }
 
 /**
+ * Who wrote a commit, GitHub-style: the author, then the co-authors from its trailers. One or
+ * two are named ("Ada Lovelace and Grace Hopper"); more are counted, since the row has one line
+ * for the name and the pills ("Ada Lovelace and 3 others").
+ */
+export function authorLine(author: string, coAuthors: readonly { name: string }[] = []): string {
+  const names = coAuthors.map((p) => p.name)
+  if (!names.length) return author
+  if (names.length > 2) return `${author} and ${names.length} others`
+  return [author, ...names.slice(0, -1)].join(', ') + ` and ${names[names.length - 1]}`
+}
+
+/**
  * A stash's message for display: a message the user typed loses git's "On main: " prefix; an
  * automatic one ("WIP on main: abc123 subject") keeps it, since it is the only description.
  */

@@ -7,10 +7,10 @@ import { ContextMenu } from 'radix-ui'
 import { memo, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { bisectMark, bisectReset, checkout, moveCommits, showAllInGraph, squashOnto } from '../lib/actions'
 import { avatarSrc, useAvatarVariant } from '../lib/avatar'
-import { formatDate, laneColor, monthLabel, sameMonth, shortHash, stashLabel } from '../lib/format'
+import { authorLine, formatDate, laneColor, monthLabel, sameMonth, shortHash, stashLabel } from '../lib/format'
 import { ensureLoaded, getLog, loadMore, selectCommit, selectedHashes, selectionCursor, updateRepo, useSetting, useStore, type LogData, type RepoView } from '../lib/store'
-import { Avatar } from './Avatar'
-import { cellWidth, GraphCell, HEADER_H, LANE_W, ROW_H, ROW_H_COMPACT, WipCell } from './GraphCell'
+import { AvatarStack, type StackedAuthor } from './Avatar'
+import { cellWidth, GraphCell, HEADER_H, ROW_H, ROW_H_COMPACT, WipCell } from './GraphCell'
 import { GraphMenu } from './menus'
 import { Spinner } from './ui'
 
@@ -318,7 +318,12 @@ const CommitRow = memo(function CommitRow(props: {
 }) {
   const { commit, row, repoId, look } = props
   const compact = look.rowH < ROW_H
-  const src = avatarSrc(commit.authorEmail, look.avatars, look.avatarVariant)
+  /** The author, then any co-authors from the commit's trailers: one avatar each, stacked. */
+  const people = useMemo<StackedAuthor[]>(
+    () => [{ name: commit.authorName, email: commit.authorEmail }, ...(commit.coAuthors ?? [])]
+      .map((p) => ({ ...p, src: avatarSrc(p.email, look.avatars, look.avatarVariant) })),
+    [commit.authorName, commit.authorEmail, commit.coAuthors, look.avatars, look.avatarVariant],
+  )
   const [dropping, setDropping] = useState(false)
   /**
    * Where dragged commits would land: just above (newer than) this one, just below it, or onto
@@ -396,6 +401,9 @@ const CommitRow = memo(function CommitRow(props: {
     </>
   )
   const subject = props.stash ? stashLabel(props.stash.message) : commit.subject
+  // "Ada Lovelace and Grace Hopper" on the line, everyone with their address in the tooltip.
+  const authors = authorLine(commit.authorName, commit.coAuthors)
+  const authorsTitle = commit.coAuthors ? people.map((p) => `${p.name} <${p.email}>`).join('\n') : undefined
 
   return (
     <div
@@ -433,9 +441,11 @@ const CommitRow = memo(function CommitRow(props: {
         style={{ left: cellW - 2, top: header + 2, bottom: 2, ...(props.selected ? { background: `color-mix(in srgb, ${lane} 22%, var(--gs-bg))` } : {}) }}
         data-testid="row-tint"
       />
+      {/* Centred across the row, not tucked against the lanes: the heading then sits in the gap
+          above the row's own text and clear of the lines running up the left. */}
       {props.month && (
-        <div className="pointer-events-none absolute top-0 flex items-end pb-1 text-[11px] font-semibold tracking-wider text-faint uppercase"
-          style={{ left: cellWidth(0) + 4, height: HEADER_H }} data-testid="month-header">
+        <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-center text-[11px] font-semibold tracking-wider text-faint uppercase"
+          style={{ height: HEADER_H }} data-testid="month-header">
           {props.month}
         </div>
       )}
@@ -446,19 +456,19 @@ const CommitRow = memo(function CommitRow(props: {
         data-testid="row-body"
       >
         <span data-testid="row-avatar" className="flex shrink-0">
-          <Avatar name={commit.authorName} email={commit.authorEmail} src={src} size={compact ? AVATAR_COMPACT : AVATAR} />
+          <AvatarStack people={people} size={compact ? AVATAR_COMPACT : AVATAR} max={compact ? 2 : 3} />
         </span>
         {compact ? (
           <>
             <span className="flex min-w-0 shrink-0 items-center gap-1">{marks}</span>
             <span className={clsx('min-w-0 flex-1 truncate', props.stash && 'text-muted italic')}>{subject}</span>
-            <span className="max-w-32 shrink-0 truncate text-[12px] text-muted" data-testid="row-author">{commit.authorName}</span>
+            <span className="max-w-40 shrink-0 truncate text-[12px] text-muted" data-testid="row-author" title={authorsTitle}>{authors}</span>
             <span className="shrink-0 text-[12px] text-faint" data-testid="row-date">{formatDate(commit.authorDate, look.dateFormat)}</span>
           </>
         ) : (
           <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
             <div className="flex min-w-0 items-center gap-1.5 text-[12px] leading-4">
-              <span className="min-w-0 max-w-48 shrink truncate text-muted" data-testid="row-author">{commit.authorName}</span>
+              <span className="min-w-0 max-w-64 shrink truncate text-muted" data-testid="row-author" title={authorsTitle}>{authors}</span>
               {marks}
               <span className="min-w-0 flex-1" />
               <span className="shrink-0 text-faint" data-testid="row-date">{formatDate(commit.authorDate, look.dateFormat)}</span>

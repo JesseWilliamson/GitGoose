@@ -71,6 +71,24 @@ test('Ctrl+F is the omni search; a commit result selects it, and there is no sec
   await app.close()
 })
 
+test('a co-authored commit stacks the avatars and names everyone on the row', async () => {
+  const r = makeFixture('linear')
+  r.commit('Pair work\n\nCo-authored-by: Grace Hopper <grace@example.com>\nCo-authored-by: Alan Turing <alan@example.com>')
+  const { app, page } = await launch(r.dir)
+  const row = page.getByTestId('commit-row').filter({ hasText: 'Pair work' }).first()
+  await expect(row.getByTestId('row-author')).toHaveText('Ada Lovelace, Grace Hopper and Alan Turing')
+  // One avatar each, the author's first: initials show while (or instead of) the images load.
+  const stack = row.getByTestId('row-avatar')
+  await expect(stack.getByTitle('Ada Lovelace <ada@example.com>')).toBeVisible()
+  await expect(stack.getByTitle('Grace Hopper <grace@example.com>')).toBeVisible()
+  await expect(stack.getByTitle('Alan Turing <alan@example.com>')).toBeVisible()
+  // A commit with one author is unchanged: one avatar, the name on its own.
+  const plain = page.getByTestId('commit-row').filter({ hasText: 'Commit 4' }).first()
+  await expect(plain.getByTestId('row-author')).toHaveText('Ada Lovelace')
+  await expect(plain.getByTestId('row-avatar').locator('[title]')).toHaveCount(1)
+  await app.close()
+})
+
 test('Tower look: two-line rows beside hollow nodes, text indented by the lanes, month headings', async () => {
   const r = makeFixture('linear')
   for (let i = 0; i < 12; i++) {
@@ -98,11 +116,12 @@ test('Tower look: two-line rows beside hollow nodes, text indented by the lanes,
   await expect(head.locator('[data-testid="commit-node"] circle').last()).toHaveAttribute('cy', String(26 + 26))
   // Nodes are hollow: the page colour inside, the lane colour as the ring.
   await expect(plain.locator('[data-testid="commit-node"] circle').last()).toHaveAttribute('fill', 'var(--gs-bg)')
-  // Thirteen lanes where the text moves aside for eight: the far nodes stay visible at the edge, faded.
+  // Thirteen lanes where the text moves aside for twelve: a node past the last lane is left out
+  // rather than pinned at the edge, where it would sit on another branch's line.
   const far = page.locator('[data-testid="commit-row"] svg[data-offscreen]').first()
   await expect(far).toBeVisible()
-  await expect(far.locator('g[opacity="0.45"] [data-testid="commit-node"]')).toHaveCount(1)
-  // Text starts further right where more lanes are open: cellWidth(lanes) = 6 + min(8, max(2, lanes)) * 24.
+  await expect(far.locator('[data-testid="commit-node"]')).toHaveCount(0)
+  // Text starts further right where more lanes are open: cellWidth(lanes) = 6 + min(12, max(2, lanes)) * 24.
   const busy = page.getByTestId('commit-row').filter({ hasText: 'work on b0' })
   const quiet = page.getByTestId('commit-row').filter({ hasText: 'Commit 1' })
   expect((await busy.getByTestId('row-body').boundingBox())!.x).toBeGreaterThan((await quiet.getByTestId('row-body').boundingBox())!.x + 100)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { hashColor, sameMonth } from './format'
+import { authorLine, hashColor, sameMonth } from './format'
 
 describe('hashColor', () => {
   it('gives different people different colours', () => {
@@ -25,5 +25,19 @@ describe('sameMonth', () => {
     expect(sameMonth(mar1, mar31)).toBe(true)
     expect(sameMonth(mar31, apr1)).toBe(false)
     expect(sameMonth(mar1, new Date(2025, 2, 1).getTime() / 1000)).toBe(false)
+  })
+})
+
+describe('authorLine', () => {
+  const people = [{ name: 'Grace Hopper' }, { name: 'Alan Turing' }, { name: 'Bob' }]
+  it('is just the author when nobody else wrote the commit', () => {
+    expect(authorLine('Ada Lovelace')).toBe('Ada Lovelace')
+    expect(authorLine('Ada Lovelace', [])).toBe('Ada Lovelace')
+  })
+
+  it('names one or two co-authors and counts more', () => {
+    expect(authorLine('Ada Lovelace', people.slice(0, 1))).toBe('Ada Lovelace and Grace Hopper')
+    expect(authorLine('Ada Lovelace', people.slice(0, 2))).toBe('Ada Lovelace, Grace Hopper and Alan Turing')
+    expect(authorLine('Ada Lovelace', people)).toBe('Ada Lovelace and 3 others')
   })
 })

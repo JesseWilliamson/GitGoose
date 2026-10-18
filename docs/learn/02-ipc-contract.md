@@ -20,8 +20,9 @@ channel. Three compile-time links keep them in sync:
 - Trace one call, `api.stagePaths(id, ['a.txt'])`, from a click in `DetailPanel.tsx` through
   preload, `registerIpc`, `Repo.stagePaths`, and back. Why does the result come back as
   `{ ok, value | error }` instead of throwing?
-- Why is the refresh after a write done in `registerIpc`'s `finally`, rather than relying on the
-  file watcher?
+- Why does `registerIpc` run a write through `repos.during`, which holds the file watcher back
+  and refreshes once afterwards, rather than relying on the watcher alone? What would the graph
+  show during a rebase of five commits without it?
 
 ## Do it: add `remotes()`
 

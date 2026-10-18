@@ -1,5 +1,5 @@
 import type {
-  BlameLine, ChangedFile, ChangeInsights, CodePeek, CommandRecord, GraphFilter, ImageSide, LfsInfo, LfsLock, Identity, Person, Commit, CommitDetails, CommitSummary, ConflictFile, DiffTarget, FileDiff, RepoSnapshot,
+  BlameLine, ChangedFile, ChangeInsights, CodeGraphStatus, CodePeek, CommandRecord, GraphFilter, ImageSide, LfsInfo, LfsLock, Identity, Person, Commit, CommitDetails, CommitSummary, ConflictFile, DiffTarget, FileDiff, RepoSnapshot,
   ReflogEntry, Remote, SearchField, Submodule, Worktree, StashEntry, UndoEntry,
 } from './index'
 import type { AgentInfo, AiPermissionRequest, AiResult, AiRunOptions, AiStatus, AiTask, AskThread, ImpactResult, LinterInfo, PushCheck, PushCheckPlan, ReviewLearning, ReviewScope } from './ai'
@@ -182,6 +182,10 @@ export interface GitGooseApi {
   changeInsights(repoId: string): Promise<ChangeInsights>
   /** Where an identifier is defined and used, at `rev` (null: the working tree). */
   codePeek(repoId: string, name: string, rev: string | null): Promise<CodePeek>
+  /** The code graph's state now; changes arrive as `codegraph` events. */
+  codeGraphStatus(repoId: string): Promise<CodeGraphStatus>
+  /** Throw the graph away and parse the repository again. */
+  reindexCode(repoId: string): Promise<void>
   lfsInfo(repoId: string): Promise<LfsInfo>
   lfsInstall(repoId: string): Promise<void>
   /** Track (or stop tracking) a pattern with LFS: edits .gitattributes, undoable. */
@@ -321,7 +325,7 @@ export const API_METHODS = [
   'aiStatus', 'aiConsent', 'aiRun', 'aiCancel', 'aiRespondPermission', 'aiAgentInfo', 'aiAuthenticate', 'aiSetApiKey',
   'snapshot', 'logPage', 'commitDetails', 'diff', 'fileHistory', 'blame', 'search', 'searchCommits', 'listFiles', 'stashList', 'reflog', 'setGraphFilter', 'submodules', 'updateSubmodules', 'syncSubmodules', 'addSubmodule', 'removeSubmodule', 'worktrees', 'addWorktree', 'removeWorktree', 'lockWorktree', 'pruneWorktrees',
   'lastCommitMessage',
-  'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'codePeek', 'impact', 'askThreads', 'saveAskThread', 'deleteAskThread', 'reviewLearnings', 'setReviewLearnings', 'linters', 'decideLinter', 'pushCheckPlan', 'pushCheckRules', 'setPushChecks', 'changeInsights', 'applySuggestion', 'writeFileChecked', 'workingText', 'lfsInfo', 'lfsInstall', 'lfsTrack', 'lfsPull', 'lfsLocks', 'lfsLock', 'commandLog', 'bisectMark', 'bisectReset', 'identity', 'setIdentity', 'commitTemplate', 'recentAuthors',
+  'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'codePeek', 'codeGraphStatus', 'reindexCode', 'impact', 'askThreads', 'saveAskThread', 'deleteAskThread', 'reviewLearnings', 'setReviewLearnings', 'linters', 'decideLinter', 'pushCheckPlan', 'pushCheckRules', 'setPushChecks', 'changeInsights', 'applySuggestion', 'writeFileChecked', 'workingText', 'lfsInfo', 'lfsInstall', 'lfsTrack', 'lfsPull', 'lfsLocks', 'lfsLock', 'commandLog', 'bisectMark', 'bisectReset', 'identity', 'setIdentity', 'commitTemplate', 'recentAuthors',
   'checkout', 'createBranch', 'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset',
   'cherryPick', 'cherryPickMany', 'commitsText', 'recomposeApply', 'compareFiles', 'mergeBase', 'restoreFile', 'diffTool', 'mergeTool', 'imagePair', 'savePatches', 'pickPatch', 'applyPatch', 'openFileAt', 'saveFileAt', 'editableCommits', 'dropCommits', 'moveCommits', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'preparedMessage', 'redo', 'redoList', 'revert', 'createTag', 'deleteTag',
   'fetch', 'pull', 'push', 'deleteRemoteBranch', 'remotes', 'addRemote', 'removeRemote', 'renameRemote', 'setRemoteUrl',
@@ -344,6 +348,8 @@ export type GitGooseEvent =
   | { type: 'worktree'; repoId: string }
   | { type: 'prompt'; promptId: number; repoId: string | null; message: string; secret: boolean }
   | { type: 'progress'; repoId: string; text: string | null }
+  /** The code graph's state changed (indexing progress, ready, failed). */
+  | { type: 'codegraph'; repoId: string; status: CodeGraphStatus }
   | { type: 'command'; name: string }
   /** Settings changed (from any window, or main): every window re-applies theme, fonts, scale. */
   | { type: 'settings'; settings: Settings }
