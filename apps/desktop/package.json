@@ -4,10 +4,10 @@
   "private": true,
   "description": "A fast git client with a GitKraken-style graph",
   "author": "Jesse Williamson",
-  "homepage": "https://github.com/JesseWilliamson/GitSquidElectron",
+  "homepage": "https://github.com/JesseWilliamson/GitGoose",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/JesseWilliamson/GitSquidElectron.git"
+    "url": "git+https://github.com/JesseWilliamson/GitGoose.git"
   },
   "desktopName": "gitgoose.desktop",
   "type": "module",
@@ -18,7 +18,8 @@
     "preview": "electron-vite preview",
     "typecheck": "tsc -p tsconfig.node.json && tsc -p tsconfig.web.json",
     "e2e": "electron-vite build && playwright test",
-    "dist": "electron-vite build && node scripts/grammars.mjs && electron-builder"
+    "build:dist": "electron-vite build && node scripts/grammars.mjs",
+    "dist": "pnpm build:dist && electron-builder"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.9.0",
