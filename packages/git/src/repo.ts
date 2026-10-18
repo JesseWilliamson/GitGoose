@@ -5,11 +5,13 @@ import type {
 } from '@gitgoose/shared'
 import { countConflicts } from '@gitgoose/shared'
 import { existsSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { lstat, readFile, realpath, rm, writeFile, chmod, mkdir } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { enclosingDefinition, findDefinitions, NOT_NAMES, parseGrep, type Definition } from '@gitgoose/codegraph'
 import type { GraphStore } from '@gitgoose/codegraph/node'
+import type { CodeContext } from '@gitgoose/shared'
 import { parseBlame } from './blame'
 import { coChanges, oldRanges, parseFilesPerCommit } from './insights'
 import { changedSymbols, isTestPath, testsByName } from './impact'
@@ -937,19 +939,27 @@ export class Repo {
     return r.code === 0 ? r.stdout : null
   }
 
-  /** Definitions in a file, cached by its blob id (hash-object for working-tree files). */
+  /** Definitions in a file, cached by its blob id. */
   async definitionsIn(rev: string | null, path: string): Promise<{ defs: Definition[]; text: string } | null> {
     const text = await this.textAt(rev, path)
     if (text === null) return null
-    const id = (await this.runner.run(['hash-object', '--stdin'], { readOnly: true, input: text })).stdout.trim()
+    return { defs: this.definitionsOf(path, text), text }
+  }
+
+  /**
+   * Definitions of a file's text: parsed by the graph when it has that content, line patterns
+   * otherwise. The graph is keyed by blob id, and a blob id is only a hash of the text, so no
+   * git call and no tree lookup is needed; any text the graph has seen, at any revision, is found.
+   */
+  definitionsOf(path: string, text: string): Definition[] {
+    const id = blobId(text)
     let defs = this.defsCache.get(id)
     if (!defs) {
-      // Parsed definitions from the graph when it has this content; line patterns otherwise.
       defs = this.graph?.knownBlobs([id]).has(id) ? this.graph.symbolsIn(id) : findDefinitions(path, text)
       if (this.defsCache.size > 5000) this.defsCache.clear()
       this.defsCache.set(id, defs)
     }
-    return { defs, text }
+    return defs
   }
 
   /**
@@ -1094,7 +1104,7 @@ export class Repo {
     return { head, base, label, commits: commits.map(({ hash, subject, body }) => ({ hash, subject, body })) }
   }
 
-  async reviewInput(scope: ReviewScope, budget = 60_000): Promise<{ files: FileDiff[]; label: string; head: string; base?: string; texts: Map<string, string>; skipped: string[] }> {
+  async reviewInput(scope: ReviewScope, budget = 60_000): Promise<ReviewInput> {
     const NOISE = [':(exclude,glob)**/pnpm-lock.yaml', ':(exclude,glob)**/package-lock.json', ':(exclude,glob)**/yarn.lock', ':(exclude,glob)**/*.lock', ':(exclude,glob)**/*.min.js']
     const diffOf = async (args: string[]) => parseDiff((await this.runner.run(['diff', '-M', '--no-color', '--no-ext-diff', '-U3', ...args, '--', '.', ...NOISE], { readOnly: true, env: { GIT_LITERAL_PATHSPECS: '0' } })).stdout)
     let files: FileDiff[]
@@ -1252,48 +1262,19 @@ export class Repo {
       const t = await this.textAt(baseRev, f.oldPath ?? f.path)
       if (t !== null) before.set(f.oldPath ?? f.path, t)
     }
-    const symbols = changedSymbols(input.files, (p) => input.texts.get(p) ?? null, (p) => before.get(p) ?? null).slice(0, 40)
+    const symbols = changedSymbols(input.files, (p) => input.texts.get(p) ?? null, (p) => before.get(p) ?? null, (p, t) => this.definitionsOf(p, t)).slice(0, 40)
     // Lines that are part of the change: uses there are not "outside".
-    const inChange = new Map<string, Set<number>>()
-    for (const f of input.files) {
-      const set = new Set<number>()
-      for (const h of f.hunks) for (const l of h.lines) if (l.newNo !== undefined && l.kind === '+') set.add(l.newNo)
-      inChange.set(f.path, set)
-    }
-    const listed = rev === null
-      ? await this.read(['ls-files', '-z', '--cached', '--others', '--exclude-standard'])
-      : rev === '' ? await this.read(['ls-files', '-z']) : await this.read(['ls-tree', '-r', '-z', '--name-only', rev])
-    const allPaths = listed.split('\0').filter(Boolean)
+    const inChange = addedLineNumbers(input.files)
+    const allPaths = await this.listPaths(rev)
     const callers: ImpactResult['callers'] = []
     const names = [...new Set(symbols.map((s) => s.name))].slice(0, 15)
     const g = await this.graphFor(rev)
+    const linesOf = this.lineReader(rev, input.texts)
+    const defLines = new Set(symbols.map((s) => `${s.path}:${s.line}`))
     for (const name of names) {
       if (callers.length >= 80) break
-      const defLines = new Set(symbols.filter((s) => s.name === name).map((s) => `${s.path}:${s.line}`))
-      if (g) {
-        // Parsed uses: calls, type uses, imports. A word in a comment or a string is not one.
-        let n = 0
-        for (const u of g.store.references(name, g.key, 200)) {
-          if (n >= 15 || callers.length >= 80) break
-          if (inChange.get(u.path)?.has(u.line) || defLines.has(`${u.path}:${u.line}`)) continue
-          const text = ((input.texts.get(u.path) ?? (await this.textAt(rev, u.path)) ?? '').split(/\r?\n/)[u.line - 1] ?? '').trim().slice(0, 240)
-          callers.push({ id: `C${callers.length + 1}`, symbol: name, path: u.path, line: u.line, text, within: u.within, test: isTestPath(u.path) })
-          n++
-        }
-        continue
-      }
-      const where = rev === null ? [] : rev === '' ? ['--cached'] : [rev]
-      const out = await this.runner.run(['grep', '-n', '-z', '--column', '-w', '-I', '-F', '--max-count=20', '-e', name, ...where, '--'], { readOnly: true, okCodes: [1] })
-      let n = 0
-      for (const h of parseGrep(out.stdout, rev || undefined)) {
-        if (n >= 15 || callers.length >= 80) break
-        if (inChange.get(h.path)?.has(h.line) || defLines.has(`${h.path}:${h.line}`)) continue
-        const defs = (await this.definitionsIn(rev, h.path))?.defs ?? []
-        // A line that defines the name (an overload, a re-export) is not a use of it.
-        if (defs.some((d) => d.name === name && d.line === h.line)) continue
-        const d = enclosingDefinition(defs, h.line)
-        callers.push({ id: `C${callers.length + 1}`, symbol: name, path: h.path, line: h.line, text: h.text.trim().slice(0, 240), within: d ? `${d.kind} ${d.name}` : undefined, test: isTestPath(h.path) })
-        n++
+      for (const u of (await this.usesOf(name, rev, g, { inChange, defLines, linesOf, limit: 15 })).slice(0, 80 - callers.length)) {
+        callers.push({ id: `C${callers.length + 1}`, symbol: name, ...u })
       }
     }
     const changedPaths = input.files.map((f) => f.path)
@@ -1307,6 +1288,175 @@ export class Repo {
       for (const c of coChanges(file, parseFilesPerCommit(log))) if (!changedPaths.includes(c.path) && !coChange.some((x) => x.path === c.path)) coChange.push(c)
     }
     return { scope, label: input.label, head: input.head, base: input.base, symbols, callers, tests, coChange: coChange.slice(0, 6) }
+  }
+
+  // ---------------------------------------------------------------- code context (what the AI is told besides the diff)
+
+  /**
+   * What the code graph knows around a change (see CodeContext): the definitions it touches and
+   * their uses outside it, the definitions of names its added lines use, and the tests that
+   * cover it. Local and deterministic; the model only reads the result. With the graph not ready
+   * for this revision, line patterns and git grep answer less precisely (a mention in a comment
+   * counts as a use) but a review never waits for an index.
+   *
+   * Everything is bounded: `limits.symbols` definitions ranked by how many added lines they
+   * carry, `limits.callers` sample uses each (non-test first), `limits.used` definitions of
+   * used names ranked by how often the added lines use them.
+   */
+  async codeContext(input: ReviewInput, limits = { symbols: 20, callers: 6, used: 12 }): Promise<CodeContext> {
+    const rev = revOf(input.head)
+    const g = await this.graphFor(rev)
+    const defsOf = (p: string, t: string) => this.definitionsOf(p, t)
+    const before = new Map<string, string>()
+    for (const f of input.files) {
+      if (f.change === 'added' || f.binary) continue
+      const t = await this.textAt(input.base ?? 'HEAD', f.oldPath ?? f.path)
+      if (t !== null) before.set(f.oldPath ?? f.path, t)
+    }
+    const all = changedSymbols(input.files, (p) => input.texts.get(p) ?? null, (p) => before.get(p) ?? null, defsOf)
+    const inChange = addedLineNumbers(input.files)
+    const changedPaths = new Set(input.files.map((f) => f.path))
+    const defLines = new Set(all.map((s) => `${s.path}:${s.line}`))
+    const linesOf = this.lineReader(rev, input.texts)
+    const testPaths = new Set<string>()
+    const symbols: CodeContext['symbols'] = []
+    for (const s of [...all].sort((a, b) => b.touched - a.touched).slice(0, limits.symbols)) {
+      const uses = await this.usesOf(s.name, rev, g, { inChange, defLines, linesOf, limit: 200 })
+      const tests = uses.filter((u) => u.test)
+      for (const t of tests) testPaths.add(t.path)
+      symbols.push({
+        name: s.name, kind: s.kind, path: s.path, line: s.line, change: s.change, signature: s.signature, ...(s.oldSignature ? { oldSignature: s.oldSignature } : {}),
+        uses: uses.length, testUses: tests.length, callers: [...uses.filter((u) => !u.test), ...tests].slice(0, limits.callers),
+      })
+    }
+    const used = await this.usedDefinitions(input, g, inChange, changedPaths, linesOf, limits.used)
+    const allPaths = await this.listPaths(rev)
+    for (const p of changedPaths) if (!isTestPath(p)) for (const t of testsByName(p, allPaths)) testPaths.add(t)
+    const tests = [...testPaths].sort().map((path) => ({ path, inChange: changedPaths.has(path) }))
+    return { source: g ? 'graph' : 'patterns', symbols, used, tests }
+  }
+
+  /**
+   * Uses of `name` outside the change, as of `rev`: from the graph (calls, type uses, imports:
+   * what the parser saw) or, without it, whole-word matches from git grep minus the lines that
+   * define the name. Lines in the change and the definitions themselves are left out.
+   */
+  private async usesOf(
+    name: string, rev: string | null, g: { store: GraphStore; key: string } | null,
+    opts: { inChange: Map<string, Set<number>>; defLines: Set<string>; linesOf: (path: string) => Promise<string[]>; limit: number },
+  ): Promise<{ path: string; line: number; text: string; within?: string; test: boolean }[]> {
+    const out: { path: string; line: number; text: string; within?: string; test: boolean }[] = []
+    const skip = (path: string, line: number) => opts.inChange.get(path)?.has(line) || opts.defLines.has(`${path}:${line}`)
+    if (g) {
+      for (const u of g.store.references(name, g.key, opts.limit + 50)) {
+        if (out.length >= opts.limit) break
+        if (skip(u.path, u.line)) continue
+        const text = ((await opts.linesOf(u.path))[u.line - 1] ?? '').trim().slice(0, 240)
+        out.push({ path: u.path, line: u.line, text, ...(u.within ? { within: u.within } : {}), test: isTestPath(u.path) })
+      }
+      return out
+    }
+    const where = rev === null ? [] : rev === '' ? ['--cached'] : [rev]
+    const res = await this.runner.run(['grep', '-n', '-z', '--column', '-w', '-I', '-F', '--max-count=20', '-e', name, ...where, '--'], { readOnly: true, okCodes: [1] })
+    for (const h of parseGrep(res.stdout, rev || undefined)) {
+      if (out.length >= opts.limit) break
+      if (skip(h.path, h.line)) continue
+      const defs = (await this.definitionsIn(rev, h.path))?.defs ?? []
+      // A line that defines the name (an overload, a re-export) is not a use of it.
+      if (defs.some((d) => d.name === name && d.line === h.line)) continue
+      const d = enclosingDefinition(defs, h.line)
+      out.push({ path: h.path, line: h.line, text: h.text.trim().slice(0, 240), ...(d ? { within: `${d.kind} ${d.name}` } : {}), test: isTestPath(h.path) })
+    }
+    return out
+  }
+
+  /**
+   * Definitions, outside the change, of the names the added lines use. With the graph: the
+   * references the parser found on those lines (calls, types, constructors), so a word in a
+   * comment or a string is not one, and a name with no definition in the repository (a
+   * built-in, a library) is dropped for free. Without it: identifiers on the added lines, a
+   * few of them, each looked up with git grep.
+   */
+  private async usedDefinitions(
+    input: ReviewInput, g: { store: GraphStore; key: string } | null, inChange: Map<string, Set<number>>, changedPaths: Set<string>,
+    linesOf: (path: string) => Promise<string[]>, limit: number,
+  ): Promise<CodeContext['used']> {
+    const definedHere = new Set<string>()
+    for (const [p, t] of input.texts) for (const d of this.definitionsOf(p, t)) definedHere.add(d.name)
+    const counts = new Map<string, number>()
+    for (const f of input.files) {
+      const text = input.texts.get(f.path)
+      const added = inChange.get(f.path)
+      if (!text || !added?.size) continue
+      if (g) {
+        const id = blobId(text)
+        if (!g.store.knownBlobs([id]).has(id)) continue
+        for (const r of g.store.referencesIn(id)) {
+          if (r.kind === 'import' || !added.has(r.line) || definedHere.has(r.name)) continue
+          counts.set(r.name, (counts.get(r.name) ?? 0) + 1)
+        }
+      } else {
+        const lines = text.split(/\r?\n/)
+        for (const n of added) {
+          const line = lines[n - 1] ?? ''
+          // An import names a thing without using it (the graph skips those too).
+          if (/^\s*(import\b|from\s+\S+\s+import\b|#include\b|use\s+[\w:]+;|(const|let|var)\s+\w+\s*=\s*require\()/.test(line)) continue
+          for (const m of line.matchAll(/[A-Za-z_$][\w$]{2,}/g)) {
+            if (NOT_NAMES.has(m[0]) || KEYWORDS.has(m[0]) || definedHere.has(m[0])) continue
+            counts.set(m[0], (counts.get(m[0]) ?? 0) + 1)
+          }
+        }
+      }
+    }
+    const ranked = [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    const out: CodeContext['used'] = []
+    // Without the graph every lookup is a grep over the repository: a few will do.
+    const lookups = g ? ranked.slice(0, limit * 2) : ranked.slice(0, Math.min(limit, 6))
+    const rev = revOf(input.head)
+    for (const [name, uses] of lookups) {
+      if (out.length >= limit) break
+      let def: { path: string; line: number; endLine: number; kind: string } | undefined
+      if (g) def = g.store.definitions(name, g.key, 5).find((d) => !changedPaths.has(d.path))
+      else def = (await this.codePeek(name, rev).catch(() => null))?.definitions.find((d) => !changedPaths.has(d.path))
+      if (!def) continue
+      const lines = await linesOf(def.path)
+      out.push({ name, kind: def.kind, path: def.path, line: def.line, endLine: def.endLine, preview: lines.slice(def.line - 1, Math.min(def.endLine, def.line + 11)), uses })
+    }
+    return out
+  }
+
+  /** A file's lines as of `rev`, read once; the change's own texts need no read. */
+  private lineReader(rev: string | null, texts: Map<string, string>): (path: string) => Promise<string[]> {
+    const cache = new Map<string, string[]>()
+    return async (path) => {
+      let lines = cache.get(path)
+      if (!lines) {
+        lines = (texts.get(path) ?? (await this.textAt(rev, path)) ?? '').split(/\r?\n/)
+        cache.set(path, lines)
+      }
+      return lines
+    }
+  }
+
+  /** Every path as of `rev` (null: the working tree, untracked included; '': the index). */
+  private async listPaths(rev: string | null): Promise<string[]> {
+    const listed = rev === null
+      ? await this.read(['ls-files', '-z', '--cached', '--others', '--exclude-standard'])
+      : rev === '' ? await this.read(['ls-files', '-z']) : await this.read(['ls-tree', '-r', '-z', '--name-only', rev])
+    return listed.split('\0').filter(Boolean)
+  }
+
+  /**
+   * The messages of the commits a change is made of, newest first: the intent a review reads
+   * alongside the diff. Uncommitted and staged changes have none.
+   */
+  async scopeCommits(input: ReviewInput, max = 20): Promise<{ subject: string; body: string }[]> {
+    if (input.head === 'worktree' || input.head === 'index' || !input.base) return []
+    const out = await this.runner.run(['log', '-z', `-n${max}`, '--format=%s%x1f%b', `${input.base}..${input.head}`], { readOnly: true, okCodes: [128] })
+    return out.stdout.split('\0').filter(Boolean).map((rec) => {
+      const [subject = '', body = ''] = rec.split('\x1f')
+      return { subject: subject.trim(), body: body.trim() }
+    })
   }
 
   /** Recent commits up to `base` that touched these files: the history a reader of the change needs. */
@@ -2680,6 +2830,40 @@ export function parseNumstatPaths(out: string): string[] {
 }
 
 /** Common words in code that are not worth looking up as definitions. */
+/** The input a review, walkthrough or impact works on: what reviewInput returns. */
+export interface ReviewInput {
+  files: FileDiff[]
+  label: string
+  /** The revision line numbers refer to: 'worktree', 'index', or a commit. */
+  head: string
+  base?: string
+  /** Each file's text after the change. */
+  texts: Map<string, string>
+  /** Files in the change but not sent (over the size budget). */
+  skipped: string[]
+}
+
+/** The revision a review head names for textAt / graphFor: null the working tree, '' the index. */
+function revOf(head: string): string | null {
+  return head === 'worktree' ? null : head === 'index' ? '' : head
+}
+
+/** git's id for a blob with this text: SHA-1 of "blob <size>\0" and the bytes. (A SHA-256 repository just misses the lookup.) */
+export function blobId(text: string): string {
+  return createHash('sha1').update(`blob ${Buffer.byteLength(text)}\0`).update(text).digest('hex')
+}
+
+/** New-side line numbers that are added lines, per file: a use there is part of the change, not outside it. */
+function addedLineNumbers(files: FileDiff[]): Map<string, Set<number>> {
+  const out = new Map<string, Set<number>>()
+  for (const f of files) {
+    const set = new Set<number>()
+    for (const h of f.hunks) for (const l of h.lines) if (l.newNo !== undefined && l.kind === '+') set.add(l.newNo)
+    out.set(f.path, set)
+  }
+  return out
+}
+
 const KEYWORDS = new Set(['const', 'let', 'var', 'true', 'false', 'null', 'undefined', 'void', 'number', 'string', 'boolean', 'any', 'unknown', 'never',
   'async', 'export', 'import', 'from', 'default', 'class', 'interface', 'type', 'extends', 'implements', 'public', 'private', 'protected', 'static',
   'self', 'None', 'True', 'False', 'def', 'pass', 'lambda', 'yield', 'func', 'struct', 'impl', 'pub', 'mut', 'let', 'nil', 'end', 'then', 'elif',

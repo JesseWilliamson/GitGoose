@@ -1,4 +1,4 @@
-import { enclosingDefinition, findDefinitions } from '@gitgoose/codegraph'
+import { enclosingDefinition, findDefinitions, type Definition } from '@gitgoose/codegraph'
 import { FINDING_TYPES, SEVERITIES, type FileDiff, type FindingSeverity, type Hunk, type ReviewFinding, type ReviewProfile } from '@gitgoose/shared'
 
 /**
@@ -22,9 +22,9 @@ export function reviewableLines(files: FileDiff[]): ReviewableLines {
 /**
  * The diff as the model reads it: every line that exists after the change carries its new line
  * number, so findings can cite lines exactly; removed lines carry none. Each hunk says which
- * definition it is in, when the file's text is known (codegraph).
+ * definition it is in: parsed by the code graph when it has the file, line patterns otherwise.
  */
-export function numberedDiff(files: FileDiff[], textAfter: (path: string) => string | null): string {
+export function numberedDiff(files: FileDiff[], textAfter: (path: string) => string | null, defsOf: (path: string, text: string) => Definition[] = findDefinitions): string {
   const out: string[] = []
   for (const f of files) {
     if (f.binary) {
@@ -34,7 +34,7 @@ export function numberedDiff(files: FileDiff[], textAfter: (path: string) => str
     const what = f.change === 'added' ? 'new file' : f.change === 'deleted' ? 'deleted' : f.oldPath ? `renamed from ${f.oldPath}` : 'modified'
     out.push(`=== ${f.path} (${what}) ===`)
     const text = f.change === 'deleted' ? null : textAfter(f.path)
-    const defs = text ? findDefinitions(f.path, text) : []
+    const defs = text ? defsOf(f.path, text) : []
     for (const h of f.hunks) {
       const d = enclosingDefinition(defs, h.newStart + Math.min(3, Math.max(0, h.newLines - 1)))
       out.push(`@@ lines ${h.newStart}-${h.newStart + Math.max(0, h.newLines - 1)}${d ? `, in ${d.kind} ${d.name} (lines ${d.line}-${d.endLine})` : ''} @@`)
