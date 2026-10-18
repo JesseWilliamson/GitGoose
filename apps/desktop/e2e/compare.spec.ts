@@ -18,7 +18,7 @@ test('compare two commits, open a file, and see changed words in unified and spl
   const { r, A, C } = setup()
   const { app, page } = await launch(r.dir)
   await row(page, C).click()
-  await row(page, A).click({ modifiers: ['Control'] })
+  await row(page, A).click({ modifiers: ['ControlOrMeta'] })
   await page.getByTestId('multi-compare').click()
   const panel = page.getByTestId('compare-panel')
   await expect(panel).toContainText(A.slice(0, 7))

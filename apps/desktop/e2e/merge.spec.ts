@@ -57,7 +57,7 @@ test('three panes: start from the ancestor, apply all, undo an apply, ignore bot
   await expect(page.getByTestId('conflicts-left')).toHaveText('All conflicts resolved')
   // Undo is the editor's: it reverts the text and the "applied" status together.
   await result(page).click()
-  await page.keyboard.press('Control+z')
+  await page.keyboard.press('ControlOrMeta+z')
   await expect(page.getByTestId('conflicts-left')).toHaveText('1 of 1 conflict left')
   await expect(result(page)).not.toContainText('theirs 14')
   await expect(page.getByTestId('apply-theirs')).toHaveCount(1)

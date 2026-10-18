@@ -9,6 +9,8 @@ const env = { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'protocol.file.allow', GI
 beforeAll(() => Object.assign(process.env, env))
 afterAll(() => { for (const k of Object.keys(env)) delete process.env[k] })
 
+// The Repo runs git with the fixture's environment, so both see the same config (on Windows the
+// system config sets core.autocrlf, which the fixture ignores: checkouts would differ).
 function setup() {
   const lib = initRepo()
   const libHead = lib.commit('lib', { 'lib.txt': 'lib\n' })
@@ -20,7 +22,7 @@ function setup() {
 describe('submodules', () => {
   it('adds one (undo deletes it), reports its state, removes it (undo brings it back)', async () => {
     const { lib, libHead, app } = setup()
-    const repo = await Repo.open(app.dir, {})
+    const repo = await Repo.open(app.dir, { env: app.env() as Record<string, string> })
     expect(await repo.submodules()).toEqual([])
 
     const add = await repo.addSubmodule(lib.dir, 'vendor/lib')
@@ -49,7 +51,7 @@ describe('submodules', () => {
 
   it('initializes submodules of a fresh clone; undo of add refuses once it has new commits', async () => {
     const { lib, libHead, app } = setup()
-    const repo = await Repo.open(app.dir, {})
+    const repo = await Repo.open(app.dir, { env: app.env() as Record<string, string> })
     const add = await repo.addSubmodule(lib.dir, 'lib')
     app.git('-C', 'lib', 'commit', '-q', '--allow-empty', '-m', 'work inside')
     await expect(repo.undo(add)).rejects.toThrow(/new commits or changes/)
@@ -59,7 +61,7 @@ describe('submodules', () => {
     const clone = initRepo()
     clone.git('fetch', '-q', app.dir, 'main')
     clone.git('reset', '-q', '--hard', 'FETCH_HEAD')
-    const c = await Repo.open(clone.dir, {})
+    const c = await Repo.open(clone.dir, { env: clone.env() as Record<string, string> })
     expect((await c.submodules())[0]!.checkedOut).toBeUndefined()
     await c.updateSubmodules()
     expect((await c.submodules())[0]!.checkedOut).toBe(libHead)

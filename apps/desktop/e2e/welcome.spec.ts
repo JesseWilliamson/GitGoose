@@ -1,6 +1,6 @@
 import { makeFixture, tempDir } from '@gitsquid/fixtures'
 import { expect, test, type ElectronApplication } from '@playwright/test'
-import { existsSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { launch } from './app'
 
@@ -17,8 +17,9 @@ test('opens a repository from the welcome screen and lists it as recent', async 
   await pickReturns(app, r.dir)
   await page.getByTestId('welcome').getByRole('button', { name: 'Open' }).click()
   await expect(page.getByTestId('commit-row')).toHaveCount(5)
-  await page.keyboard.press('Control+w')
-  await expect(page.getByTestId('welcome')).toContainText(r.dir)
+  await page.keyboard.press('ControlOrMeta+w')
+  // The path as git reports it, symlinks resolved (the macOS temp folder is one).
+  await expect(page.getByTestId('welcome')).toContainText(realpathSync.native(r.dir))
   await app.close()
 })
 

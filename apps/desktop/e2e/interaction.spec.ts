@@ -48,8 +48,9 @@ test('opens the branch menu when right-clicking a branch pill', async () => {
   await page.getByTestId('dialog-input').fill('feature-2')
   await page.getByTestId('dialog-submit').click()
   await expect(page.locator('[data-testid="ref-pill"][data-ref="refs/heads/feature-2"]')).toBeVisible()
-  // Right-clicking the row itself still gives the commit menu.
-  await page.getByTestId('commit-row').last().click({ button: 'right', position: { x: 600, y: 10 } })
+  // Right-clicking the row itself (its message, away from the pills) still gives the commit menu.
+  const root = r.git('log', '--format=%s', '--max-parents=0', 'HEAD').trim()
+  await page.getByTestId('commit-row').last().getByText(root, { exact: true }).click({ button: 'right' })
   await expect(page.getByRole('menu')).toContainText('Cherry-pick')
   await app.close()
 })

@@ -84,7 +84,7 @@ test('reword a commit; squash it into the one below; undo and redo', async () =>
   await page.getByRole('menuitem', { name: 'Reword…' }).click()
   await expect(page.getByTestId('dialog-text')).toHaveValue('B')
   await page.getByTestId('dialog-text').fill('B, better\n\nWith a reason.')
-  await page.keyboard.press('Control+Enter')
+  await page.keyboard.press('ControlOrMeta+Enter')
   await expect.poll(() => subjects(r)).toEqual(['D', 'C', 'B, better', 'A', 'root'])
 
   const c = r.git('rev-parse', 'HEAD~1').trim()
@@ -101,7 +101,7 @@ test('reword a commit; squash it into the one below; undo and redo', async () =>
   await page.getByTestId('toolbar').getByRole('button', { name: 'Undo' }).click()
   await expect.poll(() => subjects(r)).toEqual(['D', 'C', 'B, better', 'A', 'root'])
   await page.getByTestId('graph-scroll').focus()
-  await page.keyboard.press('Control+Shift+z')
+  await page.keyboard.press('ControlOrMeta+Shift+z')
   await expect.poll(() => r.head()).toBe(squashed)
 
   // And from Edit → Redo in the menu bar.

@@ -29,9 +29,9 @@ test('Ctrl+click a name in a diff to peek at its definition and uses; Esc closes
   await expect(page.getByTestId('diff-lines')).toContainText('total(2, 3)')
 
   const at = await wordPosition(page, 'total')
-  await page.keyboard.down('Control')
+  await page.keyboard.down('ControlOrMeta')
   await page.mouse.click(at.x, at.y)
-  await page.keyboard.up('Control')
+  await page.keyboard.up('ControlOrMeta')
   const peek = page.getByTestId('code-peek')
   await expect(peek).toContainText('total')
   await expect(peek.getByTestId('peek-definition')).toContainText('src/price.ts:1')

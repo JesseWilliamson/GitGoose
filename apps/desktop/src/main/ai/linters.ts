@@ -29,8 +29,12 @@ function readText(path: string): string {
   }
 }
 
-/** What the repository looks set up for. Only tools that are installed: a review should not download anything. */
-export function detectLinters(root: string): Spec[] {
+/**
+ * What the repository looks set up for. Only tools that are installed: a review should not
+ * download anything. `files` are the repository's files (or the reviewed ones): ShellCheck has
+ * no config to look for, so it counts only where there are shell scripts for it to check.
+ */
+export function detectLinters(root: string, files: string[]): Spec[] {
   const out: Spec[] = []
   const pkg = readText(join(root, 'package.json'))
   // ESLint's own script run by node, not the node_modules/.bin shim: on Windows that is a .cmd,
@@ -43,7 +47,8 @@ export function detectLinters(root: string): Spec[] {
   if ((existsSync(join(root, 'ruff.toml')) || existsSync(join(root, '.ruff.toml')) || /^\[tool\.ruff/m.test(pyproject)) && onPath('ruff')) {
     out.push({ name: 'Ruff', command: 'ruff check --output-format concise --no-cache --quiet {files}', extensions: ['.py', '.pyi'], source: 'detected' })
   }
-  if (onPath('shellcheck')) out.push({ name: 'ShellCheck', command: 'shellcheck -f gcc {files}', extensions: ['.sh', '.bash'], source: 'detected' })
+  const shell = existsSync(join(root, '.shellcheckrc')) || files.some((f) => /\.(sh|bash)$/i.test(f))
+  if (shell && onPath('shellcheck')) out.push({ name: 'ShellCheck', command: 'shellcheck -f gcc {files}', extensions: ['.sh', '.bash'], source: 'detected' })
   return out
 }
 
@@ -58,8 +63,8 @@ export function toolName(command: string): string {
 
 export const decisionKey = (root: string, command: string) => `${root}\n${command}`
 
-export function linters(root: string, settings: Settings): LinterInfo[] {
-  const specs = detectLinters(root)
+export function linters(root: string, settings: Settings, files: string[]): LinterInfo[] {
+  const specs = detectLinters(root, files)
   const own = settings.reviewLinter.trim()
   if (own) specs.push({ name: toolName(own), command: own, extensions: null, source: 'settings' })
   return specs.map((s) => {
@@ -115,7 +120,7 @@ export async function lintForReview(
   const runs: LinterRun[] = []
   const report: string[] = []
   const current = paths.filter((p) => texts.has(p) && readText(join(root, p)) === texts.get(p))
-  for (const l of linters(root, settings)) {
+  for (const l of linters(root, settings, current)) {
     const files = current.filter((p) => !l.extensions || l.extensions.some((e) => p.toLowerCase().endsWith(e)))
     if (!files.length) continue
     if (l.decision !== 'allow') {
