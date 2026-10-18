@@ -57,7 +57,7 @@ test('three panes: start from the ancestor, apply all, undo an apply, ignore bot
   await expect(page.getByTestId('conflicts-left')).toHaveText('All conflicts resolved')
   // Undo is the editor's: it reverts the text and the "applied" status together.
   await result(page).click()
-  await page.keyboard.press('Control+z')
+  await page.keyboard.press('ControlOrMeta+z')
   await expect(page.getByTestId('conflicts-left')).toHaveText('1 of 1 conflict left')
   await expect(result(page)).not.toContainText('theirs 14')
   await expect(page.getByTestId('apply-theirs')).toHaveCount(1)
@@ -129,5 +129,31 @@ test('three panes on the dev repository: a renamed file, accept left, edit by ha
   expect(r.git('show', 'HEAD:src/config.ts')).toContain('retries: 2,\n  timeoutMs: 3000,')
   expect(r.git('show', 'HEAD:src/utils/formatting.ts')).toContain('const trimmed = value.trim().replace(/\\s+/g, " ").toLowerCase()\n')
   expect(r.tryGit('cat-file', '-e', 'HEAD:src/utils/format.ts')).not.toBe(0)
+  await app.close()
+})
+
+test('cards: take both sides with theirs first; progress and file tabs follow along', async () => {
+  const { r, file } = mergeRepo()
+  const { app, page } = await launch(r.dir)
+  await expect(page.getByTestId('conflict-progress')).toHaveText('0 of 1 file resolved')
+  // The three-pane view names each side in its own colour.
+  await page.getByTestId('view-three-pane').click()
+  await expect(page.getByTestId('merge-ours-header')).toContainText('Yours (HEAD)')
+  await expect(page.getByTestId('merge-theirs-header')).toContainText('Theirs (other)')
+  await expect(page.getByTestId('merge-theirs-header')).toContainText('1 to decide')
+
+  await page.getByTestId('view-blocks').click()
+  const card = page.getByTestId('conflict-block')
+  await expect(page.getByTestId('save-resolution')).toBeDisabled()
+  // Taking one side, then the other, keeps both: the second one taken goes last.
+  await card.getByTestId('use-theirs').click()
+  await card.getByTestId('use-ours').click()
+  await expect(card).toHaveAttribute('data-choice', 'both-theirs-first')
+  await expect(card.getByTestId('conflict-result')).toContainText('theirs 14ours 14')
+  await page.getByTestId('save-resolution').click()
+  await expect(page.getByTestId('conflict-file')).toHaveCount(0)
+  await expect(page.getByTestId('resolved-file')).toContainText('f.txt')
+  await expect(page.getByTestId('conflict-progress')).toHaveText('All conflicts resolved')
+  expect(r.git('show', ':f.txt')).toBe(file({ 2: 'ours 2', 6: 'theirs 6', 10: 'same 10', 14: 'theirs 14\nours 14' }))
   await app.close()
 })

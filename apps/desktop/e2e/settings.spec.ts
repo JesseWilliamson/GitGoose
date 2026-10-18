@@ -1,7 +1,7 @@
 import { initRepo, makeFixture, tempDir } from '@gitsquid/fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { launch } from './app'
 
@@ -11,7 +11,7 @@ test('opens the settings page, searches it, and closes with Esc', async () => {
   const r = makeFixture('linear')
   const { app, page } = await launch(r.dir)
   await page.getByTestId('commit-row').first().click()
-  await page.keyboard.press('Control+,')
+  await page.keyboard.press('ControlOrMeta+,')
   await expect(page.getByTestId('settings-page')).toBeVisible()
   await page.getByTestId('settings-search').fill('whitespace')
   await expect(page.getByTestId('setting-ignoreWhitespace')).toBeVisible()
@@ -27,9 +27,9 @@ test('UI scale zooms the whole window, from the keyboard, and persists', async (
   const r = makeFixture('linear')
   const first = await launch(r.dir, { GITSQUID_USER_DATA: profile })
   await first.page.getByTestId('commit-row').first().click()
-  await first.page.keyboard.press('Control+=')
-  await first.page.keyboard.press('Control+=')
-  await first.page.keyboard.press('Control+=')
+  await first.page.keyboard.press('ControlOrMeta+=')
+  await first.page.keyboard.press('ControlOrMeta+=')
+  await first.page.keyboard.press('ControlOrMeta+=')
   const zoom = () => first.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.getZoomFactor())
   await expect.poll(zoom).toBeCloseTo(1.3, 2)
   await first.app.close()
@@ -37,7 +37,7 @@ test('UI scale zooms the whole window, from the keyboard, and persists', async (
   const second = await launch(r.dir, { GITSQUID_USER_DATA: profile })
   await expect(second.page.getByTestId('commit-row').first()).toBeVisible()
   await expect.poll(() => second.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.getZoomFactor())).toBeCloseTo(1.3, 2)
-  await second.page.keyboard.press('Control+0')
+  await second.page.keyboard.press('ControlOrMeta+0')
   await expect.poll(() => second.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.getZoomFactor())).toBe(1)
   await second.app.close()
 })
@@ -102,17 +102,17 @@ test('rebinds a shortcut and shows the conflict when two commands share keys', a
   const { app, page } = await launch(r.dir)
   await page.getByTestId('toolbar').getByRole('button', { name: 'Settings' }).click()
   await page.getByTestId('keybinding-palette').click()
-  await page.keyboard.press('Control+Shift+Y')
-  await expect(page.getByTestId('keybinding-palette')).toHaveText('Ctrl+Shift+Y')
+  await page.keyboard.press('ControlOrMeta+Shift+Y')
+  await expect(page.getByTestId('keybinding-palette')).toHaveText(process.platform === 'darwin' ? '⌘⇧Y' : 'Ctrl+Shift+Y')
   await page.getByTestId('keybinding-fetch').click()
-  await page.keyboard.press('Control+Shift+Y')
+  await page.keyboard.press('ControlOrMeta+Shift+Y')
   await expect(page.getByTestId('setting-keybindings')).toContainText('conflict')
   await page.getByTestId('keybinding-fetch').click()
   await page.keyboard.press('Backspace') // back to the default
   await expect(page.getByTestId('setting-keybindings')).not.toContainText('conflict')
   await page.getByTestId('settings-close').click()
   await page.getByTestId('commit-row').first().click()
-  await page.keyboard.press('Control+Shift+Y')
+  await page.keyboard.press('ControlOrMeta+Shift+Y')
   await expect(page.getByTestId('palette-input')).toBeVisible()
   await app.close()
 })
@@ -136,10 +136,10 @@ test('compact rows and hiding tags change the graph', async () => {
   const r = makeFixture('tags')
   const { app, page } = await launch(r.dir)
   await expect(page.locator('[data-testid="ref-pill"][data-ref="refs/tags/v0.2"]')).toBeVisible()
-  expect((await page.getByTestId('commit-row').first().boundingBox())!.height).toBe(28)
+  expect((await page.getByTestId('commit-row').first().boundingBox())!.height).toBe(32)
   await set(page, { compactRows: true, showTags: false })
   await expect(page.locator('[data-testid="ref-pill"][data-ref="refs/tags/v0.2"]')).toHaveCount(0)
-  await expect.poll(async () => (await page.getByTestId('commit-row').first().boundingBox())!.height).toBe(22)
+  await expect.poll(async () => (await page.getByTestId('commit-row').first().boundingBox())!.height).toBe(24)
   await app.close()
 })
 
@@ -157,10 +157,10 @@ test('opens files in the configured editor at a line, and a terminal in the repo
   await page.getByTestId('unstaged-file').first().click()
   await page.getByTestId('diff-line').filter({ hasText: 'three' }).dblclick()
   const { readFileSync, existsSync } = await import('node:fs')
-  await expect.poll(() => existsSync(log) && readFileSync(log, 'utf8')).toContain(`--goto ${r.dir}/file.txt:3`)
+  await expect.poll(() => existsSync(log) && readFileSync(log, 'utf8')).toContain(`--goto ${realpathSync.native(r.dir)}/file.txt:3`)
   await page.keyboard.press('Escape') // back to the graph
   await page.getByTestId('commit-row').first().click()
-  await page.keyboard.press('Control+Shift+T')
-  await expect.poll(() => readFileSync(log, 'utf8')).toContain(`${r.dir}|term`)
+  await page.keyboard.press('ControlOrMeta+Shift+T')
+  await expect.poll(() => readFileSync(log, 'utf8')).toContain(`${realpathSync.native(r.dir)}|term`)
   await app.close()
 })

@@ -96,12 +96,30 @@ export const DM = {
   Item: ({ children, onSelect, disabled }: { children: ReactNode; onSelect: () => void; disabled?: boolean }) => (
     <DropdownMenu.Item className={menuItem} onSelect={onSelect} disabled={disabled}>{children}</DropdownMenu.Item>
   ),
+  /** A toggle that keeps the menu open, so several can be flipped in a row. */
+  Check: ({ children, checked, onChange, disabled, testId }: { children: ReactNode; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean; testId?: string }) => (
+    <DropdownMenu.CheckboxItem className={clsx(menuItem, 'pl-7 relative')} checked={checked} disabled={disabled} data-testid={testId}
+      onCheckedChange={(v) => onChange(v === true)} onSelect={(e) => e.preventDefault()}>
+      <DropdownMenu.ItemIndicator className="absolute left-2 flex items-center">✓</DropdownMenu.ItemIndicator>
+      {children}
+    </DropdownMenu.CheckboxItem>
+  ),
   Separator: () => <DropdownMenu.Separator className="my-1 h-px bg-line" />,
   Label: ({ children }: { children: ReactNode }) => <DropdownMenu.Label className="px-2 py-1 text-[11px] text-faint">{children}</DropdownMenu.Label>,
+  Sub: ({ label, children }: { label: string; children: ReactNode }) => (
+    <DropdownMenu.Sub>
+      <DropdownMenu.SubTrigger className={clsx(menuItem, 'justify-between')}>{label}<span className="text-faint">›</span></DropdownMenu.SubTrigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.SubContent className={clsx(menuContent, 'max-h-80 overflow-y-auto')}>{children}</DropdownMenu.SubContent>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Sub>
+  ),
 }
 
-export function Modal({ open, onClose, title, children, width = 440 }: {
+export function Modal({ open, onClose, title, children, width = 440, tall = false }: {
   open: boolean; onClose: () => void; title: string; children: ReactNode; width?: number
+  /** A big dialog (a whole editor): placed near the top so it has the height. */
+  tall?: boolean
 }) {
   return (
     <RDialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
@@ -109,7 +127,7 @@ export function Modal({ open, onClose, title, children, width = 440 }: {
         <RDialog.Overlay className="fixed inset-0 z-40 bg-black/40" />
         <RDialog.Content
           style={{ width }}
-          className="fixed top-[18%] left-1/2 z-50 max-w-[92vw] -translate-x-1/2 rounded-lg border border-line bg-raised p-4 shadow-2xl shadow-black/40"
+          className={clsx('fixed left-1/2 z-50 max-w-[94vw] -translate-x-1/2 rounded-lg border border-line bg-raised p-4 shadow-2xl shadow-black/40', tall ? 'top-[5vh]' : 'top-[18%]')}
         >
           <RDialog.Title className="mb-3 text-[15px] font-semibold">{title}</RDialog.Title>
           <RDialog.Description className="sr-only">{title}</RDialog.Description>

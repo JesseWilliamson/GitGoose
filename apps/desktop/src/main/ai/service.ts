@@ -1,13 +1,15 @@
 import type { Repo } from '@gitsquid/git'
 import {
   agentCommandLine, agentLabel, commandArgv,
-  type AgentInfo, type AgentPreset, type AiPermissionRequest, type AiResult, type AiStatus, type AiTask, type GitSquidEvent, type Settings,
+  type AgentInfo, type AgentPreset, type AiPermissionRequest, type AiResult, type AiRunOptions, type AiStatus, type AiTask, type GitSquidEvent, type Settings,
 } from '@gitsquid/shared'
 import { tmpdir } from 'node:os'
 import { AcpAgent } from './acp'
 import { anthropicComplete } from './anthropic'
 import type { SecretFile } from './keyStore'
-import { buildPrompt, cleanCommitMessage } from './prompts'
+import { extractJson, locateSecret, redactSecrets, repairPlan, scanSecrets, verifyFindings, verifyPushChecks, verifyWalkthrough } from '@gitsquid/git'
+import { lintForReview } from './linters'
+import { buildPrompt, cleanCommitMessage, type BuiltPrompt } from './prompts'
 
 /**
  * AI requests, from the renderer's "✨" to an answer. Plain Node; index.ts wires it to Electron.
@@ -16,6 +18,7 @@ import { buildPrompt, cleanCommitMessage } from './prompts'
  *   - nothing is sent, and no agent is started, until the user has agreed to this provider
  *   - every tool call the agent asks about goes to the user (see acp.ts for the one exception)
  *   - an agent's file write is only ever a proposal the user then accepts or not
+ *   - nothing that looks like a credential is sent unless the user chose to send it redacted
  */
 export interface AiServiceDeps {
   settings: () => Settings
@@ -25,6 +28,33 @@ export interface AiServiceDeps {
   emit: (event: GitSquidEvent) => void
   anthropicBaseURL?: string
   fetch?: typeof fetch
+}
+
+/**
+ * The last check before anything leaves: scan exactly the text that would be sent. With hits,
+ * either stop and say what was found (masked), or, when the user chose to, replace each one with
+ * a "[REDACTED kind]" marker. Scanning the final text rather than the inputs means no prompt
+ * builder can forget to call it.
+ */
+export function guardSecrets(built: BuiltPrompt, redact: boolean): void {
+  const outgoing = `${built.system}\n\n${built.prompt}`
+  const hits = scanSecrets(outgoing)
+  if (!hits.length) return
+  if (redact) {
+    built.system = redactSecrets(built.system).text
+    built.prompt = redactSecrets(built.prompt).text
+    return
+  }
+  const list = hits.slice(0, 5).map((h) => {
+    const at = locateSecret(outgoing, h.index)
+    const where = at.file ? ` in ${at.file}${at.line ? `:${at.line}` : ''}` : ''
+    return `• ${h.kind} ${h.masked}${where}${at.excerpt ? `\n    ${at.excerpt}` : ''}`
+  })
+  if (hits.length > 5) list.push(`• and ${hits.length - 5} more`)
+  throw new AiError(
+    `This request contains ${hits.length === 1 ? 'something that looks like a secret' : `${hits.length} things that look like secrets`}, so nothing was sent.\n\n${list.join('\n')}`,
+    'ai-secrets',
+  )
 }
 
 export class AiError extends Error {
@@ -107,7 +137,7 @@ export class AiService {
     await this.agent.authenticate(methodId)
   }
 
-  async run(requestId: string, repoId: string, task: AiTask): Promise<AiResult> {
+  async run(requestId: string, repoId: string, task: AiTask, opts: AiRunOptions = {}): Promise<AiResult> {
     const st = this.status()
     if (st.provider === 'off') throw new AiError('AI features are off. Turn them on in Settings → AI.', 'ai-off')
     if (!st.ready) {
@@ -117,9 +147,26 @@ export class AiService {
     // Explaining an error needs no repository (it may have happened with none open).
     const repo = task.kind === 'explain-error' && !repoId ? null : this.deps.repo(repoId)
     const cwd = repo?.path ?? tmpdir()
-    const built = await buildPrompt(repo, task)
+    const settings = this.deps.settings()
+    const built = await buildPrompt(repo, task, {
+      learnings: repo ? settings.reviewLearnings[repo.path] : undefined,
+      lint: repo ? (paths, texts, lines) => lintForReview(repo.path, this.deps.settings(), paths, texts, lines) : undefined,
+    })
+    // A re-review where nothing changed: the last review stands, no need to ask anyone.
+    if (task.kind === 'review' && built.review?.skipModel) return { text: '', review: toReview(task, built, '{"summary": "", "findings": []}') }
+    guardSecrets(built, opts.redact === true)
     const emitText = (text: string) => this.deps.emit({ type: 'ai-text', requestId, text })
     const finish = (text: string) => (task.kind === 'commit-message' ? cleanCommitMessage(text) : text.trim())
+    // A recompose answer becomes a proposal for the review dialog (nothing changes until Apply).
+    const result = (text: string, extra: Partial<AiResult> = {}): AiResult =>
+      task.kind === 'recompose' ? { text: '', recompose: toProposal(task.hashes, built, text) }
+        : task.kind === 'review' ? { text: '', review: toReview(task, built, text) }
+        : task.kind === 'fix-finding' ? toFix(built, text, extra.proposal)
+        : task.kind === 'walkthrough' ? { text: '', walkthrough: toWalkthrough(built, text) }
+        : task.kind === 'assess-impact' ? { text: '', impact: toAssessment(built, text) }
+        // No answer at all still gives a verdict per check: inconclusive, which never passes.
+        : task.kind === 'push-checks' ? { text: '', pushChecks: verifyPushChecks(extractJson(text), task.checks, built.pushChecks!.lines) }
+        : { text: finish(text), ...extra }
 
     try {
       if (st.provider === 'anthropic') {
@@ -138,7 +185,7 @@ export class AiService {
           onText: emitText,
           signal: abort.signal,
         })
-        return { text: finish(text) }
+        return result(text)
       }
 
       this.onSettings()
@@ -151,6 +198,7 @@ export class AiService {
         writable: built.writable,
         onWrite: (_path, content) => {
           if (task.kind === 'resolve-conflict') proposal = { path: task.path, content }
+          if (task.kind === 'fix-finding') proposal = { path: task.finding.path, content }
         },
         onPermission: (ask) => {
           const permissionId = this.nextPermission++
@@ -162,7 +210,7 @@ export class AiService {
         },
       }, abort.signal)
       if (res.stopReason === 'cancelled') throw new AiError('Stopped.', 'ai-cancelled')
-      return { text: finish(res.text), proposal }
+      return result(res.text, { proposal })
     } finally {
       this.requests.delete(requestId)
       // Unanswered questions from this request are moot now.
@@ -187,5 +235,98 @@ export class AiService {
 
   stop(): void {
     this.agent.stop()
+  }
+}
+
+/** The model's view of which call sites are at risk; only ids we sent count. */
+function toAssessment(built: BuiltPrompt, text: string): NonNullable<AiResult['impact']> {
+  const impact = built.impact!
+  const raw = extractJson(text) as { summary?: unknown; risks?: unknown } | null
+  if (!raw) throw new AiError('The AI did not answer with an assessment. Try again.', 'ai-bad-answer')
+  const ids = new Set(impact.callers.map((c) => c.id))
+  const all = Array.isArray(raw.risks) ? raw.risks : []
+  const risks = all.flatMap((r) => {
+    const x = (r && typeof r === 'object' ? r : {}) as { id?: unknown; why?: unknown }
+    return typeof x.id === 'string' && ids.has(x.id) && typeof x.why === 'string' && x.why.trim() ? [{ id: x.id, why: x.why.trim().slice(0, 600) }] : []
+  })
+  return { ...impact, assessment: { summary: typeof raw.summary === 'string' ? raw.summary.trim().slice(0, 1000) : '', risks, dropped: all.length - risks.length } }
+}
+
+/** The model's walkthrough, checked against the change (see verifyWalkthrough). */
+function toWalkthrough(built: BuiltPrompt, text: string): NonNullable<AiResult['walkthrough']> {
+  const w = built.walkthrough!
+  const raw = extractJson(text)
+  if (!raw) throw new AiError('The AI did not answer with a walkthrough. Try again.', 'ai-bad-answer')
+  const paths = [...new Set(w.hunks.map((h) => h.path))]
+  const v = verifyWalkthrough(raw, paths, w.hunks)
+  return { ...w, ...v }
+}
+
+/**
+ * A proposed fix: the file the agent wrote, or (API mode, or an agent that answered in text) the
+ * last fenced block of its reply. The reply's prose becomes the note. No proposal, no fix.
+ */
+function toFix(built: BuiltPrompt, text: string, written?: { path: string; content: string }): AiResult {
+  const fences = [...text.matchAll(/```[\w-]*\n([\s\S]*?)\n```/g)]
+  const content = written?.content ?? fences.at(-1)?.[1]
+  if (content === undefined) throw new AiError('The AI did not propose a fixed file. Try again.', 'ai-bad-answer')
+  const note = text.replace(/```[\w-]*\n[\s\S]*?\n```/g, '').trim()
+  // A block that lost the file's final newline would show as a change on the last line.
+  const fixed = !written && built.fix!.before.endsWith('\n') && !content.endsWith('\n') ? `${content}\n` : content
+  return { text: note, proposal: { path: built.fix!.path, content: fixed } }
+}
+
+/** The model's review, checked against the change before anything is shown (see verifyFindings). */
+function toReview(task: Extract<AiTask, { kind: 'review' }>, built: BuiltPrompt, text: string): NonNullable<AiResult['review']> {
+  const r = built.review!
+  const raw = extractJson(text)
+  if (!raw) throw new AiError('The AI did not answer with findings. Try again.', 'ai-bad-answer')
+  const v = verifyFindings(raw, r.lines, (p) => r.texts.get(p) ?? null, task.profile)
+  // Tool findings first. The model saw the secrets redacted and may flag the marker itself: a
+  // security finding of its own on a line the scan already reported says nothing new.
+  const scanned = r.local.filter((f) => f.source === 'scan')
+  const model = v.findings.filter((f) => !(f.type === 'security' && scanned.some((s) => s.path === f.path && f.startLine <= s.endLine && f.endLine >= s.startLine)))
+  const fresh = [...r.local, ...model]
+  const inc = r.incremental
+  // On a re-review, new findings join the ones carried over (a new one on the same spot wins).
+  const findings = (inc
+    ? [...fresh.map((f) => ({ ...f, status: 'new' as const })), ...inc.open.filter((o) => !fresh.some((f) => f.path === o.path && f.startLine === o.startLine && f.title === o.title))]
+    : fresh
+  ).map((f, i) => ({ ...f, id: `F${i + 1}` }))
+  const summary = v.summary || (inc && !inc.sent ? 'Nothing changed in the reviewed code since the last review.' : '')
+  return {
+    scope: task.scope, profile: task.profile, label: r.label, head: r.head, base: r.base, summary, findings, dropped: v.dropped, skipped: r.skipped, context: r.context,
+    hunkKeys: r.hunkKeys, contextKey: r.contextKey,
+    incremental: inc ? { sent: inc.sent, unchanged: inc.unchanged, addressed: inc.addressed.map((f) => ({ title: f.title, path: f.path })) } : undefined,
+  }
+}
+
+const PREVIEW_LINES = 200
+const PREVIEW_CHARS = 20_000
+
+export function previewOf(body: string): string {
+  const lines = body.split('\n')
+  let out = lines.slice(0, PREVIEW_LINES).join('\n')
+  if (out.length > PREVIEW_CHARS) out = out.slice(0, out.lastIndexOf('\n', PREVIEW_CHARS))
+  const shown = out.split('\n').length
+  return shown < lines.length ? `${out}\n… ${lines.length - shown} more lines` : out
+}
+
+function toProposal(hashes: string[], built: BuiltPrompt, text: string): NonNullable<AiResult['recompose']> {
+  const info = built.recompose!
+  const raw = extractJson(text)
+  if (!raw) throw new AiError('The AI did not answer with a plan. Try again.', 'ai-bad-answer')
+  const { commits, unplaced } = repairPlan(info.units, raw)
+  return {
+    hashes,
+    branch: info.branch,
+    units: info.units.map((u) => ({
+      id: u.id, path: u.path, added: u.added, removed: u.removed, binary: u.binary,
+      // Enough to read the change in the review dialog; a huge hunk is cut, and says so.
+      preview: previewOf(u.body),
+    })),
+    commits,
+    unplaced,
+    onRemote: info.onRemote,
   }
 }

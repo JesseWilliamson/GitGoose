@@ -21,6 +21,9 @@
   --color-del-bg: var(--gs-del-bg);
   --color-warn: var(--gs-warn);
   --color-select: var(--gs-select);
+  /* The two sides of a merge, the same in every conflict view. */
+  --color-ours: var(--gs-ours);
+  --color-theirs: var(--gs-theirs);
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
 }
@@ -43,6 +46,8 @@
   --gs-del-bg: rgba(248, 81, 73, 0.15);
   --gs-warn: #e5b04a;
   --gs-select: rgba(76, 141, 255, 0.22);
+  --gs-ours: #4c8dff;
+  --gs-theirs: #e0a03a;
   /* Graph lane colours, cycled by colour index. */
   --lane-0: #4c8dff;
   --lane-1: #e5534b;
@@ -72,6 +77,8 @@
   --gs-del-bg: rgba(248, 81, 73, 0.1);
   --gs-warn: #9a6700;
   --gs-select: rgba(47, 111, 228, 0.14);
+  --gs-ours: #2f6fe4;
+  --gs-theirs: #b86e00;
   --lane-0: #2f6fe4;
   --lane-1: #d1242f;
   --lane-2: #1a7f37;
@@ -140,4 +147,16 @@ textarea,
 /* cmdk */
 [cmdk-item][data-selected='true'] {
   background: var(--gs-select);
+}
+
+/* Behind image diffs: shows where an image is transparent. */
+.checkerboard {
+  background-color: var(--color-bg);
+  background-image:
+    linear-gradient(45deg, var(--color-hover) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--color-hover) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--color-hover) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--color-hover) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
 }

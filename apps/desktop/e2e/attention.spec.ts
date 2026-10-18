@@ -5,13 +5,16 @@ import { chmodSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { launch } from './app'
 
-test('the palette button uses a platform-neutral icon and the real modifier name', async () => {
+test('the search box names its shortcuts with the real modifier, no ⌘ glyph elsewhere', async () => {
   const r = makeFixture('linear')
   const { app, page } = await launch(r.dir)
   const toolbar = page.getByTestId('toolbar')
   await expect(toolbar.locator('.lucide-command')).toHaveCount(0)
-  const palette = toolbar.getByRole('button', { name: 'Palette' })
-  await expect(palette).toHaveAttribute('title', process.platform === 'darwin' ? /⌘\+K/ : /Ctrl\+K/)
+  const search = page.getByTestId('omni-open')
+  // macOS writes shortcuts as glyphs (⌘K), elsewhere as words (Ctrl+K).
+  const key = (k: string) => (process.platform === 'darwin' ? `⌘${k}` : `Ctrl+${k}`)
+  await expect(search).toContainText(key('K'))
+  await expect(search).toHaveAttribute('title', `Search everything (${key('K')}); commands only: ${key('P')}`)
   await app.close()
 })
 

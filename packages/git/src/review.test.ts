@@ -35,15 +35,18 @@ describe('review findings', () => {
 
   it('#2 treats file names literally, never as glob patterns', async () => {
     const r = initRepo()
-    r.commit('base', { 'a[1].txt': 'one\n', 'a1.txt': 'two\n', '*.md': 'star\n', 'x.md': 'x\n' })
-    r.write('a[1].txt', 'changed\n').write('a1.txt', 'changed too\n').write('*.md', 'changed\n').write('x.md', 'changed\n')
+    // Windows does not allow * in a file name, so there only the [] case can be tested.
+    const star = process.platform !== 'win32'
+    r.commit('base', { 'a[1].txt': 'one\n', 'a1.txt': 'two\n', ...(star ? { '*.md': 'star\n' } : {}), 'x.md': 'x\n' })
+    r.write('a[1].txt', 'changed\n').write('a1.txt', 'changed too\n').write('x.md', 'changed\n')
+    if (star) r.write('*.md', 'changed\n')
     const repo = await open(r)
-    await repo.discardPaths(['a[1].txt', '*.md'])
+    await repo.discardPaths(['a[1].txt', ...(star ? ['*.md'] : [])])
     expect(read(r, 'a1.txt')).toBe('changed too\n')
     expect(read(r, 'x.md')).toBe('changed\n')
     expect(read(r, 'a[1].txt')).toBe('one\n')
     await repo.stagePaths(['a[1].txt'])
-    await repo.stagePaths(['*.md'])
+    if (star) await repo.stagePaths(['*.md'])
     expect(r.git('diff', '--cached', '--name-only').trim()).toBe('')
     // Path search still uses glob matching on purpose.
     expect((await repo.search('path', '.md')).length).toBeGreaterThan(0)

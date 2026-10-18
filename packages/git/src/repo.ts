@@ -1,21 +1,29 @@
 import type {
-  BlameLine, Commit, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
-  LogPage, Ref, RepoOperation, RepoSnapshot, ResetMode, Resolution, SearchField, SelectionRequest,
-  StashEntry, StatusEntry, UndoEntry,
+  BisectState, BlameLine, ChangeInsights, CodePeek, ImpactResult, ReviewScope, ImageSide, LfsInfo, LfsLock, ChangedFile, CommandRecord, GraphFilter, Identity, Person, Signature, Commit, CommitSummary, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
+  LogPage, Ref, Remote, RepoOperation, ReflogEntry, RepoSnapshot, ResetMode, Resolution, SearchField, SelectionRequest,
+  StashEntry, StatusEntry, Submodule, UndoEntry, Worktree,
 } from '@gitsquid/shared'
 import { countConflicts } from '@gitsquid/shared'
 import { existsSync } from 'node:fs'
-import { lstat, readFile, rm, writeFile, chmod, mkdir } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { lstat, readFile, realpath, rm, writeFile, chmod, mkdir } from 'node:fs/promises'
+import { homedir, tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
+import { enclosingDefinition, findDefinitions, NOT_NAMES, parseGrep, type Definition } from '@gitsquid/codegraph'
 import { parseBlame } from './blame'
+import { coChanges, oldRanges, parseFilesPerCommit } from './insights'
+import { changedSymbols, isTestPath, testsByName } from './impact'
+import { globToRegExp, parseCustomChecks, parsePathInstructions, relevantGuidelines } from './reviewrules'
 import { CatFile } from './catfile'
 import { parseChangedFiles, parseDiff, untrackedDiff } from './diff'
 import { graphRevs, LOG_FORMAT, LogStream, parseLog } from './log'
+import { searchLog } from './search'
+import { checkPlan, patchFor, splitUnits, type PlannedCommit, type RecomposeUnit } from './recompose'
 import { buildPatch } from './patch'
 import { parseRefs, REFS_FORMAT } from './refs'
 import { GitRunner } from './runner'
+import { parseReflog, REFLOG_FORMAT } from './reflog'
 import { parseStashList, STASH_FORMAT } from './stash'
+import { parseWorktrees, realPathOf, samePath } from './worktree'
 import { parseStatus } from './status'
 import { UndoJournal, type UndoAction } from './undo'
 
@@ -144,7 +152,8 @@ export class Repo {
     ])
     const status = parseStatus(statusOut)
     const refs = parseRefs(refsOut)
-    const key = `${status.head.branch}|${status.head.hash}|` + refs.map((r) => `${r.name}=${r.hash}`).join(',')
+    const stashes = this.showStashes ? await this.stashHashes() : []
+    const key = `${status.head.branch}|${status.head.hash}|` + refs.map((r) => `${r.name}=${r.hash}`).join(',') + `|${stashes.join(',')}`
     if (key !== this.refsKey) {
       this.refsKey = key
       this.refsVersion++
@@ -154,7 +163,8 @@ export class Repo {
     this.last = {
       id: this.id, path: this.path, name: this.name,
       head: status.head, refs, status: status.entries,
-      operation: this.operation(), refsVersion: this.refsVersion,
+      operation: this.operation(), refsVersion: this.refsVersion, filter: this.filter,
+      bisect: existsSync(join(this.gitDir, 'BISECT_START')) ? await this.bisectState() : undefined,
     }
     return this.last
   }
@@ -165,6 +175,8 @@ export class Repo {
 
   operation(): RepoOperation {
     const has = (f: string) => existsSync(join(this.gitDir, f))
+    // `git am` keeps its state in rebase-apply too; the "applying" marker tells them apart.
+    if (has('rebase-apply/applying')) return 'am'
     if (has('rebase-merge') || has('rebase-apply')) return 'rebase'
     if (has('MERGE_HEAD')) return 'merge'
     if (has('CHERRY_PICK_HEAD')) return 'cherry-pick'
@@ -214,9 +226,51 @@ export class Repo {
 
   // ---------------------------------------------------------------- reading
 
+  private filter: GraphFilter = { hidden: [], solo: [] }
+
+  /** Hide or solo refs in the graph. A new filter means a new walk, like new refs do. */
+  setGraphFilter(filter: GraphFilter): void {
+    const next = { hidden: [...new Set(filter.hidden)].sort(), solo: [...new Set(filter.solo)].sort() }
+    if (JSON.stringify(next) === JSON.stringify(this.filter)) return
+    this.filter = next
+    this.refsKey = ''
+  }
+
+  /** The revisions the graph (and search over it) walks. */
+  private graphRevs(): string[] {
+    const snap = this.last!
+    return graphRevs(snap.head.hash, this.filter, new Set(snap.refs.map((r) => r.name)))
+  }
+
+  /** Show stashes as nodes in the graph (the showStashes setting). */
+  private showStashes = true
+
+  setShowStashes(show: boolean): void {
+    if (show === this.showStashes) return
+    this.showStashes = show
+    // Force a new log (and a new refsVersion, so the renderer starts over too).
+    this.refsKey = ''
+  }
+
+  /**
+   * Stash commits, newest first, straight from the stash reflog file: no process, cheap enough
+   * to read on every snapshot (dropping stash@{2} changes only the reflog, not refs/stash).
+   */
+  private async stashHashes(): Promise<string[]> {
+    try {
+      const text = await readFile(join(this.commonDir, 'logs', 'refs', 'stash'), 'utf8')
+      return text.split('\n').filter(Boolean).map((l) => l.split(' ')[1]!).filter((h) => /^[0-9a-f]{40,64}$/.test(h)).reverse()
+    } catch {
+      return []
+    }
+  }
+
   async logPage(offset: number, count: number): Promise<LogPage> {
     if (!this.last) await this.snapshot()
-    if (!this.log) this.log = new LogStream(this.runner, graphRevs(this.last!.head.hash))
+    if (!this.log) {
+      const stashes = this.showStashes ? await this.stashHashes() : []
+      this.log = new LogStream(this.runner, this.graphRevs(), undefined, stashes)
+    }
     const generation = this.refsVersion
     const log = this.log
     const { commits, done } = await log.page(offset, count)
@@ -247,7 +301,25 @@ export class Repo {
       hash: f[0]!, parents, authorName: f[2]!, authorEmail: f[3]!,
       authorDate: Number(f[4]), commitDate: Number(f[5]), subject: f[6]!,
       committerName: f[7]!, committerEmail: f[8]!, body: (f[9] ?? '').trim(),
-      files,
+      files, signature: opts.stash ? undefined : await this.signature(hash),
+    }
+  }
+
+  /**
+   * Verify a commit's signature, if it has one. Verifying runs gpg (or ssh-keygen), so it is done
+   * only for signed commits, found by the gpgsig header in the raw object; a failure to verify is
+   * reported as "cannot check", never as an error that would hide the commit's details.
+   */
+  private async signature(hash: string): Promise<Signature | undefined> {
+    const raw = await this.read(['cat-file', 'commit', hash])
+    const headers = raw.slice(0, raw.indexOf('\n\n'))
+    if (!/^gpgsig(-sha256)? /m.test(headers)) return undefined
+    try {
+      const out = (await this.runner.run(['show', '-s', '--format=%G?%x00%GS%x00%GK', hash, '--'], { readOnly: true, okCodes: [1, 128] })).stdout
+      const [status = 'E', signer, key] = out.trim().split('\0')
+      return { status: (/^[GUXYRB]$/.test(status) ? status : 'E') as Signature['status'], signer: signer || undefined, key: key || undefined }
+    } catch {
+      return { status: 'E' }
     }
   }
 
@@ -270,6 +342,9 @@ export class Repo {
       const entry = (this.last ?? (await this.snapshot())).status.find((e) => e.path === target.path)
       const paths = entry?.origPath ? [entry.origPath, target.path] : [target.path]
       args = ['diff', '--cached', '-M', ...DIFF_ARGS, '--', ...paths]
+    } else if (target.kind === 'range') {
+      const paths = target.oldPath ? [target.oldPath, target.path] : [target.path]
+      args = ['diff', '-M', ...DIFF_ARGS, target.from, ...(target.to ? [target.to] : []), '--', ...paths]
     } else {
       const parents = (await this.read(['rev-list', '--parents', '-n', '1', target.hash])).trim().split(' ').slice(1)
       let base = parents[0] ?? (await this.emptyTreeHash())
@@ -289,6 +364,130 @@ export class Repo {
     return parsed[0] ?? null
   }
 
+  /**
+   * Both versions of an image for a diff target, read only when an image diff is shown. A side
+   * is null when the file does not exist there (added, deleted); over `cap` bytes, only its size
+   * comes back, so a huge asset never crosses IPC.
+   */
+  async imagePair(target: DiffTarget, cap = 25 * 1024 * 1024): Promise<{ old: ImageSide | null; new: ImageSide | null }> {
+    const fromRev = async (spec: string): Promise<ImageSide | null> => {
+      const sz = await this.runner.run(['cat-file', '-s', spec], { readOnly: true, okCodes: [128] })
+      if (sz.code !== 0) return null
+      const size = Number(sz.stdout.trim())
+      if (size > cap) return { size }
+      const blob = await this.fileAtSpec(spec)
+      // An LFS-tracked image is stored as a small pointer: show the real file when it is local.
+      const real = size < 400 ? await this.lfsContent(blob) : null
+      if (real) return real.length > cap ? { size: real.length } : { size: real.length, data: new Uint8Array(real) }
+      return { size, data: new Uint8Array(blob) }
+    }
+    const fromDisk = async (path: string): Promise<ImageSide | null> => {
+      const st = await lstat(join(this.path, path)).catch(() => null)
+      if (!st?.isFile()) return null
+      return st.size > cap ? { size: st.size } : { size: st.size, data: new Uint8Array(await readFile(join(this.path, path))) }
+    }
+    const p = target.path
+    switch (target.kind) {
+      case 'untracked': return { old: null, new: await fromDisk(p) }
+      case 'unstaged': return { old: await fromRev(`:${p}`), new: await fromDisk(p) }
+      case 'staged': {
+        const entry = (this.last ?? (await this.snapshot())).status.find((e) => e.path === p)
+        return { old: await fromRev(`HEAD:${entry?.origPath ?? p}`), new: await fromRev(`:${p}`) }
+      }
+      case 'range': return { old: await fromRev(`${target.from}:${target.oldPath ?? p}`), new: target.to ? await fromRev(`${target.to}:${p}`) : await fromDisk(p) }
+      case 'commit': {
+        const parents = (await this.read(['rev-list', '--parents', '-n', '1', target.hash])).trim().split(' ').slice(1)
+        const files = parents[0] ? parseChangedFiles(await this.read(['diff-tree', '-r', '-M', '-z', '--name-status', parents[0], target.hash]), '') : []
+        const f = files.find((x) => x.path === p)
+        // A file a stash saved as untracked lives in its third parent (see commitDetails).
+        if (!f && parents[2] && !(await fromRev(`${target.hash}:${p}`))) return { old: null, new: await fromRev(`${parents[2]}:${p}`) }
+        return { old: parents[0] ? await fromRev(`${parents[0]}:${f?.oldPath ?? p}`) : null, new: await fromRev(`${target.hash}:${p}`) }
+      }
+    }
+  }
+
+  /**
+   * Open a diff in the user's external diff tool (`git difftool`), which waits until the tool
+   * is closed. It does not take the write lock: it only reads, and a tool can stay open for long.
+   */
+  async diffTool(target: DiffTarget, tool?: string): Promise<void> {
+    const t = tool ? [`--tool=${tool}`] : []
+    const base = ['difftool', '--no-prompt', ...t]
+    let args: string[]
+    switch (target.kind) {
+      case 'unstaged': args = [...base, '--', target.path]; break
+      case 'staged': args = [...base, '--cached', '--', target.path]; break
+      case 'untracked': throw new Error('An untracked file has nothing to compare with yet: stage it to diff it against nothing.')
+      case 'range': args = [...base, target.from, ...(target.to ? [target.to] : []), '--', ...(target.oldPath ? [target.oldPath] : []), target.path]; break
+      case 'commit': {
+        const parent = (await this.read(['rev-list', '--parents', '-n', '1', target.hash])).trim().split(' ')[1]
+        args = [...base, parent ?? (await this.emptyTreeHash()), target.hash, '--', target.path]
+      }
+    }
+    await this.runner.run(args, { readOnly: true })
+  }
+
+  /**
+   * Resolve a conflicted file in the user's merge tool (`git mergetool`). git marks the file
+   * resolved when the tool reports success (or the file changed, per mergetool.<tool>.trustExitCode).
+   * Outside the write lock, like diffTool: the tool stays open while the user works; the
+   * snapshot that follows shows the result.
+   */
+  async mergeTool(path: string, tool?: string): Promise<void> {
+    await this.runner.run(['mergetool', '--no-prompt', ...(tool ? [`--tool=${tool}`] : []), '--', path])
+    void this.snapshot()
+  }
+
+  private async fileAtSpec(spec: string): Promise<Buffer> {
+    return (await this.runner.runBuffer(['cat-file', 'blob', spec], { readOnly: true })).stdout
+  }
+
+  /**
+   * Files that differ between two revisions, or a revision and the working tree (`to` null:
+   * tracked files only, like `git diff <rev>`).
+   */
+  async compareFiles(from: string, to: string | null): Promise<ChangedFile[]> {
+    const revs = [from, ...(to ? [to] : [])]
+    const [ns, nm] = await Promise.all([
+      this.read(['diff', '-M', '-z', '--name-status', ...revs, '--']),
+      this.read(['diff', '-M', '-z', '--numstat', ...revs, '--']),
+    ])
+    return parseChangedFiles(ns, nm)
+  }
+
+  /** The best common ancestor of two revisions (where one forked from the other). */
+  async mergeBase(a: string, b: string): Promise<string> {
+    return (await this.read(['merge-base', a, b])).trim()
+  }
+
+  /** A file's bytes as of a revision (to open or save it). */
+  async fileAt(rev: string, path: string): Promise<Buffer> {
+    return (await this.runner.runBuffer(['show', `${rev}:${path}`], { readOnly: true })).stdout
+  }
+
+  /**
+   * Put a file in the working tree back to its content at `rev` (or delete it, when it did not
+   * exist there). The current content is saved first, so it can be undone.
+   */
+  /**
+   * Write a file as of `rev` into the working copy (or delete it if `rev` does not have it).
+   * With `stash`, `rev` is a stash commit: a file stashed with -u lives in its third parent.
+   */
+  restoreFile(path: string, rev: string, opts: { stash?: boolean } = {}): Promise<number> {
+    return this.exclusive(async () => {
+      const saved = await this.saveFiles([path])
+      const has = async (r: string) => (await this.runner.run(['cat-file', '-e', `${r}:${path}`], { okCodes: [128, 1], readOnly: true })).code === 0
+      let exists = await has(rev)
+      if (!exists && opts.stash && (await has(`${rev}^3`))) {
+        rev = `${rev}^3`
+        exists = true
+      }
+      if (exists) await this.git(['restore', `--source=${rev}`, '--worktree', '--', path])
+      else await rm(join(this.path, path), { force: true })
+      return this.record(`Restore ${path} from ${rev.slice(0, 7)}`, [{ kind: 'restore-files', files: saved }], (await this.currentHead()).hash)
+    })
+  }
+
   async fileHistory(path: string): Promise<Commit[]> {
     return parseLog(await this.read(['log', '--follow', `--format=${LOG_FORMAT}`, '-n', '1000', '--', path]))
   }
@@ -297,11 +496,51 @@ export class Repo {
     return parseBlame(await this.read(['blame', '--porcelain', ...(rev ? [rev] : []), '--', path]))
   }
 
+  /** The all-fields search in flight: a newer one cancels it (typing fires one per pause). */
+  private searching: AbortController | null = null
+
+  /** Every file in the working tree, tracked or not (ignored ones left out), for finding files by name. */
+  async listFiles(limit = 200_000): Promise<string[]> {
+    const out = await this.read(['ls-files', '-z', '--cached', '--others', '--exclude-standard'])
+    // A file with conflicts is listed once per stage.
+    return [...new Set(out.split('\0').filter(Boolean))].slice(0, limit)
+  }
+
+  /** search(), plus what the first `limit` hits are (subject, author, date), for showing them as results. */
+  async searchCommits(field: SearchField, query: string, limit = 20): Promise<{ total: number; commits: CommitSummary[] }> {
+    const hashes = await this.search(field, query)
+    if (!hashes.length) return { total: 0, commits: [] }
+    const raw = await this.read(['log', '--no-walk=unsorted', '-z', '--format=%H%x00%s%x00%an%x00%ae%x00%at', ...hashes.slice(0, limit), '--'])
+    const f = raw.split('\0')
+    const commits: CommitSummary[] = []
+    for (let i = 0; i + 4 < f.length; i += 5) {
+      commits.push({ hash: f[i]!.trim(), subject: f[i + 1]!, authorName: f[i + 2]!, authorEmail: f[i + 3]!, authorDate: Number(f[i + 4]) })
+    }
+    return { total: hashes.length, commits }
+  }
+
   async search(field: SearchField, query: string): Promise<string[]> {
     const q = query.trim()
     if (!q) return []
-    const head = (this.last ?? (await this.snapshot())).head
-    const base = ['log', '--format=%H', '-n', '2000', ...graphRevs(head.hash)]
+    const snap = this.last ?? (await this.snapshot())
+    const head = snap.head
+    if (field === 'all') {
+      this.searching?.abort()
+      const abort = (this.searching = new AbortController())
+      const refNames = new Map<string, string[]>()
+      for (const r of snap.refs) {
+        if (r.kind === 'stash') continue
+        const list = refNames.get(r.hash)
+        if (list) list.push(r.shortName)
+        else refNames.set(r.hash, [r.shortName])
+      }
+      try {
+        return await searchLog(this.runner, this.graphRevs(), q, { refNames, signal: abort.signal })
+      } finally {
+        if (this.searching === abort) this.searching = null
+      }
+    }
+    const base = ['log', '--format=%H', '-n', '2000', ...this.graphRevs()]
     let args: string[]
     switch (field) {
       case 'message': args = [...base, '-i', '-F', `--grep=${q}`, '--']; break
@@ -324,6 +563,23 @@ export class Repo {
 
   async stashList(): Promise<StashEntry[]> {
     return parseStashList(await this.read(['stash', 'list', `--format=${STASH_FORMAT}`]))
+  }
+
+  /**
+   * A ref's reflog, newest first, with the commits nothing else reaches marked lost. Finding
+   * them is one `rev-list <hashes> --not --all`: it walks only what the refs do not already
+   * reach, so its cost is the size of what was lost, not the size of the repository.
+   */
+  async reflog(ref = 'HEAD', limit = 300): Promise<ReflogEntry[]> {
+    const out = await this.runner.run(['log', '-g', '--date=unix', `--format=${REFLOG_FORMAT}`, `-n${limit}`, ref, '--'], { readOnly: true, okCodes: [128] })
+    if (out.code !== 0) return [] // no reflog yet (a fresh clone of an empty repository)
+    const entries = parseReflog(out.stdout)
+    const hashes = [...new Set(entries.map((e) => e.hash))]
+    if (hashes.length) {
+      const lost = new Set((await this.read(['rev-list', ...hashes, '--not', '--all'])).split('\n').filter(Boolean))
+      for (const e of entries) if (lost.has(e.hash)) e.lost = true
+    }
+    return entries
   }
 
   async lastCommitMessage(): Promise<string> {
@@ -450,10 +706,11 @@ export class Repo {
     })
   }
 
-  commit(message: string, opts: { amend?: boolean; signOff?: boolean; gpgSign?: boolean } = {}): Promise<number> {
+  /** `noVerify` skips the pre-commit and commit-msg hooks. */
+  commit(message: string, opts: { amend?: boolean; signOff?: boolean; gpgSign?: boolean; noVerify?: boolean } = {}): Promise<number> {
     return this.exclusive(async () => {
       const before = await this.currentHead()
-      const flags = [...(opts.amend ? ['--amend'] : []), ...(opts.signOff ? ['--signoff'] : []), ...(opts.gpgSign ? ['-S'] : [])]
+      const flags = [...(opts.amend ? ['--amend'] : []), ...(opts.signOff ? ['--signoff'] : []), ...(opts.gpgSign ? ['-S'] : []), ...(opts.noVerify ? ['--no-verify'] : [])]
       await this.git(['commit', '-F', '-', ...flags], { input: message })
       const after = await this.currentHead()
       const actions: UndoAction[] = before.hash
@@ -535,6 +792,873 @@ export class Repo {
     })
   }
 
+  /** Delete several branches at once (branch cleanup); one undo entry brings them all back. */
+  deleteBranches(names: string[], opts: { force?: boolean } = {}): Promise<number> {
+    return this.exclusive(async () => {
+      const refs = await this.refs()
+      const actions: UndoAction[] = []
+      for (const name of names) {
+        const ref = refs.find((r) => r.name === `refs/heads/${name}`)
+        if (!ref) throw new Error(`No branch named ${name}`)
+        actions.push({ kind: 'update-ref', ref: ref.name, to: ref.hash, from: null })
+        if (ref.upstream) actions.push({ kind: 'set-upstream', branch: name, upstream: ref.upstream })
+      }
+      await this.git(['branch', opts.force ? '-D' : '-d', ...names])
+      return this.record(`Delete ${names.length} branches`, actions, (await this.currentHead()).hash)
+    })
+  }
+
+  /** Local branches whose tip is already in `into` (default HEAD): safe to delete. */
+  async mergedBranches(into = 'HEAD'): Promise<string[]> {
+    const head = await this.currentHead()
+    if (!head.hash) return []
+    return (await this.read(['for-each-ref', `--merged=${into}`, '--format=%(refname:short)', 'refs/heads'])).split('\n').filter(Boolean)
+  }
+
+  /**
+   * Move a branch that is not checked out forward to its upstream, when that is a fast-forward
+   * (the checked-out branch uses pull instead). One update-ref, with the old value checked.
+   */
+  fastForward(branch: string): Promise<number> {
+    return this.exclusive(async () => {
+      const refs = await this.refs()
+      const ref = refs.find((r) => r.name === `refs/heads/${branch}`)
+      if (!ref?.upstream) throw new Error(`${branch} does not track a remote branch.`)
+      if ((await this.currentHead()).branch === branch) throw new Error(`${branch} is checked out: pull it instead.`)
+      const target = refs.find((r) => r.name === ref.upstream)
+      if (!target) throw new Error(`${shortName(ref.upstream)} no longer exists.`)
+      if (!(await this.isAncestor(ref.hash, target.hash))) throw new Error(`${branch} has commits ${shortName(ref.upstream)} does not: it cannot fast-forward.`)
+      await this.git(['update-ref', '-m', `gitsquid: fast-forward to ${shortName(ref.upstream)}`, ref.name, target.hash, ref.hash])
+      return this.record(`Fast-forward ${branch}`, [{ kind: 'update-ref', ref: ref.name, to: ref.hash, from: target.hash }], (await this.currentHead()).hash)
+    })
+  }
+
+  /** Make `branch` track `upstream` (a remote branch's full or short name), or nothing. */
+  setUpstream(branch: string, upstream: string | null): Promise<number> {
+    return this.exclusive(async () => {
+      const ref = (await this.refs()).find((r) => r.name === `refs/heads/${branch}`)
+      if (!ref) throw new Error(`No branch named ${branch}`)
+      if (upstream) await this.git(['branch', `--set-upstream-to=${shortName(upstream)}`, branch])
+      else await this.git(['branch', '--unset-upstream', branch], { okCodes: [128] })
+      return this.record(upstream ? `Track ${shortName(upstream)}` : `Stop tracking for ${branch}`,
+        [{ kind: 'set-upstream', branch, upstream: ref.upstream ?? null }], (await this.currentHead()).hash)
+    })
+  }
+
+  // ---------------------------------------------------------------- worktrees
+
+  async worktrees(): Promise<Worktree[]> {
+    // git prints real paths (no symlinks: /private/tmp on macOS), so compare with ours resolved.
+    return parseWorktrees(await this.read(['worktree', 'list', '--porcelain', '-z']), await realpath(this.path).catch(() => this.path))
+  }
+
+  /**
+   * A second working tree: check out an existing branch there, a new branch (`newBranch`, at
+   * `at` or HEAD), or a detached commit. Undo removes it again, which git refuses once it has
+   * changes, so undo never deletes work.
+   */
+  addWorktree(path: string, opts: { branch?: string; newBranch?: string; at?: string }): Promise<number> {
+    return this.exclusive(async () => {
+      const args = opts.newBranch ? ['-b', opts.newBranch, path, ...(opts.at ? [opts.at] : [])]
+        : opts.branch ? [path, opts.branch]
+        : ['--detach', path, opts.at ?? 'HEAD']
+      await this.git(['worktree', 'add', ...args])
+      const actions: UndoAction[] = [{ kind: 'worktree-remove', path }]
+      if (opts.newBranch) actions.push({ kind: 'update-ref', ref: `refs/heads/${opts.newBranch}`, to: null, from: await this.revParse(`refs/heads/${opts.newBranch}`) })
+      return this.record(`Add worktree ${basename(path)}`, actions, (await this.currentHead()).hash)
+    })
+  }
+
+  /**
+   * Remove a worktree. Without `force` git refuses if it has changes or untracked files, so what
+   * goes is only a checkout of committed work: undo checks it out again. With `force` the
+   * changes are deleted and there is no undo (the UI asks first).
+   */
+  removeWorktree(path: string, opts: { force?: boolean } = {}): Promise<number | null> {
+    return this.exclusive(async () => {
+      const real = await realPathOf(path)
+      const w = (await this.worktrees()).find((x) => samePath(x.path, real))
+      if (!w) throw new Error(`No worktree at ${path}`)
+      if (w.main) throw new Error('The main working tree cannot be removed.')
+      if (w.current) throw new Error('This tab shows that worktree: open another one to remove it.')
+      await this.git(['worktree', 'remove', ...(opts.force ? ['--force', '--force'] : []), path])
+      if (opts.force || !w.head) return null
+      return this.record(`Remove worktree ${basename(path)}`, [{ kind: 'worktree-add', path, branch: w.branch, commit: w.head }], (await this.currentHead()).hash)
+    })
+  }
+
+  lockWorktree(path: string, lock: boolean, reason?: string): Promise<void> {
+    return this.exclusive(async () => {
+      await this.git(['worktree', lock ? 'lock' : 'unlock', ...(lock && reason ? ['--reason', reason] : []), path])
+    })
+  }
+
+  /** Forget worktrees whose folders are gone (their branches stay). */
+  pruneWorktrees(): Promise<void> {
+    return this.exclusive(async () => {
+      await this.git(['worktree', 'prune'])
+    })
+  }
+
+  // ---------------------------------------------------------------- code graph
+
+  /** Definitions per blob id: a file's definitions only change when its content does. */
+  private defsCache = new Map<string, Definition[]>()
+
+  /** A file's text at a revision, or in the working tree (rev null). */
+  private async textAt(rev: string | null, path: string): Promise<string | null> {
+    if (rev === null) return readFile(join(this.path, path), 'utf8').catch(() => null)
+    // rev '' reads the index (":path").
+    const r = await this.runner.run(['cat-file', 'blob', `${rev}:${path}`], { readOnly: true, okCodes: [128] })
+    return r.code === 0 ? r.stdout : null
+  }
+
+  /** Definitions in a file, cached by its blob id (hash-object for working-tree files). */
+  async definitionsIn(rev: string | null, path: string): Promise<{ defs: Definition[]; text: string } | null> {
+    const text = await this.textAt(rev, path)
+    if (text === null) return null
+    const id = (await this.runner.run(['hash-object', '--stdin'], { readOnly: true, input: text })).stdout.trim()
+    let defs = this.defsCache.get(id)
+    if (!defs) {
+      defs = findDefinitions(path, text)
+      if (this.defsCache.size > 5000) this.defsCache.clear()
+      this.defsCache.set(id, defs)
+    }
+    return { defs, text }
+  }
+
+  /**
+   * Code Peek: where `name` is defined and used, as of `rev` (null: the working tree). git grep
+   * finds every whole-word occurrence; codegraph decides which of those lines define it.
+   */
+  async codePeek(name: string, rev: string | null): Promise<CodePeek> {
+    if (!/^[A-Za-z_$][\w$]*$/.test(name)) throw new Error('Peek works on identifiers.')
+    const MAX_HITS = 400
+    const out = await this.runner.run(['grep', '-n', '-z', '--column', '-w', '-I', '-F', '--max-count=30', '-e', name, ...(rev ? [rev] : []), '--'], { readOnly: true, okCodes: [1] })
+    const all = parseGrep(out.stdout, rev ?? undefined)
+    const hits = all.slice(0, MAX_HITS)
+    // Look for definitions only in files whose matching line could define it, most likely first.
+    const byFile = new Map<string, number[]>()
+    for (const h of hits) byFile.set(h.path, [...(byFile.get(h.path) ?? []), h.line])
+    const defs: CodePeek['definitions'] = []
+    const defLines = new Set<string>()
+    for (const [path] of [...byFile].slice(0, 60)) {
+      const f = await this.definitionsIn(rev, path)
+      if (!f) continue
+      const lines = f.text.split(/\r?\n/)
+      for (const d of f.defs) {
+        if (d.name !== name) continue
+        defLines.add(`${path}:${d.line}`)
+        defs.push({ path, line: d.line, endLine: d.endLine, kind: d.kind, signature: d.signature, preview: lines.slice(d.line - 1, Math.min(d.endLine, d.line + 14)) })
+      }
+    }
+    return {
+      name,
+      definitions: defs,
+      references: hits.filter((h) => !defLines.has(`${h.path}:${h.line}`)).map((h) => ({ path: h.path, line: h.line, column: h.column, text: h.text.trim().slice(0, 300) })),
+      truncated: all.length > MAX_HITS,
+    }
+  }
+
+  /**
+   * Apply a review suggestion: replace lines startLine..endLine of the working file, but only if
+   * they are still exactly `original` (what was reviewed). Undoable.
+   */
+  applySuggestion(path: string, startLine: number, endLine: number, original: string[], replacement: string): Promise<number> {
+    return this.exclusive(async () => {
+      const abs = join(this.path, path)
+      const text = await readFile(abs, 'utf8').catch(() => null)
+      if (text === null) throw new Error(`${path} is not in the working tree.`)
+      const eol = text.includes('\r\n') ? '\r\n' : '\n'
+      const lines = text.split(/\r?\n/)
+      const now = lines.slice(startLine - 1, endLine)
+      if (now.length !== original.length || now.some((l, i) => l !== original[i])) {
+        throw new Error(`Lines ${startLine}-${endLine} of ${path} changed since the review: apply it by hand, or review again.`)
+      }
+      const saved = await this.saveFiles([path])
+      lines.splice(startLine - 1, endLine - startLine + 1, ...replacement.split(/\r?\n/))
+      await writeFile(abs, lines.join(eol))
+      return this.record(`Apply suggestion to ${path}`, [{ kind: 'restore-files', files: saved }], (await this.currentHead()).hash)
+    })
+  }
+
+  /** Write a whole working file (an accepted AI fix), only if it still reads `expected`. Undoable. */
+  writeFileChecked(path: string, expected: string, content: string, label: string): Promise<number> {
+    return this.exclusive(async () => {
+      const abs = join(this.path, path)
+      const now = await readFile(abs, 'utf8').catch(() => null)
+      if (now !== expected) throw new Error(`${path} changed since the fix was proposed: ask again.`)
+      const saved = await this.saveFiles([path])
+      await writeFile(abs, content)
+      return this.record(label, [{ kind: 'restore-files', files: saved }], (await this.currentHead()).hash)
+    })
+  }
+
+  /** A working file's text (for fix proposals: what the fix is compared with). */
+  async workingText(path: string): Promise<string | null> {
+    return readFile(join(this.path, path), 'utf8').catch(() => null)
+  }
+
+  /**
+   * The change a review covers, ready for the model: parsed file diffs, the label to show, the
+   * revision line numbers refer to ('index', 'worktree' or a commit), and each file's text after
+   * the change. Lock files and minified files are left out; so are files past the size budget
+   * (listed in `skipped`).
+   */
+  /** Pre-push checks from .coderabbit.yaml as of a revision (the one being pushed). */
+  async customChecks(rev: string): Promise<{ name: string; instructions: string; mode: 'warn' | 'block' }[]> {
+    for (const name of ['.coderabbit.yaml', '.coderabbit.yml']) {
+      const text = await this.textAt(rev, name).catch(() => null)
+      if (text !== null) return parseCustomChecks(text)
+    }
+    return []
+  }
+
+  /**
+   * What pushing a branch would send. With an upstream: the commits it does not have, from where
+   * the two meet (commits the upstream has and we lack are not ours to check). Without one: the
+   * commits no remote branch has, from the parent of the oldest. Newest first.
+   */
+  async outgoing(branch?: string): Promise<{ head: string; base: string; label: string; commits: { hash: string; subject: string; body: string }[] }> {
+    const name = branch ?? (await this.currentHead()).branch
+    if (!name) throw new Error('Check out a branch to push')
+    const head = await this.revParse(`refs/heads/${name}`)
+    if (!head) throw new Error(`No branch named ${name}`)
+    const local = (await this.refs()).find((r) => r.name === `refs/heads/${name}`)
+    const upstream = local?.upstream && !local.upstreamGone ? local.upstream : null
+    const range = upstream ? [`${upstream}..${head}`] : [head, '--not', '--remotes']
+    const raw = await this.read(['log', '-z', '--format=%H%x00%P%x00%s%x00%b', ...range, '--'])
+    const fields = raw.split('\0')
+    const commits: { hash: string; subject: string; body: string; parents: string[] }[] = []
+    for (let i = 0; i + 3 < fields.length; i += 4) {
+      commits.push({ hash: fields[i]!.trim(), parents: fields[i + 1]!.split(' ').filter(Boolean), subject: fields[i + 2]!, body: fields[i + 3]!.trim() })
+    }
+    const base = upstream
+      ? (await this.read(['merge-base', upstream, head])).trim()
+      : commits.at(-1)?.parents[0] ?? (commits.length ? await this.emptyTreeHash() : head)
+    const to = upstream ? shortName(upstream) : 'a new remote branch'
+    const label = commits.length ? `${commits.length} commit${commits.length === 1 ? '' : 's'} to ${to}` : ''
+    return { head, base, label, commits: commits.map(({ hash, subject, body }) => ({ hash, subject, body })) }
+  }
+
+  async reviewInput(scope: ReviewScope, budget = 60_000): Promise<{ files: FileDiff[]; label: string; head: string; base?: string; texts: Map<string, string>; skipped: string[] }> {
+    const NOISE = [':(exclude,glob)**/pnpm-lock.yaml', ':(exclude,glob)**/package-lock.json', ':(exclude,glob)**/yarn.lock', ':(exclude,glob)**/*.lock', ':(exclude,glob)**/*.min.js']
+    const diffOf = async (args: string[]) => parseDiff((await this.runner.run(['diff', '-M', '--no-color', '--no-ext-diff', '-U3', ...args, '--', '.', ...NOISE], { readOnly: true, env: { GIT_LITERAL_PATHSPECS: '0' } })).stdout)
+    let files: FileDiff[]
+    let label: string
+    let head: string
+    let base: string | undefined
+    switch (scope.kind) {
+      case 'staged':
+        files = await diffOf(['--cached'])
+        label = 'Staged changes'
+        head = 'index'
+        break
+      case 'working': {
+        files = (await this.currentHead()).hash ? await diffOf(['HEAD']) : []
+        const snap = this.last ?? (await this.snapshot())
+        for (const e of snap.status.filter((x) => x.kind === 'untracked').slice(0, 50)) {
+          const content = await readFile(join(this.path, e.path)).catch(() => null)
+          if (content && content.length < 200_000) files.push(untrackedDiff(e.path, content))
+        }
+        label = 'Uncommitted changes'
+        head = 'worktree'
+        base = 'HEAD'
+        break
+      }
+      case 'branch': {
+        const tip = await this.revParse(`refs/heads/${scope.branch}`)
+        if (!tip) throw new Error(`No branch named ${scope.branch}`)
+        const from = scope.base ?? (await this.defaultBase(scope.branch))
+        if (!from) throw new Error(`Cannot tell what ${scope.branch} branched from: no main, master or remote default branch.`)
+        const fork = (await this.read(['merge-base', from, tip])).trim()
+        files = await diffOf([fork, tip])
+        label = `${scope.branch} since ${shortName(from)}`
+        head = tip
+        base = fork
+        break
+      }
+      case 'commits': {
+        const list = [...scope.hashes].reverse()
+        const parents = await Promise.all(list.map(async (h) => (await this.read(['rev-list', '--parents', '-n', '1', h])).trim().split(' ').slice(1)))
+        if (!list.every((h, i) => i === 0 || parents[i]![0] === list[i - 1])) throw new Error('Select commits that follow each other to review them together.')
+        const newest = list[list.length - 1]!
+        base = parents[0]![0] ?? (await this.emptyTreeHash())
+        files = await diffOf([base, newest])
+        label = list.length === 1 ? `Commit ${newest.slice(0, 7)}` : `${list.length} commits`
+        head = newest
+        break
+      }
+      case 'outgoing': {
+        const out = await this.outgoing(scope.branch)
+        files = out.commits.length ? await diffOf([out.base, out.head]) : []
+        label = out.label
+        head = out.head
+        base = out.base
+        break
+      }
+    }
+    const texts = new Map<string, string>()
+    const kept: FileDiff[] = []
+    const skipped: string[] = []
+    let used = 0
+    for (const f of files) {
+      const size = f.hunks.reduce((n, h) => n + h.lines.reduce((m, l) => m + l.text.length + 8, 0), 0)
+      if (used + size > budget && kept.length) {
+        skipped.push(f.path)
+        continue
+      }
+      used += size
+      kept.push(f)
+      if (f.binary || f.change === 'deleted') continue
+      const text = head === 'worktree' ? await readFile(join(this.path, f.path), 'utf8').catch(() => null) : await this.textAt(head === 'index' ? '' : head, f.path)
+      if (text !== null) texts.set(f.path, text)
+    }
+    return { files: kept, label, head, base, texts, skipped }
+  }
+
+  /**
+   * The project's own review guidance for these files, as of `head` ('worktree', 'index' or a
+   * commit): guideline files covering them (CLAUDE.md, AGENTS.md, …, nearest directory last) and
+   * matching path instructions from .coderabbit.yaml. Bounded to ~24k characters.
+   */
+  async reviewContext(paths: string[], head: string): Promise<{ guidelines: { path: string; scope: string; text: string }[]; pathInstructions: { path: string; instructions: string }[] }> {
+    const rev = head === 'worktree' ? null : head === 'index' ? '' : head
+    const listed = rev === null
+      ? await this.read(['ls-files', '-z', '--cached', '--others', '--exclude-standard'])
+      : rev === '' ? await this.read(['ls-files', '-z']) : await this.read(['ls-tree', '-r', '-z', '--name-only', rev])
+    const all = listed.split('\0').filter(Boolean)
+    const guidelines: { path: string; scope: string; text: string }[] = []
+    let budget = 24_000
+    for (const g of relevantGuidelines(all, paths)) {
+      const text = await this.textAt(rev, g.path)
+      if (!text?.trim()) continue
+      const cut = text.length > 8_000 ? `${text.slice(0, 8_000)}\n[… cut]` : text
+      if (cut.length > budget) break
+      budget -= cut.length
+      guidelines.push({ ...g, text: cut })
+    }
+    const yaml = all.includes('.coderabbit.yaml') ? await this.textAt(rev, '.coderabbit.yaml') : all.includes('.coderabbit.yml') ? await this.textAt(rev, '.coderabbit.yml') : null
+    const pathInstructions = yaml ? parsePathInstructions(yaml).filter((pi) => paths.some((p) => globToRegExp(pi.path).test(p))) : []
+    return { guidelines, pathInstructions }
+  }
+
+  /**
+   * Everything worth knowing about lines start..end of a file at `rev` (null: the working tree):
+   * the lines, the definition they are in, definitions of names they use, the commits that
+   * changed them (log -L) and who wrote them (blame -L). Bounded at every step.
+   */
+  async askContext(rev: string | null, path: string, start: number, end: number): Promise<{
+    lines: string[]; within?: { name: string; kind: string; line: number; text: string }
+    used: { name: string; path: string; line: number; preview: string[] }[]
+    history: string[]; blame: { author: string; summary: string; lines: number }[]
+  }> {
+    const text = await this.textAt(rev, path)
+    if (text === null) throw new Error(`${path} is not there${rev ? ` at ${rev.slice(0, 7)}` : ''}.`)
+    const all = text.split(/\r?\n/)
+    const lines = all.slice(start - 1, end)
+    const defs = findDefinitions(path, text)
+    const d = enclosingDefinition(defs, start)
+    const within = d && d.endLine - d.line < 200 ? { name: d.name, kind: d.kind, line: d.line, text: all.slice(d.line - 1, d.endLine).join('\n') } : undefined
+    // Names used in the lines, most frequent first, minus keywords and the function itself.
+    const counts = new Map<string, number>()
+    for (const m of lines.join('\n').matchAll(/[A-Za-z_$][\w$]{2,}/g)) if (!NOT_NAMES.has(m[0]) && !KEYWORDS.has(m[0]) && m[0] !== d?.name) counts.set(m[0], (counts.get(m[0]) ?? 0) + 1)
+    const used: { name: string; path: string; line: number; preview: string[] }[] = []
+    for (const [name] of [...counts].sort((a, b) => b[1] - a[1]).slice(0, 8)) {
+      if (used.length >= 5) break
+      const peek = await this.codePeek(name, rev).catch(() => null)
+      const def = peek?.definitions[0]
+      if (def) used.push({ name, path: def.path, line: def.line, preview: def.preview.slice(0, 10) })
+    }
+    // log -L needs a commit: the working tree's lines are traced from HEAD.
+    const at = rev ?? 'HEAD'
+    const history = (await this.runner.run(['log', '-s', '-n', '6', `--format=%h %as %an: %s`, `-L${start},${end}:${path}`, at], { readOnly: true, okCodes: [128] })).stdout
+      .split('\n').filter((l) => /^[0-9a-f]{7,} /.test(l))
+    const blameOut = await this.runner.run(['blame', '--porcelain', `-L${start},${end}`, at, '--', path], { readOnly: true, okCodes: [128] })
+    const byCommit = new Map<string, { author: string; summary: string; lines: number }>()
+    for (const b of parseBlame(blameOut.stdout)) {
+      const e = byCommit.get(b.hash) ?? { author: b.author, summary: b.summary, lines: 0 }
+      e.lines++
+      byCommit.set(b.hash, e)
+    }
+    return { lines, within, used, history, blame: [...byCommit.values()].sort((a, b) => b.lines - a.lines) }
+  }
+
+  /**
+   * What a change could affect beyond itself: the definitions it touches, every use of them
+   * outside the change (git grep at the same revision), tests for them, and files that usually
+   * change along. Bounded: 15 symbols, 15 uses each, 80 in all.
+   */
+  async impact(scope: ReviewScope): Promise<ImpactResult> {
+    const input = await this.reviewInput(scope, 400_000)
+    const rev = input.head === 'worktree' ? null : input.head === 'index' ? '' : input.head
+    const baseRev = input.base ?? 'HEAD'
+    const before = new Map<string, string>()
+    for (const f of input.files) {
+      if (f.change === 'added' || f.binary) continue
+      const t = await this.textAt(baseRev, f.oldPath ?? f.path)
+      if (t !== null) before.set(f.oldPath ?? f.path, t)
+    }
+    const symbols = changedSymbols(input.files, (p) => input.texts.get(p) ?? null, (p) => before.get(p) ?? null).slice(0, 40)
+    // Lines that are part of the change: uses there are not "outside".
+    const inChange = new Map<string, Set<number>>()
+    for (const f of input.files) {
+      const set = new Set<number>()
+      for (const h of f.hunks) for (const l of h.lines) if (l.newNo !== undefined && l.kind === '+') set.add(l.newNo)
+      inChange.set(f.path, set)
+    }
+    const listed = rev === null
+      ? await this.read(['ls-files', '-z', '--cached', '--others', '--exclude-standard'])
+      : rev === '' ? await this.read(['ls-files', '-z']) : await this.read(['ls-tree', '-r', '-z', '--name-only', rev])
+    const allPaths = listed.split('\0').filter(Boolean)
+    const callers: ImpactResult['callers'] = []
+    const names = [...new Set(symbols.map((s) => s.name))].slice(0, 15)
+    for (const name of names) {
+      if (callers.length >= 80) break
+      const defLines = new Set(symbols.filter((s) => s.name === name).map((s) => `${s.path}:${s.line}`))
+      const where = rev === null ? [] : rev === '' ? ['--cached'] : [rev]
+      const out = await this.runner.run(['grep', '-n', '-z', '--column', '-w', '-I', '-F', '--max-count=20', '-e', name, ...where, '--'], { readOnly: true, okCodes: [1] })
+      let n = 0
+      for (const h of parseGrep(out.stdout, rev || undefined)) {
+        if (n >= 15 || callers.length >= 80) break
+        if (inChange.get(h.path)?.has(h.line) || defLines.has(`${h.path}:${h.line}`)) continue
+        const defs = (await this.definitionsIn(rev, h.path))?.defs ?? []
+        // A line that defines the name (an overload, a re-export) is not a use of it.
+        if (defs.some((d) => d.name === name && d.line === h.line)) continue
+        const d = enclosingDefinition(defs, h.line)
+        callers.push({ id: `C${callers.length + 1}`, symbol: name, path: h.path, line: h.line, text: h.text.trim().slice(0, 240), within: d ? `${d.kind} ${d.name}` : undefined, test: isTestPath(h.path) })
+        n++
+      }
+    }
+    const changedPaths = input.files.map((f) => f.path)
+    const tests = [...new Set([
+      ...changedPaths.flatMap((p) => testsByName(p, allPaths)),
+      ...callers.filter((c) => c.test).map((c) => c.path),
+    ])].filter((p) => !changedPaths.includes(p) || isTestPath(p))
+    const coChange: ImpactResult['coChange'] = []
+    for (const file of changedPaths.slice(0, 10)) {
+      const log = await this.read(['log', '-n', '300', '--format=%x01%H', '-z', '--name-only', '--full-diff', ...(input.base && input.head !== 'worktree' && input.head !== 'index' ? [input.head] : []), '--', file]).catch(() => '')
+      for (const c of coChanges(file, parseFilesPerCommit(log))) if (!changedPaths.includes(c.path) && !coChange.some((x) => x.path === c.path)) coChange.push(c)
+    }
+    return { scope, label: input.label, head: input.head, base: input.base, symbols, callers, tests, coChange: coChange.slice(0, 6) }
+  }
+
+  /** Recent commits up to `base` that touched these files: the history a reader of the change needs. */
+  async relatedHistory(paths: string[], base = 'HEAD', n = 8): Promise<{ hash: string; subject: string; author: string; date: number }[]> {
+    if (!paths.length) return []
+    const r = await this.runner.run(['log', `-n${n}`, '--format=%H%x00%s%x00%an%x00%at', base, '--', ...paths.slice(0, 50)], { readOnly: true, okCodes: [128] })
+    return r.stdout.split('\n').filter(Boolean).map((l) => {
+      const [hash = '', subject = '', author = '', date = '0'] = l.split('\0')
+      return { hash, subject, author, date: Number(date) }
+    })
+  }
+
+  /** What a branch is measured against: its upstream's remote default branch, else main or master. */
+  private async defaultBase(branch: string): Promise<string | null> {
+    const refs = await this.refs()
+    const names = new Set(refs.map((r) => r.name))
+    const remoteHead = (await this.runner.run(['symbolic-ref', '-q', 'refs/remotes/origin/HEAD'], { readOnly: true, okCodes: [1, 128] })).stdout.trim()
+    for (const c of [remoteHead, 'refs/remotes/origin/main', 'refs/remotes/origin/master', 'refs/heads/main', 'refs/heads/master']) {
+      if (c && names.has(c) && c !== `refs/heads/${branch}`) return c
+    }
+    return null
+  }
+
+  /**
+   * What history says about the uncommitted change (staged and unstaged, tracked files): files
+   * that usually change along with these but are missing, and who wrote the lines being
+   * changed. Bounded: 15 files, 300 commits of history each.
+   */
+  async changeInsights(): Promise<ChangeInsights> {
+    const snap = this.last ?? (await this.snapshot())
+    if (!snap.head.hash) return { coChange: [], owners: [] }
+    const changed = snap.status.filter((e) => e.kind !== 'untracked' && e.kind !== 'unmerged').map((e) => e.path)
+    const inChange = new Set(snap.status.map((e) => e.path))
+    const files = changed.slice(0, 15)
+    const coChange: ChangeInsights['coChange'] = []
+    const owners = new Map<string, number>()
+    await Promise.all(files.map(async (file) => {
+      const log = await this.read(['log', '-n', '300', '--format=%x01%H', '-z', '--name-only', '--full-diff', '--', file])
+      for (const c of coChanges(file, parseFilesPerCommit(log))) if (!inChange.has(c.path)) coChange.push(c)
+      // Owners: blame the old side of each hunk against HEAD.
+      const ranges = oldRanges(await this.read(['diff', 'HEAD', '-U0', '--no-color', '--no-ext-diff', '--', file]))
+      if (!ranges.length) return
+      const blame = await this.runner.run(['blame', '--porcelain', ...ranges.flatMap((r) => ['-L', `${r.start},+${r.count}`]), 'HEAD', '--', file], { readOnly: true, okCodes: [128] })
+      for (const b of parseBlame(blame.stdout)) owners.set(b.author, (owners.get(b.author) ?? 0) + 1)
+    }))
+    // One suggestion per missing file: the strongest reason.
+    const best = new Map<string, ChangeInsights['coChange'][number]>()
+    for (const c of coChange) {
+      const prev = best.get(c.path)
+      if (!prev || c.together / c.total > prev.together / prev.total) best.set(c.path, c)
+    }
+    return {
+      coChange: [...best.values()].sort((a, b) => b.together / b.total - a.together / a.total).slice(0, 5),
+      owners: [...owners].map(([name, lines]) => ({ name, lines })).sort((a, b) => b.lines - a.lines),
+    }
+  }
+
+  // ---------------------------------------------------------------- pull requests
+
+  /**
+   * Fetch a GitHub pull request's head (refs/pull/N/head: it exists for PRs from forks too) into
+   * a local branch and check it out. Undo returns to where you were and deletes the branch.
+   */
+  checkoutPullRequest(remote: string, num: number, branch = `pr/${num}`): Promise<number> {
+    return this.exclusive(async () => {
+      const before = await this.currentHead()
+      const existed = (await this.refs()).find((r) => r.name === `refs/heads/${branch}`)
+      if (existed && before.branch === branch) throw new Error(`${branch} is checked out: switch away to update it from the pull request.`)
+      await this.progress(['fetch', '--progress', remote, `+refs/pull/${num}/head:refs/heads/${branch}`])
+      await this.git(['checkout', branch])
+      const tip = await this.revParse(`refs/heads/${branch}`)
+      return this.record(`Check out pull request #${num}`, [
+        this.returnTo(before),
+        { kind: 'update-ref', ref: `refs/heads/${branch}`, to: existed?.hash ?? null, from: tip },
+      ], (await this.currentHead()).hash)
+    })
+  }
+
+  // ---------------------------------------------------------------- Git LFS
+
+  private lfsVersion: string | null | undefined
+
+  /**
+   * LFS state, at no cost for repositories that do not use it: the version check runs once, and
+   * the LFS commands only when .gitattributes mentions filter=lfs.
+   */
+  async lfsInfo(): Promise<LfsInfo> {
+    if (this.lfsVersion === undefined) {
+      const v = await this.runner.run(['lfs', 'version'], { readOnly: true, okCodes: [1, 128] }).catch(() => null)
+      this.lfsVersion = v?.code === 0 ? (/git-lfs\/(\S+)/.exec(v.stdout)?.[1] ?? v.stdout.trim()) : null
+    }
+    const attrs = await readFile(join(this.path, '.gitattributes'), 'utf8').catch(() => '')
+    const info: LfsInfo = { installed: this.lfsVersion !== null, version: this.lfsVersion ?? undefined, used: /filter=lfs/.test(attrs), ready: false, patterns: [], files: [] }
+    if (!info.installed || !info.used) return info
+    const [track, files, filter] = await Promise.all([
+      this.read(['lfs', 'track', '--json']),
+      this.read(['lfs', 'ls-files', '--json']),
+      this.configGet(null, 'filter.lfs.process'),
+    ])
+    info.ready = !!filter
+    info.patterns = (JSON.parse(track).patterns ?? []).map((p: { pattern: string; source: string; lockable?: boolean }) => ({ pattern: p.pattern, source: p.source, lockable: !!p.lockable }))
+    info.files = (JSON.parse(files).files ?? []).map((f: { name: string; size: number; downloaded?: boolean }) => ({ path: f.name, size: f.size, downloaded: f.downloaded !== false }))
+    return info
+  }
+
+  /** `git lfs install --local`: the filter and hooks, for this repository only. */
+  lfsInstall(): Promise<void> {
+    return this.exclusive(async () => {
+      await this.git(['lfs', 'install', '--local'])
+    })
+  }
+
+  /** Route files matching `pattern` through LFS (or stop). Only .gitattributes changes: undoable. */
+  lfsTrack(pattern: string, track = true): Promise<number> {
+    return this.exclusive(async () => {
+      const saved = await this.saveFiles(['.gitattributes'])
+      await this.git(['lfs', track ? 'track' : 'untrack', '--', pattern])
+      return this.record(`${track ? 'Track' : 'Stop tracking'} ${pattern} with LFS`, [{ kind: 'restore-files', files: saved }], (await this.currentHead()).hash)
+    })
+  }
+
+  /** Download the LFS files the checked-out commit needs (network). */
+  lfsPull(): Promise<void> {
+    return this.exclusive(async () => {
+      await this.progress(['lfs', 'pull'])
+    })
+  }
+
+  /** Locks on the LFS server (network, so only when asked). */
+  async lfsLocks(): Promise<LfsLock[]> {
+    const out = await this.read(['lfs', 'locks', '--json'])
+    return (JSON.parse(out || '[]') as { id: string; path: string; owner?: { name?: string }; locked_at?: string }[])
+      .map((l) => ({ id: String(l.id), path: l.path, owner: l.owner?.name ?? '', lockedAt: l.locked_at ?? '' }))
+  }
+
+  /** Lock or unlock a file on the LFS server (network; `force` unlocks someone else's lock). */
+  lfsLock(path: string, lock: boolean, force = false): Promise<void> {
+    return this.exclusive(async () => {
+      await this.git(['lfs', lock ? 'lock' : 'unlock', ...(force ? ['--force'] : []), '--', path])
+    })
+  }
+
+  /**
+   * The real content of an LFS pointer blob, from the local LFS store only (never the network);
+   * null when it was not downloaded. Lets image diffs show LFS images.
+   */
+  private async lfsContent(pointer: Buffer): Promise<Buffer | null> {
+    const text = pointer.subarray(0, 300).toString('utf8')
+    const oid = /^version https:\/\/git-lfs\.github\.com\/spec\/v1\noid sha256:([0-9a-f]{64})/.exec(text)?.[1]
+    if (!oid) return null
+    return readFile(join(this.commonDir, 'lfs', 'objects', oid.slice(0, 2), oid.slice(2, 4), oid)).catch(() => null)
+  }
+
+  // ---------------------------------------------------------------- command log
+
+  /** The git commands run for this repository, newest first (after `afterId`, when given). */
+  commandLog(afterId = 0): CommandRecord[] {
+    return this.runner.history.filter((r) => r.id > afterId).reverse().map((r) => ({ ...r }))
+  }
+
+  // ---------------------------------------------------------------- bisect
+
+  /**
+   * Read a bisect's state from its refs (refs/bisect/bad, good-*, skip-*) and, once there is a
+   * good and a bad commit, ask `rev-list --bisect-vars` (the plumbing behind `git bisect`) how
+   * many candidates are left. bisect_all=1 means one is left: that is the first bad commit.
+   */
+  private async bisectState(): Promise<BisectState> {
+    const st: BisectState = { good: [], skipped: [] }
+    const refs = await this.read(['for-each-ref', '--format=%(refname)%00%(objectname)', 'refs/bisect'])
+    for (const line of refs.split('\n').filter(Boolean)) {
+      const [name, hash] = line.split('\0') as [string, string]
+      if (name === 'refs/bisect/bad') st.bad = hash
+      else if (name.startsWith('refs/bisect/good-')) st.good.push(hash)
+      else if (name.startsWith('refs/bisect/skip-')) st.skipped.push(hash)
+    }
+    if (st.bad && st.good.length) {
+      const vars = new Map<string, string>()
+      const out = await this.read(['rev-list', '--bisect-vars', st.bad, '--not', ...st.good])
+      for (const m of out.matchAll(/^(\w+)='?([^'\n]*)'?$/gm)) vars.set(m[1]!, m[2]!)
+      if (vars.get('bisect_all') === '1') st.found = vars.get('bisect_rev')
+      else {
+        st.remaining = Number(vars.get('bisect_nr') ?? 0)
+        st.steps = Number(vars.get('bisect_steps') ?? 0)
+      }
+    }
+    return st
+  }
+
+  /**
+   * Mark a commit good, bad or skipped (starting a bisect if none is running). git then checks
+   * out the next commit to test. Not recorded for undo: Stop (bisect reset) is the way back.
+   */
+  bisectMark(rev: string, term: 'good' | 'bad' | 'skip'): Promise<void> {
+    return this.exclusive(async () => {
+      if (!existsSync(join(this.gitDir, 'BISECT_START'))) await this.git(['bisect', 'start'])
+      await this.git(['bisect', term, rev])
+    })
+  }
+
+  /** End the bisect and go back to the branch (or commit) it started from. */
+  bisectReset(): Promise<void> {
+    return this.exclusive(async () => {
+      await this.git(['bisect', 'reset'])
+    })
+  }
+
+  // ---------------------------------------------------------------- identity and templates
+
+  private async configGet(scope: 'local' | 'global' | null, key: string): Promise<string | undefined> {
+    const r = await this.runner.run(['config', ...(scope ? [`--${scope}`] : []), '--get', key], { readOnly: true, okCodes: [1] })
+    return r.code === 0 ? r.stdout.replace(/\n$/, '') : undefined
+  }
+
+  async identity(): Promise<Identity> {
+    const [ln, le, gn, ge, name, email] = await Promise.all([
+      this.configGet('local', 'user.name'), this.configGet('local', 'user.email'),
+      this.configGet('global', 'user.name'), this.configGet('global', 'user.email'),
+      this.configGet(null, 'user.name'), this.configGet(null, 'user.email'),
+    ])
+    return { name, email, scope: ln !== undefined || le !== undefined ? 'local' : gn !== undefined || ge !== undefined ? 'global' : null, global: { name: gn, email: ge } }
+  }
+
+  /**
+   * Set who commits are made as, for this repository or (global) every repository. Null clears
+   * this repository's own value, so the global one applies again. Undoable: the old values go back.
+   */
+  setIdentity(scope: 'local' | 'global', name: string | null, email: string | null): Promise<number> {
+    return this.exclusive(async () => {
+      const actions: UndoAction[] = []
+      for (const [key, value] of [['user.name', name], ['user.email', email]] as const) {
+        actions.push({ kind: 'config', scope, key, value: (await this.configGet(scope, key)) ?? null })
+        if (value === null) await this.git(['config', `--${scope}`, '--unset', key], { okCodes: [5] })
+        else await this.git(['config', `--${scope}`, key, value])
+      }
+      return this.record(scope === 'global' ? 'Change your global identity' : 'Change this repository\'s identity', actions, (await this.currentHead()).hash)
+    })
+  }
+
+  /** The commit message template (commit.template), when one is set and readable. */
+  async commitTemplate(): Promise<string | null> {
+    const path = await this.configGet(null, 'commit.template')
+    if (!path) return null
+    const abs = path.startsWith('~') ? join(homedir(), path.slice(1)) : resolve(this.path, path)
+    return readFile(abs, 'utf8').catch(() => null)
+  }
+
+  /** People who recently authored commits here, most active first: co-author suggestions. */
+  async recentAuthors(limit = 30): Promise<Person[]> {
+    const out = await this.read(['log', '--all', '-n', '2000', '--format=%aN%x00%aE'])
+    const counts = new Map<string, { p: Person; n: number }>()
+    for (const line of out.split('\n')) {
+      const [name, email] = line.split('\0')
+      if (!name || !email) continue
+      const key = email.toLowerCase()
+      const c = counts.get(key)
+      if (c) c.n++
+      else counts.set(key, { p: { name, email }, n: 1 })
+    }
+    return [...counts.values()].sort((a, b) => b.n - a.n).slice(0, limit).map((c) => c.p)
+  }
+
+  // ---------------------------------------------------------------- submodules
+
+  async submodules(): Promise<Submodule[]> {
+    if (!existsSync(join(this.path, '.gitmodules'))) return []
+    const cfg = (await this.runner.run(['config', '-f', '.gitmodules', '-z', '--get-regexp', '^submodule\\..*\\.(path|url)$'], { readOnly: true, okCodes: [1] })).stdout
+    const byName = new Map<string, Submodule>()
+    for (const entry of cfg.split('\0').filter(Boolean)) {
+      const nl = entry.indexOf('\n')
+      const m = /^submodule\.(.+)\.(path|url)$/.exec(entry.slice(0, nl))
+      if (!m) continue
+      const sm = byName.get(m[1]!) ?? { name: m[1]!, path: '', url: '', dirty: false }
+      sm[m[2] as 'path' | 'url'] = entry.slice(nl + 1)
+      byName.set(m[1]!, sm)
+    }
+    const list = [...byName.values()].filter((s) => s.path)
+    if (!list.length) return []
+    // Gitlinks (mode 160000) in the index are the commits the superproject records.
+    const staged = await this.read(['ls-files', '-s', '-z', '--', ...list.map((s) => s.path)])
+    for (const rec of staged.split('\0').filter(Boolean)) {
+      const [meta, path] = rec.split('\t')
+      const [mode, sha] = meta!.split(' ')
+      const sm = list.find((s) => s.path === path)
+      if (sm && mode === '160000') sm.recorded = sha
+    }
+    await Promise.all(list.map(async (sm) => {
+      // Only look inside a real checkout: in an empty folder git would find the superproject.
+      if (!existsSync(join(this.path, sm.path, '.git'))) return
+      const head = await this.runner.run(['-C', sm.path, 'rev-parse', '--verify', '-q', 'HEAD'], { readOnly: true, okCodes: [1, 128] })
+      if (head.code === 0) sm.checkedOut = head.stdout.trim()
+      const st = await this.runner.run(['-C', sm.path, 'status', '--porcelain', '-z'], { readOnly: true, okCodes: [128] })
+      sm.dirty = st.code === 0 && st.stdout.length > 0
+    }))
+    return list
+  }
+
+  /** Clone (if needed) and check out the recorded commit of each submodule, or just `paths`. May fetch. */
+  updateSubmodules(paths?: string[]): Promise<void> {
+    return this.exclusive(async () => {
+      await this.progress(['submodule', 'update', '--init', '--recursive', '--progress', ...(paths?.length ? ['--', ...paths] : [])])
+    })
+  }
+
+  /** Copy URLs from .gitmodules into the configuration (after someone changed one). */
+  syncSubmodules(): Promise<void> {
+    return this.exclusive(async () => {
+      await this.git(['submodule', 'sync', '--recursive'])
+    })
+  }
+
+  /** Add a submodule (clones it). Undo deletes it again, unless it was changed since. */
+  addSubmodule(url: string, path: string): Promise<number> {
+    return this.exclusive(async () => {
+      const tree = (await this.git(['write-tree'])).stdout.trim()
+      const saved = await this.saveFiles(['.gitmodules'])
+      await this.progress(['submodule', 'add', '--progress', '--', url, path])
+      const sm = (await this.submodules()).find((s) => s.path === path.replace(/\/+$/, ''))
+      if (!sm?.checkedOut) throw new Error(`Could not read the new submodule at ${path}`)
+      return this.record(`Add submodule ${sm.path}`, [
+        { kind: 'submodule-forget', path: sm.path, name: sm.name, commit: sm.checkedOut },
+        { kind: 'read-tree', tree },
+        { kind: 'restore-files', files: saved },
+      ], (await this.currentHead()).hash)
+    })
+  }
+
+  /**
+   * Remove a submodule: `git rm` drops its checkout and its .gitmodules entry (staged, to commit)
+   * and refuses if it has changes. Git keeps its clone in .git/modules, so undo checks it out again.
+   */
+  removeSubmodule(path: string): Promise<number> {
+    return this.exclusive(async () => {
+      const tree = (await this.git(['write-tree'])).stdout.trim()
+      const saved = await this.saveFiles(['.gitmodules'])
+      await this.git(['rm', '-q', '--', path])
+      return this.record(`Remove submodule ${path}`, [
+        { kind: 'read-tree', tree },
+        { kind: 'restore-files', files: saved },
+        { kind: 'submodule-restore', path },
+      ], (await this.currentHead()).hash)
+    })
+  }
+
+  // ---------------------------------------------------------------- remotes and tags
+
+  async remotes(): Promise<Remote[]> {
+    const out = (await this.runner.run(['config', '-z', '--get-regexp', '^remote\\..*\\.(url|pushurl)$'], { readOnly: true, okCodes: [1] })).stdout
+    const map = new Map<string, Remote>()
+    for (const entry of out.split('\0').filter(Boolean)) {
+      const nl = entry.indexOf('\n')
+      const key = entry.slice(0, nl)
+      const value = entry.slice(nl + 1)
+      const m = /^remote\.(.+)\.(url|pushurl)$/.exec(key)
+      if (!m) continue
+      const r = map.get(m[1]!) ?? { name: m[1]!, fetchUrl: '' }
+      if (m[2] === 'url') r.fetchUrl = value
+      else r.pushUrl = value
+      map.set(m[1]!, r)
+    }
+    return [...map.values()]
+  }
+
+  addRemote(name: string, url: string): Promise<number> {
+    return this.exclusive(async () => {
+      await this.git(['remote', 'add', name, url])
+      return this.record(`Add remote ${name}`, [{ kind: 'remote-remove', name }], (await this.currentHead()).hash)
+    })
+  }
+
+  /** Remove a remote (and its remote-tracking branches; a fetch brings those back after undo). */
+  removeRemote(name: string): Promise<number> {
+    return this.exclusive(async () => {
+      const r = (await this.remotes()).find((x) => x.name === name)
+      if (!r) throw new Error(`No remote named ${name}`)
+      await this.git(['remote', 'remove', name])
+      return this.record(`Remove remote ${name}`, [{ kind: 'remote-add', name, url: r.fetchUrl, pushUrl: r.pushUrl }], (await this.currentHead()).hash)
+    })
+  }
+
+  renameRemote(from: string, to: string): Promise<number> {
+    return this.exclusive(async () => {
+      await this.git(['remote', 'rename', from, to])
+      return this.record(`Rename remote ${from} to ${to}`, [{ kind: 'remote-rename', from: to, to: from }], (await this.currentHead()).hash)
+    })
+  }
+
+  /** Change a remote's URL (or its separate push URL; null removes that). */
+  setRemoteUrl(name: string, url: string | null, push = false): Promise<number> {
+    return this.exclusive(async () => {
+      const r = (await this.remotes()).find((x) => x.name === name)
+      if (!r) throw new Error(`No remote named ${name}`)
+      if (url) await this.git(['remote', 'set-url', ...(push ? ['--push'] : []), name, url])
+      else if (push) await this.git(['config', '--unset', `remote.${name}.pushurl`], { okCodes: [5] })
+      else throw new Error('A remote needs a URL.')
+      return this.record(`Change ${name}'s ${push ? 'push ' : ''}URL`, [{ kind: 'remote-url', name, url: push ? (r.pushUrl ?? null) : r.fetchUrl, push }], (await this.currentHead()).hash)
+    })
+  }
+
+  /** Push one tag, or all of them (name null), to a remote. */
+  pushTags(remote: string, name: string | null): Promise<void> {
+    return this.exclusive(async () => {
+      await this.progress(['push', '--progress', remote, ...(name ? [`refs/tags/${name}`] : ['--tags'])])
+    })
+  }
+
+  deleteRemoteTag(remote: string, name: string): Promise<void> {
+    return this.exclusive(async () => {
+      await this.progress(['push', '--progress', remote, '--delete', `refs/tags/${name}`])
+    })
+  }
+
+  /** Tag names a remote has (asks the remote: network, only on request). */
+  async remoteTags(remote: string): Promise<string[]> {
+    const out = await this.read(['ls-remote', '--tags', '--refs', remote])
+    return out.split('\n').filter(Boolean).map((l) => l.split('\t')[1]!.replace(/^refs\/tags\//, ''))
+  }
+
   /** Run an operation that moves the current branch; its undo moves it back with reset --keep. */
   private moving(label: string, run: () => Promise<unknown>): Promise<number | null> {
     return this.exclusive(async () => {
@@ -548,9 +1672,26 @@ export class Repo {
     })
   }
 
-  merge(ref: string, opts: { noFf?: boolean; ffOnly?: boolean } = {}): Promise<number | null> {
-    const flags = opts.ffOnly ? ['--ff-only'] : opts.noFf ? ['--no-ff'] : []
+  /**
+   * Merge `ref` into HEAD. squash: stage its changes without a merge commit (commit them
+   * yourself; the message is prepared). noCommit: stop before the merge commit, to adjust it.
+   */
+  merge(ref: string, opts: { noFf?: boolean; ffOnly?: boolean; squash?: boolean; noCommit?: boolean } = {}): Promise<number | null> {
+    const flags = opts.squash ? ['--squash'] : opts.noCommit ? ['--no-commit', '--no-ff'] : opts.ffOnly ? ['--ff-only'] : opts.noFf ? ['--no-ff'] : []
     return this.moving(`Merge ${shortName(ref)}`, () => this.git(['merge', '--no-edit', ...flags, shortName(ref)]))
+  }
+
+  /** The message git prepared for the next commit (a squash or a stopped merge), or ''. */
+  async preparedMessage(): Promise<string> {
+    for (const f of ['SQUASH_MSG', 'MERGE_MSG']) {
+      try {
+        const text = await readFile(join(this.gitDir, f), 'utf8')
+        return text.split('\n').filter((l) => !l.startsWith('#')).join('\n').trim()
+      } catch {
+        // not there
+      }
+    }
+    return ''
   }
 
   rebase(onto: string): Promise<number | null> {
@@ -617,14 +1758,351 @@ export class Repo {
     return this.moving(`Cherry-pick ${hash.slice(0, 7)}`, () => this.git(['cherry-pick', ...mainline, hash]))
   }
 
+  /**
+   * Cherry-pick several commits onto HEAD in one go, one undo entry for all of them.
+   * `hashes` are in graph order (newest first, as the UI shows them); they are applied oldest
+   * first. Commits already on the current branch are skipped (picking them would be empty).
+   */
+  async cherryPickMany(hashes: string[]): Promise<number | null> {
+    const head = (await this.currentHead()).hash
+    const todo: string[] = []
+    for (const h of [...hashes].reverse()) {
+      if (head && (await this.isAncestor(h, head))) continue
+      todo.push(h)
+    }
+    if (!todo.length) throw new Error('Those commits are already on the current branch.')
+    // -m 1 is accepted for ordinary commits too, so one flag covers a mixed selection.
+    const mainline = (await Promise.all(todo.map((h) => this.isMerge(h)))).some(Boolean) ? ['-m', '1'] : []
+    return this.moving(`Cherry-pick ${todo.length} ${todo.length === 1 ? 'commit' : 'commits'}`, () => this.git(['cherry-pick', ...mainline, ...todo]))
+  }
+
+  // ---------------------------------------------------------------- editing history
+
+  /**
+   * The commits on the current branch that can be dropped or moved: from HEAD along first
+   * parents, newest first, stopping before the first merge and before the root commit (moving
+   * those needs --rebase-merges or --root, more than these simple edits should do).
+   */
+  async editableCommits(limit = 1000): Promise<string[]> {
+    const head = await this.currentHead()
+    if (!head.branch || !head.hash) return []
+    const out: string[] = []
+    const lines = (await this.read(['rev-list', '--first-parent', '--parents', '-n', String(limit + 1), 'HEAD'])).trim().split('\n')
+    for (const line of lines) {
+      const [h, ...parents] = line.split(' ')
+      if (parents.length !== 1) break
+      out.push(h!)
+    }
+    return out
+  }
+
+  /** Drop commits from the current branch (the ones after them are replayed). */
+  dropCommits(hashes: string[]): Promise<number | null> {
+    return this.reorder(`Drop ${hashes.length === 1 ? `${hashes[0]!.slice(0, 7)}` : `${hashes.length} commits`}`, async (chain) => {
+      const drop = new Set(hashes)
+      if (!hashes.every((h) => chain.includes(h))) throw new Error('Only commits on the current branch, after its last merge, can be dropped.')
+      return chain.filter((h) => !drop.has(h))
+    })
+  }
+
+  /**
+   * Move commits (kept in their relative order) to just above (newer than) or below (older than)
+   * `target`, on the current branch.
+   */
+  moveCommits(hashes: string[], target: string, where: 'above' | 'below'): Promise<number | null> {
+    return this.reorder(`Move ${hashes.length === 1 ? hashes[0]!.slice(0, 7) : `${hashes.length} commits`}`, async (chain) => {
+      if (![...hashes, target].every((h) => chain.includes(h))) {
+        throw new Error('Only commits on the current branch, after its last merge, can be moved.')
+      }
+      if (hashes.includes(target)) return chain
+      const moving = chain.filter((h) => hashes.includes(h))
+      const rest = chain.filter((h) => !hashes.includes(h))
+      const at = rest.indexOf(target) + (where === 'above' ? 1 : 0)
+      return [...rest.slice(0, at), ...moving, ...rest.slice(at)]
+    })
+  }
+
+  /**
+   * Rewrite the editable part of the branch to `plan(chain)` (oldest first) with an interactive
+   * rebase whose todo list we write ourselves. Only the part from the first changed position is
+   * replayed. --autostash keeps uncommitted work out of the way; a conflict stops the rebase like
+   * any other (the conflict wizard takes over, and Abort puts everything back).
+   */
+  private reorder(label: string, plan: (chainOldestFirst: string[]) => Promise<(string | TodoItem)[]>, opts: { before?: string; undoMode?: 'keep' | 'soft' } = {}): Promise<number | null> {
+    return this.exclusive(async () => {
+      if (this.operation()) throw new Error(`Finish the ${this.operation()} in progress first.`)
+      const chain = (await this.editableCommits()).reverse()
+      const next = (await plan(chain)).map((t): TodoItem => (typeof t === 'string' ? { hash: t } : t))
+      // Replay from the first position that changes (a different commit, or an action on it).
+      let i = 0
+      while (i < chain.length && next[i] && chain[i] === next[i]!.hash && !next[i]!.action && next[i]!.message === undefined) i++
+      if (i === chain.length && next.length === chain.length) return null
+      // A squash or fixup folds into the commit before it, which must be replayed too.
+      while (i > 0 && (next[i]?.action === 'squash' || next[i]?.action === 'fixup')) i--
+      const base = (await this.read(['rev-parse', `${chain[i]}^`])).trim()
+      const files: string[] = []
+      const lines: string[] = []
+      for (const t of next.slice(i)) {
+        lines.push(`${t.action ?? 'pick'} ${t.hash}`)
+        if (t.message !== undefined) {
+          // Reword: amend the commit just picked with the new message, from a file (any text is safe).
+          const msgFile = join(this.gitDir, `gitsquid-msg-${process.pid}-${files.length}`)
+          await writeFile(msgFile, t.message.trim() + '\n')
+          files.push(msgFile)
+          lines.push(`exec git commit --amend --allow-empty --no-verify -F ${shellQuote(msgFile)}`)
+        }
+      }
+      const file = join(this.gitDir, `gitsquid-todo-${process.pid}`)
+      files.push(file)
+      await writeFile(file, (lines.join('\n') || 'noop') + '\n')
+      const before = opts.before ?? (await this.currentHead()).hash!
+      try {
+        // git runs the sequence editor through a shell with the todo path appended. GIT_EDITOR
+        // stays `true`, so a squash keeps git's combined message as it is.
+        // rebase.updateRefs=false, not --no-update-refs: the flag needs git 2.38+, config is ignored before.
+        await this.git(['-c', 'rebase.updateRefs=false', 'rebase', '-i', '--autostash', base], {
+          env: { GIT_SEQUENCE_EDITOR: `cp ${shellQuote(file)}` },
+        })
+      } finally {
+        await Promise.all(files.map((f) => rm(f, { force: true })))
+      }
+      const after = (await this.currentHead()).hash
+      return after === before ? null : this.record(label, [{ kind: 'reset', to: before, mode: opts.undoMode ?? 'keep' }], after)
+    })
+  }
+
+  /** Change the message of a commit on the current branch (HEAD included). */
+  rewordCommit(hash: string, message: string): Promise<number | null> {
+    if (!message.trim()) return Promise.reject(new Error('The message is empty.'))
+    return this.reorder(`Reword ${hash.slice(0, 7)}`, async (chain) => {
+      if (!chain.includes(hash)) throw new Error('Only commits on the current branch, after its last merge, can be reworded.')
+      return chain.map((h) => (h === hash ? { hash: h, message } : h))
+    })
+  }
+
+  /**
+   * Fold a commit into the one before it. 'squash' keeps both messages (one after the other),
+   * 'fixup' keeps only the earlier commit's message.
+   */
+  squashCommit(hash: string, mode: 'squash' | 'fixup'): Promise<number | null> {
+    return this.reorder(`${mode === 'squash' ? 'Squash' : 'Fixup'} ${hash.slice(0, 7)}`, async (chain) => {
+      const at = chain.indexOf(hash)
+      if (at < 0) throw new Error('Only commits on the current branch, after its last merge, can be squashed.')
+      if (at === 0) throw new Error('The commit below it is not on this part of the branch (a merge or the first commit).')
+      return chain.map((h) => (h === hash ? { hash: h, action: mode } : h))
+    })
+  }
+
+  /**
+   * Squash `hashes` onto `target` (Tower's drag-onto): move them just above it, then fold each
+   * into it, keeping all messages.
+   */
+  squashOnto(hashes: string[], target: string): Promise<number | null> {
+    return this.reorder(`Squash ${hashes.length === 1 ? hashes[0]!.slice(0, 7) : `${hashes.length} commits`} into ${target.slice(0, 7)}`, async (chain) => {
+      if (![...hashes, target].every((h) => chain.includes(h)) || hashes.includes(target)) {
+        throw new Error('Only commits on the current branch, after its last merge, can be squashed.')
+      }
+      const moving = chain.filter((h) => hashes.includes(h))
+      const rest = chain.filter((h) => !hashes.includes(h))
+      const at = rest.indexOf(target) + 1
+      return [...rest.slice(0, at), ...moving.map((h) => ({ hash: h, action: 'squash' as const })), ...rest.slice(at)]
+    })
+  }
+
+  /**
+   * Put the staged changes into an older commit: commit them as a fixup, then fold that into the
+   * target. Undo puts the branch back and leaves the changes staged again (reset --soft).
+   */
+  async fixupInto(target: string): Promise<number | null> {
+    const before = (await this.currentHead()).hash!
+    const chain = await this.editableCommits()
+    if (!chain.includes(target)) throw new Error('Only commits on the current branch, after its last merge, can take a fixup.')
+    await this.exclusive(() => this.git(['commit', '--no-verify', '-m', `fixup! ${target}`]))
+    const fixup = (await this.currentHead()).hash!
+    return this.reorder(`Fixup into ${target.slice(0, 7)}`, async (c) => {
+      const rest = c.filter((h) => h !== fixup)
+      const at = rest.indexOf(target) + 1
+      return [...rest.slice(0, at), { hash: fixup, action: 'fixup' as const }, ...rest.slice(at)]
+    }, { before, undoMode: 'soft' })
+  }
+
+  // ---------------------------------------------------------------- recompose
+
+  /**
+   * Check that `hashes` (graph order) can be recomposed and describe them: a chain of
+   * non-merge commits on the current branch, with only non-merge commits after it up to HEAD.
+   */
+  async recomposeInfo(hashes: string[]): Promise<{
+    branch: string
+    base: string | null
+    list: string[]
+    after: string[]
+    units: RecomposeUnit[]
+    messages: { hash: string; subject: string; body: string; author: string }[]
+    onRemote: string[]
+  }> {
+    const head = await this.currentHead()
+    if (!head.branch || !head.hash) throw new Error('Check out a branch first: recompose rewrites the current branch.')
+    const list = [...new Set(hashes)].reverse()
+    if (!list.length) throw new Error('Select the commits to recompose.')
+    const parents = await Promise.all(list.map(async (h) => (await this.read(['rev-list', '--parents', '-n', '1', h])).trim().split(' ').slice(1)))
+    if (parents.some((p) => p.length > 1)) throw new Error('Merge commits cannot be recomposed. Select a run of ordinary commits.')
+    if (!list.every((h, i) => i === 0 || parents[i]![0] === list[i - 1])) {
+      throw new Error('Select commits that follow each other (a range, with Shift-click).')
+    }
+    const newest = list[list.length - 1]!
+    if (!(await this.isAncestor(newest, head.hash))) throw new Error(`These commits are not on ${head.branch}.`)
+    const afterMerges = (await this.read(['rev-list', '--min-parents=2', `${newest}..${head.hash}`])).trim()
+    if (afterMerges) throw new Error(`${head.branch} has merge commits after these; recompose only works on a straight line of commits.`)
+    const after = (await this.read(['rev-list', '--reverse', `${newest}..${head.hash}`])).trim().split('\n').filter(Boolean)
+    const base = parents[0]![0] ?? null
+    const diff = await this.read(['diff', '--no-color', '--no-ext-diff', '--no-renames', '--binary', base ?? (await this.emptyTreeHash()), newest])
+    const units = splitUnits(diff)
+    if (!units.length) throw new Error('These commits change nothing, so there is nothing to recompose.')
+    const messages = await Promise.all(list.map(async (h) => {
+      const [subject = '', author = '', body = ''] = (await this.read(['log', '-1', '--format=%s%x00%an <%ae>%x00%b', h])).split('\0')
+      return { hash: h, subject, body: body.trim(), author }
+    }))
+    const onRemote = (await this.read(['branch', '-r', '--format=%(refname:short)', '--contains', list[0]!])).trim().split('\n').filter(Boolean)
+    return { branch: head.branch, base, list, after, units, messages, onRemote }
+  }
+
+  /**
+   * Replace the commits with `plan` (oldest first, every unit exactly once). The new commits are
+   * built in a throwaway index, so the working tree and the real index are never touched; the
+   * last one must have the newest original's tree, so the commits after the range keep their
+   * trees exactly and only get new parents. Then one update-ref moves the branch.
+   */
+  recompose(hashes: string[], plan: PlannedCommit[]): Promise<number> {
+    return this.exclusive(async () => {
+      const info = await this.recomposeInfo(hashes)
+      const problems = checkPlan(info.units, plan)
+      if (problems.length) throw new Error(problems.join(' '))
+      const oldHead = (await this.currentHead()).hash!
+      const index = join(this.gitDir, `gitsquid-recompose-${process.pid}.index`)
+      const env = { GIT_INDEX_FILE: index }
+      // One author keeps the commits theirs; several make you the author, crediting them all.
+      const authors = [...new Set(info.messages.map((m) => m.author))]
+      const authorEnv = authors.length === 1 ? splitAuthor(authors[0]!) : {}
+      const trailer = authors.length > 1 ? `\n\n${authors.map((a) => `Co-authored-by: ${a}`).join('\n')}` : ''
+      try {
+        if (info.base) await this.git(['read-tree', info.base], { env })
+        else await this.git(['read-tree', '--empty'], { env })
+        const byId = new Map(info.units.map((u) => [u.id, u]))
+        let parent = info.base
+        for (const [i, c] of plan.entries()) {
+          const patch = patchFor(c.units.map((id) => byId.get(id)!))
+          try {
+            await this.runner.run(['apply', '--cached', '--whitespace=nowarn', '-'], { env, input: patch })
+          } catch (e) {
+            throw new Error(`Could not build commit ${i + 1} ("${c.message.split('\n')[0]}"): its changes do not apply in this order. Try moving it later.\n${(e as Error).message}`)
+          }
+          const tree = (await this.runner.run(['write-tree'], { env })).stdout.trim()
+          parent = (await this.runner.run(['commit-tree', tree, ...(parent ? ['-p', parent] : [])], {
+            env: { ...env, ...authorEnv }, input: c.message.trim() + trailer + '\n',
+          })).stdout.trim()
+        }
+        const want = (await this.read(['rev-parse', `${info.list[info.list.length - 1]}^{tree}`])).trim()
+        const got = (await this.read(['rev-parse', `${parent}^{tree}`])).trim()
+        if (got !== want) throw new Error('The new commits do not add up to the original result, so nothing was changed.')
+        // The commits after the range: same tree, message and author; new parent.
+        for (const h of info.after) {
+          const [an = '', ae = '', ad = '', msg = ''] = (await this.read(['log', '-1', '--format=%an%x00%ae%x00%ad%x00%B', '--date=raw', h])).split('\0')
+          parent = (await this.runner.run(['commit-tree', `${h}^{tree}`, '-p', parent!], {
+            env: { GIT_AUTHOR_NAME: an, GIT_AUTHOR_EMAIL: ae, GIT_AUTHOR_DATE: ad }, input: msg,
+          })).stdout.trim()
+        }
+        const ref = `refs/heads/${info.branch}`
+        await this.git(['update-ref', '-m', 'gitsquid: recompose', ref, parent!, oldHead])
+        return this.record(`Recompose ${info.list.length} commits`, [{ kind: 'update-ref', ref, to: oldHead, from: parent! }], parent!)
+      } finally {
+        await rm(index, { force: true })
+      }
+    })
+  }
+
+  private async isAncestor(a: string, b: string): Promise<boolean> {
+    const res = await this.runner.run(['merge-base', '--is-ancestor', a, b], { okCodes: [1], readOnly: true })
+    return res.code === 0
+  }
+
+  /**
+   * Several commits as text to paste or `git apply`/`git am`: a diff or a mailbox of patches.
+   * `hashes` are in graph order (newest first). When they form a chain (each one's first parent
+   * is the one before), it is one diff from the oldest's parent to the newest, or a numbered
+   * patch series; otherwise each commit's own diff or patch, oldest first.
+   */
+  async commitsText(hashes: string[], format: 'diff' | 'patch'): Promise<string> {
+    const list = [...hashes].reverse()
+    if (!list.length) return ''
+    const parents = await Promise.all(list.map(async (h) => (await this.read(['rev-list', '--parents', '-n', '1', h])).trim().split(' ').slice(1)))
+    const chain = list.every((h, i) => i === 0 || parents[i]![0] === list[i - 1])
+    const diffOf = async (from: string | undefined, to: string) =>
+      this.read(['diff', '--no-color', '--no-ext-diff', '-M', '--binary', from ?? (await this.emptyTreeHash()), to])
+    if (format === 'diff') {
+      if (chain) return diffOf(parents[0]![0], list[list.length - 1]!)
+      return (await Promise.all(list.map((h, i) => diffOf(parents[i]![0], h)))).join('')
+    }
+    const fp = ['format-patch', '--stdout', '--no-color', '--binary']
+    if (chain) {
+      const newest = list[list.length - 1]!
+      return this.read(parents[0]!.length ? [...fp, `${list[0]}^..${newest}`] : [...fp, '--root', newest])
+    }
+    return (await Promise.all(list.map((h) => this.read([...fp, '-1', h])))).join('')
+  }
+
+  /** Save commits as numbered .patch files in `dir`, oldest first (`format-patch`). Returns their paths. */
+  async savePatches(hashes: string[], dir: string): Promise<string[]> {
+    const out: string[] = []
+    const list = [...hashes].reverse()
+    for (const [i, h] of list.entries()) {
+      const r = await this.read(['format-patch', '--no-color', '--binary', '-o', dir, `--start-number=${i + 1}`, '-1', h])
+      out.push(...r.split('\n').filter(Boolean))
+    }
+    return out
+  }
+
+  /**
+   * Apply a patch. Mailbox patches (format-patch output, "From <sha> …") become commits with
+   * `am --3way`, keeping author and message; undo moves the branch back. A plain diff is applied
+   * to the working tree and index with `apply --3way`; undo puts both back. A 3-way apply can
+   * stop on conflicts: `am` then waits for continue / abort, a plain apply leaves conflicted
+   * files, and the undo entry is recorded either way so nothing is lost.
+   */
+  applyPatch(text: string): Promise<number | null> {
+    if (/^From [0-9a-f]{40} /m.test(text)) {
+      return this.moving(`Apply ${(text.match(/^From [0-9a-f]{40} /gm) ?? []).length} patches`, () => this.git(['am', '--3way'], { input: text }))
+    }
+    return this.exclusive(async () => {
+      if (this.operation()) throw new Error(`Finish the ${this.operation()} in progress first.`)
+      const numstat = await this.runner.run(['apply', '--numstat', '-z'], { input: text, readOnly: true })
+      const paths = parseNumstatPaths(numstat.stdout)
+      if (!paths.length) throw new Error('This is not a patch git can read.')
+      const tree = (await this.git(['write-tree'])).stdout.trim()
+      const saved = await this.saveFiles(paths)
+      const head = (await this.currentHead()).hash
+      const record = () => this.record(`Apply patch to ${describePaths(paths)}`, [{ kind: 'read-tree', tree }, { kind: 'restore-files', files: saved }], head)
+      try {
+        await this.git(['apply', '--3way', '--whitespace=nowarn'], { input: text })
+      } catch (e) {
+        // Conflicts: the files are changed (with markers); keep the way back.
+        if ((await this.read(['ls-files', '-u'])).trim()) await record()
+        throw e
+      }
+      return record()
+    })
+  }
+
   async revert(hash: string): Promise<number | null> {
     const mainline = (await this.isMerge(hash)) ? ['-m', '1'] : []
     return this.moving(`Revert ${hash.slice(0, 7)}`, () => this.git(['revert', '--no-edit', ...mainline, hash]))
   }
 
-  createTag(name: string, hash: string, message?: string): Promise<number> {
+  /** `sign` makes a signed tag (-s, with your signing key); signed tags are annotated, so it needs a message. */
+  createTag(name: string, hash: string, message?: string, opts: { sign?: boolean } = {}): Promise<number> {
     return this.exclusive(async () => {
-      await this.git(['tag', ...(message ? ['-a', '-m', message] : []), name, hash])
+      const kind = opts.sign ? ['-s', '-m', message || name] : message ? ['-a', '-m', message] : []
+      await this.git(['tag', ...kind, name, hash])
       const obj = await this.revParse(`refs/tags/${name}`)
       return this.record(`Create tag ${name}`, [{ kind: 'update-ref', ref: `refs/tags/${name}`, to: null, from: obj }], (await this.currentHead()).hash)
     })
@@ -662,14 +2140,17 @@ export class Repo {
     })
   }
 
-  push(opts: { force?: boolean; branch?: string; remote?: string } = {}): Promise<void> {
+  push(opts: { force?: boolean; branch?: string; remote?: string; remoteBranch?: string } = {}): Promise<void> {
     return this.exclusive(async () => {
       const head = await this.currentHead()
       const branch = opts.branch ?? head.branch
       if (!branch) throw new Error('Check out a branch to push')
       const local = (await this.refs()).find((r) => r.name === `refs/heads/${branch}`)
       const force = opts.force ? ['--force-with-lease'] : []
-      if (local?.upstream && !local.upstreamGone && !opts.remote) {
+      if (opts.remoteBranch) {
+        // Push to a branch with another name on the remote, and track it.
+        await this.progress(['push', '--progress', ...force, '-u', opts.remote ?? (await this.defaultRemote()), `${branch}:${opts.remoteBranch}`])
+      } else if (local?.upstream && !local.upstreamGone && !opts.remote) {
         await this.progress(['push', '--progress', ...force, ...(opts.branch ? [remoteOf(local.upstream), branch] : [])])
       } else {
         const remote = opts.remote ?? (await this.defaultRemote())
@@ -702,13 +2183,98 @@ export class Repo {
     }
   }
 
-  stashPush(opts: { message?: string; includeUntracked?: boolean } = {}): Promise<number | null> {
+  /**
+   * Stash changes: everything (`includeUntracked` adds new files), only some `paths`, only what is
+   * staged (`staged`), or everything while leaving the staged changes in place (`keepIndex`, to
+   * test exactly what is about to be committed). Undo pops it back with --index. After a
+   * --staged stash of a partly staged file that pop can refuse; the stash is kept when it does.
+   */
+  stashPush(opts: { message?: string; includeUntracked?: boolean; paths?: string[]; staged?: boolean; keepIndex?: boolean } = {}): Promise<number | null> {
     return this.exclusive(async () => {
       const before = await this.topStash()
-      await this.git(['stash', 'push', ...(opts.includeUntracked ? ['-u'] : []), ...(opts.message ? ['-m', opts.message] : [])])
+      await this.git([
+        'stash', 'push',
+        ...(opts.includeUntracked && !opts.staged ? ['-u'] : []),
+        ...(opts.staged ? ['--staged'] : []),
+        ...(opts.keepIndex ? ['--keep-index'] : []),
+        ...(opts.message ? ['-m', opts.message] : []),
+        ...(opts.paths?.length ? ['--', ...opts.paths] : []),
+      ])
       const after = await this.topStash()
       if (!after || after === before) return null
-      return this.record('Stash changes', [{ kind: 'stash-pop', hash: after }], (await this.currentHead()).hash)
+      const what = opts.paths?.length ? describePaths(opts.paths) : opts.staged ? 'staged changes' : 'changes'
+      return this.record(`Stash ${what}`, [{ kind: 'stash-pop', hash: after }], (await this.currentHead()).hash)
+    })
+  }
+
+  /**
+   * Tower's snapshot: save the working tree as a stash entry and leave it exactly as it is (no
+   * file is rewritten, so editors and watchers see nothing). `stash create` makes the commit for
+   * tracked changes; untracked files get the third parent `stash -u` would give them, built in a
+   * temporary index, so Apply brings them back too.
+   */
+  snapshotWorkTree(message?: string): Promise<number | null> {
+    return this.exclusive(async () => {
+      const head = await this.currentHead()
+      if (!head.hash) throw new Error('Make a first commit before taking a snapshot.')
+      const untracked = (await this.read(['ls-files', '--others', '--exclude-standard', '-z'])).split('\0').filter(Boolean)
+      let w = (await this.git(['stash', 'create'])).stdout.trim()
+      if (!w && !untracked.length) return null
+      const label = message?.trim() || `Snapshot ${new Date().toLocaleString()}`
+      const msg = `On ${head.branch ?? '(no branch)'}: ${label}`
+      if (!w) {
+        // Only untracked files: stash create made nothing, so build the index commit too.
+        const index = (await this.git(['commit-tree', `${head.hash}^{tree}`, '-p', head.hash, '-m', `index on ${head.branch ?? 'HEAD'}`])).stdout.trim()
+        w = (await this.git(['commit-tree', `${head.hash}^{tree}`, '-p', head.hash, '-p', index, '-m', msg])).stdout.trim()
+      }
+      const parents = (await this.read(['rev-list', '--parents', '-n', '1', w])).trim().split(' ').slice(1)
+      let u: string | null = null
+      if (untracked.length) {
+        const tmp = join(tmpdir(), `gitsquid-snap-${process.pid}-${Date.now()}`)
+        const env = { GIT_INDEX_FILE: tmp }
+        try {
+          await this.git(['read-tree', '--empty'], { env })
+          await this.git(['update-index', '--add', '-z', '--stdin'], { env, input: untracked.join('\0') + '\0' })
+          const tree = (await this.git(['write-tree'], { env })).stdout.trim()
+          u = (await this.git(['commit-tree', tree, '-m', `untracked files on ${head.branch ?? 'HEAD'}`])).stdout.trim()
+        } finally {
+          await rm(tmp, { force: true })
+        }
+      }
+      const final = (await this.git(['commit-tree', `${w}^{tree}`, ...parents.flatMap((p) => ['-p', p]), ...(u ? ['-p', u] : []), '-m', msg])).stdout.trim()
+      await this.git(['stash', 'store', '-m', msg, final])
+      return this.record(`Snapshot "${label}"`, [{ kind: 'stash-drop', hash: final }], head.hash)
+    })
+  }
+
+  /**
+   * `git stash branch`: a new branch where the stash was made, checked out, with the stash
+   * applied and dropped. The way out when a stash no longer applies to where you are now. Undo
+   * puts the stash entry back and returns to where you were; the applied changes are dropped
+   * (they are in the restored stash), unless you edited the files since, when undo refuses.
+   */
+  stashBranch(index: number, name: string): Promise<number> {
+    return this.exclusive(async () => {
+      const entry = (await this.stashList()).find((s) => s.index === index)
+      if (!entry) throw new Error(`No stash@{${index}}`)
+      const before = await this.currentHead()
+      // What applying it will leave in the working tree: the stash's tree, plus its untracked files.
+      const tree = await this.revParse(`${entry.hash}^{tree}`)
+      const third = await this.runner.run(['rev-parse', '--verify', '-q', `${entry.hash}^3`], { readOnly: true, okCodes: [1] })
+      const untracked = third.code === 0
+        ? (await this.read(['ls-tree', '-r', '-z', third.stdout.trim()])).split('\0').filter(Boolean).map((l) => {
+            const tab = l.indexOf('\t')
+            return { path: l.slice(tab + 1), blob: l.slice(0, tab).split(' ')[2]! }
+          })
+        : []
+      await this.git(['stash', 'branch', name, entry.ref])
+      const tip = await this.revParse(`refs/heads/${name}`)
+      return this.record(`Stash to branch ${name}`, [
+        { kind: 'drop-applied', tree, untracked },
+        { kind: 'stash-store', hash: entry.hash, message: entry.message },
+        this.returnTo(before),
+        { kind: 'update-ref', ref: `refs/heads/${name}`, to: null, from: tip },
+      ], (await this.currentHead()).hash)
     })
   }
 
@@ -791,6 +2357,7 @@ export class Repo {
       else if (op === 'rebase') await this.git(['rebase', '--continue'])
       else if (op === 'cherry-pick') await this.git(['cherry-pick', '--continue'])
       else if (op === 'revert') await this.git(['revert', '--continue'])
+      else if (op === 'am') await this.git(['am', '--continue'])
     })
   }
 
@@ -801,6 +2368,7 @@ export class Repo {
       else if (op === 'rebase') await this.git(['rebase', '--abort'])
       else if (op === 'cherry-pick') await this.git(['cherry-pick', '--abort'])
       else if (op === 'revert') await this.git(['revert', '--abort'])
+      else if (op === 'am') await this.git(['am', '--abort'])
     })
   }
 
@@ -826,10 +2394,64 @@ export class Repo {
       if (head.hash !== entry.expectHead) {
         throw new Error(`Cannot undo "${entry.label}": HEAD has moved since (another tool changed the repository)`)
       }
+      const redo = await this.inverse(entry.actions)
       for (const action of entry.actions) await this.perform(action)
       this.journal.pop()
+      const after = (await this.currentHead()).hash
+      if (redo) this.journal.pushRedo({ ...entry, actions: redo, expectHead: after }, entry)
       return entry.label
     })
+  }
+
+  /** Redo the operation undone last (when nothing has happened since). Returns its label. */
+  redo(): Promise<string | null> {
+    return this.exclusive(async () => {
+      const r = this.journal.peekRedo()
+      if (!r) return null
+      const head = await this.currentHead()
+      if (head.hash !== r.redo.expectHead) {
+        this.journal.clearRedo()
+        throw new Error(`Cannot redo "${r.redo.label}": the repository changed since it was undone.`)
+      }
+      for (const action of r.redo.actions) await this.perform(action)
+      this.journal.popRedo()
+      // Back on the undo stack, expecting the HEAD we are at now.
+      this.journal.restore({ ...r.original, expectHead: (await this.currentHead()).hash })
+      return r.redo.label
+    })
+  }
+
+  redoList(): UndoEntry[] {
+    return this.journal.redoList()
+  }
+
+  /**
+   * The actions that would redo `actions` after they are performed, or null when some step
+   * cannot be reversed from data alone (a discard, a stash pop: those stay undo-only).
+   */
+  private async inverse(actions: UndoAction[]): Promise<UndoAction[] | null> {
+    const out: UndoAction[] = []
+    const head = await this.currentHead()
+    for (const a of actions) {
+      switch (a.kind) {
+        case 'reset':
+          if (!head.hash) return null
+          out.push({ kind: 'reset', to: head.hash, mode: a.mode })
+          break
+        case 'update-ref':
+          out.push({ kind: 'update-ref', ref: a.ref, to: a.from, from: a.to })
+          break
+        case 'checkout':
+          out.push({ kind: 'checkout', target: head.branch ?? head.hash!, detach: !head.branch })
+          break
+        case 'rename-branch':
+          out.push({ kind: 'rename-branch', from: a.to, to: a.from })
+          break
+        default:
+          return null
+      }
+    }
+    return out.reverse()
   }
 
   private async perform(a: UndoAction): Promise<void> {
@@ -853,13 +2475,33 @@ export class Repo {
         await this.git(['branch', '-m', a.from, a.to])
         break
       case 'set-upstream':
-        await this.git(['branch', `--set-upstream-to=${shortName(a.upstream)}`, a.branch], { okCodes: [128] })
+        if (a.upstream) await this.git(['branch', `--set-upstream-to=${shortName(a.upstream)}`, a.branch], { okCodes: [128] })
+        else await this.git(['branch', '--unset-upstream', a.branch], { okCodes: [128] })
+        break
+      case 'remote-add':
+        await this.git(['remote', 'add', a.name, a.url])
+        if (a.pushUrl) await this.git(['remote', 'set-url', '--push', a.name, a.pushUrl])
+        break
+      case 'remote-remove':
+        await this.git(['remote', 'remove', a.name])
+        break
+      case 'remote-rename':
+        await this.git(['remote', 'rename', a.from, a.to])
+        break
+      case 'remote-url':
+        if (a.url) await this.git(['remote', 'set-url', ...(a.push ? ['--push'] : []), a.name, a.url])
+        else await this.git(['config', '--unset', `remote.${a.name}.pushurl`], { okCodes: [5] })
         break
       case 'stash-pop': {
         // Find the entry by its commit: other stash operations may have moved it from stash@{0}.
         const entry = (await this.stashList()).find((s) => s.hash === a.hash)
         if (!entry) throw new Error('The stash this would restore no longer exists')
         await this.git(['stash', 'pop', '--index', entry.ref])
+        break
+      }
+      case 'stash-drop': {
+        const entry = (await this.stashList()).find((s) => s.hash === a.hash)
+        if (entry) await this.git(['stash', 'drop', entry.ref])
         break
       }
       case 'stash-store':
@@ -877,6 +2519,44 @@ export class Repo {
         } finally {
           await rm(tmp, { force: true })
         }
+        break
+      }
+      case 'config':
+        if (a.value === null) await this.git(['config', `--${a.scope}`, '--unset', a.key], { okCodes: [5] })
+        else await this.git(['config', `--${a.scope}`, a.key, a.value])
+        break
+      case 'submodule-forget': {
+        const inside = (args: string[]) => this.runner.run(['-C', a.path, ...args], { readOnly: true, okCodes: [128] })
+        const head = await inside(['rev-parse', 'HEAD'])
+        if (head.code === 0 && (head.stdout.trim() !== a.commit || (await inside(['status', '--porcelain'])).stdout.trim())) {
+          throw new Error(`${a.path} has new commits or changes since it was added: undo would delete them.`)
+        }
+        await this.git(['submodule', 'deinit', '-f', '--', a.path], { okCodes: [1, 128] })
+        await rm(join(this.path, a.path), { recursive: true, force: true })
+        await rm(join(this.gitDir, 'modules', a.name), { recursive: true, force: true })
+        await this.git(['config', '--remove-section', `submodule.${a.name}`], { okCodes: [128] })
+        break
+      }
+      case 'submodule-restore':
+        await this.git(['submodule', 'update', '--init', '--', a.path])
+        break
+      case 'worktree-remove':
+        await this.git(['worktree', 'remove', a.path])
+        break
+      case 'worktree-add':
+        await this.git(['worktree', 'add', ...(a.branch ? [a.path, a.branch] : ['--detach', a.path, a.commit])])
+        break
+      case 'drop-applied': {
+        // `stash create` snapshots the tracked working tree without touching anything.
+        const w = (await this.git(['stash', 'create'])).stdout.trim()
+        const tree = await this.revParse(`${w || 'HEAD'}^{tree}`)
+        const changed = 'The working tree changed since, so undo cannot tell your edits from the stash: commit or stash them first.'
+        if (tree !== a.tree) throw new Error(changed)
+        for (const f of a.untracked) {
+          if ((await this.read(['hash-object', '--', f.path])).trim() !== f.blob) throw new Error(changed)
+        }
+        await this.git(['reset', '--hard', '-q'])
+        for (const f of a.untracked) await rm(join(this.path, f.path), { force: true })
         break
       }
       case 'restore-files':
@@ -915,6 +2595,49 @@ function lastLine(t: string): string {
   return parts[parts.length - 1] ?? ''
 }
 
+/** Paths from `git apply --numstat -z`: "add\tdel\tpath\0", or "add\tdel\t\0old\0new\0" for a rename. */
+export function parseNumstatPaths(out: string): string[] {
+  const parts = out.split('\0')
+  const paths: string[] = []
+  for (let i = 0; i < parts.length; i++) {
+    const rec = parts[i]!
+    if (!rec) continue
+    const m = /^[\d-]+\t[\d-]+\t(.*)$/s.exec(rec)
+    if (!m) continue
+    if (m[1]) paths.push(m[1])
+    else {
+      paths.push(parts[i + 1]!, parts[i + 2]!)
+      i += 2
+    }
+  }
+  return [...new Set(paths.filter(Boolean))]
+}
+
+/** Common words in code that are not worth looking up as definitions. */
+const KEYWORDS = new Set(['const', 'let', 'var', 'true', 'false', 'null', 'undefined', 'void', 'number', 'string', 'boolean', 'any', 'unknown', 'never',
+  'async', 'export', 'import', 'from', 'default', 'class', 'interface', 'type', 'extends', 'implements', 'public', 'private', 'protected', 'static',
+  'self', 'None', 'True', 'False', 'def', 'pass', 'lambda', 'yield', 'func', 'struct', 'impl', 'pub', 'mut', 'let', 'nil', 'end', 'then', 'elif',
+  'console', 'log', 'length', 'push', 'map', 'filter', 'Math', 'Object', 'Array', 'String', 'Number', 'Promise', 'Error', 'JSON', 'throw', 'break', 'continue', 'case', 'in', 'of', 'and', 'not'])
+
 function describePaths(paths: string[]): string {
   return paths.length === 1 ? paths[0]! : `${paths.length} files`
+}
+
+/** "Ada Lovelace <ada@example.com>" -> author environment for commit-tree. */
+function splitAuthor(a: string): Record<string, string> {
+  const m = /^(.*) <(.*)>$/.exec(a)
+  return m ? { GIT_AUTHOR_NAME: m[1]!, GIT_AUTHOR_EMAIL: m[2]! } : {}
+}
+
+/** Quote for a POSIX shell (git runs editors through one, also on Windows). */
+function shellQuote(s: string): string {
+  return `'${s.replace(/\\/g, '/').replace(/'/g, `'\\''`)}'`
+}
+
+/** One line of an interactive rebase we write ourselves. */
+interface TodoItem {
+  hash: string
+  action?: 'pick' | 'squash' | 'fixup'
+  /** Reword: the commit's new message. */
+  message?: string
 }

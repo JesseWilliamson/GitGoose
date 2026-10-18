@@ -1,10 +1,23 @@
 import { GraphLayout, type Row } from '@gitsquid/graph'
-import { SETTINGS, type Commit, type DiffTarget, type GitHubStatus, type GitSquidEvent, type Ref, type RepoSnapshot, type SearchField, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitsquid/shared'
+import { SETTINGS, type PullRequestList, type Commit, type DiffTarget, type GitHubStatus, type GitSquidEvent, type AskThread, type LfsInfo, type PushCheckResult, type Ref, type Remote, type RepoSnapshot, type Submodule, type Worktree, type SearchField, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitsquid/shared'
 import { create } from 'zustand'
 import { api, toUiError, type UiError } from './api'
 import { onAiEvent } from './ai'
+import { opName } from './format'
+import type { ReviewState } from './review'
+import type { WalkthroughState } from './walkthrough'
+import type { ImpactState } from './impact'
 
-export type Selection = { kind: 'wip' } | { kind: 'commit'; hash: string }
+export type Selection =
+  | { kind: 'wip' }
+  | { kind: 'commit'; hash: string }
+  /**
+   * Several commits (Shift- or Ctrl/Cmd-click). `hashes` are in graph order; `anchor` is where a
+   * Shift-click range starts, `cursor` the commit the keyboard moves from.
+   */
+  | { kind: 'commits'; hashes: string[]; anchor: string; cursor: string }
+  /** Comparing two revisions, or a revision and the working tree (`to` null). */
+  | { kind: 'compare'; from: string; to: string | null; fromLabel: string; toLabel: string }
 
 export type FileMode = 'diff' | 'history' | 'blame'
 
@@ -12,6 +25,11 @@ export type CenterView =
   | { kind: 'graph' }
   | { kind: 'file'; target: DiffTarget; mode: FileMode }
   | { kind: 'conflicts' }
+  | { kind: 'reflog' }
+  | { kind: 'commands' }
+  | { kind: 'review' }
+  | { kind: 'walkthrough' }
+  | { kind: 'impact' }
 
 export interface SearchState {
   field: SearchField
@@ -29,8 +47,36 @@ export interface RepoView {
   selected: Selection
   center: CenterView
   search: SearchState | null
+  /** The search bar over the graph is open (it can be open with no query yet). */
+  searchOpen: boolean
+  /** Bumped to focus the search bar again (Ctrl+F while it is open). */
+  searchFocus: number
+  /** Commits that drop / move / drag can edit: the current branch back to its last merge, newest first. */
+  editable: string[]
+  /** Undone operations that can be redone, newest first. */
+  redo: UndoEntry[]
   stashes: StashEntry[]
   undo: UndoEntry[]
+  /** Configured remotes (a remote with no branches fetched yet still shows). */
+  remotes: Remote[]
+  worktrees: Worktree[]
+  submodules: Submodule[]
+  lfs: LfsInfo | null
+  /** Pull requests, loaded only when the user opens the list (it is a network call). */
+  pulls: PullRequestList | null
+  pullsLoading: boolean
+  /** The last AI review in this repository (see lib/review.ts). */
+  review: ReviewState | null
+  walkthrough: WalkthroughState | null
+  impact: ImpactState | null
+  /** The question thread open under the diff, if any. */
+  ask: AskThread | null
+  /** Saved threads (newest first), loaded with the repository. */
+  askThreads: AskThread[]
+  /** Local branches already in HEAD: safe to delete. */
+  merged: string[]
+  /** Tag names on a remote, after the user asked to check (the only way it is read: network). */
+  remoteTags: { remote: string; names: string[] } | null
   progress: string | null
   busy: string | null
   /** Bumped whenever files change on disk; open diffs reload on it. */
@@ -58,6 +104,8 @@ export interface Choice {
  */
 export interface Attention {
   id: number
+  /** Attentions with the same key replace each other (one "conflicts" row per repository). */
+  key?: string
   title: string
   detail?: string
   actions?: Choice[]
@@ -73,14 +121,32 @@ export type Dialog =
       initial?: string
       confirm: string
       /** A second, optional field (e.g. a tag message). */
-      extra?: { label: string; placeholder?: string }
+      extra?: { label: string; placeholder?: string; initial?: string }
       onSubmit: (value: string, extra: string) => void | Promise<void>
     }
   | { kind: 'confirm'; title: string; message: string; confirm: string; danger?: boolean; onConfirm: () => void | Promise<void> }
   /** A question with several answers; the last choice is usually Cancel (a choice with no run). */
-  | { kind: 'choice'; title: string; message: string; detail?: string; choices: Choice[] }
+  | { kind: 'choice'; title: string; message: string; detail?: string; choices: Choice[]; onDismiss?: () => void }
   | { kind: 'clone' }
   | { kind: 'shortcuts' }
+  /** Several lines of text (a commit message). */
+  | { kind: 'text'; title: string; initial: string; confirm: string; onSubmit: (text: string) => void }
+  /** Who commits are made as, for this repository or globally. `onSaved` refreshes whoever asked. */
+  | { kind: 'identity'; repoId: string; onSaved?: () => void }
+  /** Pick one of many (filterable): co-authors, remote branches. */
+  | { kind: 'pick'; title: string; placeholder?: string; items: { label: string; detail?: string; value: string }[]; onPick: (value: string) => void }
+  /** Open a pull request for a branch. */
+  | { kind: 'create-pr'; repoId: string; branch: string }
+  /** The review learnings of a repository, to read and remove. */
+  | { kind: 'learnings'; repoId: string }
+  /** Results of pre-push checks that need the user (a failure, or a blocking check not judged). */
+  | { kind: 'push-checks'; repoId: string; label: string; results: PushCheckResult[]; outcome: 'warn' | 'block'; onPush: () => void }
+  /** Editing this repository's own pre-push checks. */
+  | { kind: 'push-rules'; repoId: string }
+  /** Git LFS locks on the server (fetched when the dialog opens). */
+  | { kind: 'lfs-locks'; repoId: string }
+  /** Branch cleanup: pick merged or stale branches to delete. */
+  | { kind: 'cleanup'; repoId: string }
 
 export interface DropRequest {
   x: number
@@ -90,7 +156,19 @@ export interface DropRequest {
   target: { ref?: Ref; hash: string }
 }
 
-export type MenuTarget = { kind: 'commit'; hash: string } | { kind: 'ref'; ref: Ref; hash: string } | null
+export type MenuTarget =
+  | { kind: 'commit'; hash: string }
+  | { kind: 'commits'; hashes: string[] }
+  | { kind: 'stash'; stash: StashEntry }
+  | { kind: 'ref'; ref: Ref; hash: string }
+  | { kind: 'remote'; remote: string }
+  | { kind: 'worktree'; path: string }
+  | { kind: 'submodule'; path: string }
+  | { kind: 'lfs-pattern'; pattern: string }
+  | { kind: 'pull'; number: number }
+  /** A sidebar section header with its own actions. */
+  | { kind: 'section'; section: 'local' | 'remotes' | 'tags' | 'worktrees' | 'submodules' | 'lfs' }
+  | null
 
 interface State {
   settings: Settings | null
@@ -101,7 +179,10 @@ interface State {
   dialog: Dialog | null
   toasts: Toast[]
   attentions: Attention[]
-  palette: boolean
+  /** The omni search, open with this text in the box ("> " for commands only), or closed. */
+  omni: { query: string } | null
+  /** What the settings page's search box starts with (the omni search opens settings this way). */
+  settingsQuery: string
   drop: DropRequest | null
   menu: MenuTarget
   /** Progress text for a clone in flight. */
@@ -121,7 +202,8 @@ export const useStore = create<State>(() => ({
   dialog: null,
   toasts: [],
   attentions: [],
-  palette: false,
+  omni: null,
+  settingsQuery: '',
   drop: null,
   menu: null,
   cloneProgress: null,
@@ -244,6 +326,46 @@ export function loadMore(id: string): Promise<void> {
   return log.loading
 }
 
+/** The commits a selection covers, in graph order. */
+export function selectedHashes(sel: Selection): string[] {
+  return sel.kind === 'commit' ? [sel.hash] : sel.kind === 'commits' ? sel.hashes : []
+}
+
+/** The commit the keyboard moves from (the last one clicked). */
+export function selectionCursor(sel: Selection): string | null {
+  return sel.kind === 'commit' ? sel.hash : sel.kind === 'commits' ? sel.cursor : null
+}
+
+/**
+ * Click on a commit row: plain selects one; Shift selects the range from the anchor (graph
+ * order, like a file list); Ctrl/Cmd adds or removes one. A selection of one is a plain one.
+ */
+export function selectCommit(id: string, hash: string, mods: { range?: boolean; toggle?: boolean } = {}): void {
+  const v = get().repos[id]
+  if (!v) return
+  const log = getLog(id)
+  const sel = v.selected
+  const one = (h: string): Selection => ({ kind: 'commit', hash: h })
+  const many = (hashes: string[], anchor: string, cursor: string): Selection =>
+    hashes.length === 1 ? one(hashes[0]!) : { kind: 'commits', hashes, anchor, cursor }
+  let next: Selection = one(hash)
+  if (mods.range) {
+    const anchor = sel.kind === 'commits' ? sel.anchor : sel.kind === 'commit' ? sel.hash : null
+    const a = anchor ? log.index.get(anchor) : undefined
+    const b = log.index.get(hash)
+    if (anchor && a !== undefined && b !== undefined) {
+      next = many(log.commits.slice(Math.min(a, b), Math.max(a, b) + 1).map((c) => c.hash), anchor, hash)
+    }
+  } else if (mods.toggle) {
+    const set = new Set(selectedHashes(sel))
+    if (set.has(hash)) set.delete(hash)
+    else set.add(hash)
+    const hashes = [...set].sort((x, y) => (log.index.get(x) ?? Infinity) - (log.index.get(y) ?? Infinity))
+    if (hashes.length) next = many(hashes, sel.kind === 'commits' ? sel.anchor : hash, hash)
+  }
+  updateRepo(id, { selected: next })
+}
+
 /** Load pages until `hash` is in the log (for jumping to a search hit or a parent commit). */
 export async function ensureLoaded(id: string, hash: string): Promise<number | undefined> {
   for (;;) {
@@ -261,7 +383,7 @@ function newView(snap: RepoSnapshot): RepoView {
     id: snap.id, snapshot: snap, logVersion: 0,
     selected: snap.status.length ? { kind: 'wip' } : snap.head.hash ? { kind: 'commit', hash: snap.head.hash } : { kind: 'wip' },
     center: snap.operation && snap.status.some((e) => e.kind === 'unmerged') ? { kind: 'conflicts' } : { kind: 'graph' },
-    search: null, stashes: [], undo: [], progress: null, busy: null, worktreeTick: 0,
+    search: null, searchOpen: false, searchFocus: 0, editable: [], redo: [], stashes: [], undo: [], remotes: [], merged: [], worktrees: [], submodules: [], lfs: null, pulls: null, pullsLoading: false, review: null, walkthrough: null, impact: null, ask: null, askThreads: [], remoteTags: null, progress: null, busy: null, worktreeTick: 0,
   }
 }
 
@@ -275,6 +397,7 @@ export function addRepo(snap: RepoSnapshot): void {
   resetLog(snap.id, snap)
   void loadMore(snap.id)
   void refreshAux(snap.id)
+  void api.askThreads(snap.id).then((askThreads) => updateRepo(snap.id, { askThreads }), () => {})
   if (setting('fetchOnOpen')) void import('./actions').then((a) => a.fetchAll(snap.id, { quiet: true }))
 }
 
@@ -324,9 +447,12 @@ export function onSnapshot(snap: RepoSnapshot): void {
   const hasConflicts = snap.status.some((e) => e.kind === 'unmerged')
   updateRepo(snap.id, (v) => ({
     snapshot: snap,
-    // A merge/rebase just stopped on conflicts: show the conflict wizard.
-    center: hasConflicts && !hadConflicts ? { kind: 'conflicts' } : !snap.operation && v.center.kind === 'conflicts' ? { kind: 'graph' } : v.center,
+    // Something just stopped on conflicts: show the conflict wizard. Leave it once the operation
+    // is over and nothing is unmerged (a stash pop has no operation, only unmerged files).
+    center: hasConflicts && !hadConflicts ? { kind: 'conflicts' } : !snap.operation && !hasConflicts && v.center.kind === 'conflicts' ? { kind: 'graph' } : v.center,
   }))
+  if (hasConflicts && !hadConflicts) alertConflicts(snap.id, snap)
+  else if (!hasConflicts) dismissAttentionKey(`conflicts-${snap.id}`)
   if (snap.refsVersion !== getLog(snap.id).generation) {
     resetLog(snap.id, snap)
     void loadMore(snap.id)
@@ -336,8 +462,11 @@ export function onSnapshot(snap: RepoSnapshot): void {
 
 export async function refreshAux(id: string): Promise<void> {
   try {
-    const [stashes, undo] = await Promise.all([api.stashList(id), api.undoList(id)])
-    updateRepo(id, { stashes, undo })
+    const [stashes, undo, editable, redo, remotes, merged, worktrees, submodules, lfs] = await Promise.all([
+      api.stashList(id), api.undoList(id), api.editableCommits(id), api.redoList(id), api.remotes(id), api.mergedBranches(id), api.worktrees(id), api.submodules(id),
+      api.lfsInfo(id).catch(() => null),
+    ])
+    updateRepo(id, { stashes, undo, editable, redo, remotes, merged, worktrees, submodules, lfs })
   } catch {
     // The tab was closed meanwhile.
   }
@@ -385,6 +514,11 @@ export async function loadGitHub(): Promise<void> {
 }
 
 const commandListeners = new Set<(name: string) => void>()
+/** Run a command as if chosen from the menu: every listener hears it (App, the search box, …). */
+export function runCommand(name: string): void {
+  commandListeners.forEach((l) => l(name))
+}
+
 export function onCommand(l: (name: string) => void): () => void {
   commandListeners.add(l)
   return () => commandListeners.delete(l)
@@ -465,8 +599,34 @@ export function reportError(title: string, e: unknown, actions?: Choice[]): numb
 export function attention(a: Omit<Attention, 'id' | 'time'>): number {
   const id = nextAttention++
   // Newest first; keep the last few so a burst of failures cannot fill the screen.
-  set((s) => ({ attentions: [{ ...a, id, time: Date.now() }, ...s.attentions].slice(0, 5) }))
+  set((s) => ({ attentions: [{ ...a, id, time: Date.now() }, ...s.attentions.filter((x) => !a.key || x.key !== a.key)].slice(0, 5) }))
   return id
+}
+
+export function dismissAttentionKey(key: string): void {
+  set((s) => (s.attentions.some((a) => a.key === key) ? { attentions: s.attentions.filter((a) => a.key !== key) } : s))
+}
+
+/**
+ * Conflicts appeared (a merge, rebase, cherry-pick, revert, pull or stash pop stopped): say so in
+ * the attention bar, where it cannot be missed, with the two ways forward. It goes away by
+ * itself once nothing is unmerged.
+ */
+export function alertConflicts(id: string, snap: RepoSnapshot): void {
+  const files = snap.status.filter((e) => e.kind === 'unmerged').length
+  const op = snap.operation && opName(snap.operation)
+  const what = op ? `The ${op} stopped` : 'Applying the changes stopped'
+  attention({
+    key: `conflicts-${id}`,
+    title: `${what}: ${files} ${files === 1 ? 'file has' : 'files have'} conflicts`,
+    detail: op
+      ? `Resolve them in the conflict view, then continue the ${op}. Abort puts everything back as it was before the ${op}.`
+      : 'Resolve them in the conflict view and mark each file resolved.',
+    actions: [
+      { label: 'Resolve conflicts', variant: 'primary', run: () => updateRepo(id, { center: { kind: 'conflicts' } }) },
+      ...(op ? [{ label: `Abort ${op}`, run: () => void api.abortOperation(id).catch((e) => reportError(`Abort ${op} failed`, e)) }] : []),
+    ],
+  })
 }
 
 export function dismissAttention(id: number): void {
@@ -474,6 +634,6 @@ export function dismissAttention(id: number): void {
 }
 
 /** Ask a question with several answers in a modal. */
-export function choose(title: string, message: string, choices: Choice[], detail?: string): void {
-  set({ dialog: { kind: 'choice', title, message, detail, choices } })
+export function choose(title: string, message: string, choices: Choice[], detail?: string, onDismiss?: () => void): void {
+  set({ dialog: { kind: 'choice', title, message, detail, choices, onDismiss } })
 }

@@ -22,7 +22,7 @@ const CLIENT_JS = `
 const net = require('net')
 const sock = net.connect(process.env.GITSQUID_ASKPASS_HANDLE)
 let data = ''
-sock.on('connect', () => sock.end(JSON.stringify({ prompt: process.argv.slice(2).join(' ') })))
+sock.on('connect', () => sock.write(JSON.stringify({ prompt: process.argv.slice(2).join(' ') }) + '\\n'))
 sock.on('data', (b) => (data += b))
 sock.on('end', () => {
   try {
@@ -69,15 +69,20 @@ export class AskpassServer {
       chmodSync(script, 0o700)
     }
 
-    // allowHalfOpen: the client ends its side after sending the prompt. By default Node would then
-    // close our side too, before we have written the answer.
-    this.server = createServer({ allowHalfOpen: true }, (sock) => {
+    // One line each way: the prompt as JSON ending in a newline (JSON escapes any inside it),
+    // then the answer, and we close. Not a half-close (the client ending its side, then reading):
+    // Windows named pipes do not reliably carry the answer back after that.
+    this.server = createServer((sock) => {
       let data = ''
-      sock.on('data', (b) => (data += b))
-      sock.on('end', async () => {
+      let answered = false
+      sock.on('data', async (b) => {
+        data += b
+        const nl = data.indexOf('\n')
+        if (nl < 0 || answered) return
+        answered = true
         let answer: string | null = null
         try {
-          const { prompt } = JSON.parse(data) as { prompt: string }
+          const { prompt } = JSON.parse(data.slice(0, nl)) as { prompt: string }
           answer = await this.onPrompt(prompt, isSecretPrompt(prompt))
         } catch {
           answer = null

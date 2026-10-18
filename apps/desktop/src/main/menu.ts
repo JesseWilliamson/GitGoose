@@ -30,15 +30,15 @@ export function installMenu(): void {
     {
       label: 'Edit',
       submenu: [
-        // Not role: 'undo': in a text field Cmd+Z should undo typing, elsewhere it undoes the
-        // last git operation. Only the renderer knows which, so it decides.
+        // Not role: 'undo' / 'redo': in a text field Cmd+Z should undo typing, elsewhere it undoes
+        // the last git operation. Only the renderer knows which, so it decides.
         { label: 'Undo', accelerator: 'CmdOrCtrl+Z', click: cmd('undo'), registerAccelerator: false },
-        { role: 'redo' },
+        { label: 'Redo', accelerator: isMac ? 'Shift+CmdOrCtrl+Z' : 'CmdOrCtrl+Y', click: cmd('redo'), registerAccelerator: false },
         { type: 'separator' },
         { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' },
         { type: 'separator' },
-        { label: 'Find Commit…', accelerator: 'CmdOrCtrl+F', click: cmd('search'), registerAccelerator: false },
-        { label: 'Command Palette…', accelerator: 'CmdOrCtrl+Shift+P', click: cmd('palette'), registerAccelerator: false },
+        { label: 'Search…', accelerator: 'CmdOrCtrl+K', click: cmd('search'), registerAccelerator: false },
+        { label: 'Commands…', accelerator: 'CmdOrCtrl+P', click: cmd('palette'), registerAccelerator: false },
       ],
     },
     {
@@ -51,6 +51,10 @@ export function installMenu(): void {
         { label: 'New Branch…', accelerator: 'CmdOrCtrl+Shift+B', click: cmd('new-branch'), registerAccelerator: false },
         { label: 'Stash Changes', accelerator: 'CmdOrCtrl+Shift+S', click: cmd('stash'), registerAccelerator: false },
         { label: 'Pop Stash', click: cmd('pop') },
+        { label: 'Reflog (Recover Lost Commits)', click: cmd('reflog') },
+        { type: 'separator' },
+        { label: 'Apply Patch…', click: cmd('apply-patch') },
+        { label: 'Apply Patch from Clipboard', click: cmd('apply-patch-clipboard') },
         { type: 'separator' },
         { label: 'Reveal in File Manager', click: cmd('reveal') },
       ],
@@ -60,15 +64,10 @@ export function installMenu(): void {
       submenu: [
         { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+B', click: cmd('toggle-sidebar'), registerAccelerator: false },
         { label: 'Toggle Details', accelerator: 'CmdOrCtrl+Alt+B', click: cmd('toggle-details'), registerAccelerator: false },
-        { label: 'Toggle Bottom Panel', accelerator: 'CmdOrCtrl+J', click: cmd('toggle-bottom'), registerAccelerator: false },
-        {
-          label: 'Layout',
-          submenu: [
-            { label: 'Default', click: cmd('layout-default') },
-            { label: 'Wide Graph', click: cmd('layout-wide-graph') },
-            { label: 'Diff Below Graph', click: cmd('layout-diff-below') },
-          ],
-        },
+        { label: 'Hide Side Panels', click: cmd('layout-wide-graph') },
+        { label: 'Reset Panel Sizes', click: cmd('layout-default') },
+        { type: 'separator' },
+        { label: 'Git Command Log', click: cmd('command-log') },
         { type: 'separator' },
         { role: 'reload' }, { role: 'toggleDevTools' }, { type: 'separator' },
         // Zoom is the UI scale setting, so it persists; the renderer handles the keys.

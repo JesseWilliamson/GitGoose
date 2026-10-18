@@ -24,7 +24,9 @@ function visibleSettings(): Visible[] {
 
 export function SettingsPage() {
   const settings = useStore((s) => s.settings)
-  const [query, setQuery] = useState('')
+  // The omni search can open this page on a setting it found.
+  const [query, setQuery] = useState(() => useStore.getState().settingsQuery)
+  useEffect(() => () => useStore.setState({ settingsQuery: '' }), [])
   const [section, setSection] = useState<Section>('Appearance')
   const all = useMemo(visibleSettings, [])
   const q = query.trim().toLowerCase()

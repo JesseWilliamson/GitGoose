@@ -13,7 +13,8 @@
  * with each block replaced by the chosen side. Both are pure so the renderer and main can share them.
  */
 
-export type ConflictChoice = 'ours' | 'theirs' | 'both' | 'base'
+/** both: ours then theirs; both-theirs-first: theirs then ours; base: the common ancestor's lines. */
+export type ConflictChoice = 'ours' | 'theirs' | 'both' | 'both-theirs-first' | 'base'
 
 export interface ConflictBlock {
   kind: 'conflict'
@@ -88,6 +89,7 @@ export function resolveBlocks(content: string, choices: (ConflictChoice | undefi
     if (choice === 'ours') out.push(...seg.ours)
     else if (choice === 'theirs') out.push(...seg.theirs)
     else if (choice === 'both') out.push(...seg.ours, ...seg.theirs)
+    else if (choice === 'both-theirs-first') out.push(...seg.theirs, ...seg.ours)
     else if (choice === 'base') out.push(...(seg.base ?? []))
     else {
       out.push(`<<<<<<< ${seg.oursLabel}`, ...seg.ours)

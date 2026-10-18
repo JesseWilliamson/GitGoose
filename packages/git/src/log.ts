@@ -1,4 +1,4 @@
-import type { Commit } from '@gitsquid/shared'
+import type { Commit, GraphFilter } from '@gitsquid/shared'
 import type { ChildProcess } from 'node:child_process'
 import type { GitRunner } from './runner'
 
@@ -60,8 +60,18 @@ export const GRAPH_REVS = ['--branches', '--remotes', '--tags', 'HEAD']
  * GRAPH_REVS for a repository whose HEAD may be unborn (a new repo, or `checkout --orphan`).
  * Naming an unborn HEAD makes `git log` fail, which would hide every other branch.
  */
-export function graphRevs(headHash: string | undefined): string[] {
-  return headHash ? GRAPH_REVS : GRAPH_REVS.filter((r) => r !== 'HEAD')
+export function graphRevs(headHash: string | undefined, filter?: GraphFilter, existing?: Set<string>): string[] {
+  const head = headHash ? ['HEAD'] : []
+  if (!filter || (!filter.hidden.length && !filter.solo.length)) return [...GRAPH_REVS.filter((r) => r !== 'HEAD'), ...head]
+  if (filter.solo.length) {
+    // Only refs that still exist: naming a deleted branch would make the whole walk fail.
+    const solo = filter.solo.filter((r) => r.endsWith('/*') || !existing || existing.has(r))
+    return [...solo.map((r) => (r.endsWith('/*') ? `--glob=${r}` : r)), ...head]
+  }
+  // --exclude applies to the next --branches / --remotes / --tags only, and takes names relative
+  // to that namespace, so each group gets its own list.
+  const ex = (prefix: string) => filter.hidden.filter((r) => r.startsWith(prefix)).map((r) => `--exclude=${r.slice(prefix.length)}`)
+  return [...ex('refs/heads/'), '--branches', ...ex('refs/remotes/'), '--remotes', ...ex('refs/tags/'), '--tags', ...head]
 }
 
 /**
@@ -80,13 +90,37 @@ export class LogStream {
   private parser = new LogParser()
   private waiters: { need: number; resolve: () => void }[] = []
   private want = 0
+  private stashSet: Set<string>
+  /** Index and untracked-files commits of stashes: never shown. */
+  private hidden = new Set<string>()
 
   constructor(
     private runner: GitRunner,
     private revs: string[] = GRAPH_REVS,
     /** How far beyond the last request to read before pausing. */
     private readAhead = 2000,
-  ) {}
+    /** Stash commits to show in the graph, each attached to the commit it was made on. */
+    stashes: string[] = [],
+  ) {
+    this.stashSet = new Set(stashes)
+    this.revs = [...revs, ...stashes]
+  }
+
+  /**
+   * A stash is a merge commit: parent 1 is where it was made, parent 2 the staged changes, parent
+   * 3 (with -u) the untracked files. In the graph it should look like one node beside its base,
+   * so it keeps only parent 1, and the helper commits (reachable from nothing else) are dropped.
+   * --topo-order puts a stash before its parents, so they are known by the time they arrive.
+   */
+  private accept(c: Commit): boolean {
+    if (this.hidden.has(c.hash)) return false
+    if (this.stashSet.has(c.hash)) {
+      for (const p of c.parents.slice(1)) this.hidden.add(p)
+      c.parents = c.parents.slice(0, 1)
+      c.stash = true
+    }
+    return true
+  }
 
   private start(): void {
     const child = this.runner.spawn(
@@ -96,7 +130,7 @@ export class LogStream {
     this.child = child
     child.stdout!.setEncoding('utf8')
     child.stdout!.on('data', (chunk: string) => {
-      for (const c of this.parser.push(chunk)) this.commits.push(c)
+      for (const c of this.parser.push(chunk)) if (this.accept(c)) this.commits.push(c)
       this.settle()
       if (this.commits.length >= this.want + this.readAhead) child.stdout!.pause()
     })
