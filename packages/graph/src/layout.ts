@@ -28,13 +28,12 @@
  * empty until the first trunk commit arrives; that commit takes it (lines waiting for it curve
  * in) and its first-parent chain inherits it all the way down.
  *
- * HEAD gets a lane reserved from the top too, because the "uncommitted changes" row sits above
- * everything and a dashed line joins it to HEAD. When HEAD is a trunk tip that lane is lane 0;
- * otherwise it starts in lane 1, next to the trunk. Real lines take precedence over the dashed
- * one: a commit that needs a new column may take the dashed line's, and the dashed line steps
- * aside into the next free column. So commits are where they would be with nothing checked out,
- * and checking out an older commit does not push the commits ahead of it off to the side.
- * When HEAD arrives it lands in the leftmost line waiting for it, and the dashed line curves in.
+ * HEAD does not affect the layout: every commit sits where it would with nothing checked out, so
+ * a checkout moves nothing. The "uncommitted changes" row sits above everything, joined to HEAD by
+ * a dashed line that runs straight down one column. That column is decided when HEAD arrives:
+ * HEAD's own column if no row above uses it, else the leftmost column no row above uses (and the
+ * line turns into HEAD's node, like any line arriving from another column). Rows above HEAD do
+ * not carry the line, since they may already be on screen; see `headLane`.
  */
 
 export interface LayoutCommit {
@@ -56,10 +55,8 @@ export interface Edge {
    */
   color: number
   /**
-   * True for the reserved HEAD lane above HEAD itself. The UI draws it dashed, joining the
-   * "uncommitted changes" row at the top to HEAD, and hides it when there are no changes.
-   * It is the one line that may change column outside a node: a 'pass' with from !== to, where
-   * it steps aside for a real line.
+   * True for the end of the dashed line from the "uncommitted changes" row, on HEAD's row. The UI
+   * draws it dashed, and hides it when there are no changes.
    */
   pending?: boolean
 }
@@ -78,16 +75,13 @@ export interface Row {
 
 interface Lane {
   hash: string
-  /** The seeded HEAD lane, before HEAD has been reached. */
-  pending?: boolean
 }
 
 export interface LayoutOptions {
-  /** HEAD's commit. Reserves a lane for it from the top (see `headLane`). */
+  /** HEAD's commit, for the dashed line from the "uncommitted changes" row (see `headLane`). */
   head?: string
   /**
    * Tips of the main line, e.g. main and origin/main. Lane 0 is kept for whichever arrives first.
-   * Without it, HEAD's lane is lane 0.
    */
   trunk?: readonly string[]
   /** How many colours the palette has. Colour indexes cycle through 0..colors-1. */
@@ -99,25 +93,26 @@ export class GraphLayout {
   private colors: number
   /** While set, lane 0 is held free for the first of these commits to arrive. */
   private trunk: Set<string> | null = null
-  /** The dashed line may step aside for real lines (it is not HEAD's trunk lane 0). */
-  private movable = false
-  /** The lane and colour of the line from the "uncommitted changes" row down to HEAD (at the top). */
-  readonly headLane: number = 0
-  readonly headColor: number = 0
+  /** HEAD, until it has been laid out. */
+  private head: string | null
+  /** Every column a node or line uses in the rows above HEAD, until HEAD arrives. */
+  private usedAbove = new Set<number>()
+  /**
+   * The column of the dashed line from the "uncommitted changes" row down to HEAD, straight
+   * through every row above HEAD; null until HEAD has been laid out (or with no HEAD).
+   */
+  headLane: number | null = null
+  /** Its colour: HEAD's. */
+  headColor = 0
 
   constructor(opts: LayoutOptions = {}) {
     this.colors = opts.colors ?? 8
     const trunk = opts.trunk ?? []
-    if (trunk.length && !(opts.head && trunk.includes(opts.head))) {
+    if (trunk.length) {
       this.trunk = new Set(trunk)
       this.lanes[0] = null
     }
-    if (opts.head) {
-      this.headLane = this.lanes.length
-      this.headColor = this.colorOf(this.headLane)
-      this.lanes[this.headLane] = { hash: opts.head, pending: true }
-      this.movable = this.trunk !== null
-    }
+    this.head = opts.head ?? null
   }
 
   /** Lines never change column except at a node, so a column's colour is a lane's colour. */
@@ -125,27 +120,9 @@ export class GraphLayout {
     return column % this.colors
   }
 
-  /** The first column a new line may take: a free one, or the dashed HEAD line's (see claim). */
   private freeSlot(exclude = -1): number {
-    for (let i = this.trunk ? 1 : 0; i < this.lanes.length; i++) {
-      const l = this.lanes[i]
-      if (i !== exclude && (l === null || (l?.pending && this.movable))) return i
-    }
+    for (let i = this.trunk ? 1 : 0; i < this.lanes.length; i++) if (this.lanes[i] === null && i !== exclude) return i
     return this.lanes.length
-  }
-
-  /**
-   * Make column `slot` free for a real line. If the dashed HEAD line is there, it steps aside
-   * into the first truly free column (not `keep`), and its edge in this row bends to follow.
-   */
-  private claim(slot: number, keep: number, pendingEdge: Edge | undefined): void {
-    const l = this.lanes[slot]
-    if (!l?.pending) return
-    let to = this.trunk ? 1 : 0
-    while (to < this.lanes.length && (this.lanes[to] !== null || to === slot || to === keep)) to++
-    this.lanes[to] = l
-    this.lanes[slot] = null
-    if (pendingEdge) pendingEdge.to = to
   }
 
   /** Lay out the next commits. Call repeatedly with consecutive pages. */
@@ -170,24 +147,13 @@ export class GraphLayout {
     }
     const color = this.colorOf(lane)
 
-    // Lines from the top edge: either into this node, or straight past it. The dashed HEAD line
-    // keeps HEAD's colour wherever it has stepped aside to.
-    let pendingEdge: Edge | undefined
+    // Lines from the top edge: either into this node, or straight past it.
     for (let i = 0; i < lanes.length; i++) {
       const l = lanes[i]
       if (!l) continue
-      const c = l.pending ? this.headColor : this.colorOf(i)
-      if (l.hash === commit.hash) {
-        edges.push({ part: 'top', from: i, to: lane, color: c, ...(l.pending ? { pending: true } : {}) })
-      } else {
-        const e: Edge = { part: 'pass', from: i, to: i, color: c, ...(l.pending ? { pending: true } : {}) }
-        if (l.pending) pendingEdge = e
-        edges.push(e)
-      }
+      edges.push({ part: l.hash === commit.hash ? 'top' : 'pass', from: i, to: l.hash === commit.hash ? lane : i, color: this.colorOf(i) })
     }
     for (const i of incoming) lanes[i] = null
-    // A new branch tip took the dashed line's column.
-    this.claim(lane, lane, pendingEdge)
 
     // 2 and 3. Hand the parents down.
     const [first, ...rest] = commit.parents
@@ -197,11 +163,8 @@ export class GraphLayout {
     }
     for (const p of rest) {
       let target = lanes.findIndex((l) => l?.hash === p)
-      // A merge whose parent is HEAD joins the dashed line, which from here down is a real line.
-      if (target >= 0 && lanes[target]!.pending) lanes[target] = { hash: p }
       if (target < 0) {
         target = this.freeSlot(lane)
-        this.claim(target, lane, pendingEdge)
         lanes[target] = { hash: p }
       }
       edges.push({ part: 'bottom', from: lane, to: target, color: this.colorOf(target) })
@@ -210,6 +173,25 @@ export class GraphLayout {
     // Free columns at the right edge are dropped so the graph narrows again after merges
     // (all but the held trunk lane).
     while (lanes.length > (this.trunk ? 1 : 0) && lanes[lanes.length - 1] === null) lanes.pop()
+
+    if (this.head !== null) {
+      if (commit.hash === this.head) {
+        // HEAD: pick the dashed line's column and bring it into the node.
+        let col = lane
+        if (this.usedAbove.has(col)) for (col = 0; this.usedAbove.has(col);) col++
+        this.headLane = col
+        this.headColor = color
+        edges.push({ part: 'top', from: col, to: lane, color, pending: true })
+        this.head = null
+        this.usedAbove.clear()
+      } else {
+        this.usedAbove.add(lane)
+        for (const e of edges) {
+          this.usedAbove.add(e.from)
+          this.usedAbove.add(e.to)
+        }
+      }
+    }
 
     let width = lane + 1
     for (const e of edges) width = Math.max(width, e.from + 1, e.to + 1)

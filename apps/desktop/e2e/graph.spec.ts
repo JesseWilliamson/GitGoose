@@ -28,14 +28,15 @@ test('keeps main in the leftmost lane and every commit in place, whatever is che
   // laneX(n) = PAD + n * LANE_W + LANE_W / 2 = 6 + 24n + 12: lane 0 is x 18, lane 1 x 42, lane 2 x 66.
   const nodeX = (hash: string) => page.locator(`[data-testid="commit-row"][data-hash="${hash}"] [data-testid="avatar-node"] circle`).first()
   await expect(nodeX(main)).toHaveAttribute('cx', '18')
-  // The feature branch keeps lane 1 although F is checked out; F stays in lane 2. The WIP row
-  // starts next to main and its dashed line steps aside to reach F.
+  // Every commit sits where it would with main checked out; the WIP row's dashed line runs
+  // straight down F's column (nothing above F uses it).
   await expect(nodeX(feature)).toHaveAttribute('cx', '42')
   await expect(nodeX(r.head())).toHaveAttribute('cx', '66')
-  await expect(page.getByTestId('wip-node')).toHaveAttribute('data-lane', '1')
+  await expect(page.getByTestId('wip-node')).toHaveAttribute('data-lane', '2')
+  await expect(page.locator(`[data-testid="commit-row"][data-hash="${feature}"] [data-testid="pending-line"]`)).toHaveAttribute('d', 'M66 0V32')
   // HEAD's band is lit up; no ring around its node.
   const headRow = page.locator(`[data-testid="commit-row"][data-hash="${r.head()}"]`)
-  await expect(headRow.locator('[data-testid="lane-band"][data-head]')).toHaveCount(1)
+  await expect(headRow.locator('[data-testid="lane-band"][data-lit]')).toHaveCount(1)
   await expect(headRow.locator('[data-testid="avatar-node"] circle')).toHaveCount(2) // ring colour + initials disc
 
   // Checking out another branch moves nothing.
@@ -60,6 +61,14 @@ test('double-clicking a commit checks it out; a detached HEAD gets its own pill'
   await expect(row(older).getByTestId('head-pill')).toHaveText(/HEAD/)
   // The commits ahead of it stay where they were.
   await expect(row(main).locator('[data-testid="avatar-node"] circle').first()).toHaveAttribute('cx', '18')
+  // With changes, the dashed line runs straight down the first column nothing above B uses (3).
+  r.write('notes.txt', 'draft\n')
+  await expect(page.getByTestId('wip-node')).toHaveAttribute('data-lane', '3')
+  await expect(page.locator('[data-testid="pending-line"]')).toHaveCount(5) // E, M, D, C, F
+  await expect(page.locator('[data-testid="pending-line"][d="M90 0V32"]')).toHaveCount(5)
+  // Like GitKraken, nothing is painted behind the pills: colour starts at the node.
+  const refsCell = row(older).locator('> div').first()
+  await expect(refsCell).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
   // A branch tip checks out its branch, not the bare commit.
   await row(main).dblclick()
   await expect.poll(() => r.git('rev-parse', '--abbrev-ref', 'HEAD').trim()).toBe('main')

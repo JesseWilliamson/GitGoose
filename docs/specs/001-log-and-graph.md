@@ -10,8 +10,8 @@
   master) is always the leftmost lane, whatever is checked out, so a checkout does not reshuffle
   the graph. No other commit moves on checkout either: commits sit where they would with nothing
   checked out. HEAD's row has a lit-up lane band; a detached HEAD gets a "HEAD" pill. Uncommitted
-  changes appear as a dashed node at the top (in lane 0 when HEAD is a trunk tip, else lane 1),
-  joined to HEAD by a dashed line that steps aside for real lines. Double-clicking a commit checks
+  changes appear as a dashed node at the top, joined to HEAD by a dashed line that runs straight
+  down HEAD's column, or the leftmost column nothing above HEAD uses, and turns into HEAD. Double-clicking a commit checks
   out its local branch, or the commit itself (detached) when no branch points at it.
 - History loads as you scroll; the status bar shows "N+ commits" until it is complete.
 - Click or J/K/arrows select commits; the right panel shows details and changed files.

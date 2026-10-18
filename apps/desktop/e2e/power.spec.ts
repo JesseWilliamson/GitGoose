@@ -90,7 +90,7 @@ test('search finds a branch: Enter shows it in the graph, Ctrl+Enter checks it o
   await expect(page.getByTestId('omni-footer')).toContainText('check out')
   await page.keyboard.press('Enter')
   const tip = r.git('rev-parse', 'feature').trim()
-  await expect(page.locator(`[data-testid="commit-row"][data-hash="${tip}"]`)).toHaveClass(/bg-select/)
+  await expect(page.locator(`[data-testid="commit-row"][data-hash="${tip}"]`)).toHaveAttribute('data-selected', 'true')
   expect(r.git('branch', '--show-current').trim()).toBe('main')
 
   await page.keyboard.press('ControlOrMeta+k')

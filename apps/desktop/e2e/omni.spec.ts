@@ -31,7 +31,7 @@ test('one search for commits, files, settings and commands; results open where t
   await expect(commit.locator('mark')).toHaveText(['round', 'totals'])
   await commit.click()
   await expect(page.getByTestId('omni')).toHaveCount(0)
-  await expect(page.locator(`[data-testid="commit-row"][data-hash="${fix}"]`)).toHaveClass(/bg-select/)
+  await expect(page.locator(`[data-testid="commit-row"][data-hash="${fix}"]`)).toHaveAttribute('data-selected', 'true')
 
   // A file by name: its history opens. The highlight follows the best result while results
   // arrive (the file list comes after the first keystroke), so Enter right away picks the file.

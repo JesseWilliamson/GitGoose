@@ -315,6 +315,8 @@ export function loadMore(id: string): Promise<void> {
         log.rows.push(rows[i]!)
         if (rows[i]!.width > log.maxWidth) log.maxWidth = rows[i]!.width
       }
+      // The dashed line to HEAD can run right of every row above it.
+      if (log.layout.headLane !== null) log.maxWidth = Math.max(log.maxWidth, log.layout.headLane + 1)
       log.done = page.done
       if (offset === 0) performance.mark('gitsquid:first-page')
       updateRepo(id, (v) => ({ logVersion: v.logVersion + 1 }))

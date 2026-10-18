@@ -16,9 +16,9 @@ export const lineWidth = (h: number) => (h < ROW_H ? 2 : 2.5)
 /** The solid lane-coloured bar at the graph column's right edge, beside the message (GitKraken's). */
 const STRIP_W = 3
 /** Space left above and below each row's band and strip, so neighbouring rows read as separate commits. */
-/** Opacity of a row's lane band, and of HEAD's, lit up so you can find where you are. */
+/** Opacity of a row's lane band, and of HEAD's or the selected row's, lit up so you can find them. */
 const BAND = 0.1
-const HEAD_BAND = 0.35
+const LIT_BAND = 0.35
 export const bandInset = (h: number) => (h < ROW_H ? 1.5 : 2)
 
 export const laneX = (lane: number) => PAD + lane * LANE_W + LANE_W / 2
@@ -41,13 +41,18 @@ export interface NodeAuthor {
  * from the node to the right edge, ending in a solid strip: it ties the message to its lane.
  * The band and strip stop short of the row's top and bottom (bandInset), so a run of commits in
  * one lane shows as separate blocks rather than one long bar. Edges still span the full height.
- * HEAD's band is lit up (stronger) instead of ringing its node, as in GitKraken.
+ * HEAD's band and the selected row's are lit up (stronger), as in GitKraken; HEAD's node has no ring.
  */
-export const GraphCell = memo(function GraphCell({ row, width, showPending, isHead, h = ROW_H, author, stash, refLine }: {
+export const GraphCell = memo(function GraphCell({ row, width, showPending, pendingLane, pendingColor = 0, lit, h = ROW_H, author, stash, refLine }: {
   row: Row
   width: number
   showPending: boolean
-  isHead: boolean
+  /** A row above HEAD: the column the dashed line from "uncommitted changes" runs straight down. */
+  pendingLane?: number
+  /** Its colour index (HEAD's). */
+  pendingColor?: number
+  /** HEAD or selected: the band is lit up. */
+  lit: boolean
   h?: number
   author: NodeAuthor
   /** A stash: drawn as a dashed box (it is not a commit on any branch). */
@@ -69,10 +74,14 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
   return (
     <svg width={width} height={h} className="block shrink-0 overflow-hidden" aria-hidden data-node={row.merge ? 'merge' : 'commit'}
       data-offscreen={offscreen || undefined}>
-      <rect x={cx} y={inset} width={Math.max(0, width - cx)} height={h - inset * 2} fill={color} opacity={isHead ? HEAD_BAND : BAND}
-        data-testid="lane-band" data-head={isHead || undefined} />
+      <rect x={cx} y={inset} width={Math.max(0, width - cx)} height={h - inset * 2} fill={color} opacity={lit ? LIT_BAND : BAND}
+        data-testid="lane-band" data-lit={lit || undefined} />
       <rect x={width - STRIP_W} y={inset} width={STRIP_W} height={h - inset * 2} fill={color} data-testid="lane-strip" />
       {refLine && <path d={`M0 ${mid}H${cx}`} stroke={color} strokeWidth={2} opacity={0.85} data-testid="ref-line" />}
+      {pendingLane !== undefined && (
+        <path d={`M${laneX(pendingLane)} 0V${h}`} stroke={laneColor(pendingColor)} strokeWidth={stroke} strokeDasharray="3 4" opacity={0.7}
+          data-testid="pending-line" />
+      )}
       {row.edges.map((e, i) => {
         if (e.pending && !showPending) return null
         return (

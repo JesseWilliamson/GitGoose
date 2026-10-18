@@ -256,6 +256,8 @@ function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
                     hit={hits ? hits.has(commit.hash) : null}
                     bisect={bisectMarks?.get(commit.hash)}
                     showPending={showWip}
+                    pendingLane={showWip && log.layout.headLane !== null && ci < (log.index.get(snap.head.hash!) ?? -1) ? log.layout.headLane : undefined}
+                    pendingColor={log.layout.headColor}
                     graphW={graphW}
                     look={look}
                   />
@@ -336,8 +338,8 @@ function ColumnResizer({ width }: { width: number }) {
 
 function WipRow({ style, view, graphW, rowH, cols, selected, lane, color }: {
   style: React.CSSProperties; view: RepoView; graphW: number; rowH: number; cols: GraphColumns; selected: boolean
-  /** HEAD's lane and colour, where the dashed line down to HEAD runs. */
-  lane: number; color: number
+  /** The dashed line's column and colour (HEAD's); null until HEAD's row has been laid out. */
+  lane: number | null; color: number
 }) {
   const st = view.snapshot.status
   const staged = st.filter((e) => e.kind !== 'untracked' && e.kind !== 'unmerged' && e.index !== '.').length
@@ -350,7 +352,7 @@ function WipRow({ style, view, graphW, rowH, cols, selected, lane, color }: {
       className={clsx('flex items-center border-b border-line/40 text-[13px]', selected ? 'bg-select' : 'hover:bg-hover')}
     >
       {cols.refs && <div style={{ width: REFS_W }} className="shrink-0 px-3" />}
-      {cols.graph && <WipCell width={graphW} hasHead={!!view.snapshot.head.hash} h={rowH} lane={lane} color={color} />}
+      {cols.graph && <WipCell width={graphW} hasHead={lane !== null} h={rowH} lane={lane ?? 0} color={color} />}
       <div className="flex min-w-0 flex-1 items-center gap-2 px-2 whitespace-nowrap text-muted italic">
         <span className="min-w-0 truncate">{view.snapshot.head.hash ? '// WIP: uncommitted changes' : '// No commits yet'}</span>
         {st.length > 0 && <span className="shrink-0 rounded bg-raised px-1.5 text-[11px] not-italic">{st.length} changed</span>}
@@ -386,6 +388,9 @@ const CommitRow = memo(function CommitRow(props: {
   stash?: StashEntry
   hit: boolean | null
   showPending: boolean
+  /** Above HEAD, with uncommitted changes: the column the dashed line to HEAD runs straight down. */
+  pendingLane?: number
+  pendingColor: number
   graphW: number
   look: RowLook
 }) {
@@ -483,18 +488,16 @@ const CommitRow = memo(function CommitRow(props: {
         setDropAt(null)
       }}
       onDrop={(e) => onDrop(e)}
+      data-selected={props.selected || undefined}
       className={clsx(
-        'flex items-center text-[13px]',
-        props.selected ? 'bg-select' : 'hover:bg-hover',
+        'group flex items-center text-[13px]',
         dropping && 'outline outline-2 -outline-offset-2 outline-accent',
         props.hit === false && 'opacity-35',
       )}
-      // The selected row takes its lane's colour, as in GitKraken (bg-select stays as the class).
-      style={{ position: 'absolute', top: 0, left: 0, right: 0, height: look.rowH, transform: `translateY(${props.top}px)`,
-        ...(props.selected ? { background: `color-mix(in srgb, ${lane} 24%, var(--gs-bg))` } : {}) }}
+      style={{ position: 'absolute', top: 0, left: 0, right: 0, height: look.rowH, transform: `translateY(${props.top}px)` }}
     >
       {look.cols.refs && (
-        <div style={{ width: REFS_W, ...(labelled && !props.selected ? { background: `color-mix(in srgb, ${lane} 9%, transparent)` } : {}) }}
+        <div style={{ width: REFS_W }}
           className="flex h-full min-w-0 shrink-0 items-center gap-1 overflow-hidden pl-2">
           {props.bisect && (
             <span className={clsx('flex h-5 shrink-0 items-center rounded border px-1.5 text-[11px] font-medium', BISECT_PILL[props.bisect])} data-testid="bisect-pill">{props.bisect}</span>
@@ -524,23 +527,28 @@ const CommitRow = memo(function CommitRow(props: {
         </div>
       )}
       {look.cols.graph && (
-        <GraphCell row={row} width={props.graphW} showPending={props.showPending} isHead={props.isHead} h={look.rowH} author={author}
-          stash={!!commit.stash} refLine={labelled} />
+        <GraphCell row={row} width={props.graphW} showPending={props.showPending} pendingLane={props.pendingLane} pendingColor={props.pendingColor} lit={props.isHead || props.selected}
+          h={look.rowH} author={author} stash={!!commit.stash} refLine={labelled} />
       )}
-      <div className={clsx('flex min-w-0 flex-1 items-center gap-2 px-2', props.hit && 'font-semibold text-fg', props.stash && 'text-muted italic')}>
-        <span className="min-w-0 flex-1 truncate">{props.stash ? stashLabel(props.stash.message) : commit.subject}</span>
-        {recent && <span className="shrink-0 text-[11px] text-faint" data-testid="row-time">{relativeTime(commit.authorDate)}</span>}
-      </div>
-      {/* No avatar here: the graph node already is one. */}
-      {look.cols.author && (
-        <div style={{ width: AUTHOR_W }} className={clsx('min-w-0 shrink-0 items-center px-2 text-muted', COL_AUTHOR)} data-testid="author-cell">
-          <span className="truncate">{commit.authorName}</span>
+      {/* Like GitKraken, colour stays right of the node: the refs column is never painted, and
+          hover and selection paint only from the message on (the selected row in its lane's colour). */}
+      <div className={clsx('flex h-full min-w-0 flex-1 items-center', !props.selected && 'group-hover:bg-hover')}
+        style={props.selected ? { background: `color-mix(in srgb, ${lane} 24%, var(--gs-bg))` } : undefined}>
+        <div className={clsx('flex min-w-0 flex-1 items-center gap-2 px-2', props.hit && 'font-semibold text-fg', props.stash && 'text-muted italic')}>
+          <span className="min-w-0 flex-1 truncate">{props.stash ? stashLabel(props.stash.message) : commit.subject}</span>
+          {recent && <span className="shrink-0 text-[11px] text-faint" data-testid="row-time">{relativeTime(commit.authorDate)}</span>}
         </div>
-      )}
-      {look.cols.date && <div style={{ width: look.dateW }} className={clsx('shrink-0 truncate px-2 text-muted', COL_DATE)}>{formatDate(commit.authorDate, look.dateFormat)}</div>}
-      {look.cols.sha && <div style={{ width: SHA_W }} className={clsx('shrink-0 px-2 font-mono text-xs text-faint', COL_SHA)}>{shortHash(commit.hash)}</div>}
-      {/* Lines up with the header's gear. */}
-      <div className="w-7 shrink-0" />
+        {/* No avatar here: the graph node already is one. */}
+        {look.cols.author && (
+          <div style={{ width: AUTHOR_W }} className={clsx('min-w-0 shrink-0 items-center px-2 text-muted', COL_AUTHOR)} data-testid="author-cell">
+            <span className="truncate">{commit.authorName}</span>
+          </div>
+        )}
+        {look.cols.date && <div style={{ width: look.dateW }} className={clsx('shrink-0 truncate px-2 text-muted', COL_DATE)}>{formatDate(commit.authorDate, look.dateFormat)}</div>}
+        {look.cols.sha && <div style={{ width: SHA_W }} className={clsx('shrink-0 px-2 font-mono text-xs text-faint', COL_SHA)}>{shortHash(commit.hash)}</div>}
+        {/* Lines up with the header's gear. */}
+        <div className="w-7 shrink-0" />
+      </div>
       {dropAt === 'onto' ? (
         <div data-testid="drop-onto" className="pointer-events-none absolute inset-0 rounded-sm outline outline-2 -outline-offset-2 outline-accent" title="Squash into this commit" />
       ) : dropAt && (

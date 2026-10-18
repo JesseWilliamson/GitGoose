@@ -16,7 +16,7 @@ function setup() {
 }
 
 const row = (page: Page, hash: string) => page.locator(`[data-testid="commit-row"][data-hash="${hash}"]`)
-const selected = (page: Page) => page.locator('[data-testid="commit-row"].bg-select')
+const selected = (page: Page) => page.locator('[data-testid="commit-row"][data-selected]')
 
 test('shift-click selects a range, ctrl-click adds and removes; cherry-pick them all, undoably', async () => {
   const { r, X, Y, Z } = setup()

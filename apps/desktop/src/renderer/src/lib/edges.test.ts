@@ -19,8 +19,4 @@ describe('edgePath', () => {
     expect(edgePath('bottom', 0, 4, 32)).toBe('M0 16H0Q4 16 4 20V32')
     expect(edgePath('top', 0, 30, 10)).toBe('M0 0V0Q0 5 5 5H30')
   })
-
-  it('lets the dashed HEAD line step aside early in the row, above the node', () => {
-    expect(edgePath('pass', 42, 66, 32)).toBe('M42 0C42 9.6 66 0 66 9.6V32')
-  })
 })
