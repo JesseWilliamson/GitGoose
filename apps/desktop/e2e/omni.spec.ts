@@ -35,7 +35,7 @@ test('one search for commits, files, settings and commands; results open where t
 
   // A file by name: its history opens. The highlight follows the best result while results
   // arrive (the file list comes after the first keystroke), so Enter right away picks the file.
-  await page.keyboard.press('Control+k')
+  await page.keyboard.press('ControlOrMeta+k')
   await input.fill('taxrate')
   await expect(items.first()).toHaveAttribute('data-kind', 'file')
   await expect(items.first()).toHaveAttribute('data-selected', 'true')
@@ -43,7 +43,7 @@ test('one search for commits, files, settings and commands; results open where t
   await expect(page.getByTestId('file-view')).toContainText('taxRate.ts')
 
   // A setting: the settings page opens, searched for it.
-  await page.keyboard.press('Control+k')
+  await page.keyboard.press('ControlOrMeta+k')
   await page.getByTestId('omni-scope-setting').click()
   await input.fill('compact rows')
   await page.keyboard.press('Enter')
@@ -51,7 +51,7 @@ test('one search for commits, files, settings and commands; results open where t
   await page.keyboard.press('Escape')
 
   // Recent remembers what was picked; ">" limits to commands.
-  await page.keyboard.press('Control+k')
+  await page.keyboard.press('ControlOrMeta+k')
   await expect(page.getByTestId('omni-results')).toContainText('Recent')
   await expect(items.first()).toContainText('Compact graph rows')
   await input.fill('> receipts')
@@ -66,7 +66,7 @@ test('Tab narrows to one kind and shows more of it', async () => {
   r.commit('root', Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`docs/page-${i}.md`, `${i}\n`])))
   const { app, page } = await launch(r.dir)
   await expect(page.getByTestId('commit-row').first()).toBeVisible()
-  await page.keyboard.press('Control+k')
+  await page.keyboard.press('ControlOrMeta+k')
   await page.getByTestId('palette-input').fill('page')
   await expect(page.getByTestId('omni-results')).toContainText('8 of 30 · Tab to narrow')
   // All → Commands → Branches → Commits → Files

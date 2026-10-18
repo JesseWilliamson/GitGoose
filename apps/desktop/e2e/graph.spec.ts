@@ -48,7 +48,7 @@ test('searches commits and steps through matches', async () => {
   const { app, page } = await launch(r.dir)
   await page.getByTestId('commit-row').first().click()
   // The omni search hands a file search to the graph, where the matches stay bright.
-  await page.keyboard.press('Control+f')
+  await page.keyboard.press('ControlOrMeta+f')
   await page.getByTestId('palette-input').fill('.txt')
   await page.getByTestId('omni-item').filter({ hasText: 'Commits that changed files matching' }).click()
   const search = page.getByTestId('search-input')
@@ -73,7 +73,7 @@ test('one search matches messages, authors, SHAs, branches and tags, greying out
   const rows = page.getByTestId('commit-row')
   const dimmed = page.locator('[data-testid="commit-row"].opacity-35')
   await expect(rows).toHaveCount(7)
-  await page.keyboard.press('Control+f')
+  await page.keyboard.press('ControlOrMeta+f')
   await page.getByTestId('palette-input').fill('wip')
   await page.getByTestId('omni-item').filter({ hasText: /Show all 1 matching commit in the graph/ }).click()
   const search = page.getByTestId('search-input')
@@ -188,13 +188,13 @@ test('Ctrl+P opens the search on commands only; Ctrl+K and Ctrl+F on everything'
   const r = makeFixture('linear')
   const { app, page } = await launch(r.dir)
   await page.getByTestId('commit-row').first().click()
-  await page.keyboard.press('Control+p')
+  await page.keyboard.press('ControlOrMeta+p')
   const input = page.getByTestId('palette-input')
   await expect(input).toBeFocused()
   await expect(input).toHaveValue('> ')
   await expect(page.getByTestId('omni-scope-command')).toHaveAttribute('aria-selected', 'true')
   await page.keyboard.press('Escape')
-  for (const key of ['Control+k', 'Control+f']) {
+  for (const key of ['ControlOrMeta+k', 'ControlOrMeta+f']) {
     await page.keyboard.press(key)
     await expect(input).toBeFocused()
     await expect(input).toHaveValue('')

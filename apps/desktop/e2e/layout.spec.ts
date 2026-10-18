@@ -44,9 +44,9 @@ test('the keyboard collapses and restores panels; hide and reset from the palett
   r.write('file.txt', 'edited\n')
   const { app, page } = await launch(r.dir)
   await page.getByTestId('commit-row').first().click()
-  await page.keyboard.press('Control+b')
+  await page.keyboard.press('ControlOrMeta+b')
   await expect.poll(() => width(page, 'slot-left')).toBeLessThan(2)
-  await page.keyboard.press('Control+b')
+  await page.keyboard.press('ControlOrMeta+b')
   await expect.poll(() => width(page, 'slot-left')).toBeGreaterThan(150)
 
   // A file's diff opens over the graph and closes back to it.
@@ -55,11 +55,11 @@ test('the keyboard collapses and restores panels; hide and reset from the palett
   await expect(page.getByTestId('file-view')).toBeVisible()
   await expect(page.getByTestId('graph-scroll')).toHaveCount(0)
 
-  await page.keyboard.press('Control+p')
+  await page.keyboard.press('ControlOrMeta+p')
   await page.getByTestId('palette-input').fill('Hide side panels')
   await page.keyboard.press('Enter')
   await expect.poll(() => width(page, 'slot-right')).toBeLessThan(2)
-  await page.keyboard.press('Control+p')
+  await page.keyboard.press('ControlOrMeta+p')
   await page.getByTestId('palette-input').fill('Reset panel sizes')
   await page.keyboard.press('Enter')
   await expect.poll(() => width(page, 'slot-right')).toBeGreaterThan(300)

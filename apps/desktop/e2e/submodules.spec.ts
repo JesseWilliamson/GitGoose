@@ -1,5 +1,6 @@
 import { initRepo } from '@gitsquid/fixtures'
 import { expect, test } from '@playwright/test'
+import { realpathSync } from 'node:fs'
 import { launch } from './app'
 
 // Local submodule clones need protocol.file.allow (off by default since git 2.38.1).
@@ -33,6 +34,6 @@ test('clone a missing submodule, open it as a tab, remove it and undo', async ()
   await expect.poll(() => clone.git('status', '--porcelain')).toBe('')
 
   await item.dblclick()
-  await expect(page.getByTestId('tabs').getByTitle(`${clone.dir}/lib`)).toBeVisible()
+  await expect(page.getByTestId('tabs').getByTitle(`${realpathSync.native(clone.dir)}/lib`)).toBeVisible()
   await electron.close()
 })

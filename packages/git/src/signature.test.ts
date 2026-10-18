@@ -14,8 +14,8 @@ beforeAll(() => {
   process.env.GNUPGHOME = home
   process.env.GIT_CONFIG_GLOBAL = '/dev/null'
   // Loopback: take the (empty) passphrase from the command line, never from a pinentry window.
-  // stderr is kept so a failure says why.
-  execFileSync('gpg', ['--batch', '--pinentry-mode', 'loopback', '--passphrase', '', '--quick-gen-key', 'Ada Lovelace <ada@example.com>', 'ed25519', 'sign', 'never'], { stdio: ['ignore', 'ignore', 'pipe'] })
+  const gen = spawnSync('gpg', ['--batch', '--pinentry-mode', 'loopback', '--passphrase', '', '--quick-gen-key', 'Ada Lovelace <ada@example.com>', 'ed25519', 'sign', 'never'], { encoding: 'utf8' })
+  if (gen.status !== 0) throw new Error(`gpg could not make a test key (exit ${gen.status}):\n${gen.stderr}`)
 })
 afterAll(() => {
   if (!hasGpg) return

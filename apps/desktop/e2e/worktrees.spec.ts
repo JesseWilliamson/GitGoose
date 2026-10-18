@@ -1,13 +1,13 @@
 import { initRepo } from '@gitsquid/fixtures'
 import { expect, test } from '@playwright/test'
-import { existsSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { launch } from './app'
 
 test('add a worktree on a new branch (it opens as a tab), then remove it and undo', async () => {
   const r = initRepo()
   r.commit('root', { 'a.txt': 'a\n' })
   const { app, page } = await launch(r.dir)
-  const expected = `${r.dir}-feature-x`
+  const expected = `${realpathSync.native(r.dir)}-feature-x`
 
   await page.getByRole('button', { name: 'Add worktree' }).click()
   await page.getByTestId('dialog-input').fill('feature/x')
@@ -39,8 +39,8 @@ test('a branch can be checked out in a new worktree from its menu', async () => 
   const { app, page } = await launch(r.dir)
   await page.locator('[data-testid="sidebar-ref"][data-ref="refs/heads/topic"]').click({ button: 'right' })
   await page.getByRole('menuitem', { name: 'Check out in a new worktree…' }).click()
-  await expect(page.getByTestId('dialog-input')).toHaveValue(`${r.dir}-topic`)
+  await expect(page.getByTestId('dialog-input')).toHaveValue(`${realpathSync.native(r.dir)}-topic`)
   await page.getByTestId('dialog-submit').click()
-  await expect(page.getByTestId('tabs').getByTitle(`${r.dir}-topic`)).toBeVisible()
+  await expect(page.getByTestId('tabs').getByTitle(`${realpathSync.native(r.dir)}-topic`)).toBeVisible()
   await app.close()
 })

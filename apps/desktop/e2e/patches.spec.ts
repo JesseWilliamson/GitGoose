@@ -25,7 +25,7 @@ test('save a commit as a patch file, then apply it from the clipboard as a commi
 
   r.git('reset', '-q', '--hard', root)
   await setClipboard(app, readFileSync(join(dir, '0001-add-b.patch'), 'utf8'))
-  await page.keyboard.press('Control+p')
+  await page.keyboard.press('ControlOrMeta+p')
   await page.keyboard.type('Apply patch from the clipboard')
   await page.keyboard.press('Enter')
   await expect.poll(() => r.git('log', '-1', '--format=%s').trim()).toBe('add b')
@@ -42,7 +42,7 @@ test('a patch that conflicts stops as "Patch in progress"; Abort patch puts thin
   const { app, page } = await launch(r.dir)
   await expect(row(page, mine)).toBeVisible()
   await setClipboard(app, patch)
-  await page.keyboard.press('Control+p')
+  await page.keyboard.press('ControlOrMeta+p')
   await page.keyboard.type('Apply patch from the clipboard')
   await page.keyboard.press('Enter')
   const alert = page.getByTestId('attention-row').filter({ hasText: 'conflicts' })

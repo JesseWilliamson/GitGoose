@@ -182,7 +182,7 @@ export function createHandlers(
       else delete all[r(id).path]
       setSettings({ pushChecks: all })
     },
-    linters: async (id) => linters(r(id).path, getSettings()),
+    linters: async (id) => linters(r(id).path, getSettings(), await r(id).listFiles()),
     decideLinter: async (id, command, allow) => {
       const all = { ...getSettings().linterDecisions }
       const key = decisionKey(r(id).path, command)

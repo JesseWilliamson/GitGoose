@@ -1,6 +1,6 @@
 import { initRepo } from '@gitsquid/fixtures'
 import { expect, test, type Page } from '@playwright/test'
-import { launch } from './app'
+import { pickFromSubmenu, launch } from './app'
 
 const row = (page: Page, hash: string) => page.locator(`[data-testid="commit-row"][data-hash="${hash}"]`)
 
@@ -11,13 +11,11 @@ test('bisect from the graph: mark bad and good, test what git checks out, find t
   const { app, page } = await launch(r.dir)
 
   await row(page, hashes[7]!).click({ button: 'right' })
-  await page.getByRole('menuitem', { name: 'Bisect: find the commit that broke something' }).click()
-  await page.getByRole('menuitem', { name: 'Start: this commit is bad (has the bug)' }).click()
+  await pickFromSubmenu(page, 'Bisect: find the commit that broke something', 'Start: this commit is bad (has the bug)')
   const bar = page.getByTestId('bisect-bar')
   await expect(bar).toContainText('now mark a commit without the bug as good')
   await row(page, hashes[0]!).click({ button: 'right' })
-  await page.getByRole('menuitem', { name: 'Bisect' }).click()
-  await page.getByRole('menuitem', { name: 'Mark good (no bug)' }).click()
+  await pickFromSubmenu(page, 'Bisect', 'Mark good (no bug)')
   await expect(row(page, hashes[0]!).getByTestId('bisect-pill')).toHaveText('good')
 
   for (let guard = 0; guard < 6; guard++) {
@@ -25,7 +23,8 @@ test('bisect from the graph: mark bad and good, test what git checks out, find t
     if ((await bar.textContent())!.includes('First bad commit')) break
     const before = r.head()
     await bar.getByRole('button', { name: r.git('show', 'HEAD:value.txt') === 'bad\n' ? 'Bad' : 'Good' }).click()
-    await expect.poll(() => r.head() !== before || r.git('for-each-ref', 'refs/bisect').includes('bad')).toBe(true)
+    // Each step checks out the next commit to test, or ends with the answer (HEAD stays put).
+    await expect.poll(async () => r.head() !== before || (await bar.textContent())!.includes('First bad commit')).toBe(true)
   }
   await expect(bar).toContainText(`First bad commit: ${hashes[4]!.slice(0, 7)} c5`)
   await expect(row(page, hashes[4]!).getByTestId('bisect-pill')).toHaveText('first bad')
