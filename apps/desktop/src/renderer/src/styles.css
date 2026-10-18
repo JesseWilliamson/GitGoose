@@ -48,15 +48,15 @@
   --gs-select: rgba(76, 141, 255, 0.22);
   --gs-ours: #4c8dff;
   --gs-theirs: #e0a03a;
-  /* Graph lane colours, cycled by colour index. */
-  --lane-0: #4c8dff;
-  --lane-1: #e5534b;
-  --lane-2: #57ab5a;
-  --lane-3: #c69026;
-  --lane-4: #b083f0;
-  --lane-5: #39c5cf;
-  --lane-6: #f47067;
-  --lane-7: #dcbdfb;
+  /* Graph lane colours, one per column (cycled): the rainbow from aqua, left to right, as in GitKraken. */
+  --lane-0: #1ab3d6;
+  --lane-1: #2f7cf6;
+  --lane-2: #9b4dea;
+  --lane-3: #d23fc2;
+  --lane-4: #e5484d;
+  --lane-5: #f07c2a;
+  --lane-6: #e6c13e;
+  --lane-7: #3fbf6a;
   color-scheme: dark;
 }
 
@@ -79,14 +79,14 @@
   --gs-select: rgba(47, 111, 228, 0.14);
   --gs-ours: #2f6fe4;
   --gs-theirs: #b86e00;
-  --lane-0: #2f6fe4;
-  --lane-1: #d1242f;
-  --lane-2: #1a7f37;
-  --lane-3: #9a6700;
-  --lane-4: #8250df;
-  --lane-5: #0e8a96;
-  --lane-6: #e16f24;
-  --lane-7: #bf3989;
+  --lane-0: #0b8fb0;
+  --lane-1: #1f62d6;
+  --lane-2: #7a2ccb;
+  --lane-3: #b0229f;
+  --lane-4: #cf2d3a;
+  --lane-5: #d2601a;
+  --lane-6: #a88400;
+  --lane-7: #1f8f47;
   color-scheme: light;
 }
 
