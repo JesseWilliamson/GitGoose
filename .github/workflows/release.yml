@@ -1,17 +1,57 @@
 name: Release
 
-# Push a tag like v0.2.0 to build installers on all three OSes and attach them to a draft
-# GitHub release. electron-updater in the app checks these releases for updates.
+# Push a tag like v0.2.0 to build installers on all three OSes and attach them to a draft GitHub
+# release. Once you publish it, electron-updater in installed copies offers the new version.
+#
+# Pull requests that touch packaging build the installers without publishing, and so does running
+# this by hand (Actions → Release → Run workflow): download them from the run's artifacts.
 on:
   push:
     tags: ['v*']
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - apps/desktop/electron-builder.yml
+      - apps/desktop/package.json
+      - apps/desktop/build/**
+  workflow_dispatch:
 
 jobs:
+  draft:
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      # electron-updater compares the version inside the app with the release's, so a release
+      # tagged differently from the version it contains would be offered forever, or never.
+      - name: Check the tag matches the app version
+        run: |
+          version=$(node -p "require('./apps/desktop/package.json').version")
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match version $version in apps/desktop/package.json"
+            exit 1
+          fi
+      # One job creates the draft and the three builds upload to it. Left to electron-builder, each
+      # build would try to create it at the same moment and could leave three drafts.
+      - name: Create the draft release
+        run: |
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1 ||
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --generate-notes --title "GitSquid ${GITHUB_REF_NAME#v}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
   package:
+    needs: draft
+    # draft is skipped for pull requests and manual runs; build anyway, but not after it failed.
+    if: ${{ !failure() && !cancelled() }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     permissions:
       contents: write
     steps:
@@ -22,10 +62,22 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Build and publish installers
+      - name: Build installers
         working-directory: apps/desktop
-        run: pnpm exec electron-vite build && pnpm exec electron-builder --publish always
+        shell: bash
+        run: |
+          pnpm exec electron-vite build
+          args=(--publish "$PUBLISH")
+          # Without a Developer ID certificate, sign ad-hoc. Unsigned, the app keeps the signature
+          # electron-builder's edits broke, and macOS calls a downloaded copy "damaged" with no way
+          # to open it; ad-hoc signed, it is from an "unidentified developer" and can be allowed.
+          # Hardened runtime would then reject Electron's own frameworks, so it goes too.
+          if [ "$RUNNER_OS" = macOS ] && [ -z "$CSC_LINK" ]; then
+            args+=(-c.mac.identity=- -c.mac.hardenedRuntime=false)
+          fi
+          pnpm exec electron-builder "${args[@]}"
         env:
+          PUBLISH: ${{ github.ref_type == 'tag' && 'always' || 'never' }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Optional signing. Leave the secrets unset for unsigned builds.
           CSC_LINK: ${{ secrets.MAC_CERT_P12_BASE64 }}
@@ -35,3 +87,15 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           WIN_CSC_LINK: ${{ secrets.WIN_CERT_P12_BASE64 }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CERT_PASSWORD }}
+      - uses: actions/upload-artifact@v4
+        if: github.ref_type != 'tag'
+        with:
+          name: installers-${{ runner.os }}
+          retention-days: 7
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.deb
+            apps/desktop/release/latest*.yml

@@ -25,6 +25,7 @@ packages/git/          everything that runs git: runner, parsers, LogStream, Cat
 packages/graph/        lane layout. Pure, zero dependencies.
 tools/fixtures/        deterministic test repositories (+ fast-import generator for big ones)
 tools/bench/           performance benchmark with budgets
+tools/install/         pnpm install:local: build and install the working tree on this machine
 ```
 
 ## The two performance rules
@@ -77,4 +78,5 @@ pnpm typecheck
 pnpm e2e              # builds, then Playwright drives the real app
 pnpm bench            # 100k-commit benchmark (add --check to enforce budgets)
 pnpm dist             # package installers with electron-builder
+pnpm install:local    # build this working tree and install it on this machine (again to update)
 ```
