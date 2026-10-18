@@ -13,9 +13,10 @@ export const LANE_W = 24
 const PAD = 6
 /**
  * Lanes the row content moves aside for, at most. Real histories can have dozens open at once;
- * past this many the text stays put and the far nodes are pinned, faded, at the edge.
+ * past this many the text stays put and the far nodes are left out of the row (see `offscreen`).
+ * The row text is compact enough — author over hash and subject — to give the graph this much.
  */
-export const MAX_LANES = 8
+export const MAX_LANES = 12
 /** The content never starts closer than this many lanes in, so short rows line up with one another. */
 const MIN_LANES = 2
 
@@ -53,11 +54,12 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
 }) {
   const total = h + offset
   const mid = offset + h / 2
-  // A node whose lane is past the last lane the row makes room for is kept at the right edge,
-  // faded, rather than clipped away and leaving a row with no node.
+  // A node whose lane is past the last lane the row makes room for is left out: pinning it at
+  // the edge would put a dot on top of the last visible lane's line, reading as a commit on a
+  // branch it has nothing to do with. The row still shows the lines that pass through it.
   const lastX = width - LANE_W / 2
   const offscreen = laneX(row.lane) > lastX
-  const cx = offscreen ? lastX : laneX(row.lane)
+  const cx = laneX(row.lane)
   const color = laneColor(row.color)
   const r = nodeRadius(h)
   const stroke = lineWidth(h)
@@ -71,8 +73,8 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
             strokeLinecap="round" strokeLinejoin="round" strokeDasharray={e.pending ? '3 4' : undefined} opacity={e.pending ? 0.7 : 1} />
         )
       })}
-      <g opacity={offscreen ? 0.45 : undefined}>
-        {stash ? (
+      {!offscreen && (
+        stash ? (
           <g data-testid="stash-node">
             <rect x={cx - r - 2} y={mid - r - 2} width={(r + 2) * 2} height={(r + 2) * 2} rx={3} fill="var(--gs-bg)" stroke={color} strokeWidth={2} strokeDasharray="3 2" />
             {/* An archive box: lid and body. */}
@@ -83,8 +85,8 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
             {isHead && <circle cx={cx} cy={mid} r={r + 4} fill="none" stroke={color} strokeWidth={1.5} opacity={0.6} />}
             <circle cx={cx} cy={mid} r={row.merge ? r - 1.5 : r} fill="var(--gs-bg)" stroke={color} strokeWidth={stroke} />
           </g>
-        )}
-      </g>
+        )
+      )}
     </svg>
   )
 })

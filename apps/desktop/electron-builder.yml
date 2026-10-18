@@ -14,9 +14,14 @@ files:
 extraResources:
   - from: build/icon.png
     to: icon.png
-# @parcel/watcher ships a native .node binary, which cannot be loaded from inside the asar archive.
+  # The tree-sitter grammars (WASM) and their queries, laid out by scripts/grammars.mjs.
+  - from: out/grammars
+    to: grammars
+# @parcel/watcher ships a native .node binary, which cannot be loaded from inside the asar archive;
+# web-tree-sitter reads its runtime .wasm with fs, which is faster from a real file too.
 asarUnpack:
   - '**/node_modules/@parcel/watcher*/**'
+  - '**/node_modules/web-tree-sitter/**'
 mac:
   target: [dmg, zip]
   category: public.app-category.developer-tools
