@@ -21,5 +21,18 @@ macOS auto-update only works for signed builds.
 
 ## Local builds
 
-`pnpm dist` builds installers for your current OS into `apps/desktop/release/`.
-`pnpm --filter @gitsquid/desktop exec electron-builder --dir` builds an unpacked app (fast) for testing.
+`pnpm dist` builds every installer for your current OS into `apps/desktop/release/`, the same
+set the Release workflow publishes. `pnpm dist:appimage` builds only the AppImage, and
+`pnpm --filter @gitsquid/desktop exec electron-builder --dir` an unpacked app (fastest) for testing.
+
+### The deb target does not build on Arch
+
+The `deb` target shells out to fpm, a Ruby tool electron-builder downloads, and that prebuilt Ruby
+is linked against `libcrypt.so.1`. Arch has moved to libxcrypt (`libcrypt.so.2`), so `pnpm dist`
+fails there with `ruby: error while loading shared libraries`. Nothing is wrong with the project
+config, and a symlink does not help — the old glibc symbol versions are genuinely absent.
+
+Use `pnpm dist:appimage` for local Linux builds and let the Release workflow produce the deb; it
+runs on `ubuntu-latest`, which has the library. To build a deb on Arch anyway, install the
+compatibility package (`sudo pacman -S libxcrypt-compat`) or point electron-builder at your own
+fpm (`gem install --user-install fpm`, then `USE_SYSTEM_FPM=true pnpm dist`).
