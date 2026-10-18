@@ -70,6 +70,20 @@ describe('AI service', () => {
     expect(texts.length).toBe(3)
   })
 
+  it('reports progress: its own steps, then what the agent shares', async () => {
+    const { ai, events, r } = await setup()
+    ai.consent()
+    await ai.run('r1', 'x', { kind: 'explain-commit', hash: r.head() })
+    const steps = events.flatMap((e) => (e.type === 'ai-activity' && e.requestId === 'r1' ? [e.activity] : []))
+    // GitSquid's steps go out at once, in order; the agent's are batched, so check what arrived.
+    expect(steps.slice(0, 3).map((a) => a.step)).toEqual(['Gathering context', 'Starting fake-agent', 'Waiting for fake-agent'])
+    expect(steps.map((a) => a.step)).toContain('Waiting for your answer')
+    const last = steps.at(-1)!
+    expect(last.thought).toBe('The diff touches one file.')
+    expect(last.plan.map((p) => p.content)).toEqual(['Read the change', 'Explain it'])
+    expect(last.tools).toEqual([{ id: 'read-1', title: 'Read README', status: 'completed' }])
+  })
+
   it('routes tool permissions to the user and returns a conflict resolution as a proposal', async () => {
     const t = await setup()
     t.ai.consent()

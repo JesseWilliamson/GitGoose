@@ -4,7 +4,8 @@
 //   "commit message"            streams a conventional commit message in three chunks
 //   "Resolve the merge conflict" asks permission to edit, then writes the file through the client
 //   "FAKE:crash"                exits mid-turn
-//   anything else               asks to read a file in the repo and one outside it, then explains
+//   anything else               shares a plan, its thinking and a tool call, asks to read a file in
+//                               the repo and one outside it, then explains
 // FAKE_AGENT_AUTH=1   session/new fails with auth_required until `authenticate` is called
 // FAKE_AGENT_LOG=file  appends every prompt it receives (tests check what was sent)
 import * as acp from '@agentclientprotocol/sdk'
@@ -21,6 +22,11 @@ async function say(cx, sessionId, text) {
     sessionId,
     update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } },
   })
+  await tick()
+}
+
+async function update(cx, sessionId, u) {
+  await cx.notify(acp.methods.client.session.update, { sessionId, update: u })
   await tick()
 }
 
@@ -157,9 +163,17 @@ async function prompt(params, cx) {
     await say(cx, id, 'Kept both sides, ours first.')
     return { stopReason: 'end_turn' }
   }
-  // Explanations: a read inside the repository (GitSquid allows it silently) and one outside
-  // (GitSquid must ask the user).
+  // Explanations: what a real agent shares while it works (GitSquid shows it as progress), then a
+  // read inside the repository (GitSquid allows it silently) and one outside (GitSquid must ask).
+  await update(cx, id, { sessionUpdate: 'plan', entries: [
+    { content: 'Read the change', priority: 'high', status: 'in_progress' },
+    { content: 'Explain it', priority: 'medium', status: 'pending' },
+  ] })
+  await update(cx, id, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'The diff touches ' } })
+  await update(cx, id, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'one file.' } })
+  await update(cx, id, { sessionUpdate: 'tool_call', toolCallId: 'read-1', title: 'Read README', kind: 'read', status: 'in_progress' })
   const inside = await ask(cx, id, 'read-1', 'read', 'Read README', `${cwd}/README.md`)
+  await update(cx, id, { sessionUpdate: 'tool_call_update', toolCallId: 'read-1', status: 'completed' })
   const outside = await ask(cx, id, 'read-2', 'read', 'Read /etc/hostname', '/etc/hostname')
   await say(cx, id, `This change explains itself. `)
   await say(cx, id, `(inside: ${inside ? 'allowed' : 'denied'}, outside: ${outside ? 'allowed' : 'denied'})`)

@@ -515,6 +515,7 @@ function onEvent(e: GitSquidEvent): void {
       set({ github: e.status })
       break
     case 'ai-text':
+    case 'ai-activity':
     case 'ai-permission':
     case 'ai-permission-closed':
       onAiEvent(e)

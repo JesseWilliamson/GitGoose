@@ -2,7 +2,7 @@ import type {
   BlameLine, ChangedFile, ChangeInsights, CodePeek, CommandRecord, GraphFilter, ImageSide, LfsInfo, LfsLock, Identity, Person, Commit, CommitDetails, CommitSummary, ConflictFile, DiffTarget, FileDiff, RepoSnapshot,
   ReflogEntry, Remote, SearchField, Submodule, Worktree, StashEntry, UndoEntry,
 } from './index'
-import type { AgentInfo, AiPermissionRequest, AiResult, AiRunOptions, AiStatus, AiTask, AskThread, ImpactResult, LinterInfo, PushCheck, PushCheckPlan, ReviewLearning, ReviewScope } from './ai'
+import type { AgentInfo, AiActivity, AiPermissionRequest, AiResult, AiRunOptions, AiStatus, AiTask, AskThread, ImpactResult, LinterInfo, PushCheck, PushCheckPlan, ReviewLearning, ReviewScope } from './ai'
 import type { DeviceCodeInfo, GitHubAccount, GitHubStatus, PullRequest, PullRequestList } from './github'
 import type { Settings } from './settings'
 
@@ -351,6 +351,8 @@ export type GitSquidEvent =
   | { type: 'github'; status: GitHubStatus }
   /** An AI request's reply so far. */
   | { type: 'ai-text'; requestId: string; text: string }
+  /** What an AI request is doing (throttled; the whole state each time). */
+  | { type: 'ai-activity'; requestId: string; activity: AiActivity }
   /** The agent wants to use a tool: ask the user. */
   | { type: 'ai-permission'; request: AiPermissionRequest }
   /** A permission question no longer needs an answer (its request ended). */

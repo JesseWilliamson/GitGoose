@@ -46,8 +46,23 @@ test('explains a commit: reads inside the repository pass silently, anything els
   await page.getByTestId('ai-explain-commit').click()
   // The fake agent asks to read /etc/hostname, outside the repository: that needs the user.
   await expect(page.getByTestId('ai-permission')).toContainText('/etc/hostname')
+  // Meanwhile the progress card says what is going on, with the agent's plan.
+  const card = page.getByTestId('ai-run')
+  await expect(card).toContainText('Explaining the commit')
+  await expect(card.getByTestId('ai-step')).toHaveText('Waiting for your answer')
+  await expect(card).toContainText('step 1 of 2')
+  await expect(card.getByTestId('ai-elapsed')).toHaveText(/^0:\d\d$/)
   await page.getByTestId('ai-permission-deny').click()
   await expect(page.getByTestId('ai-explanation-text')).toHaveText('This change explains itself. (inside: allowed, outside: denied)')
+  await expect(card).toHaveCount(0)
+
+  // The second time, the card knows how long it took, and shows what the agent shared.
+  await page.getByTestId('commit-row').nth(1).click()
+  await page.getByTestId('ai-explain-commit').click()
+  await expect(page.getByTestId('ai-permission')).toBeVisible()
+  await expect(card).toContainText(/usually about 0:\d\d|taking longer than usual/)
+  await page.getByTestId('ai-permission-deny').click()
+  await expect(card).toHaveCount(0)
   await app.close()
 })
 

@@ -4,6 +4,7 @@ import {
   type AgentInfo, type AgentPreset, type AiPermissionRequest, type AiResult, type AiRunOptions, type AiStatus, type AiTask, type GitSquidEvent, type Settings,
 } from '@gitsquid/shared'
 import { tmpdir } from 'node:os'
+import { ActivityTracker } from './activity'
 import { AcpAgent } from './acp'
 import { anthropicComplete } from './anthropic'
 import type { SecretFile } from './keyStore'
@@ -148,6 +149,18 @@ export class AiService {
     const repo = task.kind === 'explain-error' && !repoId ? null : this.deps.repo(repoId)
     const cwd = repo?.path ?? tmpdir()
     const settings = this.deps.settings()
+    const activity = new ActivityTracker((a) => this.deps.emit({ type: 'ai-activity', requestId, activity: a }))
+    try {
+      return await this.runTracked(requestId, task, opts, st, repo, cwd, settings, activity)
+    } finally {
+      activity.close()
+    }
+  }
+
+  private async runTracked(requestId: string, task: AiTask, opts: AiRunOptions, st: AiStatus, repo: Repo | null, cwd: string,
+    settings: Settings, activity: ActivityTracker): Promise<AiResult> {
+    // Reviews can take a while here: they read the definitions a change touches and run linters.
+    activity.step('Gathering context')
     const built = await buildPrompt(repo, task, {
       learnings: repo ? settings.reviewLearnings[repo.path] : undefined,
       lint: repo ? (paths, texts, lines) => lintForReview(repo.path, this.deps.settings(), paths, texts, lines) : undefined,
@@ -155,7 +168,10 @@ export class AiService {
     // A re-review where nothing changed: the last review stands, no need to ask anyone.
     if (task.kind === 'review' && built.review?.skipModel) return { text: '', review: toReview(task, built, '{"summary": "", "findings": []}') }
     guardSecrets(built, opts.redact === true)
-    const emitText = (text: string) => this.deps.emit({ type: 'ai-text', requestId, text })
+    const emitText = (text: string) => {
+      activity.writing(text.length)
+      this.deps.emit({ type: 'ai-text', requestId, text })
+    }
     const finish = (text: string) => (task.kind === 'commit-message' ? cleanCommitMessage(text) : text.trim())
     // A recompose answer becomes a proposal for the review dialog (nothing changes until Apply).
     const result = (text: string, extra: Partial<AiResult> = {}): AiResult =>
@@ -175,6 +191,7 @@ export class AiService {
         }
         const abort = new AbortController()
         this.requests.set(requestId, { cancel: () => abort.abort() })
+        activity.step(`Waiting for ${st.label}`)
         const text = await anthropicComplete({
           apiKey: this.deps.apiKey.get()!,
           model: this.deps.settings().anthropicModel || 'claude-opus-5-5',
@@ -193,8 +210,13 @@ export class AiService {
       let proposal: AiResult['proposal']
       const abort = new AbortController()
       this.requests.set(requestId, { cancel: () => abort.abort() })
+      activity.step(`Starting ${st.label}`)
       const res = await this.agent.prompt(cwd, `${built.system}\n\n${built.prompt}`, {
         onText: emitText,
+        onStarted: () => activity.step(`Waiting for ${st.label}`),
+        onThought: (t) => activity.thought(t),
+        onTool: (id, title, status) => activity.tool(id, title, status),
+        onPlan: (entries) => activity.plan(entries),
         writable: built.writable,
         onWrite: (_path, content) => {
           if (task.kind === 'resolve-conflict') proposal = { path: task.path, content }
@@ -203,6 +225,7 @@ export class AiService {
         onPermission: (ask) => {
           const permissionId = this.nextPermission++
           const request: AiPermissionRequest = { permissionId, requestId, ...ask }
+          activity.step('Waiting for your answer')
           return new Promise((resolve) => {
             this.permissions.set(permissionId, { requestId, resolve })
             this.deps.emit({ type: 'ai-permission', request })

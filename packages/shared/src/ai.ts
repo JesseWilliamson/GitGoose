@@ -309,6 +309,23 @@ export interface AiPermissionRequest {
   options: { optionId: string; name: string; kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always' }[]
 }
 
+/**
+ * What an AI request is doing right now, for the progress card: GitSquid's own steps (gathering
+ * context, starting the agent) and what the agent shares as it works (thinking, tools, its plan).
+ */
+export interface AiActivity {
+  /** The current step, in words: "Gathering context", "Thinking", a tool's title, "Writing the answer". */
+  step: string
+  /** The agent's thinking so far (its latest part, when it is long). */
+  thought: string
+  /** The agent's tool calls, oldest first (the latest few). */
+  tools: { id: string; title: string; status: 'pending' | 'in_progress' | 'completed' | 'failed' }[]
+  /** The agent's plan, when it shares one. */
+  plan: { content: string; status: 'pending' | 'in_progress' | 'completed' }[]
+  /** Characters of the answer written so far. */
+  chars: number
+}
+
 /** One piece of a recompose: a hunk, or a whole file when it has no hunks. */
 export interface RecomposeUnitInfo {
   id: string

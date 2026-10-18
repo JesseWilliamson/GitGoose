@@ -45,6 +45,14 @@ export interface PermissionAsk {
 export interface PromptHooks {
   /** Called with the whole reply so far, after each streamed chunk. */
   onText?(text: string): void
+  /** The session is open and the request sent: the agent is working on it. */
+  onStarted?(): void
+  /** Called with all the agent's thinking so far, after each streamed chunk. */
+  onThought?(text: string): void
+  /** A tool call started or changed; fields the agent left out are undefined. */
+  onTool?(id: string, title?: string | null, status?: 'pending' | 'in_progress' | 'completed' | 'failed' | null): void
+  /** The agent's plan, whole, each time it changes. */
+  onPlan?(entries: { content: string; status: 'pending' | 'in_progress' | 'completed' }[]): void
   /** Ask the user. Resolves to the chosen optionId, or null to cancel. */
   onPermission(ask: PermissionAsk): Promise<string | null>
   /** The one file this prompt may "write" (absolute path); writes are handed to onWrite. */
@@ -71,7 +79,7 @@ interface Running {
 export class AcpAgent {
   private running: Promise<Running> | null = null
   /** sessionId -> its repository and the prompt it is running. */
-  private bySession = new Map<string, { cwd: string; hooks: PromptHooks; text: string }>()
+  private bySession = new Map<string, { cwd: string; hooks: PromptHooks; text: string; thought: string }>()
   /** The agent's last stderr lines: shown when it fails to start or dies. */
   private stderr = ''
   /** How many times the agent process has been started (tests use it to see restarts). */
@@ -188,11 +196,12 @@ export class AcpAgent {
     } catch (e) {
       throw this.authError(e, init)
     }
-    const entry = { cwd, hooks, text: '' }
+    const entry = { cwd, hooks, text: '', thought: '' }
     this.bySession.set(sessionId, entry)
     const cancel = () => void conn.agent.notify(acp.methods.agent.session.cancel, { sessionId }).catch(() => {})
     signal?.addEventListener('abort', cancel, { once: true })
     try {
+      hooks.onStarted?.()
       const res = await conn.agent.request(acp.methods.agent.session.prompt, { sessionId, prompt: [{ type: 'text', text }] })
       return { text: entry.text, stopReason: res.stopReason }
     } catch (e) {
@@ -227,6 +236,13 @@ export class AcpAgent {
     if (u.sessionUpdate === 'agent_message_chunk' && u.content.type === 'text') {
       entry.text += u.content.text
       entry.hooks.onText?.(entry.text)
+    } else if (u.sessionUpdate === 'agent_thought_chunk' && u.content.type === 'text') {
+      entry.thought += u.content.text
+      entry.hooks.onThought?.(entry.thought)
+    } else if (u.sessionUpdate === 'tool_call' || u.sessionUpdate === 'tool_call_update') {
+      entry.hooks.onTool?.(u.toolCallId, u.title, u.status)
+    } else if (u.sessionUpdate === 'plan') {
+      entry.hooks.onPlan?.(u.entries.map((e) => ({ content: e.content, status: e.status })))
     }
   }
 

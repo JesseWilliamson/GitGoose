@@ -1,4 +1,4 @@
-import { AI_AUTH_REQUIRED, type AgentAuthMethod, type AiPermissionRequest, type AiResult, type AiTask, type RecomposeProposal } from '@gitsquid/shared'
+import { AI_AUTH_REQUIRED, type AgentAuthMethod, type AiActivity, type AiPermissionRequest, type AiResult, type AiTask, type RecomposeProposal } from '@gitsquid/shared'
 import { create } from 'zustand'
 import { api, toUiError } from './api'
 import { attention, choose, useStore } from './store'
@@ -29,9 +29,28 @@ export const useAi = create<AiUi>(() => ({ consent: null, login: null, permissio
 
 const textListeners = new Map<string, (text: string) => void>()
 
+/** A request on its way: what the progress card shows. */
+export interface AiRunInfo {
+  requestId: string
+  kind: AiTask['kind']
+  /** Date.now() when it was sent. */
+  started: number
+  /** How long this kind of request took lately (median, ms), when known. */
+  usually: number | null
+  /** The latest activity main reported; null until the first one. */
+  activity: AiActivity | null
+}
+
+/** Requests on their way, oldest first. */
+export const useAiRuns = create<{ runs: AiRunInfo[] }>(() => ({ runs: [] }))
+
 /** Called from the store's event handler. */
-export function onAiEvent(e: { type: 'ai-text'; requestId: string; text: string } | { type: 'ai-permission'; request: AiPermissionRequest } | { type: 'ai-permission-closed'; permissionId: number }): void {
+export function onAiEvent(e: { type: 'ai-text'; requestId: string; text: string } | { type: 'ai-activity'; requestId: string; activity: AiActivity }
+  | { type: 'ai-permission'; request: AiPermissionRequest } | { type: 'ai-permission-closed'; permissionId: number }): void {
   if (e.type === 'ai-text') textListeners.get(e.requestId)?.(e.text)
+  else if (e.type === 'ai-activity') {
+    useAiRuns.setState((s) => ({ runs: s.runs.map((r) => (r.requestId === e.requestId ? { ...r, activity: e.activity } : r)) }))
+  }
   else if (e.type === 'ai-permission') useAi.setState((s) => ({ permissions: [...s.permissions, e.request] }))
   else useAi.setState((s) => ({ permissions: s.permissions.filter((p) => p.permissionId !== e.permissionId) }))
 }
@@ -89,11 +108,16 @@ export function startAi(repoId: string | null, task: AiTask, onText?: (text: str
     }
     await opts.before?.()
     if (onText) textListeners.set(requestId, onText)
+    const started = Date.now()
+    useAiRuns.setState((s) => ({ runs: [...s.runs, { requestId, kind: task.kind, started, usually: usualDuration(task.kind), activity: null }] }))
+    let finished = false
     try {
       let redact = false
       for (let attempt = 0; ; attempt++) {
         try {
-          return await api.aiRun(requestId, repoId ?? '', task, redact ? { redact } : undefined)
+          const res = await api.aiRun(requestId, repoId ?? '', task, redact ? { redact } : undefined)
+          finished = true
+          return res
         } catch (e) {
           const err = e as { code?: string; message?: string }
           if (err.code === 'ai-cancelled') return null
@@ -110,9 +134,45 @@ export function startAi(repoId: string | null, task: AiTask, onText?: (text: str
       }
     } finally {
       textListeners.delete(requestId)
+      useAiRuns.setState((s) => ({ runs: s.runs.filter((r) => r.requestId !== requestId) }))
+      // Only answers count towards "usually": a cancel or a failure says nothing about the time.
+      if (finished) recordDuration(task.kind, Date.now() - started)
     }
   })()
   return { requestId, done }
+}
+
+// ------------------------------------------------------------------ how long it usually takes
+
+/**
+ * The last few durations per kind of request, in this browser profile's localStorage: a viewer
+ * convenience, so losing it (private mode, cleared data) only loses the estimate. The median of
+ * the last five shrugs off one slow run.
+ */
+const DURATIONS_KEY = 'gitsquid:ai-durations'
+const KEEP = 5
+
+function readDurations(): Partial<Record<AiTask['kind'], number[]>> {
+  try {
+    return JSON.parse(localStorage.getItem(DURATIONS_KEY) ?? '{}') as Partial<Record<AiTask['kind'], number[]>>
+  } catch {
+    return {}
+  }
+}
+
+export function usualDuration(kind: AiTask['kind']): number | null {
+  const ds = [...(readDurations()[kind] ?? [])].sort((a, b) => a - b)
+  return ds.length ? ds[Math.floor(ds.length / 2)]! : null
+}
+
+function recordDuration(kind: AiTask['kind'], ms: number): void {
+  try {
+    const all = readDurations()
+    all[kind] = [...(all[kind] ?? []), ms].slice(-KEEP)
+    localStorage.setItem(DURATIONS_KEY, JSON.stringify(all))
+  } catch {
+    // No storage: no estimate next time, nothing else.
+  }
 }
 
 /**

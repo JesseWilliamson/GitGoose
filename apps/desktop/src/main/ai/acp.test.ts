@@ -34,6 +34,25 @@ describe('ACP agent', () => {
     expect(res.stopReason).toBe('end_turn')
   })
 
+  it('passes on what the agent shares while it works: thinking, tool calls, its plan', async () => {
+    const seen: string[] = []
+    await fake().prompt(tempDir(), 'Explain this commit', {
+      onPermission: deny,
+      onStarted: () => seen.push('started'),
+      onThought: (t) => seen.push(`thought: ${t}`),
+      onTool: (id, title, status) => seen.push(`tool ${id}: ${title ?? '-'} ${status ?? '-'}`),
+      onPlan: (entries) => seen.push(`plan: ${entries.map((e) => `${e.content} (${e.status})`).join(', ')}`),
+    })
+    expect(seen).toEqual([
+      'started',
+      'plan: Read the change (in_progress), Explain it (pending)',
+      'thought: The diff touches ',
+      'thought: The diff touches one file.', // the whole thought so far, each time
+      'tool read-1: Read README in_progress',
+      'tool read-1: - completed', // an update carries only what changed
+    ])
+  })
+
   it('runs requests in the same repository side by side, each in its own session', async () => {
     const agent = fake()
     const dir = tempDir()

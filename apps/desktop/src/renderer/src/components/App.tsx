@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import { applyPatchFile, applyPatchFromClipboard, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, redo, stash, undo } from '../lib/actions'
 import { comboOf, keymap } from '../lib/keys'
 import { closeTab, onCommand, runCommand, updateRepo, saveSettings, setting, useActiveRepo, useStore } from '../lib/store'
+import { AiActivity } from './AiActivity'
 import { AttentionBar } from './AttentionBar'
 import { OmniSearch } from './OmniSearch'
 import { Dialogs, PromptDialog, Toasts } from './Dialogs'
@@ -132,6 +133,7 @@ export function App() {
       <PromptDialog />
       <DropMenu />
       <Toasts />
+      <AiActivity />
     </div>
   )
 }
