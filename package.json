@@ -13,6 +13,7 @@
     "e2e": "pnpm --filter @gitsquid/desktop e2e",
     "bench": "pnpm --filter @gitsquid/bench bench",
     "dist": "pnpm --filter @gitsquid/desktop dist",
+    "dist:appimage": "pnpm --filter @gitsquid/desktop dist:appimage",
     "dev:repo": "pnpm --filter @gitsquid/fixtures dev:repo"
   },
   "devDependencies": {

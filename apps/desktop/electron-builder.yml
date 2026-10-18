@@ -28,6 +28,14 @@ linux:
   target: [AppImage, deb]
   category: Development
   maintainer: Jesse Williamson
+  # Name the .desktop entry after package.json's desktopName so its StartupWMClass matches
+  # the app_id Electron reports, and window managers group running windows with the launcher.
+  syncDesktopName: true
+deb:
+  # The workspace package is @gitsquid/desktop, which is not a legal deb package name and
+  # would put a "@gitsquid" directory in release/. Both are spelled out here instead.
+  packageName: gitsquid
+  artifactName: gitsquid_${version}_${arch}.${ext}
 publish:
   provider: github
   owner: JesseWilliamson
