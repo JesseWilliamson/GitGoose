@@ -74,6 +74,14 @@ export function graphRevs(headHash: string | undefined, filter?: GraphFilter, ex
   return [...ex('refs/heads/'), '--branches', ...ex('refs/remotes/'), '--remotes', ...ex('refs/tags/'), '--tags', ...head]
 }
 
+/** Whether graphRevs walks from this ref: the same hide and solo rules, for one full ref name. */
+export function graphShowsRef(name: string, filter?: GraphFilter): boolean {
+  const matches = (r: string) => r === name || (r.endsWith('/*') && name.startsWith(r.slice(0, -1)))
+  if (!filter) return true
+  if (filter.solo.length) return filter.solo.some(matches)
+  return !filter.hidden.some(matches)
+}
+
 /**
  * One `git log` walk over the whole history, read only as far as the UI has asked for.
  *

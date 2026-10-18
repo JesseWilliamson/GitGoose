@@ -103,16 +103,17 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
 })
 
 /** The "uncommitted changes" node: hollow and dashed with a pencil, in HEAD's lane, joined to HEAD below. */
-export function WipCell({ width, hasHead, h = ROW_H }: { width: number; hasHead: boolean; h?: number }) {
-  const cx = laneX(0)
+export function WipCell({ width, hasHead, h = ROW_H, lane, color }: { width: number; hasHead: boolean; h?: number; lane: number; color: number }) {
+  const cx = laneX(lane)
+  const stroke = laneColor(color)
   const r = nodeRadius(h)
   const s = r / 9
   return (
-    <svg width={width} height={h} className="block shrink-0" aria-hidden>
-      {hasHead && <path d={`M${cx} ${h / 2 + r}V${h}`} stroke={laneColor(0)} strokeWidth={lineWidth(h)} strokeDasharray="3 4" opacity={0.7} />}
-      <circle cx={cx} cy={h / 2} r={r} fill="var(--gs-bg)" stroke={laneColor(0)} strokeWidth={2} strokeDasharray="3 2" />
+    <svg width={width} height={h} className="block shrink-0" aria-hidden data-testid="wip-node" data-lane={lane}>
+      {hasHead && <path d={`M${cx} ${h / 2 + r}V${h}`} stroke={stroke} strokeWidth={lineWidth(h)} strokeDasharray="3 4" opacity={0.7} />}
+      <circle cx={cx} cy={h / 2} r={r} fill="var(--gs-bg)" stroke={stroke} strokeWidth={2} strokeDasharray="3 2" />
       {/* A pencil: "you are editing here". */}
-      <path transform={`translate(${cx} ${h / 2}) scale(${s})`} d="M-3 3l1-3 4-4 2 2-4 4z" fill={laneColor(0)} />
+      <path transform={`translate(${cx} ${h / 2}) scale(${s})`} d="M-3 3l1-3 4-4 2 2-4 4z" fill={stroke} />
     </svg>
   )
 }
