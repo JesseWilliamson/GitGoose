@@ -331,6 +331,19 @@ export function selectedHashes(sel: Selection): string[] {
   return sel.kind === 'commit' ? [sel.hash] : sel.kind === 'commits' ? sel.hashes : []
 }
 
+/**
+ * When the selected commits (newest first) form a chain, each one's parent being the next one
+ * down, their combined change is one diff: from the oldest one's parent to the newest. That
+ * parent, or undefined when they do not follow each other (or the chain starts at a root commit).
+ */
+export function chainBase(id: string, hashes: string[]): string | undefined {
+  const log = getLog(id)
+  const commits = hashes.map((h) => log.commits[log.index.get(h) ?? -1])
+  if (commits.some((c) => !c)) return undefined
+  const ok = commits.every((c, i) => i === commits.length - 1 || c!.parents[0] === commits[i + 1]!.hash)
+  return ok ? commits[commits.length - 1]!.parents[0] : undefined
+}
+
 /** The commit the keyboard moves from (the last one clicked). */
 export function selectionCursor(sel: Selection): string | null {
   return sel.kind === 'commit' ? sel.hash : sel.kind === 'commits' ? sel.cursor : null

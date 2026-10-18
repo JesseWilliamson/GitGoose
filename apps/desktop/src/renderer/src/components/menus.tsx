@@ -6,9 +6,10 @@ import {
 } from '../lib/actions'
 import { shortHash, stashLabel } from '../lib/format'
 import { ask } from '../lib/actions'
-import { getLog, openRepo, updateRepo, useStore } from '../lib/store'
+import { chainBase, getLog, openRepo, updateRepo, useStore } from '../lib/store'
 import { api } from '../lib/api'
 import type { ReactNode } from 'react'
+import type { Ref } from '@gitsquid/shared'
 import { recomposeWithAi } from './RecomposeDialog'
 import { startReview } from '../lib/review'
 import { startWalkthrough } from '../lib/walkthrough'
@@ -24,6 +25,51 @@ function PerRemote({ names, label, onPick, danger }: { names: string[]; label: (
       {names.map((n) => <CM.Item key={n} danger={danger} onSelect={() => onPick(n)}>{n}</CM.Item>)}
     </CM.Sub>
   )
+}
+
+/**
+ * What a branch (or tag) can do relative to HEAD: check it out, fast-forward it, merge it in,
+ * rebase onto it. Shared by the branch menu and the menu of the commit at the branch's tip.
+ */
+function BranchActions({ repoId, r }: { repoId: string; r: Ref }) {
+  const snap = useStore((s) => s.repos[repoId]?.snapshot)
+  if (!snap) return null
+  const head = currentBranchRef(snap)
+  const headName = snap.head.branch ?? 'HEAD'
+  const name = shortRef(r)
+  if (head?.name === r.name) return null
+  const upstream = r.upstream ? snap.refs.find((x) => x.name === r.upstream) : undefined
+  // Not checked out, nothing of its own, behind its upstream: moving it forward loses nothing.
+  const canFastForward = r.kind === 'local' && !!upstream && (r.behind ?? 0) > 0 && (r.ahead ?? 0) === 0
+  return (
+    <>
+      <CM.Item onSelect={() => void checkout(repoId, r.name)}>Check out {name}</CM.Item>
+      {canFastForward && <CM.Item onSelect={() => void fastForward(repoId, name)}>Fast-forward {name} to {shortRef(r.upstream!)}</CM.Item>}
+      {r.kind !== 'tag' && head && (
+        <>
+          <CM.Item onSelect={() => void merge(repoId, r.name)}>Merge {name} into {headName}</CM.Item>
+          <CM.Sub label="Merge options">
+            <CM.Item onSelect={() => void merge(repoId, r.name, { noFf: true })}>Always create a merge commit</CM.Item>
+            <CM.Item onSelect={() => void merge(repoId, r.name, { squash: true })}>Squash {name} into {headName}</CM.Item>
+            <CM.Item onSelect={() => void merge(repoId, r.name, { noCommit: true })}>Merge without committing</CM.Item>
+          </CM.Sub>
+          <CM.Item onSelect={() => void rebase(repoId, r.name)}>Rebase {headName} onto {name}</CM.Item>
+        </>
+      )}
+    </>
+  )
+}
+
+/**
+ * The branch a commit row stands for when it is a branch's tip: a local branch before a remote
+ * one, and never the checked-out branch (merging or rebasing onto yourself does nothing).
+ */
+export function tipBranch(refs: Ref[], hash: string, headBranch: string | undefined): Ref | undefined {
+  const at = refs.filter((r) => r.hash === hash && (r.kind === 'local' || r.kind === 'remote'))
+  const local = at.filter((r) => r.kind === 'local' && r.shortName !== headBranch)
+  if (local.length) return local[0]
+  // A remote branch whose local twin is HEAD is "the branch I'm on" too: skip it.
+  return at.find((r) => r.kind === 'remote' && !r.name.endsWith('/HEAD') && (!headBranch || r.shortName.slice(r.shortName.indexOf('/') + 1) !== headBranch))
 }
 
 /** Right-click menu for the graph. Rows record what was clicked in the store; this renders for it. */
@@ -44,26 +90,12 @@ export function GraphMenu({ repoId }: { repoId: string }) {
     const hidden = snap.filter.hidden.includes(r.name)
     const soloed = snap.filter.solo.includes(r.name)
     const worktree = r.kind === 'local' ? view.worktrees.find((w) => !w.current && w.branch === name) : undefined
-    const upstream = r.upstream ? snap.refs.find((x) => x.name === r.upstream) : undefined
-    // Not checked out, nothing of its own, behind its upstream: moving it forward loses nothing.
-    const canFastForward = r.kind === 'local' && !isHead && !!upstream && (r.behind ?? 0) > 0 && (r.ahead ?? 0) === 0
     /** Remote branches with the same name, the usual thing to track (all remote branches can be typed). */
     const tracking = r.kind === 'local' ? snap.refs.filter((x) => x.kind === 'remote' && x.name !== r.upstream && x.shortName.endsWith(`/${name}`)) : []
     return (
       <CM.Content>
         <CM.Label>{r.kind === 'tag' ? `Tag ${name}` : r.kind === 'remote' ? `Remote branch ${name}` : `Branch ${name}`}</CM.Label>
-        {!isHead && <CM.Item onSelect={() => void checkout(repoId, r.name)}>Check out {name}</CM.Item>}
-        {!isHead && r.kind !== 'tag' && head && (
-          <>
-            <CM.Item onSelect={() => void merge(repoId, r.name)}>Merge {name} into {headName}</CM.Item>
-            <CM.Sub label="Merge options">
-              <CM.Item onSelect={() => void merge(repoId, r.name, { noFf: true })}>Always create a merge commit</CM.Item>
-              <CM.Item onSelect={() => void merge(repoId, r.name, { squash: true })}>Squash {name} into {headName}</CM.Item>
-              <CM.Item onSelect={() => void merge(repoId, r.name, { noCommit: true })}>Merge without committing</CM.Item>
-            </CM.Sub>
-            <CM.Item onSelect={() => void rebase(repoId, r.name)}>Rebase {headName} onto {name}</CM.Item>
-          </>
-        )}
+        <BranchActions repoId={repoId} r={r} />
         {!isHead && snap.head.hash && (
           <CM.Sub label="Compare">
             <CM.Item onSelect={() => compare(repoId, snap.head.hash!, r.name, headName, name)}>{name} with {headName}</CM.Item>
@@ -76,7 +108,6 @@ export function GraphMenu({ repoId }: { repoId: string }) {
           <>
             {isHead ? <CM.Item onSelect={() => push(repoId)}>Push {name}</CM.Item> : <CM.Item onSelect={() => void pushBranch(repoId, name)}>Push {name}</CM.Item>}
             <PerRemote names={remotes} label={(n) => `Push to ${n}…`} onPick={(n) => pushTo(repoId, name, n)} />
-            {canFastForward && <CM.Item onSelect={() => void fastForward(repoId, name)}>Fast-forward {name} to {shortRef(r.upstream!)}</CM.Item>}
             {r.kind === 'local' && remotes.length > 0 && (
               <CM.Sub label={r.upstream ? 'Track another remote branch' : 'Track a remote branch'}>
                 {tracking.map((t) => <CM.Item key={t.name} onSelect={() => void setUpstream(repoId, name, t.name)}>{t.shortName}</CM.Item>)}
@@ -278,10 +309,16 @@ export function GraphMenu({ repoId }: { repoId: string }) {
 
   if (menu.kind === 'commits') {
     const n = menu.hashes.length
+    // Consecutive commits have one combined change (the side panel lists its files already).
+    const base = chainBase(repoId, menu.hashes)
     return (
       <CM.Content>
         <CM.Label>{n} commits selected</CM.Label>
         <CM.Item onSelect={() => void cherryPickMany(repoId, menu.hashes)}>Cherry-pick {n} commits onto {headName}</CM.Item>
+        {n === 2 && <CM.Item onSelect={() => compare(repoId, menu.hashes[1]!, menu.hashes[0]!)}>Compare the two</CM.Item>}
+        {base !== undefined && (
+          <CM.Item onSelect={() => compare(repoId, base, menu.hashes[0]!, `before ${shortHash(menu.hashes[n - 1]!)}`, shortHash(menu.hashes[0]!))}>Compare before and after all {n}</CM.Item>
+        )}
         <CM.Separator />
         <CM.Item onSelect={() => void copyCommits(repoId, menu.hashes, 'diff')}>Copy as diff</CM.Item>
         <CM.Item onSelect={() => void copyCommits(repoId, menu.hashes, 'patch')}>Copy as patch</CM.Item>
@@ -312,8 +349,17 @@ export function GraphMenu({ repoId }: { repoId: string }) {
   const editAt = view.editable.indexOf(hash)
   const hasStaged = snap.status.some((e) => e.kind !== 'untracked' && e.kind !== 'unmerged' && e.index !== '.')
   const isHeadCommit = hash === snap.head.hash
+  /** When this commit is a branch's tip, the branch's own actions come first, as on its pill. */
+  const tip = tipBranch(snap.refs, hash, snap.head.branch)
   return (
     <CM.Content>
+      {tip && (
+        <>
+          <CM.Label>Branch {shortRef(tip)}</CM.Label>
+          <BranchActions repoId={repoId} r={tip} />
+          <CM.Separator />
+        </>
+      )}
       <CM.Label>{hash.slice(0, 7)} {commit?.subject}</CM.Label>
       <CM.Item onSelect={() => newBranch(repoId, hash)}>Create branch here…</CM.Item>
       <CM.Item onSelect={() => newTag(repoId, hash)}>Create tag here…</CM.Item>
