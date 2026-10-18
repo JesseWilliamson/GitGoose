@@ -1,7 +1,7 @@
 import { initRepo, makeFixture, tempDir } from '@gitsquid/fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
-import { launch } from './app'
+import { launch, pickFromSubmenu } from './app'
 
 const ref = (page: Page, name: string) => page.locator(`[data-testid="sidebar-ref"][data-ref="${name}"]`)
 const remoteHeader = (page: Page, name: string) => page.locator(`[data-testid="remote-section"][data-name="${name}"] button`).first()
@@ -33,7 +33,7 @@ test('add, rename, re-point and remove a remote from the sidebar; removing is un
   await item(page, 'Use a different URL for pushing…').click()
   await page.getByTestId('dialog-input').fill('/tmp/push-here.git')
   await page.getByTestId('dialog-submit').click()
-  await expect.poll(() => r.git('config', 'remote.mirror.pushurl').trim()).toBe('/tmp/push-here.git')
+  await expect.poll(() => r.gitOrNull('config', 'remote.mirror.pushurl')?.trim()).toBe('/tmp/push-here.git')
 
   // Remove, and undo it: the remote is back (its branches come back with the next fetch).
   await remoteHeader(page, 'mirror').click({ button: 'right' })
@@ -95,13 +95,14 @@ test('fast-forward a branch that is not checked out; stop and start tracking; pu
   await topic.click({ button: 'right' })
   await item(page, 'Stop tracking origin/main').click()
   await expect.poll(() => r.tryGit('config', 'branch.topic.merge')).toBe(1)
+  // The menu is built from what the sidebar shows: wait until it shows the change, not just git.
+  await expect(topic).toHaveAttribute('data-upstream', '')
 
   await topic.click({ button: 'right' })
-  await item(page, 'Track a remote branch').click()
-  await item(page, 'Other…').click()
+  await pickFromSubmenu(page, 'Track a remote branch', 'Other…')
   await page.getByTestId('dialog-input').fill('origin/main')
   await page.getByTestId('dialog-submit').click()
-  await expect.poll(() => r.git('rev-parse', '--abbrev-ref', 'topic@{upstream}').trim()).toBe('origin/main')
+  await expect.poll(() => r.gitOrNull('rev-parse', '--abbrev-ref', 'topic@{upstream}')?.trim()).toBe('origin/main')
 
   await topic.click({ button: 'right' })
   await item(page, 'Push to origin…').click()
