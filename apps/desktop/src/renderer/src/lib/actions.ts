@@ -155,6 +155,8 @@ export function reopen(path: string): void {
 
 export function shortRef(ref: Ref | string): string {
   const name = typeof ref === 'string' ? ref : ref.name
+  // A bare commit (a detached checkout) reads better as its short hash.
+  if (/^[0-9a-f]{40}$/.test(name)) return name.slice(0, 7)
   return name.replace(/^refs\/(heads|remotes|tags)\//, '')
 }
 

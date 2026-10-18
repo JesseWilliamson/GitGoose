@@ -16,6 +16,9 @@ export const lineWidth = (h: number) => (h < ROW_H ? 2 : 2.5)
 /** The solid lane-coloured bar at the graph column's right edge, beside the message (GitKraken's). */
 const STRIP_W = 3
 /** Space left above and below each row's band and strip, so neighbouring rows read as separate commits. */
+/** Opacity of a row's lane band, and of HEAD's, lit up so you can find where you are. */
+const BAND = 0.1
+const HEAD_BAND = 0.35
 export const bandInset = (h: number) => (h < ROW_H ? 1.5 : 2)
 
 export const laneX = (lane: number) => PAD + lane * LANE_W + LANE_W / 2
@@ -34,10 +37,11 @@ export interface NodeAuthor {
  *
  * Nodes, like GitKraken's: a commit is its author's avatar ringed in the lane colour (initials
  * underneath, so they show while the image loads or when there is none); a merge is a small
- * dot; HEAD gets an extra outer ring. Behind each node, a faint band in its lane colour runs
+ * dot. Behind each node, a faint band in its lane colour runs
  * from the node to the right edge, ending in a solid strip: it ties the message to its lane.
  * The band and strip stop short of the row's top and bottom (bandInset), so a run of commits in
  * one lane shows as separate blocks rather than one long bar. Edges still span the full height.
+ * HEAD's band is lit up (stronger) instead of ringing its node, as in GitKraken.
  */
 export const GraphCell = memo(function GraphCell({ row, width, showPending, isHead, h = ROW_H, author, stash, refLine }: {
   row: Row
@@ -65,7 +69,8 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
   return (
     <svg width={width} height={h} className="block shrink-0 overflow-hidden" aria-hidden data-node={row.merge ? 'merge' : 'commit'}
       data-offscreen={offscreen || undefined}>
-      <rect x={cx} y={inset} width={Math.max(0, width - cx)} height={h - inset * 2} fill={color} opacity={0.1} data-testid="lane-band" />
+      <rect x={cx} y={inset} width={Math.max(0, width - cx)} height={h - inset * 2} fill={color} opacity={isHead ? HEAD_BAND : BAND}
+        data-testid="lane-band" data-head={isHead || undefined} />
       <rect x={width - STRIP_W} y={inset} width={STRIP_W} height={h - inset * 2} fill={color} data-testid="lane-strip" />
       {refLine && <path d={`M0 ${mid}H${cx}`} stroke={color} strokeWidth={2} opacity={0.85} data-testid="ref-line" />}
       {row.edges.map((e, i) => {
@@ -86,7 +91,6 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
           <circle cx={cx} cy={mid} r={r > 9 ? 5.5 : 4.5} fill={color} stroke="var(--gs-bg)" strokeWidth={1.5} />
         ) : (
           <g data-testid="avatar-node">
-            {isHead && <circle cx={cx} cy={mid} r={r + 3} fill="none" stroke={color} strokeWidth={2} />}
             <circle cx={cx} cy={mid} r={r} fill={color} />
             <circle cx={cx} cy={mid} r={r - 2} fill={laneColor(hashColor(author.email))} />
             <text x={cx} y={mid} dy="0.35em" textAnchor="middle" fontSize={r > 9 ? 9 : 7.5} fontWeight={700} fill="#fff"

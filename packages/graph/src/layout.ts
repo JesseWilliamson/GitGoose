@@ -30,8 +30,11 @@
  *
  * HEAD gets a lane reserved from the top too, because the "uncommitted changes" row sits above
  * everything and a dashed line joins it to HEAD. When HEAD is a trunk tip that lane is lane 0;
- * otherwise it is lane 1, next to the trunk. Commits above HEAD see it as taken and go further
- * right; when HEAD arrives it lands there (or in lane 0, if the trunk's line reaches it first).
+ * otherwise it starts in lane 1, next to the trunk. Real lines take precedence over the dashed
+ * one: a commit that needs a new column may take the dashed line's, and the dashed line steps
+ * aside into the next free column. So commits are where they would be with nothing checked out,
+ * and checking out an older commit does not push the commits ahead of it off to the side.
+ * When HEAD arrives it lands in the leftmost line waiting for it, and the dashed line curves in.
  */
 
 export interface LayoutCommit {
@@ -55,6 +58,8 @@ export interface Edge {
   /**
    * True for the reserved HEAD lane above HEAD itself. The UI draws it dashed, joining the
    * "uncommitted changes" row at the top to HEAD, and hides it when there are no changes.
+   * It is the one line that may change column outside a node: a 'pass' with from !== to, where
+   * it steps aside for a real line.
    */
   pending?: boolean
 }
@@ -94,7 +99,9 @@ export class GraphLayout {
   private colors: number
   /** While set, lane 0 is held free for the first of these commits to arrive. */
   private trunk: Set<string> | null = null
-  /** The lane and colour of the line from the "uncommitted changes" row down to HEAD. */
+  /** The dashed line may step aside for real lines (it is not HEAD's trunk lane 0). */
+  private movable = false
+  /** The lane and colour of the line from the "uncommitted changes" row down to HEAD (at the top). */
   readonly headLane: number = 0
   readonly headColor: number = 0
 
@@ -109,6 +116,7 @@ export class GraphLayout {
       this.headLane = this.lanes.length
       this.headColor = this.colorOf(this.headLane)
       this.lanes[this.headLane] = { hash: opts.head, pending: true }
+      this.movable = this.trunk !== null
     }
   }
 
@@ -117,9 +125,27 @@ export class GraphLayout {
     return column % this.colors
   }
 
+  /** The first column a new line may take: a free one, or the dashed HEAD line's (see claim). */
   private freeSlot(exclude = -1): number {
-    for (let i = this.trunk ? 1 : 0; i < this.lanes.length; i++) if (this.lanes[i] === null && i !== exclude) return i
+    for (let i = this.trunk ? 1 : 0; i < this.lanes.length; i++) {
+      const l = this.lanes[i]
+      if (i !== exclude && (l === null || (l?.pending && this.movable))) return i
+    }
     return this.lanes.length
+  }
+
+  /**
+   * Make column `slot` free for a real line. If the dashed HEAD line is there, it steps aside
+   * into the first truly free column (not `keep`), and its edge in this row bends to follow.
+   */
+  private claim(slot: number, keep: number, pendingEdge: Edge | undefined): void {
+    const l = this.lanes[slot]
+    if (!l?.pending) return
+    let to = this.trunk ? 1 : 0
+    while (to < this.lanes.length && (this.lanes[to] !== null || to === slot || to === keep)) to++
+    this.lanes[to] = l
+    this.lanes[slot] = null
+    if (pendingEdge) pendingEdge.to = to
   }
 
   /** Lay out the next commits. Call repeatedly with consecutive pages. */
@@ -144,17 +170,24 @@ export class GraphLayout {
     }
     const color = this.colorOf(lane)
 
-    // Lines from the top edge: either into this node, or straight past it.
+    // Lines from the top edge: either into this node, or straight past it. The dashed HEAD line
+    // keeps HEAD's colour wherever it has stepped aside to.
+    let pendingEdge: Edge | undefined
     for (let i = 0; i < lanes.length; i++) {
       const l = lanes[i]
       if (!l) continue
+      const c = l.pending ? this.headColor : this.colorOf(i)
       if (l.hash === commit.hash) {
-        edges.push({ part: 'top', from: i, to: lane, color: this.colorOf(i), ...(l.pending ? { pending: true } : {}) })
+        edges.push({ part: 'top', from: i, to: lane, color: c, ...(l.pending ? { pending: true } : {}) })
       } else {
-        edges.push({ part: 'pass', from: i, to: i, color: this.colorOf(i), ...(l.pending ? { pending: true } : {}) })
+        const e: Edge = { part: 'pass', from: i, to: i, color: c, ...(l.pending ? { pending: true } : {}) }
+        if (l.pending) pendingEdge = e
+        edges.push(e)
       }
     }
     for (const i of incoming) lanes[i] = null
+    // A new branch tip took the dashed line's column.
+    this.claim(lane, lane, pendingEdge)
 
     // 2 and 3. Hand the parents down.
     const [first, ...rest] = commit.parents
@@ -164,8 +197,11 @@ export class GraphLayout {
     }
     for (const p of rest) {
       let target = lanes.findIndex((l) => l?.hash === p)
+      // A merge whose parent is HEAD joins the dashed line, which from here down is a real line.
+      if (target >= 0 && lanes[target]!.pending) lanes[target] = { hash: p }
       if (target < 0) {
         target = this.freeSlot(lane)
+        this.claim(target, lane, pendingEdge)
         lanes[target] = { hash: p }
       }
       edges.push({ part: 'bottom', from: lane, to: target, color: this.colorOf(target) })

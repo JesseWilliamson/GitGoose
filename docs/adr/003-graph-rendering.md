@@ -55,5 +55,18 @@ keeps the main line on the left instead, and so do we now:
   row: lane 0 when HEAD is a trunk tip, else lane 1. `GraphLayout.headLane`/`headColor` tell the
   WIP row where to draw.
 
-A checkout now leaves the main line where it is. Side branches can still shift a column to make
-room for HEAD's lane, which is the price of the dashed WIP line.
+A checkout now leaves the main line where it is.
+
+### Real lines beat the dashed line (amended again)
+
+Reserving lane 1 for HEAD still moved things: checking out an older commit pushed every commit
+ahead of it (newer commits on its own line, or a branch merged in later) a column right, around
+the reserved lane, and curved them back in. So the reservation is now only where the dashed line
+*starts*. When a new line needs a column, the dashed line's column counts as free: the real line
+takes it and the dashed line steps aside into the next free column (a `pass` edge with
+`from !== to`, the one line allowed to change column outside a node). The upshot is that every
+commit sits where it would with nothing checked out; only the dashed line bends. A merge line
+into HEAD turns HEAD's lane into a real line from there down (it used to stay "pending", and was
+hidden whenever there were no uncommitted changes).
+
+HEAD is shown by its lit lane band (no ring around the node) and, when detached, a "HEAD" pill.

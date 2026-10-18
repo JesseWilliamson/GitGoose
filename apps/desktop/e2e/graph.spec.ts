@@ -18,25 +18,52 @@ test('loads history page by page as you scroll', async () => {
   await app.close()
 })
 
-test('keeps main in the leftmost lane whatever is checked out', async () => {
+test('keeps main in the leftmost lane and every commit in place, whatever is checked out', async () => {
   const r = makeFixture('branches')
   r.checkout('wip') // F, an older side branch, is now HEAD
   r.write('notes.txt', 'draft\n') // an untracked file: the WIP row shows, and checkouts still work
   const main = r.git('rev-parse', 'main').trim()
+  const feature = r.git('rev-parse', 'feature').trim()
   const { app, page } = await launch(r.dir)
-  // laneX(n) = PAD + n * LANE_W + LANE_W / 2 = 6 + 24n + 12: lane 0 is x 18, lane 1 is x 42.
+  // laneX(n) = PAD + n * LANE_W + LANE_W / 2 = 6 + 24n + 12: lane 0 is x 18, lane 1 x 42, lane 2 x 66.
   const nodeX = (hash: string) => page.locator(`[data-testid="commit-row"][data-hash="${hash}"] [data-testid="avatar-node"] circle`).first()
   await expect(nodeX(main)).toHaveAttribute('cx', '18')
-  // HEAD sits next to main, and the WIP row above it in the same lane.
-  await expect(nodeX(r.head())).toHaveAttribute('cx', '42')
+  // The feature branch keeps lane 1 although F is checked out; F stays in lane 2. The WIP row
+  // starts next to main and its dashed line steps aside to reach F.
+  await expect(nodeX(feature)).toHaveAttribute('cx', '42')
+  await expect(nodeX(r.head())).toHaveAttribute('cx', '66')
   await expect(page.getByTestId('wip-node')).toHaveAttribute('data-lane', '1')
+  // HEAD's band is lit up; no ring around its node.
+  const headRow = page.locator(`[data-testid="commit-row"][data-hash="${r.head()}"]`)
+  await expect(headRow.locator('[data-testid="lane-band"][data-head]')).toHaveCount(1)
+  await expect(headRow.locator('[data-testid="avatar-node"] circle')).toHaveCount(2) // ring colour + initials disc
 
-  // Checking out another branch moves only that branch; main stays put.
-  const feature = r.git('rev-parse', 'feature').trim()
+  // Checking out another branch moves nothing.
   await page.locator('[data-testid="sidebar-ref"][data-ref="refs/heads/feature"]').dblclick()
   await expect.poll(() => r.git('rev-parse', 'HEAD').trim()).toBe(feature)
   await expect(nodeX(feature)).toHaveAttribute('cx', '42')
   await expect(nodeX(main)).toHaveAttribute('cx', '18')
+  await expect(nodeX(r.git('rev-parse', 'wip').trim())).toHaveAttribute('cx', '66')
+  await app.close()
+})
+
+test('double-clicking a commit checks it out; a detached HEAD gets its own pill', async () => {
+  const r = makeFixture('branches')
+  const main = r.git('rev-parse', 'main').trim()
+  const older = r.git('rev-parse', 'main~2').trim() // B: on no branch's tip
+  const { app, page } = await launch(r.dir)
+  const row = (hash: string) => page.locator(`[data-testid="commit-row"][data-hash="${hash}"]`)
+  await expect(page.getByTestId('head-pill')).toHaveCount(0)
+  await row(older).dblclick()
+  await expect.poll(() => r.git('rev-parse', 'HEAD').trim()).toBe(older)
+  await expect.poll(() => r.git('rev-parse', '--abbrev-ref', 'HEAD').trim()).toBe('HEAD') // detached
+  await expect(row(older).getByTestId('head-pill')).toHaveText(/HEAD/)
+  // The commits ahead of it stay where they were.
+  await expect(row(main).locator('[data-testid="avatar-node"] circle').first()).toHaveAttribute('cx', '18')
+  // A branch tip checks out its branch, not the bare commit.
+  await row(main).dblclick()
+  await expect.poll(() => r.git('rev-parse', '--abbrev-ref', 'HEAD').trim()).toBe('main')
+  await expect(page.getByTestId('head-pill')).toHaveCount(0)
   await app.close()
 })
 

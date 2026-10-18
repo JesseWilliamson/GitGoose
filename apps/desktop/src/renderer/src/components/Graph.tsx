@@ -401,8 +401,10 @@ const CommitRow = memo(function CommitRow(props: {
   const pills = useMemo(() => (props.refs ? pillsFor(props.refs, props.headBranch, { remotes: look.showRemotes, tags: look.showTags }) : []),
     [props.refs, props.headBranch, look.showRemotes, look.showTags])
   const lane = laneColor(row.color)
+  /** HEAD is on this commit but on no branch: a solid "HEAD" pill shows where you are. */
+  const detached = props.isHead && !props.headBranch
   /** Pills (or a stash or bisect mark) in the first column: joined to the node by a line. */
-  const labelled = look.cols.refs && (pills.length > 0 || !!props.stash || !!props.bisect)
+  const labelled = look.cols.refs && (pills.length > 0 || detached || !!props.stash || !!props.bisect)
   // Like GitKraken: without a Date column, recent commits still say when, inside the message cell.
   const recent = !look.cols.date && Date.now() / 1000 - commit.authorDate < 86_400
 
@@ -456,6 +458,13 @@ const CommitRow = memo(function CommitRow(props: {
       // Shift-click would otherwise also select the text between the two rows.
       onMouseDown={(e) => e.shiftKey && e.preventDefault()}
       onClick={(e) => selectCommit(repoId, commit.hash, { range: e.shiftKey, toggle: isMac ? e.metaKey : e.ctrlKey })}
+      onDoubleClick={(e) => {
+        // A pill checks out its own branch; a stash is not something to check out.
+        if (props.stash || props.isHead || (e.target as HTMLElement).closest('[data-testid="ref-pill"]')) return
+        // Like GitKraken: the commit's local branch if it is a branch tip, else the commit, detached.
+        const local = pills.find((p) => p.local)?.local
+        void checkout(repoId, local?.name ?? commit.hash)
+      }}
       onContextMenu={(e) => {
         // A right-click on a branch pill bubbles up to here; the pill already set the menu target.
         // (The pill must not stopPropagation: the menu's trigger is the list container above us.)
@@ -493,6 +502,12 @@ const CommitRow = memo(function CommitRow(props: {
           {props.stash && (
             <span className="flex h-5 shrink-0 items-center gap-1 rounded border border-dashed border-line px-1.5 text-[11px] text-muted" data-testid="stash-pill">
               <Archive size={10} /> {props.stash.ref}
+            </span>
+          )}
+          {detached && (
+            <span className="flex h-5 shrink-0 items-center gap-1 rounded-[3px] px-1.5 text-[11px] font-medium text-white" data-testid="head-pill"
+              title="HEAD is detached: checked out on this commit, not on a branch" style={{ background: lane }}>
+              <span className="text-[10px]">✓</span> HEAD
             </span>
           )}
           {pills.slice(0, 2).map((p) => (

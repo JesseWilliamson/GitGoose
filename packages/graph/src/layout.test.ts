@@ -30,13 +30,17 @@ function logOf(dir: string): LayoutCommit[] {
  * Invariants every layout must satisfy, whatever the history:
  * - every parent link is drawn: a 'bottom' edge from the child's lane to some lane L, then that
  *   lane passes straight down until a 'top' edge brings it into the parent's node
- * - lines never jump: a 'pass' edge stays in its column, and two lines never share a column
+ * - lines never jump: a 'pass' edge stays in its column (except the dashed HEAD line stepping
+ *   aside), and two lines never share a column
  */
 function checkInvariants(commits: LayoutCommit[], rows: Row[]): void {
   const index = new Map(commits.map((c, i) => [c.hash, i]))
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i]!
-    const cols = row.edges.filter((e) => e.part === 'pass').map((e) => e.from)
+    const pass = row.edges.filter((e) => e.part === 'pass')
+    // Only the dashed HEAD line may change column, stepping aside for a real line (below the node).
+    for (const e of pass) if (e.from !== e.to) expect(e.pending, `row ${i}: a line jumps columns`).toBe(true)
+    const cols = pass.map((e) => e.to)
     expect(new Set(cols).size, `row ${i}: two lines share a column`).toBe(cols.length)
     expect(cols, `row ${i}: a line passes through the node`).not.toContain(row.lane)
     for (const p of commits[i]!.parents) {
@@ -109,15 +113,34 @@ describe('layout', () => {
     const lanes = (head: string) => layout(branches, { head, trunk: ['E'] }).map((r) => r.lane)
     //            E  M  D  C  F  B  A
     expect(lanes('E')).toEqual([0, 0, 1, 1, 2, 0, 0])
-    // Checking out a side branch moves that branch into lane 1, next to the trunk, and nothing else.
-    expect(lanes('F')).toEqual([0, 0, 2, 2, 1, 0, 0])
+    // Checking out a side branch moves nothing: F's dashed line starts in lane 1, and steps aside
+    // into lane 2 when the feature branch (D) needs lane 1.
+    expect(lanes('F')).toEqual([0, 0, 1, 1, 2, 0, 0])
     expect(lanes('D')).toEqual([0, 0, 1, 1, 2, 0, 0])
     const rows = layout(branches, { head: 'F', trunk: ['E'] })
-    // (Lane 1 above F is the dashed line to HEAD.)
-    expect(ascii(rows)).toEqual(['*| E', 'M| M', '||* D', '||* C', '|*| F', '* B', '* A'])
-    // The trunk keeps colour 0; HEAD's dashed line (for the WIP row) runs down lane 1.
+    expect(ascii(rows)).toEqual(['*| E', 'M| M', '|*| D', '|*| C', '||* F', '* B', '* A'])
+    // The trunk keeps colour 0; HEAD's dashed line keeps lane 1's colour after stepping aside.
     expect(rows.filter((r) => ['E', 'M', 'B', 'A'].includes(r.hash)).every((r) => r.color === 0)).toBe(true)
     expect(rows[0]!.edges).toContainEqual({ part: 'pass', from: 1, to: 1, color: 1, pending: true })
+    expect(rows[1]!.edges).toContainEqual({ part: 'pass', from: 1, to: 2, color: 1, pending: true })
+    expect(rows[4]!.edges).toContainEqual({ part: 'top', from: 2, to: 2, color: 1, pending: true })
+  })
+
+  it('does not push the commits ahead of a checked-out commit off to the side', () => {
+    // The screenshot case: main merged a branch (T3-T2-T1) whose base is HEAD (H), an older commit.
+    //   Merge(main) -> P, T3 ; T3 -> T2 -> T1 -> H -> P
+    const commits = [c('Mg', 'P', 'T3'), c('T3', 'T2'), c('T2', 'T1'), c('T1', 'H'), c('H', 'P'), c('P')]
+    const free = layout(commits, { trunk: ['Mg'] }).map((r) => r.lane)
+    const checkedOut = layout(commits, { head: 'H', trunk: ['Mg'] }).map((r) => r.lane)
+    expect(checkedOut).toEqual(free)
+    expect(checkedOut).toEqual([0, 1, 1, 1, 1, 0])
+  })
+
+  it('a merge line into HEAD is a real line, not the dashed one', () => {
+    // Mg's second parent is HEAD: from Mg down, HEAD's lane carries a real line, drawn solid.
+    const rows = layout([c('Mg', 'P', 'H'), c('X', 'P'), c('H', 'P'), c('P')], { head: 'H', trunk: ['Mg'] })
+    expect(rows[1]!.edges.filter((e) => e.pending)).toEqual([])
+    expect(rows[2]!.edges.filter((e) => e.pending)).toEqual([])
   })
 
   it('reports where HEAD\'s line runs', () => {
