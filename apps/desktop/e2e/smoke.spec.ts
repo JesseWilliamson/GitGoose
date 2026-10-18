@@ -18,3 +18,18 @@ test('opens a repository and draws the graph', async () => {
   await page.screenshot({ path: 'test-results/graph.png' })
   await app.close()
 })
+
+test('shows the repository and what HEAD is on at the top left', async () => {
+  const r = makeFixture('branches')
+  const { app, page } = await launch(r.dir)
+  await expect(page.getByTestId('location-repo')).toHaveText(r.dir.split(/[\\/]/).pop()!)
+  await expect(page.getByTestId('location-head')).toHaveText('main')
+  await app.close()
+
+  // Detached: the short commit hash stands in for the branch.
+  r.checkout('--detach', 'main~1')
+  const second = await launch(r.dir)
+  await expect(second.page.getByTestId('location')).toContainText('commit')
+  await expect(second.page.getByTestId('location-head')).toHaveText(r.head().slice(0, 7))
+  await second.app.close()
+})
