@@ -32,6 +32,7 @@ export const COMMANDS: KeyCommand[] = [
   { id: 'zoom-reset', label: 'Actual size', defaults: ['mod+0'] },
   { id: 'toggle-sidebar', label: 'Show or hide the sidebar', defaults: ['mod+b'] },
   { id: 'toggle-details', label: 'Show or hide the details panel', defaults: ['mod+alt+b'] },
+  { id: 'toggle-graph-style', label: 'Switch the graph between two-line and one-line rows', defaults: [] },
 ]
 
 const mac = typeof window !== 'undefined' && window.gitgoose?.platform === 'darwin'

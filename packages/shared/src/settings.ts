@@ -55,7 +55,13 @@ export const SETTINGS = {
   fileTree: bool(false, { label: 'Show changed files as a tree', section: 'Appearance', keywords: 'folder list view', description: 'In the changes and commit file lists. Also the toggle beside their filter box.' }),
   dateFormat: choice('relative', [{ value: 'relative', label: 'Relative (3 days ago)' }, { value: 'absolute', label: 'Absolute (12 Mar 2026)' }, { value: 'both', label: 'Both' }],
     { label: 'Dates', section: 'Appearance' }),
-  compactRows: bool(false, { label: 'Compact graph rows', section: 'Appearance', keywords: 'density row height' }),
+  graphStyle: choice('comfortable', [
+    { value: 'comfortable', label: 'Two-line rows' },
+    { value: 'compact', label: 'One-line rows, branches on the left' },
+  ], {
+    label: 'Graph layout', section: 'Appearance', keywords: 'compact density row height columns tower',
+    description: 'Two-line rows: author and branches over hash and subject, with month headings. One-line rows: the same graph, each commit on one shorter line, branch and tag names in a column on the left.',
+  }),
 
   // ---------------------------------------------------------------- Graph
   avatars: choice('initials', [
@@ -171,7 +177,7 @@ export const SETTINGS = {
   keybindings: { kind: 'keybindings' as const, default: {} as Record<string, string>, label: 'Shortcuts', section: 'Keyboard' as const, description: 'Click a shortcut, then press the new keys. Esc cancels; Backspace restores the default.' },
 
   // ---------------------------------------------------------------- app state
-  settingsVersion: internal(2),
+  settingsVersion: internal(3),
   recentRepos: internal<string[]>([]),
   openRepos: internal<string[]>([]),
   /** Questions asked about code, per repository path, newest first (kept to 100). */
@@ -243,7 +249,12 @@ export function migrateSettings(stored: Record<string, unknown>): Settings {
     if (typeof s.fontSize === 'number' && s.uiScale === undefined) s.uiScale = s.fontSize / 13
     delete s.fontSize
   }
-  s.settingsVersion = 2
+  if (version < 3) {
+    // v2 had a "compact rows" switch; it is now one of the graph layouts.
+    if (s.compactRows === true && s.graphStyle === undefined) s.graphStyle = 'compact'
+    delete s.compactRows
+  }
+  s.settingsVersion = 3
   const out = defaultSettings() as Record<string, unknown>
   for (const k of Object.keys(SETTINGS)) if (k in s) out[k] = validateSetting(k as SettingKey, s[k])
   return out as Settings
