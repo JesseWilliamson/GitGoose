@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { parseBlame } from './blame'
 import { parseChangedFiles, parseDiff, untrackedDiff } from './diff'
 import { LOG_FORMAT, LogParser, parseLog } from './log'
-import { parseRefs, REFS_FORMAT } from './refs'
+import { parseRefs, REFS_FORMAT, trunkRefs } from './refs'
 import { parseStashList, STASH_FORMAT } from './stash'
 import { parseStatus } from './status'
 
@@ -48,6 +48,27 @@ describe('refs', () => {
     expect(refs.find((x) => x.shortName === 'main')).toMatchObject({ upstream: 'refs/remotes/origin/main', ahead: 1, behind: 0 })
     expect(refs.some((x) => x.shortName === 'origin/HEAD')).toBe(false)
     expect(refs.some((x) => x.shortName === 'origin/main')).toBe(true)
+  })
+
+  it('finds the trunk: the remote default branch and its local namesake, else main or master', () => {
+    const trunk = (r: { git: (...a: string[]) => string }) => {
+      const out = r.git('for-each-ref', `--format=${REFS_FORMAT}`)
+      return trunkRefs(out, parseRefs(out))
+    }
+    const r = makeFixture('with-remote')
+    expect(trunk(r)).toEqual(['refs/heads/main', 'refs/remotes/origin/main'])
+    // origin/HEAD wins over the name "main".
+    r.git('branch', 'develop')
+    r.git('update-ref', 'refs/remotes/origin/develop', 'HEAD')
+    r.git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/develop')
+    expect(trunk(r)).toEqual(['refs/heads/develop', 'refs/remotes/origin/develop'])
+
+    const local = makeFixture('branches')
+    expect(trunk(local)).toEqual(['refs/heads/main'])
+    local.git('branch', '-m', 'main', 'master')
+    expect(trunk(local)).toEqual(['refs/heads/master'])
+    local.git('branch', '-m', 'master', 'trunk-ish')
+    expect(trunk(local)).toEqual([])
   })
 })
 

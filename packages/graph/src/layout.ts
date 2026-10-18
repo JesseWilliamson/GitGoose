@@ -23,10 +23,15 @@
  * state, push page 2 later, and nothing above changes. That is what lets the UI show the first
  * screenful of a 100k-commit history before git has finished printing it.
  *
- * GitKraken keeps the checked-out branch in the leftmost column. We do the same by seeding lane 0
- * with HEAD before the walk: commits above HEAD (newer work on other branches) see lane 0 as
- * taken and use lanes to its right; when HEAD arrives it lands in lane 0 and its first-parent
- * chain inherits it all the way down.
+ * Like GitKraken, the main line ("trunk": the default branch, local and remote) owns the leftmost
+ * column, whatever is checked out, so a checkout does not reshuffle the graph. Lane 0 is held
+ * empty until the first trunk commit arrives; that commit takes it (lines waiting for it curve
+ * in) and its first-parent chain inherits it all the way down.
+ *
+ * HEAD gets a lane reserved from the top too, because the "uncommitted changes" row sits above
+ * everything and a dashed line joins it to HEAD. When HEAD is a trunk tip that lane is lane 0;
+ * otherwise it is lane 1, next to the trunk. Commits above HEAD see it as taken and go further
+ * right; when HEAD arrives it lands there (or in lane 0, if the trunk's line reaches it first).
  */
 
 export interface LayoutCommit {
@@ -71,21 +76,40 @@ interface Lane {
 }
 
 export interface LayoutOptions {
-  /** HEAD's commit. Reserves lane 0 for it and its first-parent history. */
+  /** HEAD's commit. Reserves a lane for it from the top (see `headLane`). */
   head?: string
+  /**
+   * Tips of the main line, e.g. main and origin/main. Lane 0 is kept for whichever arrives first.
+   * Without it, HEAD's lane is lane 0.
+   */
+  trunk?: readonly string[]
   /** How many colours the palette has. Colour indexes cycle through 0..colors-1. */
   colors?: number
 }
 
 export class GraphLayout {
   private lanes: (Lane | null)[] = []
-  private nextColor = 1
+  private nextColor = 0
   private colors: number
+  /** While set, lane 0 is held free for the first of these commits to arrive. */
+  private trunk: Set<string> | null = null
+  /** The lane and colour of the line from the "uncommitted changes" row down to HEAD. */
+  readonly headLane: number = 0
+  readonly headColor: number = 0
 
   constructor(opts: LayoutOptions = {}) {
     this.colors = opts.colors ?? 8
-    if (opts.head) this.lanes[0] = { hash: opts.head, color: 0, pending: true }
-    else this.nextColor = 0
+    const trunk = opts.trunk ?? []
+    if (trunk.length && !(opts.head && trunk.includes(opts.head))) {
+      this.trunk = new Set(trunk)
+      this.lanes[0] = null
+      this.nextColor = 1 // colour 0 is the trunk's
+    }
+    if (opts.head) {
+      this.headLane = this.lanes.length
+      this.headColor = this.newColor()
+      this.lanes[this.headLane] = { hash: opts.head, color: this.headColor, pending: true }
+    }
   }
 
   private newColor(): number {
@@ -95,7 +119,7 @@ export class GraphLayout {
   }
 
   private freeSlot(exclude = -1): number {
-    for (let i = 0; i < this.lanes.length; i++) if (this.lanes[i] === null && i !== exclude) return i
+    for (let i = this.trunk ? 1 : 0; i < this.lanes.length; i++) if (this.lanes[i] === null && i !== exclude) return i
     return this.lanes.length
   }
 
@@ -114,7 +138,11 @@ export class GraphLayout {
 
     let lane: number
     let color: number
-    if (incoming.length) {
+    if (this.trunk?.has(commit.hash)) {
+      lane = 0
+      color = 0
+      this.trunk = null
+    } else if (incoming.length) {
       lane = incoming[0]!
       color = lanes[lane]!.color
     } else {
@@ -153,8 +181,9 @@ export class GraphLayout {
       edges.push({ part: 'bottom', from: lane, to: target, color: pc })
     }
 
-    // Free columns at the right edge are dropped so the graph narrows again after merges.
-    while (lanes.length && lanes[lanes.length - 1] === null) lanes.pop()
+    // Free columns at the right edge are dropped so the graph narrows again after merges
+    // (all but the held trunk lane).
+    while (lanes.length > (this.trunk ? 1 : 0) && lanes[lanes.length - 1] === null) lanes.pop()
 
     let width = lane + 1
     for (const e of edges) width = Math.max(width, e.from + 1, e.to + 1)

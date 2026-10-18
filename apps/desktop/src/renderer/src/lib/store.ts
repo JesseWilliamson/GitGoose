@@ -274,15 +274,17 @@ export function getLog(id: string): LogData {
   return l
 }
 
-function emptyLog(head: string | undefined, generation: number): LogData {
+function emptyLog(snap: RepoSnapshot | undefined, generation: number): LogData {
+  // The trunk (main, origin/main) keeps the leftmost lane, so a checkout does not move it.
+  const trunk = snap ? snap.refs.filter((r) => snap.trunk.includes(r.name)).map((r) => r.hash) : []
   return {
-    commits: [], rows: [], index: new Map(), layout: new GraphLayout({ head }),
+    commits: [], rows: [], index: new Map(), layout: new GraphLayout({ head: snap?.head.hash, trunk }),
     generation, done: false, loading: null, maxWidth: 1,
   }
 }
 
 function resetLog(id: string, snap: RepoSnapshot): void {
-  logs.set(id, emptyLog(snap.head.hash, snap.refsVersion))
+  logs.set(id, emptyLog(snap, snap.refsVersion))
   updateRepo(id, (v) => ({ logVersion: v.logVersion + 1 }))
 }
 

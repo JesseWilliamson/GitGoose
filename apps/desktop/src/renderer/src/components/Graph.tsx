@@ -227,7 +227,8 @@ function GraphList({ view, rowH }: { view: RepoView; rowH: number }) {
                 const i = item.index
                 const style = { position: 'absolute' as const, top: 0, left: 0, right: 0, height: rowH, transform: `translateY(${item.start}px)` }
                 if (showWip && i === 0) {
-                  return <WipRow key="wip" style={style} view={view} graphW={graphW} rowH={rowH} cols={cols} selected={view.selected.kind === 'wip'} />
+                  return <WipRow key="wip" style={style} view={view} graphW={graphW} rowH={rowH} cols={cols} selected={view.selected.kind === 'wip'}
+                    lane={log.layout.headLane} color={log.layout.headColor} />
                 }
                 const ci = i - offset
                 const commit = log.commits[ci]
@@ -333,8 +334,10 @@ function ColumnResizer({ width }: { width: number }) {
   )
 }
 
-function WipRow({ style, view, graphW, rowH, cols, selected }: {
+function WipRow({ style, view, graphW, rowH, cols, selected, lane, color }: {
   style: React.CSSProperties; view: RepoView; graphW: number; rowH: number; cols: GraphColumns; selected: boolean
+  /** HEAD's lane and colour, where the dashed line down to HEAD runs. */
+  lane: number; color: number
 }) {
   const st = view.snapshot.status
   const staged = st.filter((e) => e.kind !== 'untracked' && e.kind !== 'unmerged' && e.index !== '.').length
@@ -347,7 +350,7 @@ function WipRow({ style, view, graphW, rowH, cols, selected }: {
       className={clsx('flex items-center border-b border-line/40 text-[13px]', selected ? 'bg-select' : 'hover:bg-hover')}
     >
       {cols.refs && <div style={{ width: REFS_W }} className="shrink-0 px-3" />}
-      {cols.graph && <WipCell width={graphW} hasHead={!!view.snapshot.head.hash} h={rowH} />}
+      {cols.graph && <WipCell width={graphW} hasHead={!!view.snapshot.head.hash} h={rowH} lane={lane} color={color} />}
       <div className="flex min-w-0 flex-1 items-center gap-2 px-2 whitespace-nowrap text-muted italic">
         <span className="min-w-0 truncate">{view.snapshot.head.hash ? '// WIP: uncommitted changes' : '// No commits yet'}</span>
         {st.length > 0 && <span className="shrink-0 rounded bg-raised px-1.5 text-[11px] not-italic">{st.length} changed</span>}
