@@ -16,7 +16,8 @@ loaded. There is no second search bar over the graph: one place to search, one s
 
 ## Several commits
 
-Shift-click: range in graph order from the anchor. Ctrl/Cmd-click: add or remove one.
+Shift-click: range in graph order from the anchor, keeping only commits on the anchor's lane
+(the same line of history; a range across a merge leaves the other branch out). Ctrl/Cmd-click: add or remove one.
 Shift+arrows: grow the range. The details panel and the right-click menu then offer:
 cherry-pick all (oldest first, commits already on the branch skipped, one undo entry), copy as
 diff (a chain is one `diff oldest^ newest`), copy as patch (a chain is a numbered

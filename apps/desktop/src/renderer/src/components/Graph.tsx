@@ -273,10 +273,12 @@ function WipRow({ style, view, cellW, rowH, selected, lane, color }: {
       style={style}
       data-testid="wip-row"
       onClick={() => updateRepo(view.id, { selected: { kind: 'wip' } })}
-      className={clsx('flex items-center text-[13px]', selected ? 'bg-select' : 'hover:bg-hover')}
+      data-selected={selected || undefined}
+      className="group flex items-center text-[13px]"
     >
+      <div className={clsx('pointer-events-none absolute inset-y-0.5 right-2 rounded-md', selected ? 'bg-select' : 'group-hover:bg-hover')} style={{ left: cellW - 2 }} />
       <WipCell width={cellW} hasHead={!!view.snapshot.head.hash} h={rowH} lane={lane} color={color} />
-      <div className="flex h-full min-w-0 flex-1 items-center gap-2 border-b border-line/50 pr-3 pl-1 whitespace-nowrap text-muted italic">
+      <div className="relative flex h-full min-w-0 flex-1 items-center gap-2 border-b border-line/50 pr-5 pl-1 whitespace-nowrap text-muted italic">
         <span className="min-w-0 truncate">{view.snapshot.head.hash ? 'Uncommitted changes' : 'No commits yet'}</span>
         {st.length > 0 && <span className="shrink-0 rounded bg-raised px-1.5 text-[11px] not-italic">{st.length} changed</span>}
         {staged > 0 && <span className="shrink-0 rounded bg-add-bg px-1.5 text-[11px] text-add not-italic">{staged} staged</span>}
@@ -420,9 +422,17 @@ const CommitRow = memo(function CommitRow(props: {
         setDropAt(null)
       }}
       onDrop={(e) => onDrop(e)}
-      className={clsx('flex items-stretch text-[13px]', dropping && 'outline outline-2 -outline-offset-2 outline-accent')}
+      data-selected={props.selected || undefined}
+      className={clsx('group flex items-stretch text-[13px]', dropping && 'outline outline-2 -outline-offset-2 outline-accent')}
       style={{ position: 'absolute', top: 0, left: 0, right: 0, height, transform: `translateY(${props.top}px)` }}
     >
+      {/* The selected row's tint, in its lane colour, as a rounded block that stops short of the
+          row's edges: consecutive selected rows stay distinct, and the lines on the left stay clean. */}
+      <div
+        className={clsx('pointer-events-none absolute right-2 rounded-md', !props.selected && 'group-hover:bg-hover')}
+        style={{ left: cellW - 2, top: header + 2, bottom: 2, ...(props.selected ? { background: `color-mix(in srgb, ${lane} 22%, var(--gs-bg))` } : {}) }}
+        data-testid="row-tint"
+      />
       {props.month && (
         <div className="pointer-events-none absolute top-0 flex items-end pb-1 text-[11px] font-semibold tracking-wider text-faint uppercase"
           style={{ left: cellWidth(0) + 4, height: HEADER_H }} data-testid="month-header">
@@ -430,10 +440,9 @@ const CommitRow = memo(function CommitRow(props: {
         </div>
       )}
       <GraphCell row={row} width={cellW} showPending={props.showPending} isHead={props.isHead} h={look.rowH} offset={header} stash={!!commit.stash} />
-      {/* The selected row takes its lane's colour; the tint stops at the text so the lines stay clean. */}
       <div
-        className={clsx('flex min-w-0 flex-1 items-center gap-2.5 rounded-l-md border-b border-line/50 pr-3 pl-1', !props.selected && 'hover:bg-hover')}
-        style={{ marginTop: header, ...(props.selected ? { background: `color-mix(in srgb, ${lane} 22%, var(--gs-bg))` } : {}) }}
+        className="relative flex min-w-0 flex-1 items-center gap-2.5 border-b border-line/50 pr-5 pl-1"
+        style={{ marginTop: header }}
         data-testid="row-body"
       >
         <span data-testid="row-avatar" className="flex shrink-0">
