@@ -206,10 +206,10 @@ export class Repo {
   /**
    * Write git's commit-graph file if the repository lacks one (see ADR-004).
    *
-   * `git log --topo-order` must emit children before parents. Without generation numbers it
-   * can only prove that by walking the entire history first, so the first page of a 100k-commit
-   * log waits ~500 ms for the whole walk. The commit-graph stores generation numbers, letting git
-   * stream topological order incrementally: the same first page takes ~10 ms. It is the same
+   * `git log --date-order` (like --topo-order) must never emit a parent before its children.
+   * Without generation numbers it can only prove that by walking the entire history first, so
+   * the first page of a 100k-commit log waits ~500 ms for the whole walk. The commit-graph stores
+   * generation numbers, letting git stream the order incrementally: the same first page takes ~10 ms. It is the same
    * cache `git gc` and `git maintenance` write; `--split` makes later writes incremental.
    *
    * Returns true if it wrote one. Respects core.commitGraph=false.

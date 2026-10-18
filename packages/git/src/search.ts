@@ -38,7 +38,7 @@ export function searchLog(runner: GitRunner, revs: string[], query: string, opts
   const limit = opts.limit ?? 5000
   return new Promise((resolve, reject) => {
     if (!query.trim() || opts.signal?.aborted) return resolve([])
-    const child = runner.spawn(['log', '--topo-order', `--format=${FORMAT}`, ...revs, '--'], { readOnly: true })
+    const child = runner.spawn(['log', '--date-order', `--format=${FORMAT}`, ...revs, '--'], { readOnly: true })
     const hits: string[] = []
     let buf = ''
     let stderr = ''

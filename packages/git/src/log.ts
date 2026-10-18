@@ -159,7 +159,7 @@ export class LogStream {
    * A stash is a merge commit: parent 1 is where it was made, parent 2 the staged changes, parent
    * 3 (with -u) the untracked files. In the graph it should look like one node beside its base,
    * so it keeps only parent 1, and the helper commits (reachable from nothing else) are dropped.
-   * --topo-order puts a stash before its parents, so they are known by the time they arrive.
+   * git never prints a parent before its children, so a stash's parents arrive after it.
    */
   private accept(c: Commit): boolean {
     if (this.hidden.has(c.hash)) return false
@@ -173,7 +173,10 @@ export class LogStream {
 
   private start(): void {
     const child = this.runner.spawn(
-      ['log', '--topo-order', `--format=${LOG_FORMAT}`, ...this.revs, '--'],
+      // Date order, as most git clients show it: newest commit date first, never a parent
+      // above one of its children. Topological order would keep each branch in one block but
+      // send the dates up and down the list.
+      ['log', '--date-order', `--format=${LOG_FORMAT}`, ...this.revs, '--'],
       { readOnly: true },
     )
     this.child = child
