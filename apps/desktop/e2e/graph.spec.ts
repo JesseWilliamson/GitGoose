@@ -174,7 +174,12 @@ test('compact look: pills joined to their node, recent times inline, far lanes p
   await expect(plain.getByTestId('ref-line')).toHaveCount(0)
   await expect(plain.getByTestId('row-time')).toHaveCount(0)
   // Thirteen lanes in a column sized for eight: the far nodes stay visible at the edge.
-  await expect(page.locator('[data-testid="commit-row"] svg[data-offscreen]').first()).toBeVisible()
+  const far = page.locator('[data-testid="commit-row"] svg[data-offscreen]').first()
+  await expect(far).toBeVisible()
+  // Faded rather than ringed with dashes; every row also gets its lane band.
+  await expect(far.locator('g[opacity="0.45"] [data-testid="avatar-node"]')).toHaveCount(1)
+  await expect(far.locator('[stroke-dasharray]')).toHaveCount(0)
+  await expect(plain.getByTestId('lane-band')).toHaveCount(1)
   await expect(page.getByTestId('sidebar-viewing')).toHaveText('Viewing 13/13')
   await page.locator('[data-testid="sidebar-ref"][data-ref="refs/heads/b3"]').hover()
   await page.locator('[data-testid="sidebar-ref"][data-ref="refs/heads/b3"]').getByTestId('toggle-hidden').click()

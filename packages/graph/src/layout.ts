@@ -42,7 +42,10 @@ export interface Edge {
   from: number
   /** Column at the end of the line (bottom edge for pass/bottom, the node for top). */
   to: number
-  /** Colour index of the line (lanes keep their colour from tip to end). */
+  /**
+   * Colour index of the line: the colour of its column, so colours run in palette order from the
+   * left. A curve between columns takes the colour of the branch side.
+   */
   color: number
   /**
    * True for the reserved HEAD lane above HEAD itself. The UI draws it dashed, joining the
@@ -65,7 +68,6 @@ export interface Row {
 
 interface Lane {
   hash: string
-  color: number
   /** The seeded HEAD lane, before HEAD has been reached. */
   pending?: boolean
 }
@@ -79,19 +81,16 @@ export interface LayoutOptions {
 
 export class GraphLayout {
   private lanes: (Lane | null)[] = []
-  private nextColor = 1
   private colors: number
 
   constructor(opts: LayoutOptions = {}) {
     this.colors = opts.colors ?? 8
-    if (opts.head) this.lanes[0] = { hash: opts.head, color: 0, pending: true }
-    else this.nextColor = 0
+    if (opts.head) this.lanes[0] = { hash: opts.head, pending: true }
   }
 
-  private newColor(): number {
-    const c = this.nextColor
-    this.nextColor = (this.nextColor + 1) % this.colors
-    return c
+  /** Lines never change column except at a node, so a column's colour is a lane's colour. */
+  private colorOf(column: number): number {
+    return column % this.colors
   }
 
   private freeSlot(exclude = -1): number {
@@ -112,24 +111,17 @@ export class GraphLayout {
     const incoming: number[] = []
     for (let i = 0; i < lanes.length; i++) if (lanes[i]?.hash === commit.hash) incoming.push(i)
 
-    let lane: number
-    let color: number
-    if (incoming.length) {
-      lane = incoming[0]!
-      color = lanes[lane]!.color
-    } else {
-      lane = this.freeSlot()
-      color = this.newColor()
-    }
+    const lane = incoming.length ? incoming[0]! : this.freeSlot()
+    const color = this.colorOf(lane)
 
     // Lines from the top edge: either into this node, or straight past it.
     for (let i = 0; i < lanes.length; i++) {
       const l = lanes[i]
       if (!l) continue
       if (l.hash === commit.hash) {
-        edges.push({ part: 'top', from: i, to: lane, color: l.color, ...(l.pending ? { pending: true } : {}) })
+        edges.push({ part: 'top', from: i, to: lane, color: this.colorOf(i), ...(l.pending ? { pending: true } : {}) })
       } else {
-        edges.push({ part: 'pass', from: i, to: i, color: l.color, ...(l.pending ? { pending: true } : {}) })
+        edges.push({ part: 'pass', from: i, to: i, color: this.colorOf(i), ...(l.pending ? { pending: true } : {}) })
       }
     }
     for (const i of incoming) lanes[i] = null
@@ -137,20 +129,16 @@ export class GraphLayout {
     // 2 and 3. Hand the parents down.
     const [first, ...rest] = commit.parents
     if (first !== undefined) {
-      lanes[lane] = { hash: first, color }
+      lanes[lane] = { hash: first }
       edges.push({ part: 'bottom', from: lane, to: lane, color })
     }
     for (const p of rest) {
       let target = lanes.findIndex((l) => l?.hash === p)
-      let pc: number
-      if (target >= 0) {
-        pc = lanes[target]!.color
-      } else {
+      if (target < 0) {
         target = this.freeSlot(lane)
-        pc = this.newColor()
-        lanes[target] = { hash: p, color: pc }
+        lanes[target] = { hash: p }
       }
-      edges.push({ part: 'bottom', from: lane, to: target, color: pc })
+      edges.push({ part: 'bottom', from: lane, to: target, color: this.colorOf(target) })
     }
 
     // Free columns at the right edge are dropped so the graph narrows again after merges.

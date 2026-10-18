@@ -83,6 +83,15 @@ describe('layout', () => {
     ])
   })
 
+  it('colours by column, so a column reused by a later branch keeps its colour', () => {
+    // Two side branches, one after the other, both in column 1.
+    const rows = layout([c('M2', 'M1', 'G'), c('G', 'M1'), c('M1', 'B', 'F'), c('F', 'A'), c('B', 'A'), c('A')])
+    expect(rows.map((r) => [r.hash, r.lane, r.color])).toEqual([
+      ['M2', 0, 0], ['G', 1, 1], ['M1', 0, 0], ['F', 1, 1], ['B', 0, 0], ['A', 0, 0],
+    ])
+    for (const r of rows) for (const e of r.edges) expect(e.color).toBe(e.part === 'top' ? e.from : e.to)
+  })
+
   it('reserves lane 0 for HEAD, even when newer commits on other branches come first', () => {
     // other (newer) -> X ; HEAD = B -> A ; X -> A
     const commits = [c('other', 'X'), c('X', 'A'), c('B', 'A'), c('A')]
