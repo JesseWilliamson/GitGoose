@@ -18,7 +18,8 @@
     "preview": "electron-vite preview",
     "typecheck": "tsc -p tsconfig.node.json && tsc -p tsconfig.web.json",
     "e2e": "electron-vite build && playwright test",
-    "dist": "electron-vite build && electron-builder"
+    "dist": "electron-vite build && electron-builder",
+    "dist:appimage": "electron-vite build && electron-builder --linux AppImage"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.9.0",
