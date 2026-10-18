@@ -6,7 +6,7 @@ import {
 } from '../lib/actions'
 import { shortHash, stashLabel } from '../lib/format'
 import { ask } from '../lib/actions'
-import { getLog, openRepo, updateRepo, useStore } from '../lib/store'
+import { chainBase, getLog, openRepo, updateRepo, useStore } from '../lib/store'
 import { api } from '../lib/api'
 import type { ReactNode } from 'react'
 import { recomposeWithAi } from './RecomposeDialog'
@@ -278,10 +278,16 @@ export function GraphMenu({ repoId }: { repoId: string }) {
 
   if (menu.kind === 'commits') {
     const n = menu.hashes.length
+    // Consecutive commits have one combined change (the side panel lists its files already).
+    const base = chainBase(repoId, menu.hashes)
     return (
       <CM.Content>
         <CM.Label>{n} commits selected</CM.Label>
         <CM.Item onSelect={() => void cherryPickMany(repoId, menu.hashes)}>Cherry-pick {n} commits onto {headName}</CM.Item>
+        {n === 2 && <CM.Item onSelect={() => compare(repoId, menu.hashes[1]!, menu.hashes[0]!)}>Compare the two</CM.Item>}
+        {base !== undefined && (
+          <CM.Item onSelect={() => compare(repoId, base, menu.hashes[0]!, `before ${shortHash(menu.hashes[n - 1]!)}`, shortHash(menu.hashes[0]!))}>Compare before and after all {n}</CM.Item>
+        )}
         <CM.Separator />
         <CM.Item onSelect={() => void copyCommits(repoId, menu.hashes, 'diff')}>Copy as diff</CM.Item>
         <CM.Item onSelect={() => void copyCommits(repoId, menu.hashes, 'patch')}>Copy as patch</CM.Item>
