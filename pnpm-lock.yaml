@@ -45,19 +45,19 @@ importers:
       '@codemirror/view':
         specifier: ^6.43.14
         version: 6.43.14
-      '@gitsquid/codegraph':
+      '@gitgoose/codegraph':
         specifier: workspace:*
         version: link:../../packages/codegraph
-      '@gitsquid/fixtures':
+      '@gitgoose/fixtures':
         specifier: workspace:*
         version: link:../../tools/fixtures
-      '@gitsquid/git':
+      '@gitgoose/git':
         specifier: workspace:*
         version: link:../../packages/git
-      '@gitsquid/graph':
+      '@gitgoose/graph':
         specifier: workspace:*
         version: link:../../packages/graph
-      '@gitsquid/shared':
+      '@gitgoose/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@playwright/test':
@@ -128,20 +128,20 @@ importers:
 
   packages/git:
     dependencies:
-      '@gitsquid/codegraph':
+      '@gitgoose/codegraph':
         specifier: workspace:*
         version: link:../codegraph
-      '@gitsquid/shared':
+      '@gitgoose/shared':
         specifier: workspace:*
         version: link:../shared
     devDependencies:
-      '@gitsquid/fixtures':
+      '@gitgoose/fixtures':
         specifier: workspace:*
         version: link:../../tools/fixtures
 
   packages/graph:
     devDependencies:
-      '@gitsquid/fixtures':
+      '@gitgoose/fixtures':
         specifier: workspace:*
         version: link:../../tools/fixtures
 
@@ -149,13 +149,13 @@ importers:
 
   tools/bench:
     devDependencies:
-      '@gitsquid/fixtures':
+      '@gitgoose/fixtures':
         specifier: workspace:*
         version: link:../fixtures
-      '@gitsquid/git':
+      '@gitgoose/git':
         specifier: workspace:*
         version: link:../../packages/git
-      '@gitsquid/graph':
+      '@gitgoose/graph':
         specifier: workspace:*
         version: link:../../packages/graph
       '@playwright/test':

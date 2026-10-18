@@ -1,7 +1,7 @@
 import clsx from 'clsx'
 import { KeyRound } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { pickGitHubRemote, type Identity, type LfsLock, type PushCheck, type PushCheckResult, type ReviewLearning } from '@gitsquid/shared'
+import { pickGitHubRemote, type Identity, type LfsLock, type PushCheck, type PushCheckResult, type ReviewLearning } from '@gitgoose/shared'
 import { cleanupCandidates, cloneRepo, confirmAction, deleteBranches, lfsLock, loadPulls, openPull, run, STALE_DAYS } from '../lib/actions'
 import { relativeTime } from '../lib/format'
 import { COMMANDS, FIXED_KEYS, formatCombo, keymap, modName } from '../lib/keys'

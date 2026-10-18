@@ -157,8 +157,8 @@ async function prompt(params, cx) {
     await say(cx, id, 'Kept both sides, ours first.')
     return { stopReason: 'end_turn' }
   }
-  // Explanations: a read inside the repository (GitSquid allows it silently) and one outside
-  // (GitSquid must ask the user).
+  // Explanations: a read inside the repository (GitGoose allows it silently) and one outside
+  // (GitGoose must ask the user).
   const inside = await ask(cx, id, 'read-1', 'read', 'Read README', `${cwd}/README.md`)
   const outside = await ask(cx, id, 'read-2', 'read', 'Read /etc/hostname', '/etc/hostname')
   await say(cx, id, `This change explains itself. `)

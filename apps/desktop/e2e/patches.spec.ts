@@ -1,4 +1,4 @@
-import { initRepo, tempDir } from '@gitsquid/fixtures'
+import { initRepo, tempDir } from '@gitgoose/fixtures'
 import { expect, test, type ElectronApplication } from '@playwright/test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -17,7 +17,7 @@ test('save a commit as a patch file, then apply it from the clipboard as a commi
   const root = r.commit('root', { 'a.txt': 'a\n' })
   const one = r.commit('add b', { 'b.txt': 'b\n' })
   const { app, page } = await launch(r.dir)
-  const dir = tempDir('gitsquid-patches-')
+  const dir = tempDir('gitgoose-patches-')
   await answerDialogs(app, dir)
   await row(page, one).click({ button: 'right' })
   await page.getByRole('menuitem', { name: 'Save as patch file…' }).click()

@@ -143,14 +143,14 @@ export const SETTINGS = {
     { value: 'anthropic', label: 'Anthropic API key' },
   ], {
     label: 'AI features', section: 'AI', keywords: 'claude gemini codex llm acp agent',
-    description: 'Commit messages, explanations and conflict help. Nothing is sent anywhere until you use one, and GitSquid asks first.',
+    description: 'Commit messages, explanations and conflict help. Nothing is sent anywhere until you use one, and GitGoose asks first.',
   }),
   aiAgent: choice('claude', [
     { value: 'claude', label: 'Claude' },
     { value: 'codex', label: 'Codex' },
     { value: 'gemini', label: 'Gemini CLI' },
     { value: 'custom', label: 'Custom command' },
-  ], { label: 'Agent', section: 'AI', description: 'Started on first use and kept running until GitSquid quits. It uses its own login.' }),
+  ], { label: 'Agent', section: 'AI', description: 'Started on first use and kept running until GitGoose quits. It uses its own login.' }),
   aiAgentCommand: text('', {
     label: 'Custom agent command', section: 'AI', placeholder: 'my-agent --acp',
     description: 'Used when Agent is "Custom command". It must speak the Agent Client Protocol on stdin/stdout.',
@@ -161,7 +161,7 @@ export const SETTINGS = {
     { label: 'Review style', section: 'AI', keywords: 'code review findings nits coderabbit', description: 'How much AI review says. Findings are always checked against the diff before they are shown.' }),
   reviewLinter: text('', {
     label: 'Extra linter for reviews', section: 'AI', placeholder: 'npx stylelint --formatter unix {files}', keywords: 'lint eslint ruff shellcheck',
-    description: 'Runs on the changed files during an AI review, besides the linters GitSquid finds in the repository (ESLint, Ruff, ShellCheck). {files} is replaced by the files; output as path:line:col: message. Asked for once per repository.',
+    description: 'Runs on the changed files during an AI review, besides the linters GitGoose finds in the repository (ESLint, Ruff, ShellCheck). {files} is replaced by the files; output as path:line:col: message. Asked for once per repository.',
   }),
   aiConsent: internal([] as string[]),
   /** The user's own pre-push checks, per repository path (besides those in .coderabbit.yaml). */

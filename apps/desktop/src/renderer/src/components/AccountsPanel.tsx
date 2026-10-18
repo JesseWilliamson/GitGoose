@@ -1,5 +1,5 @@
-import type { DeviceCodeInfo } from '@gitsquid/shared'
-import { hasScope } from '@gitsquid/shared'
+import type { DeviceCodeInfo } from '@gitgoose/shared'
+import { hasScope } from '@gitgoose/shared'
 import { CircleAlert, Copy, ExternalLink, LogOut, UserRound } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { api, toUiError } from '../lib/api'
@@ -61,7 +61,7 @@ export function AccountsPanel() {
       )}
       {status.configured && (
         <p className="mt-2 text-xs text-faint">
-          Signing out forgets the sign-in on this computer. To remove GitSquid's access on GitHub too,{' '}
+          Signing out forgets the sign-in on this computer. To remove GitGoose's access on GitHub too,{' '}
           <button className="text-accent hover:underline" onClick={() => void api.githubOpenPage('applications')}>manage it on github.com</button>.
         </p>
       )}
@@ -115,12 +115,12 @@ function SignInDialog({ access, onClose }: { access: 'basic' | 'repo'; onClose: 
   }
 
   return (
-    <Modal open onClose={cancel} title={access === 'repo' ? 'Give GitSquid access to your repositories' : 'Sign in with GitHub'} width={420}>
+    <Modal open onClose={cancel} title={access === 'repo' ? 'Give GitGoose access to your repositories' : 'Sign in with GitHub'} width={420}>
       <div className="text-[13px]" data-testid="github-dialog">
         {phase.k === 'starting' && <div className="flex items-center gap-2 text-muted"><Spinner /> Asking GitHub for a code…</div>}
         {phase.k === 'code' && (
           <>
-            <p className="text-muted">Enter this code on GitHub to approve GitSquid:</p>
+            <p className="text-muted">Enter this code on GitHub to approve GitGoose:</p>
             <div className="my-3 text-center font-mono text-[28px] font-semibold tracking-[0.2em] select-all" data-testid="github-user-code">
               {phase.info.userCode}
             </div>

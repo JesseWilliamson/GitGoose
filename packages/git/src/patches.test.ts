@@ -1,4 +1,4 @@
-import { initRepo, tempDir } from '@gitsquid/fixtures'
+import { initRepo, tempDir } from '@gitgoose/fixtures'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -21,7 +21,7 @@ describe('patches', () => {
     const one = r.commit('one', { 'b.txt': 'b\n' })
     const two = r.commit('two', { 'a.txt': '1\n2\n3\n4\n' })
     const repo = await Repo.open(r.dir, {})
-    const dir = tempDir('gitsquid-patches-')
+    const dir = tempDir('gitgoose-patches-')
     const paths = await repo.savePatches([two, one], dir)
     expect(paths.map((p) => p.split('/').pop())).toEqual(['0001-one.patch', '0002-two.patch'])
 
@@ -54,7 +54,7 @@ describe('patches', () => {
     const { r, root } = setup()
     const change = r.commit('change three', { 'a.txt': '1\n2\nTHREE\n' })
     const repo = await Repo.open(r.dir, {})
-    const text = readFileSync((await repo.savePatches([change], tempDir('gitsquid-patches-')))[0]!, 'utf8')
+    const text = readFileSync((await repo.savePatches([change], tempDir('gitgoose-patches-')))[0]!, 'utf8')
     r.git('reset', '-q', '--hard', root)
     r.commit('other change', { 'a.txt': '1\n2\ntres\n' })
     await expect(repo.applyPatch(text)).rejects.toThrow()

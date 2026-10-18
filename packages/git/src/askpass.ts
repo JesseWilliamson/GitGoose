@@ -20,7 +20,7 @@ export type PromptHandler = (message: string, secret: boolean) => Promise<string
 
 const CLIENT_JS = `
 const net = require('net')
-const sock = net.connect(process.env.GITSQUID_ASKPASS_HANDLE)
+const sock = net.connect(process.env.GITGOOSE_ASKPASS_HANDLE)
 let data = ''
 sock.on('connect', () => sock.write(JSON.stringify({ prompt: process.argv.slice(2).join(' ') }) + '\\n'))
 sock.on('data', (b) => (data += b))
@@ -51,8 +51,8 @@ export class AskpassServer {
    */
   constructor(private onPrompt: PromptHandler, private nodePath: string = process.execPath) {
     const id = `${process.pid}-${Math.random().toString(36).slice(2, 8)}`
-    this.dir = join(tmpdir(), `gitsquid-askpass-${id}`)
-    this.handle = process.platform === 'win32' ? `\\\\.\\pipe\\gitsquid-askpass-${id}` : join(this.dir, 's')
+    this.dir = join(tmpdir(), `gitgoose-askpass-${id}`)
+    this.handle = process.platform === 'win32' ? `\\\\.\\pipe\\gitgoose-askpass-${id}` : join(this.dir, 's')
   }
 
   async start(): Promise<Record<string, string>> {
@@ -62,10 +62,10 @@ export class AskpassServer {
     let script: string
     if (process.platform === 'win32') {
       script = join(this.dir, 'askpass.cmd')
-      writeFileSync(script, `@echo off\r\n"%GITSQUID_ASKPASS_NODE%" "%GITSQUID_ASKPASS_JS%" %*\r\n`)
+      writeFileSync(script, `@echo off\r\n"%GITGOOSE_ASKPASS_NODE%" "%GITGOOSE_ASKPASS_JS%" %*\r\n`)
     } else {
       script = join(this.dir, 'askpass.sh')
-      writeFileSync(script, `#!/bin/sh\nexec "$GITSQUID_ASKPASS_NODE" "$GITSQUID_ASKPASS_JS" "$@"\n`)
+      writeFileSync(script, `#!/bin/sh\nexec "$GITGOOSE_ASKPASS_NODE" "$GITGOOSE_ASKPASS_JS" "$@"\n`)
       chmodSync(script, 0o700)
     }
 
@@ -102,9 +102,9 @@ export class AskpassServer {
       // OpenSSH 8.4+: use SSH_ASKPASS even when a terminal or no DISPLAY is present.
       SSH_ASKPASS_REQUIRE: 'force',
       DISPLAY: process.env.DISPLAY || ':0',
-      GITSQUID_ASKPASS_HANDLE: this.handle,
-      GITSQUID_ASKPASS_NODE: this.nodePath,
-      GITSQUID_ASKPASS_JS: clientJs,
+      GITGOOSE_ASKPASS_HANDLE: this.handle,
+      GITGOOSE_ASKPASS_NODE: this.nodePath,
+      GITGOOSE_ASKPASS_JS: clientJs,
       ELECTRON_RUN_AS_NODE: '1',
     }
     return this.env

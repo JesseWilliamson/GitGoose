@@ -1,4 +1,4 @@
-import type { AgentInfo, AiStatus } from '@gitsquid/shared'
+import type { AgentInfo, AiStatus } from '@gitgoose/shared'
 import { CheckCircle2, CircleAlert, KeyRound, PlugZap } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { api, toUiError } from '../lib/api'
@@ -40,7 +40,7 @@ export function AiPanel() {
           <div className="flex items-center gap-2">
             <PlugZap size={16} className="text-muted" />
             <span className="flex-1">
-              GitSquid talks to <b>{status.label}</b> over the Agent Client Protocol. The agent keeps its own login.
+              GitGoose talks to <b>{status.label}</b> over the Agent Client Protocol. The agent keeps its own login.
             </span>
             <Button size="sm" onClick={() => void runTest()} disabled={test?.busy || !status.ready} data-testid="ai-test">
               {test?.busy ? <Spinner /> : null} Test
@@ -83,7 +83,7 @@ export function AiPanel() {
           )}
           {status.keyInMemoryOnly && (
             <p className="mt-2 flex items-start gap-1.5 text-xs text-warn">
-              <CircleAlert size={13} className="mt-px shrink-0" /> No system keychain was found: the key is kept until GitSquid quits.
+              <CircleAlert size={13} className="mt-px shrink-0" /> No system keychain was found: the key is kept until GitGoose quits.
             </p>
           )}
           <p className="mt-2 text-xs text-faint">Text features only: resolving conflicts needs an agent, because it edits a file.</p>

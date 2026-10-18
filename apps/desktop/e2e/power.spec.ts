@@ -1,4 +1,4 @@
-import { makeFixture } from '@gitsquid/fixtures'
+import { makeFixture } from '@gitgoose/fixtures'
 import { expect, test } from '@playwright/test'
 import { delimiter } from 'node:path'
 import { launch, pickFromSubmenu } from './app'
@@ -116,7 +116,7 @@ test('opens several repositories as tabs', async () => {
   const a = makeFixture('linear')
   const b = makeFixture('branches')
   const { app, page } = await launch([a.dir, b.dir].join(delimiter))
-  const tabs = page.getByTestId('tabs').locator('[title*="gitsquid-"]')
+  const tabs = page.getByTestId('tabs').locator('[title*="gitgoose-"]')
   await expect(tabs).toHaveCount(2)
   // The last one opened is active.
   await expect(page.getByTestId('commit-row')).toHaveCount(7)

@@ -1,4 +1,4 @@
-import { initRepo, tempDir } from '@gitsquid/fixtures'
+import { initRepo, tempDir } from '@gitgoose/fixtures'
 import { chmodSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -11,7 +11,7 @@ import { GitRunner, flatpakCommandLine, inFlatpakSandbox } from './runner'
  * these tests fail.
  */
 function fakeFlatpakSpawn(): string {
-  const dir = tempDir('gitsquid-flatpak-')
+  const dir = tempDir('gitgoose-flatpak-')
   const script = join(dir, 'flatpak-spawn')
   writeFileSync(script, `#!/bin/sh
 [ "$1" = "--host" ] || { echo "expected --host, got $1" >&2; exit 2; }
@@ -41,7 +41,7 @@ afterEach(() => {
 describe('running git on the host from a flatpak sandbox', () => {
   it('detects the sandbox from FLATPAK_ID', () => {
     expect(inFlatpakSandbox({})).toBe(false)
-    expect(inFlatpakSandbox({ FLATPAK_ID: 'dev.gitsquid.app' })).toBe(true)
+    expect(inFlatpakSandbox({ FLATPAK_ID: 'dev.gitgoose.app' })).toBe(true)
   })
 
   it('passes the working directory and only the variables we set', () => {
@@ -66,7 +66,7 @@ describe('running git on the host from a flatpak sandbox', () => {
 
     // Proof that the variables cross as --env arguments: from a directory that is not a
     // repository at all, git finds this one only through GIT_DIR.
-    const elsewhere = new GitRunner({ cwd: tempDir('gitsquid-elsewhere-'), hostSpawn: true })
+    const elsewhere = new GitRunner({ cwd: tempDir('gitgoose-elsewhere-'), hostSpawn: true })
     const gitDir = await elsewhere.run(['rev-parse', '--git-dir'], {
       readOnly: true,
       env: { GIT_DIR: join(r.dir, '.git') },

@@ -1,5 +1,5 @@
-import { Repo } from '@gitsquid/git'
-import type { GraphFilter, RepoSnapshot } from '@gitsquid/shared'
+import { Repo } from '@gitgoose/git'
+import type { GraphFilter, RepoSnapshot } from '@gitgoose/shared'
 import watcher from '@parcel/watcher'
 import { relative, sep } from 'node:path'
 

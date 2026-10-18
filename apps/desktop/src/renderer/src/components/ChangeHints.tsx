@@ -1,4 +1,4 @@
-import type { ChangeInsights } from '@gitsquid/shared'
+import type { ChangeInsights } from '@gitgoose/shared'
 import { Lightbulb } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { openInEditor } from '../lib/actions'

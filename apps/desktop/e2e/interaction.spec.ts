@@ -1,4 +1,4 @@
-import { makeFixture } from '@gitsquid/fixtures'
+import { makeFixture } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import { createServer } from 'node:http'
 import { launch } from './app'

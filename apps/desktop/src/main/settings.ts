@@ -1,4 +1,4 @@
-import { migrateSettings, validatePatch, type Settings } from '@gitsquid/shared'
+import { migrateSettings, validatePatch, type Settings } from '@gitgoose/shared'
 import { app, BrowserWindow } from 'electron'
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'

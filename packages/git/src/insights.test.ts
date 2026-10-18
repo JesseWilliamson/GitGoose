@@ -1,4 +1,4 @@
-import { initRepo } from '@gitsquid/fixtures'
+import { initRepo } from '@gitgoose/fixtures'
 import { describe, expect, it } from 'vitest'
 import { coChanges, oldRanges, parseFilesPerCommit } from './insights'
 import { Repo } from './repo'

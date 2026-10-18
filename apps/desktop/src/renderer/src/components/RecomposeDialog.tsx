@@ -1,4 +1,4 @@
-import type { RecomposeProposal, RecomposeUnitInfo } from '@gitsquid/shared'
+import type { RecomposeProposal, RecomposeUnitInfo } from '@gitgoose/shared'
 import clsx from 'clsx'
 import { ArrowDown, ArrowUp, CircleAlert, GripVertical, Plus, Redo2, RotateCcw, Sparkles, Trash2, Undo2 } from 'lucide-react'
 import { ContextMenu, DropdownMenu } from 'radix-ui'
@@ -99,7 +99,7 @@ interface Lift {
   over: Over
 }
 
-const isMac = window.gitsquid?.platform === 'darwin'
+const isMac = window.gitgoose?.platform === 'darwin'
 const TIMING: KeyframeAnimationOptions = { duration: 160, easing: 'cubic-bezier(.2,.8,.2,1)' }
 const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
 const ROW = '[data-testid="recompose-commit"]'
@@ -328,7 +328,7 @@ function Review({ repoId, proposal, close }: { repoId: string; proposal: Recompo
       {proposal.onRemote.length > 0 && (
         <p className="mb-2 flex items-start gap-1.5 rounded bg-warn/10 px-2 py-1.5 text-xs text-warn" data-testid="recompose-remote">
           <CircleAlert size={13} className="mt-px shrink-0" />
-          {proposal.onRemote.join(', ')} already {proposal.onRemote.length === 1 ? 'has' : 'have'} these commits. After recomposing, pushing {proposal.branch} needs a force-push, which GitSquid will not do for you.
+          {proposal.onRemote.join(', ')} already {proposal.onRemote.length === 1 ? 'has' : 'have'} these commits. After recomposing, pushing {proposal.branch} needs a force-push, which GitGoose will not do for you.
         </p>
       )}
       {proposal.unplaced.length > 0 && (

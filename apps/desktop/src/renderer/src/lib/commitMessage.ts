@@ -1,7 +1,7 @@
 /**
  * Commit message helpers for the commit box. Pure, so they are unit-tested.
  *
- * Templates (commit.template): git's own editor flow strips "#" lines, but GitSquid commits with
+ * Templates (commit.template): git's own editor flow strips "#" lines, but GitGoose commits with
  * `-F -`, where git keeps them. So comment lines never go into the fields: they become the
  * description's placeholder, which is what they are for (guidance), and the rest is prefilled.
  */

@@ -1,4 +1,4 @@
-import { initRepo, makeFixture, makeLargeRepo, tempDir, type FixtureRepo } from '@gitsquid/fixtures'
+import { initRepo, makeFixture, makeLargeRepo, tempDir, type FixtureRepo } from '@gitgoose/fixtures'
 import { execFile, execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { basename, join } from 'node:path'
@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { AskpassServer, isSecretPrompt } from './askpass'
 import { buildPatch } from './patch'
 import { Repo } from './repo'
-import { resolveBlocks } from '@gitsquid/shared'
+import { resolveBlocks } from '@gitgoose/shared'
 
 const open = (r: FixtureRepo) => Repo.open(r.dir, { env: r.env() as Record<string, string> })
 const read = (r: FixtureRepo, p: string) => readFileSync(join(r.dir, p), 'utf8')

@@ -1,4 +1,4 @@
-import type { FileDiff, PushCheck, PushCheckResult, PushCheckVerdict } from '@gitsquid/shared'
+import type { FileDiff, PushCheck, PushCheckResult, PushCheckVerdict } from '@gitgoose/shared'
 import { secretFindings } from './lint'
 import type { ReviewableLines } from './review'
 

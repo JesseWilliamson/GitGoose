@@ -1,6 +1,6 @@
 /** The GitHub REST calls the app makes. Plain Node; fetch is passed in. */
 
-import type { PullRequest } from '@gitsquid/shared'
+import type { PullRequest } from '@gitgoose/shared'
 
 interface RawPull {
   number: number

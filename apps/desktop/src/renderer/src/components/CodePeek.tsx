@@ -1,11 +1,11 @@
-import type { CodePeek } from '@gitsquid/shared'
-import { identifierAt } from '@gitsquid/codegraph'
+import type { CodePeek } from '@gitgoose/shared'
+import { identifierAt } from '@gitgoose/codegraph'
 import { X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { openInEditor } from '../lib/actions'
 import { api } from '../lib/api'
 
-const mod = (e: React.MouseEvent) => (window.gitsquid?.platform === 'darwin' ? e.metaKey : e.ctrlKey)
+const mod = (e: React.MouseEvent) => (window.gitgoose?.platform === 'darwin' ? e.metaKey : e.ctrlKey)
 
 /**
  * Ctrl/Cmd+click on a word in a diff: the identifier under the pointer, or null. Uses the

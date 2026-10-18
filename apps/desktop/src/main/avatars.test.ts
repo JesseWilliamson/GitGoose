@@ -1,4 +1,4 @@
-import { tempDir } from '@gitsquid/fixtures'
+import { tempDir } from '@gitgoose/fixtures'
 import { utimesSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'

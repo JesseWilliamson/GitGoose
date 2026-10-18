@@ -1,4 +1,4 @@
-import type { SearchField } from '@gitsquid/shared'
+import type { SearchField } from '@gitgoose/shared'
 import { ChevronDown, ChevronUp, Search, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api'

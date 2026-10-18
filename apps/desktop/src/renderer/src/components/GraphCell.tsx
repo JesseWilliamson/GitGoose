@@ -1,4 +1,4 @@
-import type { Row } from '@gitsquid/graph'
+import type { Row } from '@gitgoose/graph'
 import { memo } from 'react'
 import { edgePath } from '../lib/edges'
 import { hashColor, initials, laneColor } from '../lib/format'
@@ -23,7 +23,7 @@ export const laneX = (lane: number) => PAD + lane * LANE_W + LANE_W / 2
 export interface NodeAuthor {
   name: string
   email: string
-  /** Avatar image (gitsquid-avatar: URL), or null for initials only. */
+  /** Avatar image (gitgoose-avatar: URL), or null for initials only. */
   src: string | null
 }
 

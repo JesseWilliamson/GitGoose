@@ -1,4 +1,4 @@
-import type { GitHubAccount } from '@gitsquid/shared'
+import type { GitHubAccount } from '@gitgoose/shared'
 import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 
 /**

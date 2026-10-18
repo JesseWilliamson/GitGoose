@@ -1,4 +1,4 @@
-import { setCollapsed, setSize, type PaneLayout, type Slot } from '@gitsquid/shared'
+import { setCollapsed, setSize, type PaneLayout, type Slot } from '@gitgoose/shared'
 import { Group, Panel, Separator, usePanelRef } from 'react-resizable-panels'
 import { useEffect, useRef, type ReactNode } from 'react'
 import { saveSettings, setting, useSetting, type RepoView } from '../lib/store'

@@ -1,4 +1,4 @@
-import { initRepo, tempDir } from '@gitsquid/fixtures'
+import { initRepo, tempDir } from '@gitgoose/fixtures'
 import { existsSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -23,7 +23,7 @@ describe('worktrees', () => {
     const r = initRepo()
     r.commit('root', { 'a.txt': 'a\n' })
     const repo = await Repo.open(r.dir, {})
-    const path = join(tempDir('gitsquid-wt-'), 'feature')
+    const path = join(tempDir('gitgoose-wt-'), 'feature')
     const id = await repo.addWorktree(path, { newBranch: 'feature' })
     const list = await repo.worktrees()
     expect(list.map((w) => [w.branch, w.main, w.current])).toEqual([['main', true, true], ['feature', false, false]])
@@ -43,14 +43,14 @@ describe('worktrees', () => {
     const r = initRepo()
     r.commit('root', { 'a.txt': 'a\n' })
     const repo = await Repo.open(r.dir, {})
-    const path = join(tempDir('gitsquid-wt-'), 'w')
+    const path = join(tempDir('gitgoose-wt-'), 'w')
     await repo.addWorktree(path, { at: 'HEAD' })
     writeFileSync(join(path, 'a.txt'), 'edited\n')
     await expect(repo.removeWorktree(path)).rejects.toThrow()
     expect(await repo.removeWorktree(path, { force: true })).toBeNull()
     await expect(repo.removeWorktree(r.dir)).rejects.toThrow(/main working tree/)
 
-    const gone = join(tempDir('gitsquid-wt-'), 'gone')
+    const gone = join(tempDir('gitgoose-wt-'), 'gone')
     await repo.addWorktree(gone, { newBranch: 'gone' })
     await repo.lockWorktree(gone, true, 'testing')
     expect((await repo.worktrees())[1]!.locked).toBe('testing')
@@ -66,8 +66,8 @@ describe('worktrees', () => {
     const r = initRepo()
     r.commit('root', { 'a.txt': 'a\n' })
     const repo = await Repo.open(r.dir, {})
-    const real = tempDir('gitsquid-wt-')
-    const link = join(tempDir('gitsquid-wt-'), 'link')
+    const real = tempDir('gitgoose-wt-')
+    const link = join(tempDir('gitgoose-wt-'), 'link')
     symlinkSync(real, link)
     await repo.addWorktree(join(link, 'w'), { at: 'HEAD' })
     expect(await repo.removeWorktree(join(link, 'w'))).not.toBeNull()
@@ -76,8 +76,8 @@ describe('worktrees', () => {
   })
 
   it('resolves symlinks in paths that do not exist yet', async () => {
-    const real = tempDir('gitsquid-wt-')
-    const link = join(tempDir('gitsquid-wt-'), 'link')
+    const real = tempDir('gitgoose-wt-')
+    const link = join(tempDir('gitgoose-wt-'), 'link')
     symlinkSync(real, link)
     expect(await realPathOf(join(link, 'not', 'yet'))).toBe(join(await realPathOf(real), 'not', 'yet'))
     expect(await realPathOf(join(link, '..', 'link'))).toBe(await realPathOf(real))

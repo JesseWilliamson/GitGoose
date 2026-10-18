@@ -1,4 +1,4 @@
-import { makeFixture } from '@gitsquid/fixtures'
+import { makeFixture } from '@gitgoose/fixtures'
 import { describe, expect, it } from 'vitest'
 import { pushCheckOutcome, secretPushCheck, verifyPushChecks } from './pushchecks'
 import { Repo } from './repo'

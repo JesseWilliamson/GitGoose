@@ -1,4 +1,4 @@
-# GitSquid
+# GitGoose
 
 A fast git client with a clear commit graph and power features.
 

@@ -1,4 +1,4 @@
-import { makeFixture, tempDir } from '@gitsquid/fixtures'
+import { makeFixture, tempDir } from '@gitgoose/fixtures'
 import { execFileSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 import { Repo } from './repo'
@@ -10,7 +10,7 @@ describe('remotes', () => {
   it('adds, renames, re-points and removes remotes, each undoable', async () => {
     const r = makeFixture('with-remote')
     const repo = await Repo.open(r.dir, {})
-    const other = tempDir('gitsquid-other-')
+    const other = tempDir('gitgoose-other-')
     const add = await repo.addRemote('backup', other)
     expect((await repo.remotes()).map((x) => x.name).sort()).toEqual(['backup', 'origin'])
     const ren = await repo.renameRemote('backup', 'mirror')

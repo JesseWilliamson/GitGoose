@@ -1,4 +1,4 @@
-import type { AvatarSource } from '@gitsquid/shared'
+import type { AvatarSource } from '@gitgoose/shared'
 import { useStore } from './store'
 
 /**
@@ -7,7 +7,7 @@ import { useStore } from './store'
  */
 export function avatarSrc(email: string, source: AvatarSource, variant = ''): string | null {
   if (source === 'initials' || !email) return null
-  const url = `gitsquid-avatar://author/${encodeURIComponent(email.trim().toLowerCase())}`
+  const url = `gitgoose-avatar://author/${encodeURIComponent(email.trim().toLowerCase())}`
   // The browser caches images by URL. Signing in to GitHub can turn a miss (initials) into a
   // picture, so the sign-in state is part of the URL: the change makes the page ask again.
   return variant ? `${url}?v=${variant}` : url

@@ -1,8 +1,8 @@
 # Packaging. `pnpm dist` builds installers for the current OS into apps/desktop/release/.
 # Signing and notarization read credentials from the environment (see docs/RELEASING.md);
 # without them, builds are unsigned, which is fine for local use.
-appId: dev.gitsquid.app
-productName: GitSquid
+appId: dev.gitgoose.app
+productName: GitGoose
 copyright: Copyright © 2026 Jesse Williamson
 directories:
   output: release
@@ -10,6 +10,10 @@ directories:
 files:
   - out/**
   - package.json
+# The window icon on Linux and Windows (main/index.ts reads it from resources/).
+extraResources:
+  - from: build/icon.png
+    to: icon.png
 # @parcel/watcher ships a native .node binary, which cannot be loaded from inside the asar archive.
 asarUnpack:
   - '**/node_modules/@parcel/watcher*/**'
@@ -24,7 +28,7 @@ nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
 linux:
-  executableName: gitsquid
+  executableName: gitgoose
   target: [AppImage]
   category: Development
   maintainer: Jesse Williamson

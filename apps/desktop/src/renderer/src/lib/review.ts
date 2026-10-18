@@ -1,4 +1,4 @@
-import type { DiffTarget, ReviewFinding, ReviewProfile, ReviewResult, ReviewScope } from '@gitsquid/shared'
+import type { DiffTarget, ReviewFinding, ReviewProfile, ReviewResult, ReviewScope } from '@gitgoose/shared'
 import { api, toUiError } from './api'
 import { cancelAi, startAi, useAi } from './ai'
 import { choose, setting, toast, updateRepo, useStore, type RepoView } from './store'

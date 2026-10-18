@@ -3,7 +3,7 @@
  * the changes ("units": one hunk, or one whole file) it contains. Every edit here keeps the one
  * rule that makes recomposing safe: each unit is in exactly one commit. Moving a unit takes it
  * out of where it was; squashing joins several lists; a commit is only deleted once it is empty.
- * Main checks the rule again before writing anything (checkPlan in @gitsquid/git).
+ * Main checks the rule again before writing anything (checkPlan in @gitgoose/git).
  */
 
 export interface DraftCommit {

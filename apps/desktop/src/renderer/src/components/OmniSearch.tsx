@@ -1,4 +1,4 @@
-import { SETTINGS, type CommitSummary, type DiffTarget, type SearchField } from '@gitsquid/shared'
+import { SETTINGS, type CommitSummary, type DiffTarget, type SearchField } from '@gitgoose/shared'
 import clsx from 'clsx'
 import { Command } from 'cmdk'
 import { Archive, CornerDownLeft, File, FileDiff, GitBranch, GitCommitHorizontal, History, Search, Settings2, SquareTerminal, Tag } from 'lucide-react'

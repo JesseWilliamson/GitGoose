@@ -1,5 +1,5 @@
 {
-  "name": "@gitsquid/desktop",
+  "name": "@gitgoose/desktop",
   "version": "0.1.0",
   "private": true,
   "description": "A fast git client with a clear commit graph",
@@ -9,7 +9,7 @@
     "type": "git",
     "url": "git+https://github.com/JesseWilliamson/GitSquidElectron.git"
   },
-  "desktopName": "gitsquid.desktop",
+  "desktopName": "gitgoose.desktop",
   "type": "module",
   "main": "out/main/index.js",
   "scripts": {
@@ -31,11 +31,11 @@
     "@codemirror/commands": "^6.11.1",
     "@codemirror/state": "^6.7.6",
     "@codemirror/view": "^6.43.14",
-    "@gitsquid/codegraph": "workspace:*",
-    "@gitsquid/fixtures": "workspace:*",
-    "@gitsquid/git": "workspace:*",
-    "@gitsquid/graph": "workspace:*",
-    "@gitsquid/shared": "workspace:*",
+    "@gitgoose/codegraph": "workspace:*",
+    "@gitgoose/fixtures": "workspace:*",
+    "@gitgoose/git": "workspace:*",
+    "@gitgoose/graph": "workspace:*",
+    "@gitgoose/shared": "workspace:*",
     "@playwright/test": "^1.64.1",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/react-virtual": "^3.14.21",

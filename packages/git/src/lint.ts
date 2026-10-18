@@ -1,4 +1,4 @@
-import type { FileDiff, FindingSeverity, ReviewFinding } from '@gitsquid/shared'
+import type { FileDiff, FindingSeverity, ReviewFinding } from '@gitgoose/shared'
 import { scanSecrets } from './secrets'
 
 /**

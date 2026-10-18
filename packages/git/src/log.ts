@@ -1,4 +1,4 @@
-import type { Commit, GraphFilter } from '@gitsquid/shared'
+import type { Commit, GraphFilter } from '@gitgoose/shared'
 import type { ChildProcess } from 'node:child_process'
 import type { GitRunner } from './runner'
 

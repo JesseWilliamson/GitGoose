@@ -1,4 +1,4 @@
-import type { PushCheckPlan, PushCheckResult } from '@gitsquid/shared'
+import type { PushCheckPlan, PushCheckResult } from '@gitgoose/shared'
 import { api, toUiError } from './api'
 import { startAi } from './ai'
 import { reportError, setting, updateRepo, useStore } from './store'
@@ -13,7 +13,7 @@ import { reportError, setting, updateRepo, useStore } from './store'
  * A check never blocks because the AI was unsure. Inconclusive is not a failure.
  */
 
-/** Same rule as pushCheckOutcome in @gitsquid/git, kept here so the renderer needs no git code. */
+/** Same rule as pushCheckOutcome in @gitgoose/git, kept here so the renderer needs no git code. */
 export function outcome(results: PushCheckResult[]): 'go' | 'warn' | 'block' {
   if (results.some((r) => r.mode === 'block' && r.verdict === 'fail')) return 'block'
   if (results.some((r) => r.verdict === 'fail' || (r.mode === 'block' && r.verdict === 'inconclusive'))) return 'warn'

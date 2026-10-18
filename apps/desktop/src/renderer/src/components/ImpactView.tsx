@@ -1,4 +1,4 @@
-import type { ImpactResult } from '@gitsquid/shared'
+import type { ImpactResult } from '@gitgoose/shared'
 import clsx from 'clsx'
 import { Radar, Sparkles } from 'lucide-react'
 import { openInEditor } from '../lib/actions'

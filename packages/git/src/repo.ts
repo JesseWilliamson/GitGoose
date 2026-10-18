@@ -2,13 +2,13 @@ import type {
   BisectState, BlameLine, ChangeInsights, CodePeek, ImpactResult, ReviewScope, ImageSide, LfsInfo, LfsLock, ChangedFile, CommandRecord, GraphFilter, Identity, Person, Signature, Commit, CommitSummary, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
   LogPage, Ref, Remote, RepoOperation, ReflogEntry, RepoSnapshot, ResetMode, Resolution, SearchField, SelectionRequest,
   StashEntry, StatusEntry, Submodule, UndoEntry, Worktree,
-} from '@gitsquid/shared'
-import { countConflicts } from '@gitsquid/shared'
+} from '@gitgoose/shared'
+import { countConflicts } from '@gitgoose/shared'
 import { existsSync } from 'node:fs'
 import { lstat, readFile, realpath, rm, writeFile, chmod, mkdir } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
-import { enclosingDefinition, findDefinitions, NOT_NAMES, parseGrep, type Definition } from '@gitsquid/codegraph'
+import { enclosingDefinition, findDefinitions, NOT_NAMES, parseGrep, type Definition } from '@gitgoose/codegraph'
 import { parseBlame } from './blame'
 import { coChanges, oldRanges, parseFilesPerCommit } from './insights'
 import { changedSymbols, isTestPath, testsByName } from './impact'
@@ -830,7 +830,7 @@ export class Repo {
       const target = refs.find((r) => r.name === ref.upstream)
       if (!target) throw new Error(`${shortName(ref.upstream)} no longer exists.`)
       if (!(await this.isAncestor(ref.hash, target.hash))) throw new Error(`${branch} has commits ${shortName(ref.upstream)} does not: it cannot fast-forward.`)
-      await this.git(['update-ref', '-m', `gitsquid: fast-forward to ${shortName(ref.upstream)}`, ref.name, target.hash, ref.hash])
+      await this.git(['update-ref', '-m', `gitgoose: fast-forward to ${shortName(ref.upstream)}`, ref.name, target.hash, ref.hash])
       return this.record(`Fast-forward ${branch}`, [{ kind: 'update-ref', ref: ref.name, to: ref.hash, from: target.hash }], (await this.currentHead()).hash)
     })
   }
@@ -1706,7 +1706,7 @@ export class Repo {
    * when `git stash create` refuses (it cannot handle an index with unmerged entries).
    */
   private async worktreeTree(): Promise<string> {
-    const tmp = join(tmpdir(), `gitsquid-index-${process.pid}-${Date.now()}`)
+    const tmp = join(tmpdir(), `gitgoose-index-${process.pid}-${Date.now()}`)
     try {
       await this.git(['add', '-A'], { env: { GIT_INDEX_FILE: tmp } })
       return (await this.git(['write-tree'], { env: { GIT_INDEX_FILE: tmp } })).stdout.trim()
@@ -1848,13 +1848,13 @@ export class Repo {
         lines.push(`${t.action ?? 'pick'} ${t.hash}`)
         if (t.message !== undefined) {
           // Reword: amend the commit just picked with the new message, from a file (any text is safe).
-          const msgFile = join(this.gitDir, `gitsquid-msg-${process.pid}-${files.length}`)
+          const msgFile = join(this.gitDir, `gitgoose-msg-${process.pid}-${files.length}`)
           await writeFile(msgFile, t.message.trim() + '\n')
           files.push(msgFile)
           lines.push(`exec git commit --amend --allow-empty --no-verify -F ${shellQuote(msgFile)}`)
         }
       }
-      const file = join(this.gitDir, `gitsquid-todo-${process.pid}`)
+      const file = join(this.gitDir, `gitgoose-todo-${process.pid}`)
       files.push(file)
       await writeFile(file, (lines.join('\n') || 'noop') + '\n')
       const before = opts.before ?? (await this.currentHead()).hash!
@@ -1981,7 +1981,7 @@ export class Repo {
       const problems = checkPlan(info.units, plan)
       if (problems.length) throw new Error(problems.join(' '))
       const oldHead = (await this.currentHead()).hash!
-      const index = join(this.gitDir, `gitsquid-recompose-${process.pid}.index`)
+      const index = join(this.gitDir, `gitgoose-recompose-${process.pid}.index`)
       const env = { GIT_INDEX_FILE: index }
       // One author keeps the commits theirs; several make you the author, crediting them all.
       const authors = [...new Set(info.messages.map((m) => m.author))]
@@ -2015,7 +2015,7 @@ export class Repo {
           })).stdout.trim()
         }
         const ref = `refs/heads/${info.branch}`
-        await this.git(['update-ref', '-m', 'gitsquid: recompose', ref, parent!, oldHead])
+        await this.git(['update-ref', '-m', 'gitgoose: recompose', ref, parent!, oldHead])
         return this.record(`Recompose ${info.list.length} commits`, [{ kind: 'update-ref', ref, to: oldHead, from: parent! }], parent!)
       } finally {
         await rm(index, { force: true })
@@ -2232,7 +2232,7 @@ export class Repo {
       const parents = (await this.read(['rev-list', '--parents', '-n', '1', w])).trim().split(' ').slice(1)
       let u: string | null = null
       if (untracked.length) {
-        const tmp = join(tmpdir(), `gitsquid-snap-${process.pid}-${Date.now()}`)
+        const tmp = join(tmpdir(), `gitgoose-snap-${process.pid}-${Date.now()}`)
         const env = { GIT_INDEX_FILE: tmp }
         try {
           await this.git(['read-tree', '--empty'], { env })
@@ -2514,7 +2514,7 @@ export class Repo {
         break
       case 'restore-tree': {
         // Check the tree out into the working tree through a throwaway index.
-        const tmp = join(tmpdir(), `gitsquid-index-${process.pid}-${Date.now()}`)
+        const tmp = join(tmpdir(), `gitgoose-index-${process.pid}-${Date.now()}`)
         try {
           await this.git(['read-tree', a.tree], { env: { GIT_INDEX_FILE: tmp } })
           await this.git(['checkout-index', '-a', '-f'], { env: { GIT_INDEX_FILE: tmp } })

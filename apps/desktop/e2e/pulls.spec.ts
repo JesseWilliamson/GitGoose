@@ -1,4 +1,4 @@
-import { fakeGitHub, initRepo, makeFixture, tempDir } from '@gitsquid/fixtures'
+import { fakeGitHub, initRepo, makeFixture, tempDir } from '@gitgoose/fixtures'
 import { expect, test } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { launch } from './app'
@@ -8,7 +8,7 @@ test('pull requests: listed only on request, checked out from a fork, created fr
   const work = makeFixture('linear')
   const prHead = work.commit('fork work', { 'fork.txt': 'f\n' })
   work.git('reset', '-q', '--hard', 'HEAD~1')
-  const bare = tempDir('gitsquid-gh-bare-')
+  const bare = tempDir('gitgoose-gh-bare-')
   execFileSync('git', ['clone', '-q', '--bare', work.dir, bare])
   execFileSync('git', ['update-ref', 'refs/pull/5/head', prHead], { cwd: bare })
 
@@ -25,7 +25,7 @@ test('pull requests: listed only on request, checked out from a fork, created fr
     number: 5, title: 'Fork improvement', html_url: 'https://github.com/acme/widgets/pull/5', user: { login: 'grace' },
     head: { ref: 'improve', sha: prHead, repo: { full_name: 'grace/widgets' } }, base: { ref: 'main' },
   }] })
-  const { app, page } = await launch(r.dir, { GITSQUID_GITHUB_URL: gh.url, GITSQUID_GITHUB_CLIENT_ID: 'test-client' })
+  const { app, page } = await launch(r.dir, { GITGOOSE_GITHUB_URL: gh.url, GITGOOSE_GITHUB_CLIENT_ID: 'test-client' })
   await expect(page.getByTestId('commit-row').first()).toBeVisible()
   const section = page.getByTestId('sidebar').getByRole('button', { name: /^Pull requests/ })
 
@@ -34,8 +34,8 @@ test('pull requests: listed only on request, checked out from a fork, created fr
   await expect(page.getByTestId('sidebar')).toContainText('to see pull requests')
   expect(gh.hits.filter((h) => h.includes('/pulls'))).toEqual([])
   await page.evaluate(async () => {
-    await window.gitsquid.githubSignIn('repo')
-    await window.gitsquid.githubWaitForSignIn()
+    await window.gitgoose.githubSignIn('repo')
+    await window.gitgoose.githubWaitForSignIn()
   })
   await page.getByRole('button', { name: 'Refresh pull requests' }).click()
   const pr5 = page.locator('[data-testid="pull-item"][data-number="5"]')

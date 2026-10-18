@@ -1,4 +1,4 @@
-import { avatarUrl, type AvatarBases, type AvatarSource } from '@gitsquid/shared'
+import { avatarUrl, type AvatarBases, type AvatarSource } from '@gitgoose/shared'
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -7,7 +7,7 @@ import { join } from 'node:path'
  * Author avatars, fetched and cached by the main process.
  *
  * The renderer never talks to the network: its Content-Security-Policy only allows images from
- * the app itself and from the `gitsquid-avatar:` scheme, which this class answers. It asks for
+ * the app itself and from the `gitgoose-avatar:` scheme, which this class answers. It asks for
  * an author by email; we look in a disk cache, fetch on a miss, and remember misses too, so an
  * author without an avatar is not looked up again on every scroll.
  *

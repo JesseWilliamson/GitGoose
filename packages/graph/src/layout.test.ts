@@ -1,4 +1,4 @@
-import { makeFixture, makeLargeRepo, SHAPES, type Shape } from '@gitsquid/fixtures'
+import { makeFixture, makeLargeRepo, SHAPES, type Shape } from '@gitgoose/fixtures'
 import { execFileSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 import { GraphLayout, layout, type LayoutCommit, type Row } from './layout'

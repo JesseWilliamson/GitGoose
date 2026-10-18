@@ -1,4 +1,4 @@
-import type { DiffTarget, ImageSide } from '@gitsquid/shared'
+import type { DiffTarget, ImageSide } from '@gitgoose/shared'
 import clsx from 'clsx'
 import { useEffect, useState } from 'react'
 import { api } from '../lib/api'

@@ -1,4 +1,4 @@
-import type { Ref } from '@gitsquid/shared'
+import type { Ref } from '@gitgoose/shared'
 import { describe, expect, it } from 'vitest'
 import { refShown } from './graphFilter'
 

@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type Server } from 'node:http'
 /**
  * A local stand-in for github.com and api.github.com, enough for the OAuth device flow, GET /user,
  * the commit lookup behind signed-in avatars, and avatar images. Tests point the app at it with
- * GITSQUID_GITHUB_URL / GITSQUID_GITHUB_API; nothing ever talks to the real GitHub.
+ * GITGOOSE_GITHUB_URL / GITGOOSE_GITHUB_API; nothing ever talks to the real GitHub.
  */
 
 /** A real 1x1 PNG. */
