@@ -2,26 +2,32 @@ import Anthropic from '@anthropic-ai/sdk'
 
 /**
  * The fallback for people with no ACP agent: the Anthropic Messages API with their own key.
- * Text in, text out; no tools, so the conflict feature (which edits a file) needs an agent.
+ * Text in, text out; no tools, so the conflict feature (which edits a file) needs an agent, and
+ * a thread in this mode never shows tool cards. The API keeps no session: a thread resends its
+ * whole conversation each turn (see AiService.outgoing).
  */
-export interface CompleteOptions {
+export interface ChatOptions {
   apiKey: string
   model: string
   system: string
-  prompt: string
+  /** The conversation, oldest first, ending with the new user message. */
+  messages: { role: 'user' | 'assistant'; content: string }[]
+  /** The reply's length limit (Settings → AI → Longest answer). */
+  maxTokens?: number
   baseURL?: string
-  onText?: (text: string) => void
+  /** The reply so far, after each streamed chunk, and the chunk itself. */
+  onText?: (snapshot: string, delta: string) => void
   signal?: AbortSignal
   fetch?: typeof fetch
 }
 
-export async function anthropicComplete(o: CompleteOptions): Promise<string> {
+export async function anthropicChat(o: ChatOptions): Promise<string> {
   const client = new Anthropic({ apiKey: o.apiKey, baseURL: o.baseURL, maxRetries: 1, fetch: o.fetch })
   const stream = client.messages.stream(
-    { model: o.model, max_tokens: 2048, system: o.system, messages: [{ role: 'user', content: o.prompt }] },
+    { model: o.model, max_tokens: o.maxTokens ?? 8192, system: o.system, messages: o.messages },
     { signal: o.signal },
   )
-  stream.on('text', (_delta, snapshot) => o.onText?.(snapshot))
+  stream.on('text', (delta, snapshot) => o.onText?.(snapshot, delta))
   const message = await stream.finalMessage()
   return message.content.map((b) => (b.type === 'text' ? b.text : '')).join('')
 }

@@ -2,7 +2,10 @@ import type {
   BlameLine, ChangedFile, ChangeInsights, CodeGraphStatus, CodePeek, CommandRecord, GraphFilter, ImageSide, LfsInfo, LfsLock, Identity, Person, Commit, CommitDetails, CommitSummary, ConflictFile, DiffTarget, FileDiff, RepoSnapshot,
   ReflogEntry, Remote, SearchField, Submodule, Worktree, StashEntry, UndoEntry,
 } from './index'
-import type { AgentInfo, AiPermissionRequest, AiResult, AiRunOptions, AiStatus, AiTask, AskThread, ImpactResult, LinterInfo, PushCheck, PushCheckPlan, ReviewLearning, ReviewScope } from './ai'
+import type {
+  AgentInfo, AiArtifactResult, AiPermissionRequest, AiResult, AiRunOptions, AiStatus, AiTask, AiThread, AiUpdate, ArtifactKind, AskThread, ImpactResult, LinterInfo, PermissionAnswer, PushCheck, PushCheckPlan,
+  ReviewLearning, ReviewScope, ThreadAnchor,
+} from './ai'
 import type { DeviceCodeInfo, GitHubAccount, GitHubStatus, PullRequest, PullRequestList } from './github'
 import type { Settings } from './settings'
 
@@ -96,8 +99,31 @@ export interface GitGooseApi {
   aiStatus(): Promise<AiStatus>
   /** The user agreed to send content to the configured provider (asked once per provider/agent). */
   aiConsent(): Promise<AiStatus>
-  /** Run a task. Text streams as 'ai-text' events with the same requestId; tool calls ask via 'ai-permission'. */
+  /**
+   * Run a task: a thread whose first message is the task's prompt, closed when the answer is in
+   * (or, with opts.keepThread, kept for the view to chat on: AiResult.threadId). Text streams as
+   * 'ai-text' events with the same requestId; tool calls ask via 'ai-permission'.
+   */
   aiRun(requestId: string, repoId: string, task: AiTask, opts?: AiRunOptions): Promise<AiResult>
+  /**
+   * Open a conversation for a view: a new one about `anchor`, or `resume` a saved one. Nothing is
+   * sent and no agent starts until the first message. Its events arrive as 'ai-update'.
+   */
+  aiThreadOpen(repoId: string, anchor: ThreadAnchor, resume?: string): Promise<AiThread>
+  /** Send a message; resolves with the turn's request id once it has started (refusals, like a secret in the text, throw first). */
+  aiThreadSend(threadId: string, text: string, opts?: AiRunOptions): Promise<string>
+  aiThreadCancel(threadId: string): Promise<void>
+  /** The view closed: the agent session stays for 10 minutes, then ends. The thread stays saved. */
+  aiThreadClose(threadId: string): Promise<void>
+  /** This repository's saved conversations, most recently used first. */
+  aiThreads(repoId: string): Promise<AiThread[]>
+  aiThreadDelete(repoId: string, threadId: string): Promise<void>
+  /** Answer a permission card in a thread. 'session' also answers the same question for the rest of the session. */
+  aiThreadPermission(permissionId: number, answer: Exclude<PermissionAnswer, 'expired'>): Promise<void>
+  /** Check an artifact (a json:<kind> block) with the feature's own verifier; nothing is applied. */
+  aiThreadArtifact(threadId: string, kind: ArtifactKind, json: string): Promise<AiArtifactResult>
+  /** Open a web link (from an AI answer) in the browser: http, https and mailto only. */
+  openExternal(url: string): Promise<void>
   aiCancel(requestId: string): Promise<void>
   aiRespondPermission(permissionId: number, optionId: string | null): Promise<void>
   /** Start the agent (if needed) and say who it is and how it logs in. */
@@ -162,7 +188,7 @@ export interface GitGooseApi {
   workingText(repoId: string, path: string): Promise<string | null>
   /** What a change could affect: touched definitions, their uses elsewhere, tests, usual companions. Local only. */
   impact(repoId: string, scope: ReviewScope): Promise<ImpactResult>
-  /** Question threads about this repository's code (pinned to commits). */
+  /** Question threads about this repository's code (pinned to commits): the ask-anchored AI threads, in the old shape. */
   askThreads(repoId: string): Promise<AskThread[]>
   saveAskThread(repoId: string, thread: AskThread): Promise<void>
   deleteAskThread(repoId: string, id: string): Promise<void>
@@ -339,6 +365,7 @@ export const API_METHODS = [
   'respondPrompt', 'openPath', 'openInEditor', 'openTerminal', 'revealPath', 'logError',
   'githubStatus', 'githubSignIn', 'githubWaitForSignIn', 'githubCancelSignIn', 'githubOpenPage', 'githubSignOut', 'pullRequests', 'createPullRequest', 'checkoutPullRequest', 'openPullRequest',
   'aiStatus', 'aiConsent', 'aiRun', 'aiCancel', 'aiRespondPermission', 'aiAgentInfo', 'aiAuthenticate', 'aiSetApiKey',
+  'aiThreadOpen', 'aiThreadSend', 'aiThreadCancel', 'aiThreadClose', 'aiThreads', 'aiThreadDelete', 'aiThreadPermission', 'aiThreadArtifact', 'openExternal',
   'snapshot', 'logPage', 'commitDetails', 'diff', 'fileHistory', 'blame', 'search', 'searchCommits', 'listFiles', 'stashList', 'reflog', 'setGraphFilter', 'submodules', 'updateSubmodules', 'syncSubmodules', 'addSubmodule', 'removeSubmodule', 'worktrees', 'addWorktree', 'removeWorktree', 'lockWorktree', 'pruneWorktrees',
   'lastCommitMessage',
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'codePeek', 'codeGraphStatus', 'reindexCode', 'impact', 'askThreads', 'saveAskThread', 'deleteAskThread', 'reviewLearnings', 'setReviewLearnings', 'linters', 'decideLinter', 'pushCheckPlan', 'pushCheckRules', 'setPushChecks', 'changeInsights', 'applySuggestion', 'writeFileChecked', 'workingText', 'lfsInfo', 'lfsInstall', 'lfsTrack', 'lfsPull', 'lfsLocks', 'lfsLock', 'commandLog', 'bisectMark', 'bisectReset', 'identity', 'setIdentity', 'commitTemplate', 'recentAuthors',
@@ -377,6 +404,8 @@ export type GitGooseEvent =
   | { type: 'ai-permission'; request: AiPermissionRequest }
   /** A permission question no longer needs an answer (its request ended). */
   | { type: 'ai-permission-closed'; permissionId: number }
+  /** One event of a conversation (see reduceThread): the renderer folds it into its copy. */
+  | { type: 'ai-update'; threadId: string; requestId: string; update: AiUpdate }
 
 /** Errors cross IPC as data, so the renderer gets git's stderr intact. */
 export interface SerializedError {
