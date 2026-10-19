@@ -209,6 +209,12 @@ export interface GitGooseApi {
   checkout(repoId: string, ref: string): Promise<UndoId>
   createBranch(repoId: string, name: string, opts?: { at?: string; checkout?: boolean }): Promise<UndoId>
   renameBranch(repoId: string, from: string, to: string): Promise<UndoId>
+  /** Rename a branch into a sidebar folder: `topic` into `feature` becomes `feature/topic`. Undoable. */
+  renameBranchInto(repoId: string, branch: string, folder: string): Promise<UndoId>
+  /** Branch names pinned to the top of the sidebar (git config gitgoose.pin, shared by worktrees). */
+  pinnedBranches(repoId: string): Promise<string[]>
+  /** Pin or unpin a branch; null when it already was (or was not). Undoable. */
+  pinBranch(repoId: string, branch: string, pin: boolean): Promise<UndoId>
   deleteBranch(repoId: string, name: string, opts?: { force?: boolean }): Promise<UndoId>
   merge(repoId: string, ref: string, opts?: { noFf?: boolean; ffOnly?: boolean; squash?: boolean; noCommit?: boolean }): Promise<UndoId>
   /** The message git prepared for the next commit (after a squash merge or a stopped merge), or ''. */
@@ -219,6 +225,13 @@ export interface GitGooseApi {
   /** Several commits, given in graph order (newest first); applied oldest first, one undo entry. */
   cherryPickMany(repoId: string, hashes: string[]): Promise<UndoId>
   /**
+   * Cherry-pick commits (graph order) onto a branch that is not checked out, without checking it
+   * out (merge-tree, git 2.40+). Refused, changing nothing, when they conflict. Undoable.
+   */
+  cherryPickOnto(repoId: string, branch: string, hashes: string[]): Promise<UndoId>
+  /** Apply the change a commit (or stash: `stash`) made to these files to the working tree. Undoable. */
+  applyFileFrom(repoId: string, rev: string, paths: string[], opts?: { stash?: boolean }): Promise<UndoId>
+  /**
    * Replace a run of commits on the current branch with new ones (messages and unit ids from a
    * RecomposeProposal, oldest first). The branch ends at the same tree; one undo entry.
    */
@@ -227,8 +240,8 @@ export interface GitGooseApi {
   rewordCommit(repoId: string, hash: string, message: string): Promise<UndoId>
   /** Fold a commit into the one below it: 'squash' keeps both messages, 'fixup' the lower one's. */
   squashCommit(repoId: string, hash: string, mode: 'squash' | 'fixup'): Promise<UndoId>
-  /** Fold commits into `target` (drag onto), keeping all messages. */
-  squashOnto(repoId: string, hashes: string[], target: string): Promise<UndoId>
+  /** Fold commits into `target` (drag onto), keeping all messages, or (`fixup`) only the target's. */
+  squashOnto(repoId: string, hashes: string[], target: string, opts?: { fixup?: boolean }): Promise<UndoId>
   /** Commit the staged changes into an older commit on the current branch. */
   fixupInto(repoId: string, target: string): Promise<UndoId>
   /** Files that differ between two revisions, or a revision and the working tree (`to` null). */
@@ -268,7 +281,8 @@ export interface GitGooseApi {
 
   // Remotes
   fetch(repoId: string, opts?: { remote?: string; prune?: boolean }): Promise<void>
-  pull(repoId: string, opts?: { mode?: PullMode }): Promise<UndoId>
+  /** Pull HEAD's upstream, or with `remote` and `branch` that remote branch, into HEAD. */
+  pull(repoId: string, opts?: { mode?: PullMode; remote?: string; branch?: string }): Promise<UndoId>
   push(repoId: string, opts?: { force?: boolean; branch?: string; remote?: string; remoteBranch?: string }): Promise<void>
   remotes(repoId: string): Promise<Remote[]>
   addRemote(repoId: string, name: string, url: string): Promise<UndoId>
@@ -326,8 +340,8 @@ export const API_METHODS = [
   'snapshot', 'logPage', 'commitDetails', 'diff', 'fileHistory', 'blame', 'search', 'searchCommits', 'listFiles', 'stashList', 'reflog', 'setGraphFilter', 'submodules', 'updateSubmodules', 'syncSubmodules', 'addSubmodule', 'removeSubmodule', 'worktrees', 'addWorktree', 'removeWorktree', 'lockWorktree', 'pruneWorktrees',
   'lastCommitMessage',
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'codePeek', 'codeGraphStatus', 'reindexCode', 'impact', 'askThreads', 'saveAskThread', 'deleteAskThread', 'reviewLearnings', 'setReviewLearnings', 'linters', 'decideLinter', 'pushCheckPlan', 'pushCheckRules', 'setPushChecks', 'changeInsights', 'applySuggestion', 'writeFileChecked', 'workingText', 'lfsInfo', 'lfsInstall', 'lfsTrack', 'lfsPull', 'lfsLocks', 'lfsLock', 'commandLog', 'bisectMark', 'bisectReset', 'identity', 'setIdentity', 'commitTemplate', 'recentAuthors',
-  'checkout', 'createBranch', 'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset',
-  'cherryPick', 'cherryPickMany', 'commitsText', 'recomposeApply', 'compareFiles', 'mergeBase', 'restoreFile', 'diffTool', 'mergeTool', 'imagePair', 'savePatches', 'pickPatch', 'applyPatch', 'openFileAt', 'saveFileAt', 'editableCommits', 'dropCommits', 'moveCommits', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'preparedMessage', 'redo', 'redoList', 'revert', 'createTag', 'deleteTag',
+  'checkout', 'createBranch', 'renameBranch', 'renameBranchInto', 'pinnedBranches', 'pinBranch', 'deleteBranch', 'merge', 'rebase', 'reset',
+  'cherryPick', 'cherryPickMany', 'cherryPickOnto', 'applyFileFrom', 'commitsText', 'recomposeApply', 'compareFiles', 'mergeBase', 'restoreFile', 'diffTool', 'mergeTool', 'imagePair', 'savePatches', 'pickPatch', 'applyPatch', 'openFileAt', 'saveFileAt', 'editableCommits', 'dropCommits', 'moveCommits', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'preparedMessage', 'redo', 'redoList', 'revert', 'createTag', 'deleteTag',
   'fetch', 'pull', 'push', 'deleteRemoteBranch', 'remotes', 'addRemote', 'removeRemote', 'renameRemote', 'setRemoteUrl',
   'pushTags', 'deleteRemoteTag', 'remoteTags', 'setUpstream', 'fastForward', 'deleteBranches', 'mergedBranches',
   'stashPush', 'snapshotWorkTree', 'stashBranch', 'stashApply', 'stashPop', 'stashDrop',
