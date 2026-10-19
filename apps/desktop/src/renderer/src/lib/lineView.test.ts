@@ -2,14 +2,15 @@ import { initRepo, makeFixture, type FixtureRepo } from '@gitgoose/fixtures'
 import { GraphLayout, type LayoutCommit, type Row } from '@gitgoose/graph'
 import { execFileSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
-import { lineEdges, lineIndexOf, lineThrough, type LineLog } from './lineView'
+import { lineEdges, lineEnded, lineIndexOf, lineThrough, type LineLog } from './lineView'
 
 /** Same revisions and order as the app's LogStream. */
 function logOf(dir: string): LayoutCommit[] {
   const out = execFileSync('git', ['log', '--date-order', '--format=%H %P', '--branches', '--remotes', '--tags', 'HEAD', '--'], { cwd: dir, encoding: 'utf8' })
   return out.split('\n').filter(Boolean).map((l) => {
     const [hash, ...parents] = l.split(' ')
-    return { hash: hash!, parents }
+    // A root commit's line is "<hash> " (no parents after the space).
+    return { hash: hash!, parents: parents.filter(Boolean) }
   })
 }
 
@@ -115,6 +116,23 @@ describe('lineThrough', () => {
   it('is empty for a commit that is not loaded', () => {
     const { log } = load(makeFixture('linear'))
     expect(lineThrough(log, 'f'.repeat(40))).toHaveLength(0)
+  })
+})
+
+describe('lineEnded', () => {
+  it('is true once the line reaches a root commit, wherever that is in the log', () => {
+    // An orphan branch's root sorts near the top of the log; history below it is not its line.
+    const r = makeFixture('orphan')
+    const { log } = load(r, 1)
+    const pages = lineThrough(log, rev(r, 'pages'))
+    expect(pages).toHaveLength(1)
+    expect(lineEnded(log, pages)).toBe(true)
+    expect(lineEnded(log, lineThrough(log, rev(r, 'main')))).toBe(true)
+    // Only the newest row of main loaded: its parent may still come.
+    const partial = new TestLog(new GraphLayout({ head: rev(r, 'HEAD'), trunk: [rev(r, 'main')] }))
+    partial.push(logOf(r.dir).filter((c) => c.hash === rev(r, 'main')))
+    expect(lineEnded(partial, lineThrough(partial, rev(r, 'main')))).toBe(false)
+    expect(lineEnded(partial, new Uint32Array(0))).toBe(false)
   })
 })
 
