@@ -178,7 +178,8 @@ export class Repo {
     const shapeKey = `${status.head.hash}|` + refs.map((r) => `${r.name}=${r.hash}`).join(',') + `|${trunk.join(',')}`
     if (shapeKey !== this.straightKey) {
       const trunkTips = refs.filter((r) => trunk.includes(r.name)).map((r) => r.hash)
-      this.straight = await this.straightTips(trunkTips, status.head.hash)
+      // Only a hint for drawing: if it fails, the graph draws as it would without it.
+      this.straight = await this.straightTips(trunkTips, status.head.hash).catch(() => ({ overTrunk: [], overHead: [] }))
       this.straightKey = shapeKey
     }
     const straight = this.straight
@@ -224,7 +225,10 @@ export class Repo {
    */
   async straightTips(trunkTips: readonly string[], head: string | undefined): Promise<StraightTips> {
     const none: StraightTips = { overTrunk: [], overHead: [] }
-    const trunks = [...new Set(trunkTips)]
+    // The bases go inside a --format atom: take nothing there but a commit hash.
+    const isHash = (h: string | undefined): h is string => !!h && /^[0-9a-f]{40,64}$/.test(h)
+    const trunks = [...new Set(trunkTips)].filter(isHash)
+    if (!isHash(head)) head = undefined
     const bases = [...new Set([...trunks, ...(head ? [head] : [])])]
     if (!bases.length || !(await this.hasAheadBehind())) return none
     const out = await this.read(['for-each-ref', `--format=%(refname)%00%(objectname)${bases.map((b) => `%00%(ahead-behind:${b})`).join('')}`,

@@ -748,6 +748,15 @@ describe('straight tips (a branch on top of the trunk or HEAD continues its lane
     expect(await straight(empty)).toEqual({ overTrunk: [], overHead: [] })
   })
 
+  it('never fails the snapshot: a base that is not a hash is ignored', async () => {
+    const { r, B } = base()
+    r.checkout('-b', 'topic')
+    const X = r.commit('X')
+    const repo = await open(r)
+    expect(await repo.straightTips([B, 'main)%(refname'], 'not-a-hash')).toEqual({ overTrunk: [X], overHead: [] })
+    expect(await repo.straightTips([], undefined)).toEqual({ overTrunk: [], overHead: [] })
+  })
+
   it('is part of the snapshot, and read again when the refs move', async () => {
     const { r } = base()
     r.checkout('-b', 'topic')
