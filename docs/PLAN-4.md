@@ -185,6 +185,28 @@ the pending shift: check `edgePath` draws it), ADR-003 amendment, spec 001. e2e 
 with the multiselect fixture (`main: A-B`, `topic: X-Y-Z` on B): the topic rows and B share
 `data-lane`. Bench must hold.
 
+### As built (where reality refined the plan)
+
+- **HEAD itself on top of the trunk.** With `topic` checked out on top of `main`, Z is HEAD: a lane
+  (HEAD's) already waits for it, so it is not a tip and rule A does not apply. The layout treats
+  HEAD in `overTrunk` like a trunk tip: HEAD's lane is lane 0 from the top. `straightTips` checks
+  every branch ref including HEAD's, so this needs no extra command.
+- **First-parent check.** The base must be *among* the first `ahead + 1` first-parent commits, not
+  necessarily the last. That is the same answer for a branch without merges, and also accepts a
+  branch that merged another feature branch (its `ahead` counts the merged commits too) while
+  still rejecting one that merged main.
+- **Which trunk tip.** With main and origin/main at different commits, the base is the one that
+  contains the other (one `%(ahead-behind)` atom per trunk tip in the same `for-each-ref`). If they
+  have diverged there is no trunk line and `overTrunk` is empty.
+- **Cost.** It runs only when refs, HEAD or the trunk change (it is a function of them, so it is in
+  the refs key by construction), checks at most 64 candidates, and any failure gives empty lists.
+- **e2e fixture.** The multiselect fixture branches topic from A, not B, so `graph.spec.ts` builds
+  `main: A-B`, `topic: X-Y-Z` on B itself. The WIP case ("the dashed line runs beside topic and
+  joins B") needs HEAD = B, so it runs with main checked out; with topic checked out the WIP line
+  joins Z straight down lane 0, and that is the other e2e case.
+- A detached HEAD that no branch points at is not itself classified against the trunk; the layout
+  still draws it correctly (rule A gives a branch above it lane 0 and HEAD's dashed line joins it).
+
 ### Exercise for Jesse (docs/learn/07-straight-lanes.md)
 
 Delete the two rules in `GraphLayout.next()` and rebuild them from the tests. Question to answer in
@@ -556,7 +578,7 @@ branch since its fork point (a PR, when the branch has one). Opened from the Rev
 5a → 5b, then 6a (DiagramBuilder) → 6b, then 7, which needs 5 and 6.
 
 - [x] 1a blue selection · [x] 1b no month headers · [x] 1c double-click checks out · [x] 1d topological order
-- [ ] 2 straight lanes
+- [x] 2 straight lanes
 - [ ] 3 line view
 - [ ] 4a sidebar · [ ] 4b drag-and-drop matrix
 - [ ] 5a threads · [ ] 5b Copilot
