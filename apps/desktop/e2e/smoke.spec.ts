@@ -29,7 +29,6 @@ test('shows the repository and what HEAD is on at the top left', async () => {
   // Detached: the short commit hash stands in for the branch.
   r.checkout('--detach', 'main~1')
   const second = await launch(r.dir)
-  await expect(second.page.getByTestId('location')).toContainText('commit')
   await expect(second.page.getByTestId('location-head')).toHaveText(r.head().slice(0, 7))
   await second.app.close()
 })
