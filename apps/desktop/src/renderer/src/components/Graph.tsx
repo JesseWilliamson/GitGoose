@@ -196,8 +196,10 @@ function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
   // When the graph collapses to a line or expands again, the selected row stays where it was on
   // screen: a Shift-click that follows lands where the user aimed. Before the browser paints, work
   // out where the row was (from the previous render's list) and scroll the new list to match.
+  // (The list's own top does not move: the line bar floats over it, see LineBar. Runs on every
+  // render, so it reads nothing from the DOM that would force a layout while scrolling.)
   const scrollTop = useRef(0)
-  const before = useRef<{ key: string; itemOf: (row: number) => number; pad: number; elTop: number } | null>(null)
+  const before = useRef<{ key: string; itemOf: (row: number) => number; pad: number } | null>(null)
   const pendingScroll = useRef<number | null>(null)
   const viewKey = anchor ? `line:${anchor}` : 'all'
   useLayoutEffect(() => {
@@ -212,14 +214,13 @@ function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
       pendingScroll.current = null
     }
     const prev = before.current
-    const elTop = el.getBoundingClientRect().top
     if (prev && prev.key !== viewKey) {
       const was = cursorRow === undefined ? -1 : prev.itemOf(cursorRow)
       const now = selectedIndex
       let next = { top: 0, min: 0 }
       if (was >= 0 && now >= 0) {
         // The row's distance from the top of the list's viewport, before; the same after.
-        const y = prev.elTop + prev.pad + was * rowH - scrollTop.current - elTop
+        const y = prev.pad + was * rowH - scrollTop.current
         const top = visible ? Math.max(0, y - now * rowH) : 0
         const target = top + now * rowH - y
         next = { top, min: visible ? target + el.clientHeight : 0 }
@@ -229,7 +230,7 @@ function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
       }
       if (next.top !== space.top || next.min !== space.min) setSpace(next)
     }
-    before.current = { key: viewKey, itemOf, pad: space.top, elTop }
+    before.current = { key: viewKey, itemOf, pad: space.top }
   })
 
   // Hold Shift (no click, no other modifier) with a commit selected: show only its line until Shift
@@ -321,7 +322,6 @@ function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
           <div
             ref={scrollRef}
             data-testid="graph-scroll"
-            data-line={visible ? 'true' : undefined}
             tabIndex={0}
             onKeyDown={onKeyDown}
             onScroll={(e) => { scrollTop.current = e.currentTarget.scrollTop }}
