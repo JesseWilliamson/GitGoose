@@ -646,7 +646,7 @@ branch since its fork point (a PR, when the branch has one). Opened from the Rev
 - [x] 1a blue selection · [x] 1b no month headers · [x] 1c double-click checks out · [x] 1d topological order
 - [x] 2 straight lanes
 - [x] 3 line view
-- [ ] 4a sidebar · [ ] 4b drag-and-drop matrix
+- [x] 4a sidebar · [x] 4b drag-and-drop matrix
 - [ ] 5a threads · [ ] 5b Copilot
 - [ ] 6a dsviz skill + extensions (2.2.0) · [ ] 6b dsviz in GitGoose
 - [ ] 7 Change Stack
