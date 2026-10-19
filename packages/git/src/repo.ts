@@ -934,13 +934,14 @@ export class Repo {
     return this.record(label, actions, (await this.currentHead()).hash)
   }
 
-  /** When anything was last fetched here (FETCH_HEAD's time, unix seconds), or null when never. */
+  /**
+   * When anything was last fetched here (FETCH_HEAD's time, unix seconds), or null when never.
+   * A linked worktree writes its own FETCH_HEAD, so the newer of its and the main one counts.
+   */
   async lastFetched(): Promise<number | null> {
-    try {
-      return Math.floor((await stat(join(this.commonDir, 'FETCH_HEAD'))).mtimeMs / 1000)
-    } catch {
-      return null
-    }
+    const times = await Promise.all([...new Set([this.gitDir, this.commonDir])].map((d) => stat(join(d, 'FETCH_HEAD')).then((s) => s.mtimeMs, () => 0)))
+    const newest = Math.max(...times)
+    return newest ? Math.floor(newest / 1000) : null
   }
 
   // ---------------------------------------------------------------- pins

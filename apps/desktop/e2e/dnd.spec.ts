@@ -190,9 +190,9 @@ test('stashes and files: a stash onto the working copy applies, Alt pops; a comm
   expect(r.git('stash', 'list').trim()).not.toBe('')
   r.git('checkout', '--', 'a.txt')
   await drag(page, stash, page.getByTestId('wip-row'), { alt: true, badge: 'Pop stash@{0}' })
-  await expect.poll(() => r.git('stash', 'list').trim()).toBe('')
+  await expect.poll(() => r.gitOrNull('stash', 'list')?.trim()).toBe('')
   await undo(page)
-  await expect.poll(() => r.git('stash', 'list').trim()).not.toBe('')
+  await expect.poll(() => r.gitOrNull('stash', 'list')?.trim()).not.toBe('')
   r.git('checkout', '--', 'a.txt')
 
   // One file of a commit, from its file list, onto the WIP row.
