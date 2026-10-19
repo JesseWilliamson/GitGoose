@@ -1,6 +1,6 @@
 import type { Repo } from '@gitgoose/git'
 import { addedLines, carryOver, codeContextInfo, contextBudget, textKey, describeHunks, globToRegExp, hunkKey, numberedDiff, onlyChanged, renderCodeContext, reviewableLines, secretFindings, walkthroughHunks, type AddedLines, type ReviewableLines } from '@gitgoose/git'
-import type { AiTask, ImpactResult, LinterRun, ReviewContextInfo, ReviewFinding, ReviewLearning, ReviewProfile, WalkthroughResult } from '@gitgoose/shared'
+import type { AiTask, ArtifactKind, ImpactResult, LinterRun, ReviewContextInfo, ReviewFinding, ReviewLearning, ReviewProfile, ThreadAnchor, WalkthroughResult } from '@gitgoose/shared'
 import { join } from 'node:path'
 
 /**
@@ -422,4 +422,163 @@ export function cleanCommitMessage(text: string): string {
   const t = text.trim()
   const fenced = /^```[\w-]*\n([\s\S]*?)\n```$/.exec(t)
   return (fenced ? fenced[1]! : t).trim()
+}
+
+// ------------------------------------------------------------------ threads
+
+/** Which artifacts a conversation about each anchor may send back (and the renderer may apply). */
+export const ANCHOR_ARTIFACTS: Record<ThreadAnchor['kind'], ArtifactKind[]> = {
+  review: ['findings', 'diagram'],
+  changestack: ['findings', 'diagram'],
+  recompose: ['plan'],
+  walkthrough: ['walkthrough', 'diagram'],
+  explain: ['diagram'],
+  impact: ['diagram'],
+  ask: ['diagram'],
+  free: ['commit-message', 'diagram'],
+  task: [],
+}
+
+const ARTIFACT_SHAPE: Record<ArtifactKind, string> = {
+  findings: 'the whole review again (every finding you still stand by, not only the new ones), in the same JSON shape as the first answer: {"summary": "…", "findings": [{"path", "startLine", "endLine", "type", "severity", "title", "message", "suggestion"?}]}, with line numbers from the diff',
+  plan: 'the whole plan again, in the same JSON shape as the first answer: {"commits": [{"message": "…", "units": ["U1"]}]}, oldest first, every piece in exactly one commit',
+  walkthrough: 'the whole walkthrough again, in the same JSON shape as the first answer',
+  'commit-message': '{"message": "summary line under 72 characters\n\noptional body"}',
+  diagram: '{"participants": ["A", "B"], "messages": [{"from": "A", "to": "B", "label": "call or event"}]} (a sequence diagram, under 8 participants and 20 messages)',
+}
+
+const ARTIFACT_NOUN: Record<ArtifactKind, string> = {
+  findings: 'revise the review',
+  plan: 'revise the plan',
+  walkthrough: 'revise the walkthrough',
+  'commit-message': 'write a commit message the user can use',
+  diagram: 'draw a diagram',
+}
+
+/**
+ * The artifact protocol: how a conversation sends a structured result back. Each anchor states
+ * it in its first message. GitGoose parses the tagged block, checks it with the same verifier as
+ * the feature's first answer, and shows it as a card the user may apply; nothing changes by itself.
+ */
+export function artifactProtocol(anchor: ThreadAnchor, afterFeature: boolean): string {
+  const kinds = ANCHOR_ARTIFACTS[anchor.kind]
+  return [
+    'This is a conversation: the user may ask follow-up questions.',
+    afterFeature ? 'Your first answer keeps the format asked for above. After that, answer in prose.' : 'Answer in prose.',
+    'Write prose as Markdown: short paragraphs, lists, `inline code` and fenced code blocks. No HTML.',
+    ...kinds.map((k) => `When you ${ARTIFACT_NOUN[k]}, send it as one fenced code block tagged \`\`\`json:${k} containing ${ARTIFACT_SHAPE[k]}. GitGoose checks it and the user decides whether to apply it.`),
+    ...(kinds.length ? ['Send such a block only when it is asked for or clearly needed; otherwise answer in prose.'] : []),
+  ].join('\n')
+}
+
+/** What the conversation's feature knew: the start of a thread opened without the feature's own request, and of a replay. */
+export async function anchorContext(repo: Repo, anchor: ThreadAnchor): Promise<string> {
+  switch (anchor.kind) {
+    case 'free': {
+      const head = (await git(repo, ['log', '-n', '1', '--format=%h %s', 'HEAD']).catch(() => '')).trim()
+      const branch = (await git(repo, ['symbolic-ref', '--short', '-q', 'HEAD']).catch(() => '')).trim()
+      return [
+        'You are helping someone with their git repository, in GitGoose (a desktop git client).',
+        `Repository: ${repo.path.split(/[\\/]/).pop()}. HEAD: ${branch ? `${branch} at ` : 'detached at '}${head || '(no commits yet)'}.`,
+        'You may read files in the repository; ask before anything else. Do not change files or run commands unless the user asks.',
+      ].join('\n')
+    }
+    case 'review':
+    case 'walkthrough':
+    case 'changestack':
+    case 'impact': {
+      const input = await repo.reviewInput(anchor.scope)
+      const diff = numberedDiff(input.files, (p) => input.texts.get(p) ?? null, (p, t) => repo.definitionsOf(p, t))
+      const about = anchor.kind === 'review' ? 'a code review' : anchor.kind === 'walkthrough' ? 'a walkthrough' : anchor.kind === 'impact' ? 'what this change could affect' : 'a change stack'
+      const parts = [`This conversation is about ${about} of a change (${input.label}). The change, with new line numbers at the left:`, truncate(diff)]
+      if (anchor.kind === 'impact') {
+        const impact = await repo.impact(anchor.scope)
+        if (impact.callers.length) {
+          parts.push('', 'Where the changed definitions are used elsewhere:', ...impact.callers.map((c) => `- ${c.path}:${c.line}${c.within ? ` in ${c.within}` : ''}${c.test ? ' (test)' : ''}: ${c.text}`))
+        }
+      }
+      return parts.join('\n')
+    }
+    case 'recompose': {
+      const info = await repo.recomposeInfo(anchor.hashes)
+      return [
+        `This conversation is about reorganising ${info.list.length === 1 ? 'a commit' : `${info.list.length} commits`} on ${info.branch} into a better series. The original commits, oldest first:`,
+        ...info.messages.map((m) => `- ${m.subject}`),
+        '',
+        'The changes, cut into numbered pieces:',
+        truncate(info.units.map((u) => describeUnit(u, 20)).join('\n\n')),
+      ].join('\n')
+    }
+    case 'explain': {
+      if (!/^[0-9a-f]{4,64}$/i.test(anchor.hash)) throw new Error('Not a commit hash')
+      const show = await git(repo, ['show', '--no-color', '--no-ext-diff', '-M', '--stat', '--patch', '--format=fuller', anchor.hash, '--', '.', ...NOISE], true)
+      return [`This conversation is about commit ${anchor.hash.slice(0, 7)}:`, truncate(show)].join('\n')
+    }
+    case 'ask': {
+      const built = await buildPrompt(repo, { kind: 'ask', rev: anchor.rev === 'worktree' ? null : anchor.rev, path: anchor.path, startLine: anchor.lines[0], endLine: anchor.lines[1], question: '(see the conversation)', earlier: [] })
+      return built.prompt.slice(0, built.prompt.lastIndexOf('\nQuestion:'))
+    }
+    case 'task':
+      return ''
+  }
+}
+
+/** The first message of a thread that starts with the user's own words (not a feature's request). */
+export function openingMessage(context: string, anchor: ThreadAnchor, text: string): string {
+  return [context, '', artifactProtocol(anchor, false), '', "The user's message:", text].filter((l, i) => i > 0 || l).join('\n')
+}
+
+/** Marks each earlier exchange in a replay (the fake agent counts them). */
+export const REPLAY_USER = '<<user>>'
+export const REPLAY_AGENT = '<<assistant>>'
+
+/**
+ * A new session for a conversation that already happened (the agent restarted, the thread was
+ * reopened later, and the agent cannot load sessions): the conversation so far as text, then
+ * the new message. The first exchange carries the context, so it is all the agent needs.
+ */
+export function replayMessage(history: { user: string; agent: string }[], text: string): string {
+  return [
+    'This conversation was interrupted (the assistant restarted). Here it is so far, oldest first; carry on from where it ended.',
+    '',
+    ...history.flatMap((h) => [REPLAY_USER, h.user, REPLAY_AGENT, h.agent, '']),
+    'The new message:',
+    text,
+  ].join('\n')
+}
+
+/** The task a thread's artifacts are checked against (its verifier needs what the feature saw). */
+export function anchorTask(anchor: ThreadAnchor, profile: ReviewProfile): AiTask | null {
+  switch (anchor.kind) {
+    case 'review':
+    case 'changestack': return { kind: 'review', scope: anchor.scope, profile }
+    case 'walkthrough': return { kind: 'walkthrough', scope: anchor.scope }
+    case 'recompose': return { kind: 'recompose', hashes: anchor.hashes }
+    default: return null
+  }
+}
+
+/** The thread a one-shot task becomes. */
+export function anchorOf(task: AiTask): ThreadAnchor {
+  switch (task.kind) {
+    case 'review': return { kind: 'review', scope: task.scope }
+    case 'walkthrough': return { kind: 'walkthrough', scope: task.scope }
+    case 'assess-impact': return { kind: 'impact', scope: task.scope }
+    case 'recompose': return { kind: 'recompose', hashes: task.hashes }
+    case 'explain-commit': return { kind: 'explain', hash: task.hash }
+    case 'ask': return { kind: 'ask', rev: task.rev ?? 'worktree', path: task.path, lines: [task.startLine, task.endLine], code: '' }
+    default: return { kind: 'task', task: task.kind }
+  }
+}
+
+/** How a feature's own request reads in its thread (one line; the view shows the result). */
+export function featureLabel(task: AiTask, built: BuiltPrompt): string {
+  switch (task.kind) {
+    case 'review': return `Review: ${built.review?.label ?? 'the change'}`
+    case 'walkthrough': return `Walkthrough: ${built.walkthrough?.label ?? 'the change'}`
+    case 'assess-impact': return 'Assess which uses of the changed code are at risk'
+    case 'recompose': return `Propose a better series for ${task.hashes.length === 1 ? 'this commit' : `these ${task.hashes.length} commits`}`
+    case 'explain-commit': return `Explain commit ${task.hash.slice(0, 7)}`
+    default: return task.kind
+  }
 }

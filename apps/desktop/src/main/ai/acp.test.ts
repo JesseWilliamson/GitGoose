@@ -2,7 +2,7 @@ import { tempDir } from '@gitgoose/fixtures'
 import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { AcpAgent, AgentAuthError, allInside, type PermissionAsk } from './acp'
+import { AcpAgent, AgentAuthError, allInside, SessionGoneError, type AgentUpdate, type PermissionAsk } from './acp'
 
 const FAKE = join(import.meta.dirname, '../../../e2e/fake-agent.mjs')
 const agents: AcpAgent[] = []
@@ -28,7 +28,7 @@ describe('ACP agent', () => {
 
   it('streams the reply', async () => {
     const seen: string[] = []
-    const res = await fake().prompt(tempDir(), 'Write a commit message for this diff', { onText: (t) => seen.push(t), onPermission: deny })
+    const res = await fake().ask(tempDir(), 'Write a commit message for this diff', { onText: (t) => seen.push(t), onPermission: deny })
     expect(res.text).toBe('feat: add the widget registry\n\nRegisters widgets by name so plugins can add their own.')
     expect(seen).toHaveLength(3)
     expect(res.stopReason).toBe('end_turn')
@@ -38,8 +38,8 @@ describe('ACP agent', () => {
     const agent = fake()
     const dir = tempDir()
     const [a, b] = await Promise.all([
-      agent.prompt(dir, 'Write a commit message', { onPermission: deny }),
-      agent.prompt(dir, 'Explain this commit', { onPermission: deny }),
+      agent.ask(dir, 'Write a commit message for it', { onPermission: deny }),
+      agent.ask(dir, 'Explain this commit', { onPermission: deny }),
     ])
     expect(a.text).toContain('feat: add the widget registry')
     expect(b.text).toContain('This change explains itself.')
@@ -48,7 +48,7 @@ describe('ACP agent', () => {
 
   it('allows reads inside the repository silently, and asks for anything else', async () => {
     const asked: PermissionAsk[] = []
-    const res = await fake().prompt(tempDir(), 'Explain this commit', {
+    const res = await fake().ask(tempDir(), 'Explain this commit', {
       onPermission: async (a) => (asked.push(a), null),
     })
     expect(res.text).toContain('inside: allowed, outside: denied')
@@ -65,37 +65,37 @@ describe('ACP agent', () => {
     const agent = fake()
 
     // Denied in the permission modal: nothing is written or proposed.
-    const denied = await agent.prompt(dir, text, { onPermission: deny, writable: file, onWrite: (p, c) => writes.push([p, c]) })
+    const denied = await agent.ask(dir, text, { onPermission: deny, writable: file, onWrite: (p, c) => writes.push([p, c]) })
     expect(denied.text).toBe('Left the file as it was.')
     expect(writes).toEqual([])
 
     // Allowed: the content arrives as a proposal; the file on disk is untouched.
-    const allowed = await agent.prompt(dir, text, { onPermission: async () => 'allow', writable: file, onWrite: (p, c) => writes.push([p, c]) })
+    const allowed = await agent.ask(dir, text, { onPermission: async () => 'allow', writable: file, onWrite: (p, c) => writes.push([p, c]) })
     expect(allowed.text).toBe('Kept both sides, ours first.')
     expect(writes).toEqual([[file, 'one\nours\ntheirs\nthree\n']])
     expect(readFileSync(file, 'utf8')).toBe(conflicted)
 
     // Allowed by the user, but not a file this request may write: the agent gets an error.
-    await expect(agent.prompt(dir, text, { onPermission: async () => 'allow', writable: join(dir, 'other.txt'), onWrite: () => {} }))
+    await expect(agent.ask(dir, text, { onPermission: async () => 'allow', writable: join(dir, 'other.txt'), onWrite: () => {} }))
       .rejects.toThrow(/did not allow the agent to write/)
   })
 
   it('reports auth_required with the login methods, then works after authenticate', async () => {
     const agent = fake({ FAKE_AGENT_AUTH: '1' })
     const dir = tempDir()
-    const err = await agent.prompt(dir, 'Explain', { onPermission: deny }).catch((e) => e)
+    const err = await agent.ask(dir, 'Explain', { onPermission: deny }).catch((e) => e)
     expect(err).toBeInstanceOf(AgentAuthError)
     expect((err as AgentAuthError).methods.map((m) => m.id)).toEqual(['fake-login', 'fake-terminal'])
     await agent.authenticate('fake-login')
-    await expect(agent.prompt(dir, 'Explain', { onPermission: deny })).resolves.toMatchObject({ stopReason: 'end_turn' })
+    await expect(agent.ask(dir, 'Explain', { onPermission: deny })).resolves.toMatchObject({ stopReason: 'end_turn' })
   })
 
   it('survives the agent crashing: the request fails, the next one starts a new agent', async () => {
     const agent = fake()
     const dir = tempDir()
-    await expect(agent.prompt(dir, 'FAKE:crash', { onPermission: deny })).rejects.toThrow(/agent stopped/)
+    await expect(agent.ask(dir, 'FAKE:crash', { onPermission: deny })).rejects.toThrow(/agent stopped/)
     expect(agent.starts).toBe(1)
-    await expect(agent.prompt(dir, 'Write a commit message', { onPermission: deny })).resolves.toMatchObject({ stopReason: 'end_turn' })
+    await expect(agent.ask(dir, 'Write a commit message for it', { onPermission: deny })).resolves.toMatchObject({ stopReason: 'end_turn' })
     expect(agent.starts).toBe(2)
   })
 
@@ -107,6 +107,86 @@ describe('ACP agent', () => {
     const quits = new AcpAgent(() => ({ command: process.execPath, args: ['-e', 'process.exit(3)'] }))
     agents.push(quits)
     await expect(quits.info()).rejects.toThrow(/Could not start the agent .*: it exited before answering/)
+  })
+})
+
+describe('ACP sessions (threads)', () => {
+  it('a session remembers: follow-ups are later turns of the same conversation', async () => {
+    const agent = fake()
+    const sid = await agent.openSession(tempDir())
+    expect((await agent.prompt(sid, 'hello', { onPermission: deny })).text).toBe('Turn 1. You said: hello.')
+    expect((await agent.prompt(sid, 'again', { onPermission: deny })).text).toBe('Turn 2. You said: again.')
+    // Another session is another conversation.
+    const other = await agent.openSession(tempDir())
+    expect((await agent.prompt(other, 'hi', { onPermission: deny })).text).toBe('Turn 1. You said: hi.')
+    agent.closeSession(sid)
+    expect(agent.hasSession(sid)).toBe(false)
+    await expect(agent.prompt(sid, 'gone?', { onPermission: deny })).rejects.toBeInstanceOf(SessionGoneError)
+  })
+
+  it('passes on thoughts, plans and tool calls, merging tool updates into the whole call', async () => {
+    const agent = fake()
+    const dir = tempDir()
+    const sid = await agent.openSession(dir)
+    const seen: AgentUpdate[] = []
+    const res = await agent.prompt(sid, 'FAKE:tools', { onPermission: deny, onUpdate: (u) => seen.push(u) })
+    expect(res.text).toBe('Turn 1. Edited README.md.')
+    expect(seen.map((u) => u.kind)).toEqual(['meta', 'thought', 'plan', 'tool', 'tool', 'text'])
+    expect(seen[0]).toEqual({ kind: 'meta', commands: ['compact'] })
+    const done = seen[4] as Extract<AgentUpdate, { kind: 'tool' }>
+    // The update said only status and content; title, kind, input and locations carried over.
+    expect(done.tool).toMatchObject({ id: 'edit-readme', title: 'Edit README.md', kind: 'edit', status: 'completed', locations: [`${dir}/README.md`] })
+    expect(JSON.parse(done.tool.rawInput!)).toEqual({ path: `${dir}/README.md`, line: 1 })
+    expect(done.tool.content).toEqual([{ type: 'diff', path: `${dir}/README.md`, oldText: 'old line\n', newText: 'new line\n' }])
+  })
+
+  it('shows the raw input of a permission ask, and "allow for this session" answers the same ask again', async () => {
+    const agent = fake()
+    const sid = await agent.openSession(tempDir())
+    const asked: PermissionAsk[] = []
+    const res = await agent.prompt(sid, 'FAKE:permission', {
+      onPermission: async (a) => {
+        asked.push(a)
+        agent.rememberAllow(sid, a)
+        return a.options.find((o) => o.kind === 'allow_once')!.optionId
+      },
+    })
+    expect(res.text).toBe('Turn 1. First: allowed, second: allowed.')
+    expect(asked).toHaveLength(1)
+    expect(JSON.parse(asked[0]!.rawInput!)).toEqual({ command: 'npm test' })
+    // Remembered for that session only.
+    const other = await agent.openSession(tempDir())
+    const again: PermissionAsk[] = []
+    await agent.prompt(other, 'FAKE:permission', { onPermission: async (a) => (again.push(a), null) })
+    expect(again).toHaveLength(2)
+  })
+
+  it('cancel ends the turn as cancelled', async () => {
+    const agent = fake()
+    const sid = await agent.openSession(tempDir())
+    const abort = new AbortController()
+    const p = agent.prompt(sid, 'FAKE:slow', { onPermission: deny, onText: (t) => t.includes('chunk 2') && abort.abort() }, abort.signal)
+    await expect(p).resolves.toMatchObject({ stopReason: 'cancelled' })
+    // The session takes the next turn.
+    await expect(agent.prompt(sid, 'next', { onPermission: deny })).resolves.toMatchObject({ text: 'Turn 2. You said: next.' })
+  })
+
+  it('loads a session after a restart when the agent can, without repeating its history to us', async () => {
+    const env = { FAKE_AGENT_LOAD: '1', FAKE_AGENT_STATE: join(tempDir(), 'state.json') }
+    const agent = fake(env)
+    const dir = tempDir()
+    const sid = await agent.openSession(dir)
+    await agent.prompt(sid, 'one', { onPermission: deny })
+    await expect(agent.prompt(sid, 'FAKE:crash', { onPermission: deny })).rejects.toThrow(/agent stopped/)
+    expect(agent.hasSession(sid)).toBe(false)
+    expect(await agent.canLoad()).toBe(true)
+    await agent.loadSession(sid, dir)
+    const seen: string[] = []
+    const res = await agent.prompt(sid, 'two', { onPermission: deny, onText: (t) => seen.push(t) })
+    // The replayed history was not streamed into this turn; the agent remembered turn 1.
+    expect(res.text).toBe('Turn 2. You said: two.')
+    expect(seen).toEqual(['Turn 2. You said: two.'])
+    expect(agent.starts).toBe(2)
   })
 })
 
