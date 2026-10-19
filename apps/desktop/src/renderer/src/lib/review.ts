@@ -15,6 +15,8 @@ export interface ReviewState {
   dismissed: string[]
   /** The finding to scroll to (from a gutter marker). */
   focus: string | null
+  /** The conversation this review is the first turn of (the chat rail). */
+  threadId?: string | null
 }
 
 /**
@@ -28,11 +30,11 @@ export function startReview(id: string, scope: ReviewScope, opts: { incremental?
   const profile = setting('reviewProfile') as ReviewProfile
   const same = old?.result && JSON.stringify(old.scope) === JSON.stringify(scope) && old.profile === profile
   const previous = opts.incremental && same ? { findings: old!.result!.findings.filter((f) => !old!.dismissed.includes(f.id)), hunkKeys: old!.result!.hunkKeys, contextKey: old!.result!.contextKey } : undefined
-  const run = startAi(id, { kind: 'review', scope, profile, previous }, undefined, { before: () => askAboutLinters(id) })
+  const run = startAi(id, { kind: 'review', scope, profile, previous }, undefined, { before: () => askAboutLinters(id), keepThread: true })
   updateRepo(id, { review: { scope, profile, requestId: run.requestId, result: null, error: null, dismissed: [], focus: null }, center: { kind: 'review' } })
   const mine = (v: RepoView) => v.review?.requestId === run.requestId
   run.done.then(
-    (res) => updateRepo(id, (v) => (mine(v) ? { review: res?.review ? { ...v.review!, requestId: null, result: res.review } : null, ...(res ? {} : { center: { kind: 'graph' } as const }) } : {})),
+    (res) => updateRepo(id, (v) => (mine(v) ? { review: res?.review ? { ...v.review!, requestId: null, result: res.review, threadId: res.threadId ?? null } : null, ...(res ? {} : { center: { kind: 'graph' } as const }) } : {})),
     (e) => updateRepo(id, (v) => (mine(v) ? { review: { ...v.review!, requestId: null, error: toUiError(e).message } } : {})),
   )
 }

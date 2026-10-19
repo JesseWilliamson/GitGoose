@@ -6,6 +6,7 @@ import { useAiEnabled } from '../lib/ai'
 import { indexingText } from '../lib/codegraph'
 import { assessImpact, showImpact } from '../lib/impact'
 import { updateRepo, type RepoView } from '../lib/store'
+import { RailToggle, ThreadRail, useRailOpen } from './ThreadRail'
 import { Button, Spinner } from './ui'
 
 const CHANGE_STYLE = { changed: 'bg-warn/15 text-warn', added: 'bg-add/15 text-add', removed: 'bg-del/15 text-del' }
@@ -18,6 +19,7 @@ const CHANGE_STYLE = { changed: 'bg-warn/15 text-warn', added: 'bg-add/15 text-a
 export function ImpactView({ view }: { view: RepoView }) {
   const st = view.impact
   const aiOn = useAiEnabled()
+  const chat = useRailOpen('impact')
   if (!st) return null
   const r = st.result
   const risk = new Map(r?.assessment?.risks.map((x) => [x.id, x.why]) ?? [])
@@ -39,9 +41,11 @@ export function ImpactView({ view }: { view: RepoView }) {
             : <Button onClick={() => assessImpact(view.id)} data-testid="assess-impact"><Sparkles size={13} /> Assess impact</Button>
         )}
         <Button onClick={() => showImpact(view.id, st.scope)}>Again</Button>
+        {aiOn && r && <RailToggle kind="impact" />}
         <Button variant="ghost" onClick={() => updateRepo(view.id, { center: { kind: 'graph' } })}>Back to graph</Button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 text-[13px]">
+      <div className="flex min-h-0 flex-1">
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-5 py-4 text-[13px]">
         {st.error && <div className="mb-4 rounded-md border border-del/40 bg-del/10 p-3 text-del">{st.error}</div>}
         {r?.assessment && (
           <div className="mb-4 max-w-4xl rounded-md border border-accent/30 bg-accent/5 p-3" data-testid="impact-assessment">
@@ -97,6 +101,12 @@ export function ImpactView({ view }: { view: RepoView }) {
             )}
           </>
         )}
+      </div>
+      {aiOn && chat && r && !st.requestId && (
+        <ThreadRail repoId={view.id} kind="impact" anchor={{ kind: 'impact', scope: st.scope }} threadId={st.threadId}
+          onThread={(id) => updateRepo(view.id, (v) => (v.impact ? { impact: { ...v.impact, threadId: id } } : {}))}
+          hint="Ask what a change to one of these definitions could break, or which tests to run." />
+      )}
       </div>
     </div>
   )

@@ -34,6 +34,7 @@ export const COMMANDS: KeyCommand[] = [
   { id: 'toggle-details', label: 'Show or hide the details panel', defaults: ['mod+alt+b'] },
   // Mod+L, not the plan's Mod+Shift+L: that one has been Fetch for a long time.
   { id: 'line-view', label: 'Show only the selected line of history, or everything again', defaults: ['mod+l'] },
+  { id: 'ai-chat', label: 'Show or hide the AI panel (chat about this repository)', defaults: ['mod+shift+a'] },
   { id: 'toggle-graph-style', label: 'Switch the graph between two-line and one-line rows', defaults: [] },
   // Mod+1…9 switch tabs (and Mod+0 is Actual Size), so
   // the Workspace takes Mod+Alt and the same digits. In the sidebar, Mod+0 goes to HEAD's branch too.
