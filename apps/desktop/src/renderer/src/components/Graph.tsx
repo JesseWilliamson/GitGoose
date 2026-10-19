@@ -471,11 +471,13 @@ const CommitRow = memo(function CommitRow(props: {
       className={clsx('group flex items-stretch text-[13px]', dropping && 'outline outline-2 -outline-offset-2 outline-accent')}
       style={{ position: 'absolute', top: 0, left: 0, right: 0, height, transform: `translateY(${props.top}px)` }}
     >
-      {/* The selected row's tint, in its lane colour, as a rounded block that stops short of the
-          row's edges: consecutive selected rows stay distinct, and the lines on the left stay clean. */}
+      {/* The selected row's tint: the one selection blue (bg-select, as on the WIP row, the sidebar
+          and the palette), not the lane colour, so "selected" reads the same on every branch. A
+          rounded block that stops short of the row's edges: consecutive selected rows stay
+          distinct, and the lines on the left stay clean. */}
       <div
-        className={clsx('pointer-events-none absolute right-2 rounded-md', !props.selected && 'group-hover:bg-hover')}
-        style={{ left: textX - 2, top: header + 2, bottom: 2, ...(props.selected ? { background: `color-mix(in srgb, ${lane} 22%, var(--gs-bg))` } : {}) }}
+        className={clsx('pointer-events-none absolute right-2 rounded-md', props.selected ? 'bg-select' : 'group-hover:bg-hover')}
+        style={{ left: textX - 2, top: header + 2, bottom: 2 }}
         data-testid="row-tint"
       />
       {/* One-line rows: the branch and tag pills in a column of their own, left of the graph, with

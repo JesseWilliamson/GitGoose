@@ -194,3 +194,30 @@ test('Ctrl+P opens the search on commands only; Ctrl+K and Ctrl+F on everything'
   }
   await app.close()
 })
+
+test('the selected row is tinted with the selection blue, not its lane colour, in dark and light', async () => {
+  const r = makeFixture('branches')
+  const { app, page } = await launch(r.dir)
+  // A side-branch commit: its lane is not lane 0, so a lane tint would differ from the blue.
+  const row = page.locator(`[data-testid="commit-row"][data-hash="${r.git('rev-parse', 'wip').trim()}"]`)
+  await row.click()
+  await expect(row).toHaveAttribute('data-selected', 'true')
+  const tint = row.getByTestId('row-tint')
+  /** What var(--gs-select) resolves to right now, as the browser would paint it. */
+  const selectBlue = () => page.evaluate(() => {
+    const probe = document.createElement('div')
+    probe.style.background = 'var(--gs-select)'
+    document.body.append(probe)
+    const c = getComputedStyle(probe).backgroundColor
+    probe.remove()
+    return c
+  })
+  for (const theme of ['dark', 'light'] as const) {
+    await page.evaluate((t) => window.gitgoose.setSettings({ theme: t }), theme)
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
+    const want = await selectBlue()
+    expect(want).toMatch(/^rgba\(/)
+    await expect.poll(() => tint.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(want)
+  }
+  await app.close()
+})
