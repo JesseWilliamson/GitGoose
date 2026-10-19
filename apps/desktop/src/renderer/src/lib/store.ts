@@ -147,14 +147,6 @@ export type Dialog =
   /** Branch cleanup: pick merged or stale branches to delete. */
   | { kind: 'cleanup'; repoId: string }
 
-export interface DropRequest {
-  x: number
-  y: number
-  source: Ref
-  /** Where it was dropped: a ref pill, or just a commit row. */
-  target: { ref?: Ref; hash: string }
-}
-
 /** Double-click on a commit where several local branches point: which one to check out. */
 export interface CheckoutChoice {
   x: number
@@ -189,7 +181,6 @@ interface State {
   omni: { query: string } | null
   /** What the settings page's search box starts with (the omni search opens settings this way). */
   settingsQuery: string
-  drop: DropRequest | null
   checkoutChoice: CheckoutChoice | null
   menu: MenuTarget
   /** Progress text for a clone in flight. */
@@ -211,7 +202,6 @@ export const useStore = create<State>(() => ({
   attentions: [],
   omni: null,
   settingsQuery: '',
-  drop: null,
   checkoutChoice: null,
   menu: null,
   cloneProgress: null,

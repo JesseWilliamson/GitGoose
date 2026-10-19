@@ -3,6 +3,7 @@ import clsx from 'clsx'
 import { ChevronDown, ChevronRight, Folder, List, ListTree, Search } from 'lucide-react'
 import { ContextMenu } from 'radix-ui'
 import { useState, type ReactNode } from 'react'
+import { startDrag, type DragSource } from '../lib/dnd'
 import { matchesFilter, treeRows } from '../lib/fileTree'
 import { splitPath } from '../lib/format'
 import { saveSettings, useSetting } from '../lib/store'
@@ -32,7 +33,9 @@ export function statusKind(code: string): ChangeKind | 'untracked' {
   }
 }
 
-export function FileRow({ path, oldPath, kind, selected, onClick, actions, stats, testId, menu, depth, tree }: {
+export function FileRow({ path, oldPath, kind, selected, onClick, actions, stats, testId, menu, depth, tree, drag }: {
+  /** Dragging the row drags this (a file's change to apply elsewhere, or working-copy files to stash). */
+  drag?: DragSource
   /** Tree view: indent by depth and show only the file name (the folders are rows above). */
   depth?: number
   tree?: boolean
@@ -54,6 +57,8 @@ export function FileRow({ path, oldPath, kind, selected, onClick, actions, stats
       onClick={onClick}
       data-testid={testId}
       data-path={path}
+      draggable={!!drag}
+      onDragStart={drag ? (e) => startDrag(e.dataTransfer, drag) : undefined}
       title={oldPath ? `${oldPath} → ${path}` : path}
       style={tree ? { paddingLeft: 12 + (depth ?? 0) * 14 + 16 } : undefined}
       className={clsx('group flex h-6 cursor-default items-center gap-2 px-3 text-[13px]', selected ? 'bg-select' : 'hover:bg-hover')}

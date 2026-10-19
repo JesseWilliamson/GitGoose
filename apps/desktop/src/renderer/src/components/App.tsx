@@ -6,7 +6,8 @@ import { closeTab, onCommand, runCommand, updateRepo, saveSettings, setting, tog
 import { AttentionBar } from './AttentionBar'
 import { OmniSearch } from './OmniSearch'
 import { Dialogs, PromptDialog, Toasts } from './Dialogs'
-import { CheckoutMenu, DropMenu } from './menus'
+import { CheckoutMenu } from './menus'
+import { DragBadge } from './DragBadge'
 import { SettingsPage } from './SettingsPage'
 import { AiDialogs } from './AiDialogs'
 import { StatusBar } from './StatusBar'
@@ -140,7 +141,7 @@ export function App() {
       <Dialogs />
       <AiDialogs />
       <PromptDialog />
-      <DropMenu />
+      <DragBadge />
       <CheckoutMenu />
       <Toasts />
     </div>

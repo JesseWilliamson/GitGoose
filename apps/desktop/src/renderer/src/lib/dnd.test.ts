@@ -140,6 +140,9 @@ describe('commit(s) → Working Copy / HEAD branch / WIP row', () => {
     expect(plan({ kind: 'commits', hashes: [H('5')] }, wip)?.label).toBe(`Cherry-pick ${H('5').slice(0, 7)} onto main`)
     expect(plan({ kind: 'commits', hashes: [H('a')] }, wip)).toBeNull()
   })
+  it('HEAD\'s own commit can still be reverted', () => {
+    expect(plan({ kind: 'commits', hashes: [H('a')] }, wip, true)).toEqual({ label: 'Revert aaaaaaa', op: { op: 'revert', hashes: [H('a')] } })
+  })
 })
 
 describe('commit → Branches / Tags header', () => {
