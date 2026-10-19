@@ -15,6 +15,7 @@ import {
 import { relativeTime, stashLabel } from '../lib/format'
 import { refShown } from '../lib/graphFilter'
 import { shortcutOf } from '../lib/keys'
+import { startDrag, type DropTarget } from '../lib/dnd'
 import { foldersOf } from '../lib/refTree'
 import {
   defaultOpen, focusable, folderKey, openKeyOf, parentIndex, refKey, rowHeight, sidebarRows, type RefSection, type SidebarRow, type WorkspaceItem,
@@ -290,6 +291,10 @@ const sectionMenu = { branches: 'local', remotes: 'remotes', tags: 'tags', workt
  * to the left of that, so a folder's name and its branches' names line up.
  */
 const pad = (depth: number) => 16 + depth * 16
+/** A row's `data-drop-target`: what DragBadge passes to dropPlan when something is dragged over it. */
+const drop = (t: DropTarget) => JSON.stringify(t)
+const SECTION_TARGETS = new Set(['branches', 'tags', 'pinned', 'worktrees'])
+const WORKSPACE_TARGETS = new Set(['working-copy', 'stashes', 'pulls'])
 const FOLD = 14
 
 /**
@@ -314,6 +319,7 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
       const menu = (sectionMenu as Record<string, (typeof sectionMenu)[keyof typeof sectionMenu]>)[row.section]
       return (
         <div style={style} data-testid="sidebar-section" data-section={row.section} data-name={row.title}
+          data-drop-target={SECTION_TARGETS.has(row.section) ? drop({ kind: 'section', section: row.section as 'branches' }) : undefined}
           className={clsx('flex items-center pr-2', cursor && 'bg-select')}
           onContextMenu={menu ? () => useStore.setState({ menu: { kind: 'section', section: menu } }) : noMenu}>
           <button onClick={() => { onCursor(row.key); onToggle(row.key) }} style={{ paddingLeft: 8 }}
@@ -338,6 +344,7 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
       const changes = row.item === 'working-copy' ? view.snapshot.status.length : 0
       const body = (
         <div style={{ ...style, paddingLeft: pad(1) }} data-testid="workspace-item" data-item={row.item} title={`${w.title}${key ? ` (${key})` : ''}`}
+          data-drop-target={WORKSPACE_TARGETS.has(row.item) ? drop({ kind: 'workspace', item: row.item as 'stashes' }) : undefined}
           onClick={() => { onCursor(row.key); onWorkspace(row.item) }} onContextMenu={noMenu}
           className={clsx(base, active ? 'font-semibold text-fg' : 'text-muted')}>
           {row.open !== undefined ? (row.open ? <ChevronDown size={12} className="-ml-3.5 shrink-0" /> : <ChevronRight size={12} className="-ml-3.5 shrink-0" />) : null}
@@ -358,6 +365,8 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
     case 'folder':
       return (
         <div style={{ ...style, paddingLeft: pad(row.depth) - FOLD }} data-testid="sidebar-folder" data-path={row.path} data-section={sectionName(row.section)}
+          // Only Branches' folders take a branch (rename it into the folder).
+          data-drop-target={row.section === 'branches' ? drop({ kind: 'folder', folder: row.path }) : undefined}
           onClick={() => { onCursor(row.key); onToggle(row.key) }} onContextMenu={noMenu} className={clsx(base, 'text-muted')}>
           {row.open ? <ChevronDown size={12} className="shrink-0" /> : <ChevronRight size={12} className="shrink-0" />}
           <Folder size={12} className="shrink-0" />
@@ -369,6 +378,7 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
       const hidden = look.filter.hidden.includes(`refs/remotes/${row.remote}/*`)
       return (
         <div style={{ ...style, paddingLeft: pad(1) - FOLD }} data-testid="remote-section" data-name={row.remote} className={clsx(base, 'text-muted')}
+          data-drop-target={drop({ kind: 'remote', remote: row.remote })}
           onContextMenu={() => useStore.setState({ menu: { kind: 'remote', remote: row.remote } })}>
           <button onClick={() => { onCursor(row.key); onToggle(row.key) }} className="flex h-full min-w-0 flex-1 items-center gap-1.5 font-medium hover:text-fg">
             {row.open ? <ChevronDown size={12} className="shrink-0" /> : <ChevronRight size={12} className="shrink-0" />}
@@ -385,7 +395,8 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
       const s = row.stash
       const selected = view.selected.kind === 'commit' && view.selected.hash === s.hash
       return (
-        <div style={{ ...style, paddingLeft: pad(2) }} data-testid="stash-item"
+        <div style={{ ...style, paddingLeft: pad(2) }} data-testid="stash-item" draggable
+          onDragStart={(e) => startDrag(e.dataTransfer, { kind: 'stash', index: s.index, hash: s.hash, ref: s.ref })}
           onClick={() => { onCursor(row.key); updateRepo(id, { selected: { kind: 'commit', hash: s.hash }, center: { kind: 'graph' } }) }}
           onDoubleClick={() => pop(id, s.index)}
           onContextMenu={() => useStore.setState({ menu: { kind: 'stash', stash: s } })}
@@ -534,6 +545,9 @@ function RefRow({ row, style, cursor, look, onClick, onDoubleClick }: {
       onDoubleClick={() => onDoubleClick(r)}
       onMouseDown={(e) => e.detail > 1 && e.preventDefault()}
       onContextMenu={() => useStore.setState({ menu: { kind: 'ref', ref: r, hash: r.hash } })}
+      draggable
+      onDragStart={(e) => startDrag(e.dataTransfer, { kind: 'ref', ref: r })}
+      data-drop-target={drop({ kind: 'ref', ref: r })}
       data-testid="sidebar-ref"
       data-ref={r.name}
       data-section={sectionName(row.section)}

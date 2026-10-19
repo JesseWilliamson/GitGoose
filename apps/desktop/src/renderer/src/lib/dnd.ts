@@ -283,9 +283,11 @@ function commitDrop(ctx: DropContext, hashes: string[], t: DropTarget, alt: bool
   if (!hashes.length) return null
   const headName = ctx.snapshot.head.branch ?? 'HEAD'
   if (isHeadTarget(ctx, t)) {
-    if (!ctx.snapshot.head.hash || hashes.includes(ctx.snapshot.head.hash)) return null
-    return alt ? { label: `Revert ${commits(hashes)}`, op: { op: 'revert', hashes } }
-      : { label: `Cherry-pick ${commits(hashes)} onto ${headName}`, op: { op: 'cherry-pick', hashes } }
+    if (!ctx.snapshot.head.hash) return null
+    // Reverting works on any commit, HEAD's own included; picking HEAD onto itself does nothing.
+    if (alt) return { label: `Revert ${commits(hashes)}`, op: { op: 'revert', hashes } }
+    if (hashes.includes(ctx.snapshot.head.hash)) return null
+    return { label: `Cherry-pick ${commits(hashes)} onto ${headName}`, op: { op: 'cherry-pick', hashes } }
   }
   switch (t.kind) {
     case 'section':

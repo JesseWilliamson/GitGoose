@@ -5,9 +5,9 @@ import clsx from 'clsx'
 import { Archive, Cloud, Laptop, Tag } from 'lucide-react'
 import { ContextMenu } from 'radix-ui'
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from 'react'
-import { bisectMark, bisectReset, checkout, checkoutRow, moveCommits, showAllInGraph, squashOnto } from '../lib/actions'
+import { bisectMark, bisectReset, checkout, checkoutRow, showAllInGraph } from '../lib/actions'
 import { avatarSrc, useAvatarVariant } from '../lib/avatar'
-import { COMMITS_MIME, REF_MIME } from '../lib/dnd'
+import { startDrag, type DropTarget } from '../lib/dnd'
 import { authorLine, formatDate, laneColor, shortHash, stashLabel } from '../lib/format'
 import { lineEnded, lineIndexOf, lineThrough } from '../lib/lineView'
 import { ensureLoaded, getLog, loadMore, selectCommit, selectedHashes, selectionCursor, setLine, updateRepo, useSetting, useStore, type RepoView } from '../lib/store'
@@ -398,6 +398,8 @@ function LineBar({ view, hash, hidden }: { view: RepoView; hash: string; hidden:
   )
 }
 
+const WIP_TARGET = JSON.stringify({ kind: 'wip' } satisfies DropTarget)
+
 function WipRow({ style, view, cellW, look, selected, lane, color }: {
   style: React.CSSProperties; view: RepoView; cellW: number; look: RowLook; selected: boolean
   /** HEAD's lane and colour, where the dashed line down to HEAD runs. */
@@ -420,6 +422,8 @@ function WipRow({ style, view, cellW, look, selected, lane, color }: {
     <div
       style={style}
       data-testid="wip-row"
+      // Drops here mean "into the working copy": cherry-pick, merge, apply a stash or a file (lib/dnd.ts).
+      data-drop-target={WIP_TARGET}
       onClick={() => updateRepo(view.id, { selected: { kind: 'wip' } })}
       data-selected={selected || undefined}
       className="group flex items-center text-[13px]"
@@ -454,7 +458,7 @@ const CommitRow = memo(function CommitRow(props: {
   headBranch: string | undefined
   isHead: boolean
   selected: boolean
-  /** On the part of the current branch that can be reordered: draggable, and a drop target. */
+  /** On the part of the current branch that can be reordered (dropPlan reads it from the store; kept so a change re-renders). */
   editable: boolean
   /** Set when this row is a stash (its entry, for the label and the menu). */
   stash?: StashEntry
@@ -472,12 +476,6 @@ const CommitRow = memo(function CommitRow(props: {
       .map((p) => ({ ...p, src: avatarSrc(p.email, look.avatars, look.avatarVariant) })),
     [commit.authorName, commit.authorEmail, commit.coAuthors, look.avatars, look.avatarVariant],
   )
-  const [dropping, setDropping] = useState(false)
-  /**
-   * Where dragged commits would land: just above (newer than) this one, just below it, or onto
-   * it (squash them into it). The row is split in thirds.
-   */
-  const [dropAt, setDropAt] = useState<'above' | 'onto' | 'below' | null>(null)
   const pills = useMemo(() => (props.refs ? pillsFor(props.refs, props.headBranch, { remotes: look.showRemotes, tags: look.showTags }) : []),
     [props.refs, props.headBranch, look.showRemotes, look.showTags])
   const lane = laneColor(row.color)
@@ -487,48 +485,19 @@ const CommitRow = memo(function CommitRow(props: {
   /** Where the row's text starts: past the branch column (one-line rows) and the graph. */
   const textX = (look.compact ? REFS_W : 0) + cellW
 
+  /**
+   * Drag the commit (or the selection it is part of) somewhere: onto another row to move or squash
+   * it, onto the working copy to cherry-pick it, onto a branch to pick it there (lib/dnd.ts). A
+   * stash row drags the stash. A branch pill inside the row starts its own drag.
+   */
   const onDragStart = (e: DragEvent) => {
-    // A branch pill inside the row starts its own drag.
-    if (!props.editable || (e.target as HTMLElement).closest('[data-testid="ref-pill"]')) return
+    if ((e.target as HTMLElement).closest('[data-testid="ref-pill"]')) return
+    if (props.stash) return startDrag(e.dataTransfer, { kind: 'stash', index: props.stash.index, hash: props.stash.hash, ref: props.stash.ref })
     const sel = useStore.getState().repos[repoId]?.selected
-    const hashes = sel?.kind === 'commits' && sel.hashes.includes(commit.hash) ? sel.hashes : [commit.hash]
-    e.dataTransfer.setData(COMMITS_MIME, JSON.stringify(hashes))
-    e.dataTransfer.effectAllowed = 'move'
+    startDrag(e.dataTransfer, { kind: 'commits', hashes: sel?.kind === 'commits' && sel.hashes.includes(commit.hash) ? sel.hashes : [commit.hash] })
   }
-  const onDragOver = (e: DragEvent) => {
-    if (e.dataTransfer.types.includes(COMMITS_MIME)) {
-      if (!props.editable) return
-      e.preventDefault()
-      e.dataTransfer.dropEffect = 'move'
-      const box = (e.currentTarget as HTMLElement).getBoundingClientRect()
-      const y = (e.clientY - box.top) / box.height
-      setDropAt(y < 1 / 3 ? 'above' : y > 2 / 3 ? 'below' : 'onto')
-      return
-    }
-    if (!e.dataTransfer.types.includes(REF_MIME)) return
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    setDropping(true)
-  }
-  const onDrop = (e: DragEvent, ref?: Ref) => {
-    setDropping(false)
-    const commits = e.dataTransfer.getData(COMMITS_MIME)
-    if (commits) {
-      e.preventDefault()
-      const where = dropAt ?? 'above'
-      setDropAt(null)
-      const hashes = JSON.parse(commits) as string[]
-      if (hashes.includes(commit.hash)) return
-      if (where === 'onto') void squashOnto(repoId, hashes, commit.hash)
-      else void moveCommits(repoId, hashes, commit.hash, where)
-      return
-    }
-    const raw = e.dataTransfer.getData(REF_MIME)
-    if (!raw) return
-    e.preventDefault()
-    e.stopPropagation()
-    useStore.setState({ drop: { x: e.clientX, y: e.clientY, source: JSON.parse(raw) as Ref, target: { ref, hash: commit.hash } } })
-  }
+  /** Where a drop lands on this row (above, onto, below) is worked out from the pointer: see DragBadge. */
+  const dropTarget = useMemo(() => JSON.stringify({ kind: 'row', hash: commit.hash, where: 'onto' } satisfies DropTarget), [commit.hash])
 
   /** The pills and marks, at most `max` branch pills before a "+N". */
   const marks = (max: number) => (
@@ -542,7 +511,7 @@ const CommitRow = memo(function CommitRow(props: {
         </span>
       )}
       {pills.slice(0, max).map((p) => (
-        <RefPill key={p.key} pill={p} color={row.color} repoId={repoId} hash={commit.hash} onDrop={onDrop} />
+        <RefPill key={p.key} pill={p} color={row.color} repoId={repoId} hash={commit.hash} />
       ))}
       {pills.length > max && (
         <span className="shrink-0 rounded-[4px] bg-raised px-1.5 text-[11px] font-medium text-muted" title={pills.slice(max).map((p) => p.label).join('\n')}>
@@ -584,26 +553,17 @@ const CommitRow = memo(function CommitRow(props: {
       else if (sel?.kind === 'commits' && sel.hashes.includes(commit.hash)) useStore.setState({ menu: { kind: 'commits', hashes: sel.hashes } })
       else useStore.setState({ menu: { kind: 'commit', hash: commit.hash } })
     },
-    draggable: props.editable,
+    draggable: true,
     onDragStart,
-    onDragOver,
-    onDragLeave: () => {
-      setDropping(false)
-      setDropAt(null)
-    },
-    onDrop: (e: DragEvent) => onDrop(e),
+    'data-drop-target': dropTarget,
+    'data-drop-zones': 'thirds',
     'data-selected': props.selected || undefined,
   }
-  const dropMarks = dropAt === 'onto' ? (
-    <div data-testid="drop-onto" className="pointer-events-none absolute inset-0 rounded-sm outline outline-2 -outline-offset-2 outline-accent" title="Squash into this commit" />
-  ) : dropAt && (
-    <div data-testid="drop-line" className={clsx('pointer-events-none absolute inset-x-0 h-0.5 bg-accent', dropAt === 'above' ? 'top-0' : 'bottom-0')} />
-  )
 
   return (
     <div
       {...rowProps}
-      className={clsx('group flex items-stretch text-[13px]', dropping && 'outline outline-2 -outline-offset-2 outline-accent')}
+      className="group flex items-stretch text-[13px]"
       style={{ position: 'absolute', top: 0, left: 0, right: 0, height: look.rowH, transform: `translateY(${props.top}px)` }}
     >
       {/* The selected row's tint: the one selection blue (bg-select, as on the WIP row, the sidebar
@@ -653,36 +613,20 @@ const CommitRow = memo(function CommitRow(props: {
           </div>
         )}
       </div>
-      {dropMarks}
     </div>
   )
 })
 
-function RefPill({ pill, color, repoId, hash, onDrop }: {
-  pill: Pill; color: number; repoId: string; hash: string; onDrop: (e: DragEvent, ref?: Ref) => void
-}) {
+function RefPill({ pill, color, repoId, hash }: { pill: Pill; color: number; repoId: string; hash: string }) {
   const ref = pill.local ?? pill.remotes[0] ?? pill.tag!
-  const [over, setOver] = useState(false)
   return (
     <span
-      draggable={!pill.tag}
+      draggable
       data-testid="ref-pill"
       data-ref={ref.name}
-      onDragStart={(e) => {
-        e.dataTransfer.setData(REF_MIME, JSON.stringify(ref))
-        e.dataTransfer.effectAllowed = 'move'
-      }}
-      onDragOver={(e) => {
-        if (e.dataTransfer.types.includes(REF_MIME)) {
-          e.preventDefault()
-          setOver(true)
-        }
-      }}
-      onDragLeave={() => setOver(false)}
-      onDrop={(e) => {
-        setOver(false)
-        onDrop(e, ref)
-      }}
+      // A branch dragged here, or commits: see lib/dnd.ts. Inside its row, the pill is the nearer target.
+      data-drop-target={JSON.stringify({ kind: 'ref', ref } satisfies DropTarget)}
+      onDragStart={(e) => startDrag(e.dataTransfer, { kind: 'ref', ref })}
       onContextMenu={() => useStore.setState({ menu: { kind: 'ref', ref, hash } })}
       onDoubleClick={(e) => {
         // The row's own double-click would check out the commit's branch (or ask which); the pill
@@ -694,7 +638,6 @@ function RefPill({ pill, color, repoId, hash, onDrop }: {
       className={clsx(
         'flex h-[18px] max-w-44 min-w-0 shrink cursor-grab items-center gap-1 rounded-[4px] px-1.5 text-[11px] font-semibold',
         pill.isHead ? 'bg-accent text-accent-fg' : pill.tag ? 'bg-warn text-black' : 'text-fg',
-        over && 'ring-2 ring-accent',
       )}
       // The checked-out branch is solid accent and tags solid amber; other branches
       // take a tint of their lane so the pill still says which line of history it sits on.

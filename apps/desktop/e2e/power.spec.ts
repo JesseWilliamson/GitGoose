@@ -7,7 +7,6 @@ test('resolves a merge conflict in the wizard and continues', async () => {
   const r = makeFixture('conflict')
   const { app, page } = await launch(r.dir)
   await page.locator('[data-testid="ref-pill"][data-ref="refs/heads/other"]').dragTo(page.locator('[data-testid="ref-pill"][data-ref="refs/heads/main"]'))
-  await page.getByRole('menuitem', { name: 'Merge other into main' }).click()
   await expect(page.getByTestId('conflicts')).toBeVisible()
   await expect(page.getByTestId('conflict-file')).toHaveCount(1)
   await page.getByTestId('view-blocks').click()
