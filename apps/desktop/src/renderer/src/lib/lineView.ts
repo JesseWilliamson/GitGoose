@@ -62,6 +62,15 @@ export function lineThrough(log: LineLog, hash: string): Uint32Array {
   return out
 }
 
+/**
+ * The line has reached a root commit: nothing loaded later can belong to it, so the list need not
+ * load further pages for it (an orphan branch's line can end near the top of a long history).
+ */
+export function lineEnded(log: Pick<LineLog, 'commits'>, line: Uint32Array): boolean {
+  const last = line.length ? log.commits[line[line.length - 1]!] : undefined
+  return !!last && last.parents.length === 0
+}
+
 /** Where row `row` sits in `line` (sorted, as lineThrough returns it), or -1. */
 export function lineIndexOf(line: Uint32Array, row: number): number {
   let lo = 0

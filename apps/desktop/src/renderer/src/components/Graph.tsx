@@ -8,7 +8,7 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragE
 import { bisectMark, bisectReset, checkout, checkoutRow, moveCommits, showAllInGraph, squashOnto } from '../lib/actions'
 import { avatarSrc, useAvatarVariant } from '../lib/avatar'
 import { authorLine, formatDate, laneColor, shortHash, stashLabel } from '../lib/format'
-import { lineIndexOf, lineThrough } from '../lib/lineView'
+import { lineEnded, lineIndexOf, lineThrough } from '../lib/lineView'
 import { ensureLoaded, getLog, loadMore, selectCommit, selectedHashes, selectionCursor, setLine, updateRepo, useSetting, useStore, type RepoView } from '../lib/store'
 import { AvatarStack, type StackedAuthor } from './Avatar'
 import { cellWidth, GraphCell, ROW_H, ROW_H_COMPACT, WipCell } from './GraphCell'
@@ -113,7 +113,10 @@ function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
   const showWip = (snap.status.length > 0 || !snap.head.hash) && (!visible || (headRow !== undefined && lineIndexOf(visible, headRow) >= 0))
   const offset = showWip ? 1 : 0
   const rowCount = visible ? visible.length : log.commits.length
-  const count = rowCount + offset + (log.done ? 0 : 1)
+  // More rows can still come: the history is not all loaded, and (in the line view) the line has
+  // not ended at a root commit, below which nothing belongs to it.
+  const more = !log.done && !(visible && lineEnded(log, visible))
+  const count = rowCount + offset + (more ? 1 : 0)
   /** The log row at list position `item`: -1 for the WIP row, -2 for the "Loading…" row. */
   const rowOf = (item: number): number => {
     const k = item - offset
@@ -151,9 +154,8 @@ function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
   // where its next first parent is not loaded yet, so near the end of the line it loads on (page
   // after page if it must) until the parent arrives or the history ends.
   useEffect(() => {
-    if (log.done) return
-    if (visible ? lastVisible > offset + visible.length - 50 : lastVisible > log.commits.length - 400) void loadMore(view.id)
-  }, [lastVisible, view.logVersion, view.id, log, visible, offset])
+    if (more && lastVisible > offset + rowCount - (visible ? 50 : 400)) void loadMore(view.id)
+  }, [lastVisible, view.logVersion, view.id, more, visible, offset, rowCount])
 
   /** Bisect marks on rows: what was marked good / bad / skipped, and the culprit once found. */
   const bisectMarks = useMemo(() => {
