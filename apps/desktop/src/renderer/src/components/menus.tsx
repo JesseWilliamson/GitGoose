@@ -407,6 +407,29 @@ export function GraphMenu({ repoId }: { repoId: string }) {
   )
 }
 
+/**
+ * Double-clicking a commit row where several local branches point: "Check out main", "Check out
+ * release", at the pointer. One branch (or none) needs no question and never shows this.
+ */
+export function CheckoutMenu() {
+  const choice = useStore((s) => s.checkoutChoice)
+  const active = useStore((s) => s.active)
+  if (!choice || !active) return null
+  const close = () => useStore.setState({ checkoutChoice: null })
+  return (
+    <DropdownMenu.Root open onOpenChange={(o) => !o && close()}>
+      <DropdownMenu.Trigger asChild>
+        <span style={{ position: 'fixed', left: choice.x, top: choice.y, width: 1, height: 1 }} />
+      </DropdownMenu.Trigger>
+      <DM.Content>
+        {choice.branches.map((b) => (
+          <DM.Item key={b.name} onSelect={() => { close(); void checkout(active, b.name) }}>Check out {shortRef(b)}</DM.Item>
+        ))}
+      </DM.Content>
+    </DropdownMenu.Root>
+  )
+}
+
 /** The menu that appears where a branch was dropped, offering what the drop can mean. */
 export function DropMenu() {
   const drop = useStore((s) => s.drop)

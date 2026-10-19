@@ -5,7 +5,7 @@ import clsx from 'clsx'
 import { Archive, Cloud, Laptop, Tag } from 'lucide-react'
 import { ContextMenu } from 'radix-ui'
 import { memo, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
-import { bisectMark, bisectReset, checkout, moveCommits, showAllInGraph, squashOnto } from '../lib/actions'
+import { bisectMark, bisectReset, checkout, checkoutRow, moveCommits, showAllInGraph, squashOnto } from '../lib/actions'
 import { avatarSrc, useAvatarVariant } from '../lib/avatar'
 import { authorLine, formatDate, laneColor, shortHash, stashLabel } from '../lib/format'
 import { ensureLoaded, getLog, loadMore, selectCommit, selectedHashes, selectionCursor, updateRepo, useSetting, useStore, type RepoView } from '../lib/store'
@@ -403,9 +403,19 @@ const CommitRow = memo(function CommitRow(props: {
   const rowProps = {
     'data-testid': 'commit-row',
     'data-hash': commit.hash,
-    // Shift-click would otherwise also select the text between the two rows.
-    onMouseDown: (e: React.MouseEvent) => e.shiftKey && e.preventDefault(),
-    onClick: (e: React.MouseEvent) => selectCommit(repoId, commit.hash, { range: e.shiftKey, toggle: isMac ? e.metaKey : e.ctrlKey }),
+    // Shift-click would otherwise also select the text between the two rows, and a double-click
+    // the word under the pointer.
+    onMouseDown: (e: React.MouseEvent) => (e.shiftKey || e.detail > 1) && e.preventDefault(),
+    // The second click of a double-click (detail 2) leaves the selection alone: with Ctrl or Shift
+    // held it would otherwise toggle the commit back off or grow a range.
+    onClick: (e: React.MouseEvent) => e.detail < 2 && selectCommit(repoId, commit.hash, { range: e.shiftKey, toggle: isMac ? e.metaKey : e.ctrlKey }),
+    // Check out what is here (see checkoutRow). A stash is not something to check out; the pills
+    // have their own double-click and stop it reaching the row.
+    onDoubleClick: (e: React.MouseEvent) => {
+      if (props.stash) return
+      selectCommit(repoId, commit.hash)
+      checkoutRow(repoId, commit.hash, { x: e.clientX, y: e.clientY })
+    },
     onContextMenu: (e: React.MouseEvent) => {
       // A right-click on a branch pill bubbles up to here; the pill already set the menu target.
       // (The pill must not stopPropagation: the menu's trigger is the list container above us.)
@@ -515,7 +525,12 @@ function RefPill({ pill, color, repoId, hash, onDrop }: {
         onDrop(e, ref)
       }}
       onContextMenu={() => useStore.setState({ menu: { kind: 'ref', ref, hash } })}
-      onDoubleClick={() => void checkout(repoId, ref.name)}
+      onDoubleClick={(e) => {
+        // The row's own double-click would check out the commit's branch (or ask which); the pill
+        // means this ref, so the row must not see it.
+        e.stopPropagation()
+        void checkout(repoId, ref.name)
+      }}
       title={[pill.local?.name, ...pill.remotes.map((r) => r.name), pill.tag?.name].filter(Boolean).join('\n')}
       className={clsx(
         'flex h-[18px] max-w-44 min-w-0 shrink cursor-grab items-center gap-1 rounded-[4px] px-1.5 text-[11px] font-semibold',

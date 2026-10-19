@@ -146,6 +146,13 @@ export interface DropRequest {
   target: { ref?: Ref; hash: string }
 }
 
+/** Double-click on a commit where several local branches point: which one to check out. */
+export interface CheckoutChoice {
+  x: number
+  y: number
+  branches: Ref[]
+}
+
 export type MenuTarget =
   | { kind: 'commit'; hash: string }
   | { kind: 'commits'; hashes: string[] }
@@ -174,6 +181,7 @@ interface State {
   /** What the settings page's search box starts with (the omni search opens settings this way). */
   settingsQuery: string
   drop: DropRequest | null
+  checkoutChoice: CheckoutChoice | null
   menu: MenuTarget
   /** Progress text for a clone in flight. */
   cloneProgress: string | null
@@ -195,6 +203,7 @@ export const useStore = create<State>(() => ({
   omni: null,
   settingsQuery: '',
   drop: null,
+  checkoutChoice: null,
   menu: null,
   cloneProgress: null,
   page: null,

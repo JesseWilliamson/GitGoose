@@ -24,6 +24,12 @@
   dashed line.
 - History loads as you scroll; the status bar shows "N+ commits" until it is complete.
 - Click or J/K/arrows select commits; the right panel shows details and changed files.
+- Double-click a commit row to check out what is there: the local branch that points at it, or
+  a menu at the pointer ("Check out main / Check out release") when several do, or the commit
+  itself, detached, when none does. HEAD's own row, stash rows and the WIP row ignore it. A
+  branch pill's double-click checks out that pill's branch and does not reach the row. Every path
+  is undoable, and the double-click leaves exactly that commit selected (its second click never
+  toggles or extends a selection).
 - Search (Ctrl/Cmd+F) by message, author, file path, code (pickaxe) or SHA; Enter/Shift+Enter
   step through matches, non-matches are dimmed.
 
