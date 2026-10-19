@@ -5,5 +5,7 @@
     "jsx": "react-jsx",
     "types": ["vite/client"]
   },
-  "include": ["src/renderer/src", "src/preload/types.d.ts"]
+  "include": ["src/renderer/src", "src/preload/types.d.ts"],
+  // Runs real git through @gitgoose/fixtures (Node), so tsconfig.node.json checks it.
+  "exclude": ["src/renderer/src/lib/lineView.test.ts"]
 }
