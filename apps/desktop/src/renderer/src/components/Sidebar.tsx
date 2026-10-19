@@ -7,7 +7,7 @@ import { addRemote, addWorktree, checkoutPull, hasGitHubRemote, lfsPull, lfsSetU
 import { relativeTime, stashLabel } from '../lib/format'
 import { refShown } from '../lib/graphFilter'
 import { ensureLoaded, openRepo, updateRepo, useStore, type RepoView } from '../lib/store'
-import { REF_MIME } from './Graph'
+import { REF_MIME } from '../lib/dnd'
 import { GraphMenu } from './menus'
 import { CM } from './ui'
 

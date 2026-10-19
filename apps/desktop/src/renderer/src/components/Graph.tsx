@@ -7,6 +7,7 @@ import { ContextMenu } from 'radix-ui'
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { bisectMark, bisectReset, checkout, checkoutRow, moveCommits, showAllInGraph, squashOnto } from '../lib/actions'
 import { avatarSrc, useAvatarVariant } from '../lib/avatar'
+import { COMMITS_MIME, REF_MIME } from '../lib/dnd'
 import { authorLine, formatDate, laneColor, shortHash, stashLabel } from '../lib/format'
 import { lineEnded, lineIndexOf, lineThrough } from '../lib/lineView'
 import { ensureLoaded, getLog, loadMore, selectCommit, selectedHashes, selectionCursor, setLine, updateRepo, useSetting, useStore, type RepoView } from '../lib/store'
@@ -16,9 +17,6 @@ import { GraphMenu } from './menus'
 import { Spinner } from './ui'
 
 const isMac = window.gitgoose?.platform === 'darwin'
-export const REF_MIME = 'application/x-gitgoose-ref'
-/** Commits being dragged to a new place in the branch (JSON list of hashes). */
-export const COMMITS_MIME = 'application/x-gitgoose-commits'
 /** Avatar beside the text: two lines tall, or one. */
 const AVATAR = 30
 const AVATAR_COMPACT = 18
