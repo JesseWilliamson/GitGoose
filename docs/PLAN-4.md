@@ -490,6 +490,31 @@ its view is open (plus a 10-minute idle grace), and every AI feature produces a 
   prove continuity, emits `agent_thought_chunk`, a `tool_call` with a diff and a `plan`, honours
   `session/cancel`, optionally advertises `loadSession`.
 
+**As built (5a), where reality refined the plan:**
+
+- The reducer lives in `packages/shared/src/thread.ts` and runs on both sides: main folds the
+  same `ai-update` events into the copy it saves, so the renderer's copy cannot drift from it.
+- `AiUpdate` gained three kinds: `turn` (a user message went in; the agent's turn starts),
+  `permission-answered`, and `meta` (mode and slash commands). `ThreadAnchor` gained `task` for
+  one-shot requests (commit message, push checks, conflict help), which are never saved.
+- IPC as planned, plus: `aiThreadOpen(repoId, anchor, resume?)` reopens a saved thread;
+  `aiThreadDelete(repoId, threadId)` (like `deleteAskThread`); `aiThreadPermission` answers a
+  card; `aiThreadArtifact` checks an artifact in main (the verifiers need what the feature saw,
+  which lives in main); `openExternal` opens Markdown links (http, https, mailto only).
+  `askThreads` / `saveAskThread` / `deleteAskThread` stay, as views of the ask-anchored threads.
+- One-shot requests still ask permission in the modal (their views show no thread); thread
+  turns ask inline. "Allow for this session" is remembered by GitGoose per session for the same
+  tool kind, title and input, also when the agent offers no `allow_always` option.
+- `aiThreadSend` resolves only once the turn has started: setup, consent, login, the secret scan
+  and opening or loading the session all refuse before anything is in the thread.
+- The Markdown subset is `lib/markdown.ts` (pure, unit-tested) plus `components/Markdown.tsx`,
+  not one `lib/markdown.tsx`: renderer tests cannot import modules that touch `window`.
+- `json:diagram` artifacts are the walkthrough's sequence diagram (checked by `verifySequence`)
+  until phase 6 brings dsviz and `fromSpec`. `json:commit-message` is offered by the AI panel.
+- Spec 007 had no Ask section; it has one now, pointing to spec 006.
+- The chat rails in Review, Walkthrough and Impact open from a **Chat** button: at the default
+  window size a permanent 320 px rail would leave the findings too narrow.
+
 ### 5b. GitHub Copilot as an agent
 
 Copilot CLI speaks ACP natively since 0.0.397 (`copilot --acp`, stdio NDJSON; docs:
@@ -647,6 +672,6 @@ branch since its fork point (a PR, when the branch has one). Opened from the Rev
 - [x] 2 straight lanes
 - [x] 3 line view
 - [x] 4a sidebar · [x] 4b drag-and-drop matrix
-- [ ] 5a threads · [ ] 5b Copilot
+- [x] 5a threads · [ ] 5b Copilot
 - [ ] 6a dsviz skill + extensions (2.2.0) · [ ] 6b dsviz in GitGoose
 - [ ] 7 Change Stack
