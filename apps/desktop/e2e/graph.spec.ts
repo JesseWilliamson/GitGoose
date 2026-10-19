@@ -40,6 +40,45 @@ test('keeps main in the leftmost lane whatever is checked out', async () => {
   await app.close()
 })
 
+/**   main:  A - B        topic (on B):  X - Y - Z   */
+function onTop() {
+  const r = initRepo()
+  r.commit('A', { 'a.txt': 'a\n' })
+  const B = r.commit('B', { 'b.txt': 'b\n' })
+  r.git('checkout', '-q', '-b', 'topic')
+  const topic = [r.commit('X', { 'x.txt': 'x\n' }), r.commit('Y', { 'y.txt': 'y\n' }), r.commit('Z', { 'z.txt': 'z\n' })]
+  return { r, B, topic }
+}
+
+test('a branch on top of main goes straight up instead of out to the right', async () => {
+  // topic checked out, nothing uncommitted: Z, Y, X and B are one straight line in lane 0.
+  const { r, B, topic } = onTop()
+  const { app, page } = await launch(r.dir)
+  const lane = (hash: string) => page.locator(`[data-testid="commit-row"][data-hash="${hash}"]`)
+  for (const h of [...topic, B]) await expect(lane(h)).toHaveAttribute('data-lane', '0')
+  await expect(page.getByTestId('wip-node')).toHaveCount(0)
+  // The node circles agree (laneX(0) = 18).
+  await expect(lane(topic[2]!).locator('[data-testid="commit-node"] circle').last()).toHaveAttribute('cx', '18')
+  await app.close()
+})
+
+test('with main checked out and a change, the WIP line runs beside the branch on top and joins main', async () => {
+  const { r, B, topic } = onTop()
+  r.checkout('main')
+  r.write('notes.txt', 'draft\n')
+  const { app, page } = await launch(r.dir)
+  const row = (hash: string) => page.locator(`[data-testid="commit-row"][data-hash="${hash}"]`)
+  for (const h of [...topic, B]) await expect(row(h)).toHaveAttribute('data-lane', '0')
+  // The WIP node sits above, in HEAD's lane (0); its dashed line steps to lane 1 under Z
+  // (laneX(1) = 42), runs down beside the branch and curves into B.
+  await expect(page.getByTestId('wip-node')).toHaveAttribute('data-lane', '0')
+  const dashed = (hash: string) => row(hash).locator('path[stroke-dasharray="3 4"]')
+  await expect(dashed(topic[2]!)).toHaveAttribute('d', /^M18 0C18 \d+ 42 \d+ 42 \d+$/)
+  await expect(dashed(topic[1]!)).toHaveAttribute('d', /^M42 0V\d+$/)
+  await expect(dashed(B)).toHaveAttribute('d', /^M42 0V.*H18$/)
+  await app.close()
+})
+
 test('navigates with the keyboard and shows commit details', async () => {
   const r = makeFixture('linear')
   const { app, page } = await launch(r.dir)

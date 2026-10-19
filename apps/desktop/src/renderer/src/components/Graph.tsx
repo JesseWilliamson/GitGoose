@@ -403,6 +403,7 @@ const CommitRow = memo(function CommitRow(props: {
   const rowProps = {
     'data-testid': 'commit-row',
     'data-hash': commit.hash,
+    'data-lane': row.lane,
     // Shift-click would otherwise also select the text between the two rows, and a double-click
     // the word under the pointer.
     onMouseDown: (e: React.MouseEvent) => (e.shiftKey || e.detail > 1) && e.preventDefault(),
