@@ -1,7 +1,8 @@
 import type { Row } from '@gitgoose/graph'
-import { memo } from 'react'
+import { memo, useMemo } from 'react'
 import { edgePath } from '../lib/edges'
 import { laneColor } from '../lib/format'
+import { lineEdges } from '../lib/lineView'
 
 /** Graph row height: two lines (author and refs over hash and subject), or one line when compact. */
 export const ROW_H = 52
@@ -41,7 +42,7 @@ export const cellWidth = (lanes: number) => PAD + Math.min(MAX_LANES, Math.max(M
  * `refLine` (one-line layout, where the branch pills sit in a column to the left) draws the
  * connector from the left edge to the node, so it is clear which commit a branch points at.
  */
-export const GraphCell = memo(function GraphCell({ row, width, showPending, isHead, h = ROW_H, stash, refLine }: {
+export const GraphCell = memo(function GraphCell({ row, width, showPending, isHead, h = ROW_H, stash, refLine, lineAbove, lineAboveColor = 0, lineBelow = false }: {
   row: Row
   width: number
   showPending: boolean
@@ -51,7 +52,18 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
   stash?: boolean
   /** The row has branch pills to the left: draw their connector from the left edge to the node. */
   refLine?: boolean
+  /**
+   * Set while the graph shows one line of history (lib/lineView.ts): the lane of the line's row
+   * above, or -1 at its top. The row then draws only that line (see lineEdges). Plain numbers,
+   * not an object, so the memo still skips rows whose line did not change.
+   */
+  lineAbove?: number
+  lineAboveColor?: number
+  /** In the line view: the line goes on below this commit. */
+  lineBelow?: boolean
 }) {
+  const edges = useMemo(() => (lineAbove === undefined ? row.edges : lineEdges(row, lineAbove, lineAboveColor, lineBelow)),
+    [row, lineAbove, lineAboveColor, lineBelow])
   const mid = h / 2
   // A node whose lane is past the last lane the row makes room for is left out: pinning it at
   // the edge would put a dot on top of the last visible lane's line, reading as a commit on a
@@ -65,7 +77,7 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
     <svg width={width} height={h} className="block shrink-0 overflow-hidden" aria-hidden data-node={row.merge ? 'merge' : 'commit'}
       data-offscreen={offscreen || undefined}>
       {refLine && !offscreen && <path d={`M0 ${mid}H${cx}`} stroke={color} strokeWidth={2} opacity={0.85} data-testid="ref-line" />}
-      {row.edges.map((e, i) => {
+      {edges.map((e, i) => {
         if (e.pending && !showPending) return null
         return (
           <path key={i} d={edgePath(e.part, laneX(e.from), laneX(e.to), h)} fill="none" stroke={laneColor(e.color)} strokeWidth={LINE_W}
