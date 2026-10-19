@@ -5,7 +5,8 @@ import {
 import { startReview } from './review'
 import { startWalkthrough } from './walkthrough'
 import { showImpact } from './impact'
-import { saveSettings, useStore } from './store'
+import { modName } from './keys'
+import { saveSettings, toggleLine, useStore } from './store'
 
 export interface CommandEntry {
   id: string
@@ -45,6 +46,8 @@ export function commandEntries(): CommandEntry[] {
     add('Repository', 'Add remote…', () => addRemote(id))
     add('Repository', 'Change who you commit as…', () => useStore.setState({ dialog: { kind: 'identity', repoId: id } }))
     add('Repository', 'Add worktree…', () => addWorktree(id))
+    add('Layout', active.line?.pinned ? 'Line view: show all commits' : 'Line view: show only the selected line of history',
+      () => toggleLine(id), `${modName()}+L, or hold Shift`)
     add('Repository', 'What could the uncommitted changes affect?', () => showImpact(id, { kind: 'working' }))
     if ((useStore.getState().settings?.aiProvider ?? 'off') !== 'off') {
       add('AI', 'Review uncommitted changes', () => startReview(id, { kind: 'working' }))
