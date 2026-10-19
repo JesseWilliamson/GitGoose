@@ -555,7 +555,7 @@ branch since its fork point (a PR, when the branch has one). Opened from the Rev
 1 → 2 → 3 (graph) can run first, in a day each. 4 is the largest UI piece and independent of AI.
 5a → 5b, then 6a (DiagramBuilder) → 6b, then 7, which needs 5 and 6.
 
-- [ ] 1a blue selection · [ ] 1b no month headers · [ ] 1c double-click checks out · [ ] 1d topological order
+- [x] 1a blue selection · [x] 1b no month headers · [x] 1c double-click checks out · [x] 1d topological order
 - [ ] 2 straight lanes
 - [ ] 3 line view
 - [ ] 4a sidebar · [ ] 4b drag-and-drop matrix
