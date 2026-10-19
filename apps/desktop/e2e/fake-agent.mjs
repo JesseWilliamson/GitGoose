@@ -9,6 +9,7 @@
 //   "FAKE:permission"           asks twice to run `npm test` (execute, rawInput.command), reports both answers
 //   "FAKE:slow"                 streams slowly until session/cancel stops it
 //   "FAKE:findings", "FAKE:plan" (follow-ups) revise the review / recompose plan as a json:<kind> block
+//   "FAKE:message"              suggests a commit message as a json:commit-message block
 //   a follow-up                 "Turn N. You said: <last line>." (N counts this session's turns,
 //                               plus any replayed after a restart: "(replayed K earlier turns)")
 //   "Explain"                   asks to read a file in the repo and one outside it, then explains
@@ -103,6 +104,11 @@ async function answer(id, session, text, cx) {
     const a = await run()
     const b = await run()
     await say(cx, id, `Turn ${n}. First: ${a}, second: ${b}.`)
+    return { stopReason: 'end_turn' }
+  }
+  if (text.includes('FAKE:message')) {
+    const json = JSON.stringify({ message: 'docs: say what the widgets are for\n\nThe README did not say.' })
+    await say(cx, id, `Turn ${n}. Try this:\n\n\`\`\`json:commit-message\n${json}\n\`\`\`\n`)
     return { stopReason: 'end_turn' }
   }
   if (history.length || replayed) {
