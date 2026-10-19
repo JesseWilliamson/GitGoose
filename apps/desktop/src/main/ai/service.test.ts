@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { SecretFile } from './keyStore'
 import { buildPrompt, cleanCommitMessage, MAX_DIFF_CHARS } from './prompts'
-import { AiService, previewOf } from './service'
+import { AiService, compact, previewOf } from './service'
 import { reduceThread, type AiThread, type AiUpdate } from '@gitgoose/shared'
 
 const FAKE = join(import.meta.dirname, '../../../e2e/fake-agent.mjs')
@@ -95,6 +95,9 @@ describe('AI service', () => {
     expect(api.requests[0]).toMatchObject({ model: 'claude-opus-5-5' })
     expect(api.requests[0]!.headers['x-api-key']).toBe('sk-ant-test')
     expect(api.requests[0]!.messages[0]!.content).toContain('! [rejected] main -> main')
+    // The system prompt goes on its own, not again at the top of the message.
+    expect(api.requests[0]!.system).toBe('You help people use git.')
+    expect(api.requests[0]!.messages[0]!.content).not.toContain('You help people use git.')
     expect(events.filter((e) => e.type === 'ai-text').length).toBeGreaterThan(0)
     await expect(ai.run('r4', 'x', { kind: 'resolve-conflict', path: 'a.txt' })).rejects.toMatchObject({ code: 'ai-unsupported' })
     expect(ai.agent.starts).toBe(0)
@@ -174,6 +177,31 @@ describe('threads', () => {
     expect(checked.review.dropped.map((d) => d.title)).toEqual(['Invented in chat'])
     // An artifact the anchor does not take is refused.
     expect(await t.ai.checkArtifact(thread.id, 'plan', '{}')).toMatchObject({ kind: 'problem' })
+  })
+
+  it('a feature thread nobody opens still ends its session after the idle grace', async () => {
+    const t = await setup({}, undefined, { threadIdleMs: 60 })
+    t.ai.consent()
+    const res = await t.ai.run('w1', 'x', { kind: 'review', scope: { kind: 'staged' }, profile: 'chill' }, { keepThread: true })
+    expect(t.ai.liveThreads()).toEqual([res.threadId])
+    await new Promise((ok) => setTimeout(ok, 150))
+    expect(t.ai.liveThreads()).toEqual([])
+    // Saved, so the rail can still open it later.
+    expect(t.ai.listThreads('x').map((x) => x.id)).toEqual([res.threadId])
+  })
+
+  it('saves a compact thread: a long feature answer is cut, the conversation is kept', () => {
+    const at = 1
+    let thread: AiThread = { id: 't', repoId: 'r', anchor: { kind: 'free' }, title: '', turns: [], createdAt: at, updatedAt: at, head: '' }
+    thread = reduceThread(thread, 'a', { kind: 'turn', text: 'Review', feature: 'Review', at })
+    thread = reduceThread(thread, 'a', { kind: 'text', text: 'x'.repeat(20_000) })
+    thread = reduceThread(thread, 'b', { kind: 'turn', text: 'why?', at })
+    thread = reduceThread(thread, 'b', { kind: 'text', text: 'because' })
+    const saved = compact(thread)
+    expect(saved.repoId).toBe('')
+    const feature = saved.turns[1]!.blocks[0]
+    expect(feature?.type === 'text' && feature.text.length).toBeLessThan(8_100)
+    expect(saved.turns[3]!.blocks).toEqual([{ type: 'text', text: 'because' }])
   })
 
   it('a thread permission card: "Allow for this session" answers the same question again by itself', async () => {
