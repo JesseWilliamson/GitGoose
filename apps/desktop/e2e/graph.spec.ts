@@ -1,4 +1,4 @@
-import { makeFixture, makeLargeRepo } from '@gitgoose/fixtures'
+import { initRepo, makeFixture, makeLargeRepo } from '@gitgoose/fixtures'
 import { expect, test } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { launch } from './app'
@@ -217,5 +217,32 @@ test('the selected row is tinted with the selection blue, not its lane colour, i
     expect(want).toMatch(/^rgba\(/)
     await expect.poll(() => tint.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(want)
   }
+  await app.close()
+})
+
+test('Commit order: topological keeps each branch together, and switching reloads the graph in place', async () => {
+  // main and side alternate in time: s1, m1, s2, m2, s3, m3.
+  const r = initRepo()
+  r.commit('A', { 'a.txt': 'a\n' })
+  r.checkout('-b', 'side')
+  r.checkout('main')
+  for (let i = 1; i <= 3; i++) {
+    r.checkout('side')
+    r.commit(`s${i}`, { [`s${i}.txt`]: 'x\n' })
+    r.checkout('main')
+    r.commit(`m${i}`, { [`m${i}.txt`]: 'x\n' })
+  }
+  const { app, page } = await launch(r.dir)
+  const subjects = () => page.locator('[data-testid="commit-row"] [data-testid="row-sha"] + span').allTextContents()
+  await expect.poll(subjects).toEqual(['m3', 's3', 'm2', 's2', 'm1', 's1', 'A'])
+  await page.evaluate(() => window.gitgoose.setSettings({ commitOrder: 'topo' }))
+  // Each branch in one block; which block comes first is git's choice.
+  await expect.poll(async () => (await subjects()).join(' ')).toMatch(/^(m3 m2 m1 s3 s2 s1|s3 s2 s1 m3 m2 m1) A$/)
+  // Back from the command palette.
+  await page.getByTestId('commit-row').first().click()
+  await page.keyboard.press('ControlOrMeta+p')
+  await page.getByTestId('palette-input').fill('> commit order')
+  await page.getByTestId('omni-item').filter({ hasText: 'Commit order: by date' }).click()
+  await expect.poll(subjects).toEqual(['m3', 's3', 'm2', 's2', 'm1', 's1', 'A'])
   await app.close()
 })

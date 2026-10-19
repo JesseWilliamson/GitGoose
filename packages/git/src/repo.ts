@@ -1,5 +1,5 @@
 import type {
-  BisectState, BlameLine, ChangeInsights, CodePeek, ImpactResult, ReviewScope, ImageSide, LfsInfo, LfsLock, ChangedFile, CommandRecord, GraphFilter, Identity, Person, Signature, Commit, CommitSummary, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
+  BisectState, BlameLine, ChangeInsights, CodePeek, ImpactResult, ReviewScope, ImageSide, LfsInfo, LfsLock, ChangedFile, CommandRecord, CommitOrder, GraphFilter, Identity, Person, Signature, Commit, CommitSummary, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
   LogPage, Ref, Remote, RepoOperation, ReflogEntry, RepoSnapshot, ResetMode, Resolution, SearchField, SelectionRequest,
   StashEntry, StatusEntry, Submodule, UndoEntry, Worktree,
 } from '@gitgoose/shared'
@@ -158,7 +158,7 @@ export class Repo {
     // Only trunk refs the graph walks: one it leaves out would hold lane 0 empty all the way down.
     const trunk = trunkRefs(refsOut, refs).filter((r) => graphShowsRef(r, this.filter))
     const stashes = this.showStashes ? await this.stashHashes() : []
-    const key = `${status.head.branch}|${status.head.hash}|` + refs.map((r) => `${r.name}=${r.hash}`).join(',') + `|${stashes.join(',')}|${trunk.join(',')}`
+    const key = `${this.order}|${status.head.branch}|${status.head.hash}|` + refs.map((r) => `${r.name}=${r.hash}`).join(',') + `|${stashes.join(',')}|${trunk.join(',')}`
     if (key !== this.refsKey) {
       this.refsKey = key
       this.refsVersion++
@@ -168,7 +168,7 @@ export class Repo {
     this.last = {
       id: this.id, path: this.path, name: this.name,
       head: status.head, refs, status: status.entries,
-      operation: this.operation(), refsVersion: this.refsVersion, filter: this.filter, trunk,
+      operation: this.operation(), refsVersion: this.refsVersion, filter: this.filter, trunk, order: this.order,
       bisect: existsSync(join(this.gitDir, 'BISECT_START')) ? await this.bisectState() : undefined,
     }
     return this.last
@@ -257,6 +257,19 @@ export class Repo {
     this.refsKey = ''
   }
 
+  /** The order the log lists commits in (the commitOrder setting). */
+  private order: CommitOrder = 'date'
+
+  /**
+   * Date or topological order. Like a filter change, it means a new walk: the refs key is reset,
+   * so the next snapshot bumps refsVersion and the renderer reloads the log once, from the top.
+   */
+  setCommitOrder(order: CommitOrder): void {
+    if (order === this.order) return
+    this.order = order
+    this.refsKey = ''
+  }
+
   /**
    * Stash commits, newest first, straight from the stash reflog file: no process, cheap enough
    * to read on every snapshot (dropping stash@{2} changes only the reflog, not refs/stash).
@@ -274,7 +287,7 @@ export class Repo {
     if (!this.last) await this.snapshot()
     if (!this.log) {
       const stashes = this.showStashes ? await this.stashHashes() : []
-      this.log = new LogStream(this.runner, this.graphRevs(), undefined, stashes)
+      this.log = new LogStream(this.runner, this.graphRevs(), undefined, stashes, this.order)
     }
     const generation = this.refsVersion
     const log = this.log
@@ -540,7 +553,7 @@ export class Repo {
         else refNames.set(r.hash, [r.shortName])
       }
       try {
-        return await searchLog(this.runner, this.graphRevs(), q, { refNames, signal: abort.signal })
+        return await searchLog(this.runner, this.graphRevs(), q, { refNames, signal: abort.signal, order: this.order })
       } finally {
         if (this.searching === abort) this.searching = null
       }

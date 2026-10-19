@@ -16,9 +16,12 @@ function ascii(rows: Row[]): string[] {
   })
 }
 
-function logOf(dir: string): LayoutCommit[] {
-  // Same revisions and order as the app's LogStream.
-  const out = execFileSync('git', ['log', '--topo-order', '--format=%H %P', '--branches', '--remotes', '--tags', 'HEAD', '--'],
+/** The two orders the app can walk in (Settings → Graph → Commit order); the layout must handle both. */
+const ORDERS = ['--date-order', '--topo-order'] as const
+
+function logOf(dir: string, order: (typeof ORDERS)[number] = '--date-order'): LayoutCommit[] {
+  // Same revisions and orders as the app's LogStream.
+  const out = execFileSync('git', ['log', order, '--format=%H %P', '--branches', '--remotes', '--tags', 'HEAD', '--'],
     { cwd: dir, encoding: 'utf8', maxBuffer: 1 << 30 })
   return out.split('\n').filter(Boolean).map((l) => {
     const [hash, ...parents] = l.split(' ')
@@ -166,9 +169,10 @@ describe('layout', () => {
     expect([...g2.push(commits.slice(0, 101)), ...g2.push(commits.slice(101))]).toEqual(layout(commits, opts))
   })
 
-  it.each(SHAPES.filter((s) => s !== 'empty'))('satisfies invariants on the %s fixture', (shape: Shape) => {
+  const shapesByOrder = SHAPES.filter((s) => s !== 'empty').flatMap((s) => ORDERS.map((o) => [s, o] as const))
+  it.each(shapesByOrder)('satisfies invariants on the %s fixture in %s', (shape: Shape, order) => {
     const r = makeFixture(shape)
-    const commits = logOf(r.dir)
+    const commits = logOf(r.dir, order)
     const head = r.head()
     checkInvariants(commits, layout(commits, { head }))
     const rows = layout(commits, { head })
@@ -182,8 +186,8 @@ describe('layout', () => {
     }
   })
 
-  it('satisfies invariants on a large generated history', () => {
-    const commits = logOf(makeLargeRepo(2000))
+  it.each(ORDERS)('satisfies invariants on a large generated history in %s', (order) => {
+    const commits = logOf(makeLargeRepo(2000), order)
     checkInvariants(commits, layout(commits, { head: commits[0]!.hash }))
     checkInvariants(commits, layout(commits, { head: commits[700]!.hash, trunk: [commits[3]!.hash] }))
   })

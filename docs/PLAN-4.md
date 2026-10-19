@@ -113,10 +113,16 @@ a bare commit → detached HEAD banner; double-click HEAD's row → nothing.
   interleaved branches differs between the two modes; `layout.test.ts` runs the invariants on topo
   input too (it should already, since the fixtures are permuted).
 
-The interesting idea for Jesse: `--date-order` is a heap pop (git can print as it goes), while
-`--topo-order` needs to know no unprinted commit is a child of the next one, which without extra
-information means walking everything first. Generation numbers in the commit-graph file give git
-that information cheaply, which is why writing the commit-graph matters more in topo mode.
+The interesting idea for Jesse: a plain `git log` is a heap pop on commit date (git can print as it
+goes), while `--topo-order` needs to know no unprinted commit is a child of the next one, which
+without extra information means walking everything first. Generation numbers in the commit-graph
+file give git that information cheaply.
+
+*Corrected after measuring (phase 1):* `--date-order` is not the plain heap pop. In git it is a
+topological sort with date tie-breaks, so it pays the same full walk as `--topo-order` without a
+commit-graph (614 ms vs 566 ms for the first page of 100k commits) and the same few milliseconds
+with one (9.9 ms vs 8.1 ms). Topological mode therefore costs nothing extra; the commit-graph
+matters equally in both. Details in ADR-003.
 
 ---
 

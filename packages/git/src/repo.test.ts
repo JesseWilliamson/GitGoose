@@ -79,6 +79,48 @@ describe('snapshot and log', () => {
     expect(merge.parents).toHaveLength(2)
     expect(merge.files.map((f) => f.path).sort()).toEqual(['c.txt', 'd.txt'])
   })
+
+  it('lists commits in date or topological order, and a change of order restarts the walk', async () => {
+    // Two branches whose commits alternate in time:
+    //   main:  A - m1 - m2 - m3
+    //           \
+    //   side:    s1 - s2 - s3      (s1 before m1, s2 before m2, ...)
+    const r = initRepo()
+    r.commit('A', { 'a.txt': 'a\n' })
+    r.checkout('-b', 'side')
+    r.checkout('main')
+    for (let i = 1; i <= 3; i++) {
+      r.checkout('side')
+      r.commit(`s${i}`, { [`s${i}.txt`]: 'x\n' })
+      r.checkout('main')
+      r.commit(`m${i}`, { [`m${i}.txt`]: 'x\n' })
+    }
+    const repo = await open(r)
+    const subjects = async () => (await repo.logPage(0, 100)).commits.map((c) => c.subject)
+
+    const before = await repo.snapshot()
+    expect(before.order).toBe('date')
+    // Date order: newest first, the two branches interleaved.
+    expect(await subjects()).toEqual(['m3', 's3', 'm2', 's2', 'm1', 's1', 'A'])
+
+    repo.setCommitOrder('topo')
+    const after = await repo.snapshot()
+    expect(after.order).toBe('topo')
+    // A new walk: the renderer sees a new refsVersion and reloads the log.
+    expect(after.refsVersion).toBeGreaterThan(before.refsVersion)
+    const topo = await subjects()
+    // Topological: each branch's commits together (which branch comes first is git's choice).
+    expect(topo).not.toEqual(['m3', 's3', 'm2', 's2', 'm1', 's1', 'A'])
+    expect([['m3', 'm2', 'm1', 's3', 's2', 's1', 'A'], ['s3', 's2', 's1', 'm3', 'm2', 'm1', 'A']]).toContainEqual(topo)
+
+    // Setting the same order again is not a new walk.
+    repo.setCommitOrder('topo')
+    expect((await repo.snapshot()).refsVersion).toBe(after.refsVersion)
+    repo.setCommitOrder('date')
+    await repo.snapshot()
+    expect(await subjects()).toEqual(['m3', 's3', 'm2', 's2', 'm1', 's1', 'A'])
+    repo.dispose()
+  })
 })
 
 describe('line staging (patch building)', () => {

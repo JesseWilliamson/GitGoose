@@ -23,6 +23,10 @@
   Uncommitted changes appear as a dashed node at the top in HEAD's lane, joined to HEAD by a
   dashed line.
 - History loads as you scroll; the status bar shows "N+ commits" until it is complete.
+- Settings → Graph → Commit order: date (default; newest first, branches interleaved by time) or
+  topological (each branch's commits kept together; dates run out of order). Also in View →
+  Commit Order and the command palette. Switching reloads the graph in place, without a blank
+  frame; the layout rules are the same in both.
 - Click or J/K/arrows select commits; the right panel shows details and changed files.
 - Double-click a commit row to check out what is there: the local branch that points at it, or
   a menu at the pointer ("Check out main / Check out release") when several do, or the commit
@@ -37,7 +41,8 @@
 
 - `git log --date-order --format=%H%x00%P%x00%an%x00%ae%x00%at%x00%ct%x00<co-authors>%x00%s%x1e --branches --remotes --tags HEAD --`
   streamed by `LogStream` (ADR-004), where `<co-authors>` is
-  `%(trailers:key=Co-authored-by,valueonly,unfold,separator=%x1f)`.
+  `%(trailers:key=Co-authored-by,valueonly,unfold,separator=%x1f)`. With Settings → Graph →
+  Commit order set to topological, `--topo-order` replaces `--date-order` (here and in search).
 - `git for-each-ref` with NUL-separated fields for refs; `status --porcelain=v2 -z --branch`.
 - `git commit-graph write --reachable --split` in the background when missing.
 - Search: `log --grep -F -i`, `--author -F -i`, pathspec `:(glob,icase)`, `-S`, `rev-parse --verify`.

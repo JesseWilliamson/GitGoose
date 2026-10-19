@@ -104,6 +104,13 @@ export interface StatusEntry {
   kind: 'changed' | 'renamed' | 'unmerged' | 'untracked'
 }
 
+/**
+ * The order the graph lists commits in (Settings → Graph → Commit order). Both put every child
+ * above its parents. Date: newest commit date first, branches interleaved by time. Topological:
+ * each branch's commits kept together, so dates run out of order.
+ */
+export type CommitOrder = 'date' | 'topo'
+
 export interface RepoSnapshot {
   id: string
   path: string
@@ -123,6 +130,8 @@ export interface RepoSnapshot {
   trunk: string[]
   /** Set while a bisect is running. */
   bisect?: BisectState
+  /** The order the log (and search over it) lists commits in. */
+  order: CommitOrder
 }
 
 export type ChangeKind = 'added' | 'modified' | 'deleted' | 'renamed' | 'copied' | 'typechange' | 'unmerged'
