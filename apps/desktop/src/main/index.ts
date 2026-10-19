@@ -208,7 +208,10 @@ function createWindow(): BrowserWindow {
 let lastShowStashes = getSettings().showStashes
 let lastCommitOrder = getSettings().commitOrder
 let lastCodeGraph = getSettings().codeGraph
-onSettingsChanged((settings) => {
+onSettingsChanged((settings, changed) => {
+  // Saved AI conversations are read through aiThreads, not settings: a saved turn is no reason
+  // to send every window the whole settings file (threads and all) again.
+  if (changed.size === 1 && changed.has('aiThreads')) return
   refreshCredentialEnv()
   ai.onSettings()
   if (settings.codeGraph !== lastCodeGraph) {
