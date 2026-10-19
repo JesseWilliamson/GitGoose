@@ -636,6 +636,39 @@ export function pushTo(id: string, branch: string, remote: string): void {
 export const pushBranch = (id: string, branch: string) =>
   withPushChecks(id, branch, () => void run(id, `Push ${branch}`, () => api.push(id, { branch }), { success: `Pushed ${branch}` }))
 
+/** Force-push a branch (checked out or not) with lease, after the push checks and (setting) a confirmation. */
+export function forcePushBranch(id: string, branch: string, remote?: string, remoteBranch?: string): void {
+  const go = () => void withPushChecks(id, branch, () => void run(id, `Force push ${branch}`, () => api.push(id, { branch, remote, remoteBranch, force: true }), { success: `Force-pushed ${branch}` }))
+  if (!setting('confirmForcePush')) return go()
+  confirmAction(`Force push ${branch}?`, `Overwrites ${remoteBranch ? `${remote}/${remoteBranch}` : remote ? `${branch} on ${remote}` : 'its remote branch'} with yours (with --force-with-lease, so it refuses if someone else pushed meanwhile). Undo cannot reverse changes to a remote.`, 'Force push', go)
+}
+
+/** Push a branch without an upstream to a remote, and track it there (Tower's Publish). */
+export const publishBranch = (id: string, branch: string, remote: string) =>
+  withPushChecks(id, branch, () => void run(id, `Publish ${branch}`, () => api.push(id, { branch, remote }), { success: `Published ${branch} to ${remote}` }))
+
+/** A local branch tracking a remote one, without checking it out. */
+export function trackRemoteBranch(id: string, remoteRef: string, name?: string): void {
+  const short = shortRef(remoteRef)
+  const create = (n: string) => void run(id, `Create ${n}`, async () => {
+    const created = await api.createBranch(id, n, { at: remoteRef })
+    return [created, await api.setUpstream(id, n, remoteRef)]
+  }, { success: `Created ${n} tracking ${short}` })
+  if (name) return create(name)
+  ask(`Track ${short}`, 'Local branch name', 'Create branch', (n) => create(n.trim()), { initial: short.slice(short.indexOf('/') + 1) })
+}
+
+/** Pull one remote branch into HEAD (fetches it first, like Pull). */
+export function pullRemoteBranch(id: string, remoteRef: string, rebase = false): Promise<boolean> {
+  const short = shortRef(remoteRef)
+  const slash = short.indexOf('/')
+  return run(id, `Pull ${short}`, () => api.pull(id, { remote: short.slice(0, slash), branch: short.slice(slash + 1), mode: rebase ? 'rebase' : 'merge' }), { success: `Pulled ${short}` })
+}
+
+/** Forget remote branches that were deleted on the remote (fetch --prune). */
+export const pruneRemote = (id: string, remote: string) =>
+  run(id, `Prune ${remote}`, () => api.fetch(id, { remote, prune: true }), { success: `Pruned ${remote}` })
+
 export const setUpstream = (id: string, branch: string, upstream: string | null) =>
   run(id, upstream ? `Track ${shortRef(upstream)}` : `Stop tracking for ${branch}`, () => api.setUpstream(id, branch, upstream))
 
@@ -711,6 +744,42 @@ export const soloInGraph = (id: string, ref: string) =>
   setFilter(id, (f) => ({ hidden: f.hidden.filter((r) => r !== ref), solo: [...f.solo, ref] }))
 export const unsoloInGraph = (id: string, ref: string) => setFilter(id, (f) => ({ ...f, solo: f.solo.filter((r) => r !== ref) }))
 export const showAllInGraph = (id: string) => setFilter(id, () => ({ hidden: [], solo: [] }))
+
+/**
+ * Tower's per-branch history: a click on a branch in the sidebar shows only its history, by
+ * soloing it through the graph filter. `add` (Ctrl/Cmd-click) adds it to the branches shown.
+ */
+export const showBranchHistory = (id: string, ref: string, add = false) =>
+  setFilter(id, (f) => ({ hidden: f.hidden.filter((r) => r !== ref), solo: add ? (f.solo.includes(ref) ? f.solo.filter((r) => r !== ref) : [...f.solo, ref]) : [ref] }))
+
+/** Put the graph filter back as it was (a double-click undoes the click that came before it). */
+export const restoreGraphFilter = (id: string, filter: GraphFilter) => setFilter(id, () => filter)
+
+/** Workspace ▸ History (and Esc in the sidebar): every branch again; hidden ones stay hidden. */
+export function showHistory(id: string): void {
+  const view = useStore.getState().repos[id]
+  if (view?.snapshot.filter.solo.length) setFilter(id, (f) => ({ ...f, solo: [] }))
+  updateRepo(id, (v) => ({ center: { kind: 'graph' }, selected: v.selected.kind === 'wip' && v.snapshot.head.hash ? { kind: 'commit', hash: v.snapshot.head.hash } : v.selected }))
+}
+
+/** Workspace ▸ Working Copy: the uncommitted changes, in the graph's WIP row and the commit panel. */
+export function showWorkingCopy(id: string): void {
+  updateRepo(id, { selected: { kind: 'wip' }, center: { kind: 'graph' } })
+}
+
+/** Jump to a commit in the graph without changing what it shows (Reveal in History). */
+export async function revealInHistory(id: string, hash: string): Promise<void> {
+  updateRepo(id, { selected: { kind: 'commit', hash }, center: { kind: 'graph' } })
+  await ensureLoaded(id, hash)
+}
+
+// ------------------------------------------------------------------ pins
+
+export const pinBranch = (id: string, branch: string, pin: boolean) =>
+  run(id, pin ? `Pin ${branch}` : `Unpin ${branch}`, () => api.pinBranch(id, branch, pin), { quiet: true })
+
+export const renameBranchInto = (id: string, branch: string, folder: string) =>
+  run(id, `Move ${branch} into ${folder}`, () => api.renameBranchInto(id, branch, folder))
 
 // ------------------------------------------------------------------ worktrees
 

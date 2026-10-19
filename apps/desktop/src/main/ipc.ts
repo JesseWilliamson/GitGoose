@@ -243,6 +243,7 @@ export function createHandlers(
     renameBranch: (id, from, to) => r(id).renameBranch(from, to),
     renameBranchInto: (id, branch, folder) => r(id).renameBranchInto(branch, folder),
     pinnedBranches: (id) => r(id).pins(),
+    lastFetched: (id) => r(id).lastFetched(),
     pinBranch: (id, branch, pin) => r(id).pinBranch(branch, pin),
     deleteBranch: (id, name, opts) => r(id).deleteBranch(name, opts),
     merge: (id, ref, opts) => r(id).merge(ref, opts),

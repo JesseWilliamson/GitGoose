@@ -11,6 +11,23 @@ import { DEFAULT_LAYOUT, normalizeLayout, type PaneLayout } from './layout'
  * and never appear on the page.
  */
 
+/**
+ * The sidebar's state for one repository (internal setting `sidebar`, by repository path): which
+ * sections, folders and remotes are open (only those the user changed; the rest use their
+ * default), and the gear menu's per-repository options.
+ */
+export interface SidebarPrefs {
+  open?: Record<string, boolean>
+  /** Badges: "merged" (already in HEAD) and "stale" (no commits for 90 days). Default on. */
+  merged?: boolean
+  stale?: boolean
+  /** The Reflog item in Workspace, and the stash count beside Stashes. Default on. */
+  reflog?: boolean
+  stashCount?: boolean
+  /** What a single click on a branch does: show its history (solo it in the graph), or only jump to its commit. */
+  click?: 'history' | 'reveal'
+}
+
 interface Meta {
   label: string
   section: Section
@@ -62,6 +79,14 @@ export const SETTINGS = {
     label: 'Graph layout', section: 'Appearance', keywords: 'compact density row height columns tower',
     description: 'Two-line rows: author and branches over hash and subject. One-line rows: the same graph, each commit on one shorter line, branch and tag names in a column on the left.',
   }),
+
+  sidebarFolders: bool(true, {
+    label: 'Group branches and tags in folders', section: 'Appearance', keywords: 'sidebar tree folder slash',
+    description: 'In the sidebar, names with a slash (feature/login) sit in folders. Also in the gear menu below the sidebar.',
+  }),
+  sidebarTags: choice('250', [
+    { value: '50', label: 'Newest 50' }, { value: '100', label: 'Newest 100' }, { value: '250', label: 'Newest 250' }, { value: 'all', label: 'All' },
+  ], { label: 'Tags in the sidebar', section: 'Appearance', keywords: 'sidebar tags limit', description: 'Newest first. Also View ▸ Tags. The filter box always searches all of them.' }),
 
   // ---------------------------------------------------------------- Graph
   avatars: choice('initials', [
@@ -191,6 +216,8 @@ export const SETTINGS = {
   askThreads: internal<Record<string, AskThread[]>>({}),
   /** Review learnings per repository path ("do not flag X"), from dismissed findings. */
   reviewLearnings: internal<Record<string, ReviewLearning[]>>({}),
+  /** The sidebar's open sections and gear options, per repository path (see SidebarPrefs). */
+  sidebar: internal<Record<string, SidebarPrefs>>({}),
   /** Hidden and soloed branches, per repository path (empty filters are not stored). */
   graphFilters: internal<Record<string, GraphFilter>>({}),
   /** Pane arrangement (packages/shared/src/layout.ts); repaired with normalizeLayout when read. */
