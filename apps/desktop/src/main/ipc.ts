@@ -1,6 +1,6 @@
 import { GitError, Repo, secretPushCheck } from '@gitgoose/git'
 import {
-  API_METHODS, IPC_EVENT, IPC_INVOKE,
+  API_METHODS, IPC_EVENT, IPC_INVOKE, askToThread, threadToAsk,
   type ApiMethod, type GitGooseApi, type GitGooseEvent, type IpcResult, type PushCheckPlan, type ReviewScope, type SerializedError,
 } from '@gitgoose/shared'
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
@@ -67,6 +67,8 @@ export function createHandlers(
       return snap
     },
     closeRepo: async (id) => {
+      // Its conversations end their sessions now (they stay saved).
+      ai.closeRepo(id)
       const path = await repos.close(id)
       if (path) forgetOpenRepo(path)
     },
@@ -109,6 +111,27 @@ export function createHandlers(
       return ai.run(requestId, repoId, task, opts)
     },
     aiCancel: async (requestId) => ai.cancel(requestId),
+    aiThreadOpen: (repoId, anchor, resume) => ai.openThread(repoId, anchor, resume),
+    aiThreadSend: async (threadId, text, opts) => {
+      // Ask's first answer reads the code graph, as aiRun's did; the same short wait.
+      const anchor = ai.threadAnchor(threadId)
+      if (anchor?.kind === 'ask') {
+        const rev = anchor.rev === 'worktree' ? null : anchor.rev
+        await Promise.race([codegraph.ensure(ai.threadRepo(threadId)!, rev).catch(() => {}), new Promise((r) => setTimeout(r, 3000))])
+      }
+      return ai.sendThread(threadId, text, opts)
+    },
+    aiThreadCancel: async (threadId) => ai.cancelThread(threadId),
+    aiThreadClose: async (threadId) => ai.closeThread(threadId),
+    aiThreads: async (repoId) => ai.listThreads(repoId),
+    aiThreadDelete: async (repoId, threadId) => ai.deleteThread(repoId, threadId),
+    aiThreadPermission: async (permissionId, answer) => ai.answerPermission(permissionId, answer),
+    aiThreadArtifact: (threadId, kind, json) => ai.checkArtifact(threadId, kind, json),
+    openExternal: async (url) => {
+      // Links in AI answers: web pages and mail only, never file: or app schemes.
+      if (!/^(https?:\/\/|mailto:)/i.test(url)) throw new Error('Only web links can be opened.')
+      await shell.openExternal(url)
+    },
     aiRespondPermission: async (id, optionId) => ai.respondPermission(id, optionId),
     aiAgentInfo: () => ai.agentInfo(),
     aiAuthenticate: (methodId) => ai.authenticate(methodId),
@@ -172,16 +195,10 @@ export function createHandlers(
       await codegraph.ensure(id, scopeRev(scope)).catch(() => {})
       return r(id).impact(scope)
     },
-    askThreads: async (id) => getSettings().askThreads[r(id).path] ?? [],
-    saveAskThread: async (id, thread) => {
-      const path = r(id).path
-      const list = [thread, ...(getSettings().askThreads[path] ?? []).filter((t) => t.id !== thread.id)].slice(0, 100)
-      setSettings({ askThreads: { ...getSettings().askThreads, [path]: list } })
-    },
-    deleteAskThread: async (id, threadId) => {
-      const path = r(id).path
-      setSettings({ askThreads: { ...getSettings().askThreads, [path]: (getSettings().askThreads[path] ?? []).filter((t) => t.id !== threadId) } })
-    },
+    // The Ask methods of earlier versions, over the AI threads that replaced them.
+    askThreads: async (id) => ai.listThreads(id).flatMap((t) => threadToAsk(t) ?? []),
+    saveAskThread: async (id, thread) => ai.saveThread(id, askToThread(thread, id)),
+    deleteAskThread: async (id, threadId) => ai.deleteThread(id, threadId),
     reviewLearnings: async (id) => getSettings().reviewLearnings[r(id).path] ?? [],
     pushCheckPlan: async (id, branch) => {
       const repo = r(id)

@@ -5,13 +5,16 @@ import clsx from 'clsx'
 import { DropdownMenu } from 'radix-ui'
 import { useEffect, useRef, useState } from 'react'
 import { copy, discard as discardFiles, lfsLock, lfsPatternFor, lfsTrack, openDiffTool, openInEditor, pop, restoreFileFrom, run, snapshot, stashApply, stashDrop, stashToBranch, stashWith, stashWithMessage } from '../lib/actions'
-import { cancelAi, startAi, useAiEnabled } from '../lib/ai'
+import { cancelAi, startAi, useAi, useAiEnabled } from '../lib/ai'
 import { api, toUiError } from '../lib/api'
 import { dateTime, opName, sentence, shortHash, stashLabel } from '../lib/format'
 import { avatarSrc, useAvatarVariant } from '../lib/avatar'
 import { addTrailer, isUntouched, splitTemplate } from '../lib/commitMessage'
 import { startReview } from '../lib/review'
 import { openAsk } from '../lib/ask'
+import { useThread } from '../lib/thread'
+import { Markdown } from './Markdown'
+import { Thread } from './Thread'
 import { startWalkthrough } from '../lib/walkthrough'
 import { showImpact } from '../lib/impact'
 import { chainBase, ensureLoaded, getLog, reportError, selectCommit, setting, toast, updateRepo, useSetting, useStore, type FileMode, type RepoView } from '../lib/store'
@@ -293,6 +296,19 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
   }, [id, opKey])
   /** The AI request writing the message, while it runs. */
   const [writing, setWriting] = useState<string | null>(null)
+  // A commit message applied from a chat (lib/artifacts.ts) replaces the draft; Undo puts it back.
+  const incoming = useAi((s) => (s.draft?.repoId === id ? s.draft : null))
+  useEffect(() => {
+    if (!incoming) return
+    useAi.setState({ draft: null })
+    const before = { summary, body }
+    const [first, ...rest] = incoming.message.split('\n')
+    setSummary(first ?? '')
+    setBody(rest.join('\n').trim())
+    toast({ kind: 'success', title: 'Commit message from the chat', action: { label: 'Undo', run: () => { setSummary(before.summary); setBody(before.body) } } })
+    // Only a new message matters; the draft at that moment is what Undo restores.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incoming?.nonce])
 
   const writeMessage = async () => {
     if (writing) return cancelAi(writing)
@@ -405,6 +421,19 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
         </Button>
       </div>
     </div>
+  )
+}
+
+/**
+ * Explain grows into a conversation: the explanation was the first turn of a thread, and the
+ * follow-ups go to the same agent session, so "and why not X?" needs no repeating of the diff.
+ */
+function ExplainFollowUp({ repoId, hash, threadId }: { repoId: string; hash: string; threadId: string }) {
+  const thread = useThread(repoId, { kind: 'explain', hash }, threadId)
+  if (!thread) return null
+  return (
+    <Thread thread={thread} repoId={repoId} hideFeature testids={{ root: 'explain-thread' }} placeholder="Ask a follow-up (Enter sends)"
+      className={clsx('mt-2 -mx-2 -mb-2 border-t border-line', thread.turns.some((t) => !t.feature) && 'max-h-[60vh]')} />
   )
 }
 
@@ -622,7 +651,7 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
   const [fileFilter, setFileFilter] = useState('')
   const latest = useRef(hash)
   const aiOn = useAiEnabled()
-  const [explained, setExplained] = useState<{ hash: string; text: string; requestId: string | null; error: string | null } | null>(null)
+  const [explained, setExplained] = useState<{ hash: string; text: string; requestId: string | null; error: string | null; threadId?: string } | null>(null)
   useEffect(() => {
     latest.current = hash
     const cached = detailsCache.get(hash)
@@ -653,10 +682,10 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
     const target = d.hash
     const update = (patch: Partial<NonNullable<typeof explained>>) =>
       setExplained((e) => (e && e.hash === target ? { ...e, ...patch } : e))
-    const r = startAi(view.id, { kind: 'explain-commit', hash: target }, (text) => update({ text }))
+    const r = startAi(view.id, { kind: 'explain-commit', hash: target }, (text) => update({ text }), { keepThread: true })
     setExplained({ hash: target, text: '', requestId: r.requestId, error: null })
     r.done.then(
-      (res) => (res ? update({ text: res.text, requestId: null }) : setExplained((e) => (e?.hash === target && !e.text ? null : e && { ...e, requestId: null }))),
+      (res) => (res ? update({ text: res.text, requestId: null, threadId: res.threadId }) : setExplained((e) => (e?.hash === target && !e.text ? null : e && { ...e, requestId: null }))),
       (e) => update({ requestId: null, error: toUiError(e).message }),
     )
   }
@@ -699,10 +728,11 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
                     setExplained(null)
                   }}><X size={12} /></button>
                 </div>
-                <div className="whitespace-pre-wrap" data-testid="ai-explanation-text">
-                  {explanation.text || (explanation.requestId ? <span className="flex items-center gap-2 text-muted"><Spinner /> Thinking…</span> : null)}
+                <div data-testid="ai-explanation-text">
+                  {explanation.text ? <Markdown text={explanation.text} /> : (explanation.requestId ? <span className="flex items-center gap-2 text-muted"><Spinner /> Thinking…</span> : null)}
                 </div>
                 {explanation.error && <div className="mt-1 text-xs text-del">{explanation.error}</div>}
+                {explanation.threadId && <ExplainFollowUp repoId={view.id} hash={explanation.hash} threadId={explanation.threadId} />}
               </div>
             )}
           </div>

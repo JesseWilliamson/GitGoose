@@ -16,6 +16,7 @@ import { Toolbar } from './Toolbar'
 import { Welcome } from './Welcome'
 import { toggleSlot } from './Workspace'
 import { Workspace } from './Workspace'
+import { toggleChat } from '../lib/thread'
 
 function isTyping(): boolean {
   const el = document.activeElement
@@ -73,6 +74,7 @@ function useCommands() {
         case 'reflog': return updateRepo(id, { center: { kind: 'reflog' } })
         case 'command-log': return updateRepo(id, { center: { kind: 'commands' } })
         case 'line-view': return toggleLine(id)
+        case 'ai-chat': return toggleChat(id)
         // Workspace items (the sidebar handles Stashes, Pull Requests and the current branch itself).
         case 'ws-working-copy': return showWorkingCopy(id)
         case 'ws-history': return showHistory(id)

@@ -1,5 +1,6 @@
 import type { GraphFilter } from './index'
-import type { AskThread, PushCheck, ReviewLearning } from './ai'
+import type { AiThread, PushCheck, ReviewLearning } from './ai'
+import { askToThread } from './thread'
 import { DEFAULT_LAYOUT, normalizeLayout, type PaneLayout } from './layout'
 
 /**
@@ -181,6 +182,10 @@ export const SETTINGS = {
     description: 'Used when Agent is "Custom command". It must speak the Agent Client Protocol on stdin/stdout.',
   }),
   anthropicModel: text('claude-opus-5-5', { label: 'Model (API key only)', section: 'AI', placeholder: 'claude-opus-5-5' }),
+  anthropicMaxTokens: num(8192, 1024, 64000, 1024, {
+    label: 'Longest answer (API key only)', section: 'AI', unit: 'tokens', keywords: 'max_tokens length limit',
+    description: 'The most one answer may use. Long reviews and walkthroughs need room; a lower limit costs less.',
+  }),
   /** Providers the user agreed to send content to, e.g. "agent:npx -y …" or "anthropic". */
   reviewProfile: choice('chill', [{ value: 'quiet', label: 'Quiet: only real problems' }, { value: 'chill', label: 'Chill: no nits or style' }, { value: 'assertive', label: 'Assertive: everything, nits too' }],
     { label: 'Review style', section: 'AI', keywords: 'code review findings nits coderabbit', description: 'How much AI review says. Findings are always checked against the diff before they are shown.' }),
@@ -209,11 +214,14 @@ export const SETTINGS = {
   keybindings: { kind: 'keybindings' as const, default: {} as Record<string, string>, label: 'Shortcuts', section: 'Keyboard' as const, description: 'Click a shortcut, then press the new keys. Esc cancels; Backspace restores the default.' },
 
   // ---------------------------------------------------------------- app state
-  settingsVersion: internal(3),
+  settingsVersion: internal(4),
   recentRepos: internal<string[]>([]),
   openRepos: internal<string[]>([]),
-  /** Questions asked about code, per repository path, newest first (kept to 100). */
-  askThreads: internal<Record<string, AskThread[]>>({}),
+  /**
+   * AI conversations, per repository path, most recently used first (kept to 100): Ask threads
+   * about lines, the AI panel's, and the ones under reviews, walkthroughs and the rest.
+   */
+  aiThreads: internal<Record<string, AiThread[]>>({}),
   /** Review learnings per repository path ("do not flag X"), from dismissed findings. */
   reviewLearnings: internal<Record<string, ReviewLearning[]>>({}),
   /** The sidebar's open sections and gear options, per repository path (see SidebarPrefs). */
@@ -288,7 +296,24 @@ export function migrateSettings(stored: Record<string, unknown>): Settings {
     if (s.compactRows === true && s.graphStyle === undefined) s.graphStyle = 'compact'
     delete s.compactRows
   }
-  s.settingsVersion = 3
+  if (version < 4) {
+    // v3 kept Ask's question threads on their own; they are AI threads with an ask anchor now.
+    const old = s.askThreads
+    if (old && typeof old === 'object' && !Array.isArray(old) && s.aiThreads === undefined) {
+      s.aiThreads = Object.fromEntries(Object.entries(old as Record<string, unknown>).map(([path, list]) => [
+        path,
+        (Array.isArray(list) ? list : []).flatMap((t) => {
+          try {
+            return [askToThread(t)]
+          } catch {
+            return []
+          }
+        }),
+      ]))
+    }
+    delete s.askThreads
+  }
+  s.settingsVersion = 4
   const out = defaultSettings() as Record<string, unknown>
   for (const k of Object.keys(SETTINGS)) if (k in s) out[k] = validateSetting(k as SettingKey, s[k])
   return out as Settings
