@@ -7,6 +7,7 @@ import { startWalkthrough } from './walkthrough'
 import { showImpact } from './impact'
 import { modName } from './keys'
 import { saveSettings, toggleLine, useStore } from './store'
+import { toggleChat } from './thread'
 
 export interface CommandEntry {
   id: string
@@ -50,6 +51,7 @@ export function commandEntries(): CommandEntry[] {
       () => toggleLine(id), `${modName()}+L, or hold Shift`)
     add('Repository', 'What could the uncommitted changes affect?', () => showImpact(id, { kind: 'working' }))
     if ((useStore.getState().settings?.aiProvider ?? 'off') !== 'off') {
+      add('AI', active.chat.open ? 'Hide the AI panel' : 'Chat with the AI about this repository', () => toggleChat(id), `${modName()}+Shift+A`)
       add('AI', 'Review uncommitted changes', () => startReview(id, { kind: 'working' }))
       add('AI', 'Review staged changes', () => startReview(id, { kind: 'staged' }))
       add('AI', 'Review what will be pushed', () => startReview(id, { kind: 'outgoing' }))
