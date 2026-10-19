@@ -39,3 +39,11 @@ page 2 later without redoing page 1.
 - Lanes never move sideways once open, so a long-lived branch can leave a gap when the lane to its
   left closes. Try compacting: when a lane frees up, shift lanes to its right left by one. Which
   edges now need to be diagonal `pass` edges, and does `GraphCell` draw those?
+- **Follow-up: the line view** (`apps/desktop/src/renderer/src/lib/lineView.ts`, spec 007). Holding
+  Shift shows only the line through a commit: first parents down, and up the first-parent child
+  *in the same lane*. Delete the body of `lineThrough` and rebuild it from `lineView.test.ts`.
+  The question: the walk up could pick "any child whose first parent this is". Using the
+  multiselect fixture (main: A - B, topic: X - Y - Z from A), which commit would that pick from A,
+  and why is the lane the right tie-breaker? Put differently, which rule in your layout
+  guarantees that at most one such child is in the parent's lane, and that it is the one the
+  line came down through?
