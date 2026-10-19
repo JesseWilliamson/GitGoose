@@ -32,6 +32,18 @@
  * everything and a dashed line joins it to HEAD. When HEAD is a trunk tip that lane is lane 0;
  * otherwise it is lane 1, next to the trunk. Commits above HEAD see it as taken and go further
  * right; when HEAD arrives it lands there (or in lane 0, if the trunk's line reaches it first).
+ *
+ * Those two reservations have one cost: a branch sitting on top of the trunk (or of HEAD) has its
+ * tip arrive *before* the commit the reserved lane waits for, so it would open a lane to the right
+ * and curve back in. The layout streams, so it cannot know when the tip arrives that its line will
+ * reach the trunk. Git can: the snapshot lists the tips whose first-parent chain runs straight
+ * down to the trunk tip (`straight.overTrunk`) or to HEAD (`straight.overHead`), and the layout
+ * lets such a tip continue the reserved line instead (ADR-003, "A branch on top of a reserved
+ * line continues it"):
+ *   A. A tip in overTrunk arriving while lane 0 is held takes lane 0, and the hold ends.
+ *   B. A tip in overHead arriving while HEAD's lane is still pending takes that column, and the
+ *      pending (dashed) line steps aside to the first free column on its right.
+ * And when HEAD itself is in overTrunk, its lane is lane 0 from the start, as if it were a trunk tip.
  */
 
 export interface LayoutCommit {
@@ -43,7 +55,10 @@ export type EdgePart = 'pass' | 'top' | 'bottom'
 
 export interface Edge {
   part: EdgePart
-  /** Column at the start of the line (top edge for pass/top, the node for bottom). */
+  /**
+   * Column at the start of the line (top edge for pass/top, the node for bottom). A 'pass' ends in
+   * the same column, except the pending line where rule B moves it aside (then `to` > `from`).
+   */
   from: number
   /** Column at the end of the line (bottom edge for pass/bottom, the node for top). */
   to: number
@@ -87,6 +102,19 @@ export interface LayoutOptions {
   trunk?: readonly string[]
   /** How many colours the palette has. Colour indexes cycle through 0..colors-1. */
   colors?: number
+  /** Tips that sit straight on top of the trunk or of HEAD (see the rules at the top). */
+  straight?: StraightTips
+}
+
+/**
+ * Branch tips whose first-parent chain runs straight down to a reserved line. Git works this out
+ * (`Repo.straightTips`); the layout only trusts it.
+ */
+export interface StraightTips {
+  /** Tips whose first-parent chain reaches the trunk tip. */
+  overTrunk: readonly string[]
+  /** Tips whose first-parent chain reaches HEAD. */
+  overHead: readonly string[]
 }
 
 export class GraphLayout {
@@ -94,14 +122,20 @@ export class GraphLayout {
   private colors: number
   /** While set, lane 0 is held free for the first of these commits to arrive. */
   private trunk: Set<string> | null = null
+  private overTrunk: ReadonlySet<string>
+  private overHead: ReadonlySet<string>
   /** The lane and colour of the line from the "uncommitted changes" row down to HEAD. */
   readonly headLane: number = 0
   readonly headColor: number = 0
 
   constructor(opts: LayoutOptions = {}) {
     this.colors = opts.colors ?? 8
+    this.overTrunk = new Set(opts.straight?.overTrunk)
+    this.overHead = new Set(opts.straight?.overHead)
     const trunk = opts.trunk ?? []
-    if (trunk.length && !(opts.head && trunk.includes(opts.head))) {
+    // HEAD on the trunk line (a trunk tip, or straight on top of one) shares lane 0 with it.
+    const headOnTrunk = !!opts.head && (trunk.includes(opts.head) || this.overTrunk.has(opts.head))
+    if (trunk.length && !headOnTrunk) {
       this.trunk = new Set(trunk)
       this.lanes[0] = null
     }
@@ -117,8 +151,8 @@ export class GraphLayout {
     return column % this.colors
   }
 
-  private freeSlot(exclude = -1): number {
-    for (let i = this.trunk ? 1 : 0; i < this.lanes.length; i++) if (this.lanes[i] === null && i !== exclude) return i
+  private freeSlot(exclude = -1, from = 0): number {
+    for (let i = Math.max(from, this.trunk ? 1 : 0); i < this.lanes.length; i++) if (this.lanes[i] === null && i !== exclude) return i
     return this.lanes.length
   }
 
@@ -136,25 +170,46 @@ export class GraphLayout {
     for (let i = 0; i < lanes.length; i++) if (lanes[i]?.hash === commit.hash) incoming.push(i)
 
     let lane: number
+    // Rule B moves the pending HEAD line from one column to another on this row.
+    let moved = -1
+    let movedTo = -1
+    const tip = incoming.length === 0
     if (this.trunk?.has(commit.hash)) {
       lane = 0
       this.trunk = null
+    } else if (tip && this.trunk && this.overTrunk.has(commit.hash)) {
+      // Rule A: its first-parent chain leads to the trunk tip, which will come down lane 0 anyway.
+      lane = 0
+      this.trunk = null
+    } else if (tip && this.overHead.has(commit.hash) && (moved = lanes.findIndex((l) => l?.pending)) >= 0) {
+      // Rule B: its first-parent chain leads to HEAD; it continues HEAD's column and the dashed
+      // line to HEAD steps aside.
+      lane = moved
+      movedTo = this.freeSlot(-1, moved + 1)
     } else {
       lane = incoming.length ? incoming[0]! : this.freeSlot()
     }
     const color = this.colorOf(lane)
 
-    // Lines from the top edge: either into this node, or straight past it.
+    // Lines from the top edge: either into this node, or past it (straight down, or for the
+    // pending line moved by rule B, across to its new column).
     for (let i = 0; i < lanes.length; i++) {
       const l = lanes[i]
       if (!l) continue
+      const pending = l.pending ? { pending: true } : {}
       if (l.hash === commit.hash) {
-        edges.push({ part: 'top', from: i, to: lane, color: this.colorOf(i), ...(l.pending ? { pending: true } : {}) })
+        edges.push({ part: 'top', from: i, to: lane, color: this.colorOf(i), ...pending })
+      } else if (i === moved) {
+        edges.push({ part: 'pass', from: i, to: movedTo, color: this.colorOf(movedTo), ...pending })
       } else {
-        edges.push({ part: 'pass', from: i, to: i, color: this.colorOf(i), ...(l.pending ? { pending: true } : {}) })
+        edges.push({ part: 'pass', from: i, to: i, color: this.colorOf(i), ...pending })
       }
     }
     for (const i of incoming) lanes[i] = null
+    if (movedTo >= 0) {
+      lanes[movedTo] = lanes[moved]!
+      lanes[moved] = null
+    }
 
     // 2 and 3. Hand the parents down.
     const [first, ...rest] = commit.parents

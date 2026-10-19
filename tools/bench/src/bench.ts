@@ -6,7 +6,8 @@
  *   pnpm bench --commits 20000   smaller repo for a quick run
  *
  * Three layers are timed separately so a regression points at its cause:
- *   1. git:    open the repo and read the first page of the log (LogStream)
+ *   1. git:    open the repo and read the first page of the log (LogStream), in date order and in
+ *              topological order, each without and with a commit-graph file (ADR-003)
  *   2. layout: lane layout for every commit
  *   3. app:    launch Electron, time to the first painted graph rows, then scroll fps
  */
@@ -52,17 +53,26 @@ async function main() {
 
   // 1. git layer. "Cold" is a repository without a commit-graph file; the app writes one in
   // the background (ADR-004), after which every log walk is "warm".
+  // Topological order is timed both ways too: without generation numbers git must walk all of
+  // history before it can print the first commit; with them it walks in increments.
   for (const f of ['commit-graph', 'commit-graphs']) rmSync(join(cache, '.git/objects/info', f), { recursive: true, force: true })
-  const cold = await Repo.open(cache)
-  await cold.snapshot()
-  const [, coldFirstPageMs] = await time(() => cold.logPage(0, 300))
-  cold.dispose()
+  const firstPage = async (order: Parameters<Repo['setCommitOrder']>[0]) => {
+    const r = await Repo.open(cache)
+    r.setCommitOrder(order)
+    await r.snapshot()
+    const [, ms] = await time(() => r.logPage(0, 300))
+    r.dispose()
+    return ms
+  }
+  const coldFirstPageMs = await firstPage('date')
+  const coldTopoFirstPageMs = await firstPage('topo')
   const repo = await Repo.open(cache)
   await repo.maintainCommitGraph()
   await repo.snapshot()
   const [, firstPageMs] = await time(() => repo.logPage(0, 300))
   const [all, fullLogMs] = await time(() => repo.logPage(0, 10_000_000))
   repo.dispose()
+  const topoFirstPageMs = await firstPage('topo')
 
   // 2. layout
   const head = all.commits[0]?.hash
@@ -105,6 +115,8 @@ async function main() {
     maxLanes,
     coldFirstPageMs: round(coldFirstPageMs),
     firstPageMs: round(firstPageMs),
+    coldTopoFirstPageMs: round(coldTopoFirstPageMs),
+    topoFirstPageMs: round(topoFirstPageMs),
     fullLogMs: round(fullLogMs),
     layoutAllMs: round(layoutAllMs),
     appFirstPaintMs: round(appFirstPaintMs),
@@ -120,6 +132,8 @@ async function main() {
   if (flag('--check')) {
     const failures: string[] = []
     if (results.firstPageMs > BUDGET.firstPageMs) failures.push(`first log page ${results.firstPageMs} ms > ${BUDGET.firstPageMs} ms`)
+    // With the commit-graph the app writes, topological order must start as fast as date order.
+    if (results.topoFirstPageMs > BUDGET.firstPageMs) failures.push(`first log page, topological ${results.topoFirstPageMs} ms > ${BUDGET.firstPageMs} ms`)
     if (results.layoutAllMs > BUDGET.layoutAllMs) failures.push(`layout ${results.layoutAllMs} ms > ${BUDGET.layoutAllMs} ms`)
     if (results.appFirstPaintMs > BUDGET.appFirstPaintMs) failures.push(`app first paint ${results.appFirstPaintMs} ms > ${BUDGET.appFirstPaintMs} ms`)
     // Scrolling must keep up with what the machine can draw at all, minus a little slack.
