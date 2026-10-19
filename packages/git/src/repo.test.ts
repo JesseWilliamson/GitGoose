@@ -911,6 +911,17 @@ describe('drag-and-drop operations (PLAN-4 phase 4)', () => {
     expect((await repo.pins()).sort()).toEqual(['feature', 'later/wip'])
   })
 
+  it('knows when the repository last fetched (null before the first fetch)', async () => {
+    const r = makeFixture('with-remote')
+    const repo = await open(r)
+    // A fresh clone has no FETCH_HEAD yet.
+    expect(await repo.lastFetched()).toBeNull()
+    r.git('fetch', '-q')
+    const t = await repo.lastFetched()
+    expect(t).not.toBeNull()
+    expect(Math.abs(t! - Date.now() / 1000)).toBeLessThan(60)
+  })
+
   it('squashes onto a commit as a fixup, keeping the target\'s message', async () => {
     const r = initRepo()
     r.commit('one', { '1.txt': '1\n' })
