@@ -1,3 +1,5 @@
+import type { CommitOrder } from '@gitgoose/shared'
+import { orderFlag } from './log'
 import type { GitRunner } from './runner'
 
 /**
@@ -22,6 +24,8 @@ export interface LogSearchOptions {
   /** Stop after this many hits (the UI cannot use more). */
   limit?: number
   signal?: AbortSignal
+  /** The graph's order, so hits step through it top to bottom. */
+  order?: CommitOrder
 }
 
 /** Does a commit match? Exported for tests and for anything that already has the fields. */
@@ -38,7 +42,7 @@ export function searchLog(runner: GitRunner, revs: string[], query: string, opts
   const limit = opts.limit ?? 5000
   return new Promise((resolve, reject) => {
     if (!query.trim() || opts.signal?.aborted) return resolve([])
-    const child = runner.spawn(['log', '--date-order', `--format=${FORMAT}`, ...revs, '--'], { readOnly: true })
+    const child = runner.spawn(['log', orderFlag(opts.order ?? 'date'), `--format=${FORMAT}`, ...revs, '--'], { readOnly: true })
     const hits: string[] = []
     let buf = ''
     let stderr = ''

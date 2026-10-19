@@ -188,6 +188,22 @@ export const checkout = (id: string, ref: string) =>
     },
   })
 
+/**
+ * Double-click on a commit row: check out what is there. A local branch at the commit is what
+ * you almost always mean, so that wins over a detached checkout; several branches ask which one
+ * (a menu at the pointer, `at`); none checks the commit out detached. HEAD's own commit does
+ * nothing. Every path goes through checkout(), so each is undoable and offers the stash when local
+ * changes are in the way.
+ */
+export function checkoutRow(id: string, hash: string, at: { x: number; y: number }): void {
+  const snap = useStore.getState().repos[id]?.snapshot
+  if (!snap || hash === snap.head.hash) return
+  const locals = snap.refs.filter((r) => r.kind === 'local' && r.hash === hash)
+  if (locals.length === 1) void checkout(id, locals[0]!.name)
+  else if (locals.length > 1) useStore.setState({ checkoutChoice: { ...at, branches: locals } })
+  else void checkout(id, hash)
+}
+
 export function newBranch(id: string, at?: string): void {
   ask('New branch', 'Branch name', 'Create and check out', (name) => {
     void run(id, `Create branch ${name}`, () => api.createBranch(id, name.trim(), { at, checkout: true }))

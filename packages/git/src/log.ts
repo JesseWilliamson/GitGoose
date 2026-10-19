@@ -1,4 +1,4 @@
-import type { Commit, GraphFilter, Person } from '@gitgoose/shared'
+import type { Commit, CommitOrder, GraphFilter, Person } from '@gitgoose/shared'
 import type { ChildProcess } from 'node:child_process'
 import type { GitRunner } from './runner'
 
@@ -94,6 +94,20 @@ export class LogParser {
   }
 }
 
+/**
+ * git's flag for a commit order. Both never print a parent above one of its children, which is
+ * all the lane layout needs. --date-order is newest commit date first, as most git clients
+ * show it. --topo-order keeps each branch's commits in one block, so dates jump up and down.
+ *
+ * Both are topological sorts in git (date order only breaks ties by date), so both must be sure
+ * no unprinted commit is a child of the next one before printing it. Without generation numbers
+ * (the commit-graph file) that means walking all of history first; with them, the first page is
+ * as quick as a plain `git log`. Measured in ADR-003.
+ */
+export function orderFlag(order: CommitOrder): string {
+  return order === 'topo' ? '--topo-order' : '--date-order'
+}
+
 /** The revisions the graph shows: every branch, remote branch and tag, plus HEAD (detached or not). */
 export const GRAPH_REVS = ['--branches', '--remotes', '--tags', 'HEAD']
 
@@ -150,6 +164,7 @@ export class LogStream {
     private readAhead = 2000,
     /** Stash commits to show in the graph, each attached to the commit it was made on. */
     stashes: string[] = [],
+    private order: CommitOrder = 'date',
   ) {
     this.stashSet = new Set(stashes)
     this.revs = [...revs, ...stashes]
@@ -173,10 +188,7 @@ export class LogStream {
 
   private start(): void {
     const child = this.runner.spawn(
-      // Date order, as most git clients show it: newest commit date first, never a parent
-      // above one of its children. Topological order would keep each branch in one block but
-      // send the dates up and down the list.
-      ['log', '--date-order', `--format=${LOG_FORMAT}`, ...this.revs, '--'],
+      ['log', orderFlag(this.order), `--format=${LOG_FORMAT}`, ...this.revs, '--'],
       { readOnly: true },
     )
     this.child = child

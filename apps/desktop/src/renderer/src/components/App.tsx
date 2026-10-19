@@ -6,7 +6,7 @@ import { closeTab, onCommand, runCommand, updateRepo, saveSettings, setting, use
 import { AttentionBar } from './AttentionBar'
 import { OmniSearch } from './OmniSearch'
 import { Dialogs, PromptDialog, Toasts } from './Dialogs'
-import { DropMenu } from './menus'
+import { CheckoutMenu, DropMenu } from './menus'
 import { SettingsPage } from './SettingsPage'
 import { AiDialogs } from './AiDialogs'
 import { StatusBar } from './StatusBar'
@@ -37,6 +37,8 @@ function useCommands() {
         case 'zoom-in': return void saveSettings({ uiScale: setting('uiScale') + 0.1 })
         case 'zoom-out': return void saveSettings({ uiScale: setting('uiScale') - 0.1 })
         case 'zoom-reset': return void saveSettings({ uiScale: 1 })
+        case 'commit-order-date': return void saveSettings({ commitOrder: 'date' })
+        case 'commit-order-topo': return void saveSettings({ commitOrder: 'topo' })
         case 'toggle-graph-style': return void saveSettings({ graphStyle: setting('graphStyle') === 'compact' ? 'comfortable' : 'compact' })
         case 'toggle-sidebar': return toggleSlot('left')
         case 'toggle-details': return toggleSlot('right')
@@ -132,6 +134,7 @@ export function App() {
       <AiDialogs />
       <PromptDialog />
       <DropMenu />
+      <CheckoutMenu />
       <Toasts />
     </div>
   )

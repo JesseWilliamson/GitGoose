@@ -67,6 +67,13 @@ export function installMenu(): void {
         { label: 'Hide Side Panels', click: cmd('layout-wide-graph') },
         { label: 'Reset Panel Sizes', click: cmd('layout-default') },
         { label: 'Toggle Compact Graph', click: cmd('toggle-graph-style') },
+        {
+          label: 'Commit Order',
+          submenu: [
+            { label: 'By Date', click: cmd('commit-order-date') },
+            { label: 'Topological', click: cmd('commit-order-topo') },
+          ],
+        },
         { type: 'separator' },
         { label: 'Git Command Log', click: cmd('command-log') },
         { type: 'separator' },

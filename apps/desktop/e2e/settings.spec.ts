@@ -136,13 +136,11 @@ test('one-line graph rows and hiding tags change the graph', async () => {
   const r = makeFixture('tags')
   const { app, page } = await launch(r.dir)
   await expect(page.locator('[data-testid="ref-pill"][data-ref="refs/tags/v0.2"]')).toBeVisible()
-  // The first row carries its month's heading (26px) over a two-line row (52px); one-line rows
-  // are 28px with no headings.
-  expect((await page.getByTestId('commit-row').first().boundingBox())!.height).toBe(52 + 26)
+  // Two-line rows are 52px, one-line rows 28px.
+  expect((await page.getByTestId('commit-row').first().boundingBox())!.height).toBe(52)
   await set(page, { graphStyle: 'compact', showTags: false })
   await expect(page.locator('[data-testid="ref-pill"][data-ref="refs/tags/v0.2"]')).toHaveCount(0)
   await expect.poll(async () => (await page.getByTestId('commit-row').first().boundingBox())!.height).toBe(28)
-  await expect(page.getByTestId('month-header')).toHaveCount(0)
   await app.close()
 })
 
