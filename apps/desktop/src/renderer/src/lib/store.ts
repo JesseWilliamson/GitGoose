@@ -282,7 +282,9 @@ function emptyLog(snap: RepoSnapshot | undefined, generation: number): LogData {
   // The trunk (main, origin/main) keeps the leftmost lane, so a checkout does not move it.
   const trunk = snap ? snap.refs.filter((r) => snap.trunk.includes(r.name)).map((r) => r.hash) : []
   return {
-    commits: [], rows: [], index: new Map(), layout: new GraphLayout({ head: snap?.head.hash, trunk }),
+    commits: [], rows: [], index: new Map(),
+    // Branches on top of the trunk or HEAD continue its lane (git worked out which, see straightTips).
+    layout: new GraphLayout({ head: snap?.head.hash, trunk, straight: snap?.graph.straight }),
     generation, done: false, loading: null, maxWidth: 1,
   }
 }

@@ -1,7 +1,7 @@
 import type {
   BisectState, BlameLine, ChangeInsights, CodePeek, ImpactResult, ReviewScope, ImageSide, LfsInfo, LfsLock, ChangedFile, CommandRecord, CommitOrder, GraphFilter, Identity, Person, Signature, Commit, CommitSummary, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
   LogPage, Ref, Remote, RepoOperation, ReflogEntry, RepoSnapshot, ResetMode, Resolution, SearchField, SelectionRequest,
-  StashEntry, StatusEntry, Submodule, UndoEntry, Worktree,
+  StashEntry, StatusEntry, StraightTips, Submodule, UndoEntry, Worktree,
 } from '@gitgoose/shared'
 import { countConflicts } from '@gitgoose/shared'
 import { existsSync } from 'node:fs'
@@ -47,6 +47,20 @@ function diffArgs(opts: DiffOptions = {}): string[] {
 }
 
 let nextRepoId = 1
+
+/**
+ * At most this many tips are checked for sitting straight on the trunk or HEAD, each with one
+ * bounded rev-list. Real repositories have a handful; past this many the rest draw as before.
+ */
+const MAX_STRAIGHT_CANDIDATES = 64
+
+/** Whether `git version` output names a git with `%(ahead-behind:...)` in for-each-ref (2.41+). */
+export function supportsAheadBehind(version: string): boolean {
+  const m = /git version (\d+)\.(\d+)/.exec(version)
+  if (!m) return false
+  const [major, minor] = [Number(m[1]), Number(m[2])]
+  return major > 2 || (major === 2 && minor >= 41)
+}
 
 /**
  * One open repository. Reads run concurrently; anything that writes goes through `exclusive`,
@@ -158,7 +172,19 @@ export class Repo {
     // Only trunk refs the graph walks: one it leaves out would hold lane 0 empty all the way down.
     const trunk = trunkRefs(refsOut, refs).filter((r) => graphShowsRef(r, this.filter))
     const stashes = this.showStashes ? await this.stashHashes() : []
-    const key = `${this.order}|${status.head.branch}|${status.head.hash}|` + refs.map((r) => `${r.name}=${r.hash}`).join(',') + `|${stashes.join(',')}|${trunk.join(',')}`
+    // Which tips sit straight on top of the trunk or HEAD depends only on the refs, HEAD and the
+    // trunk, so it is worked out again only when those change (it walks history) and is part of
+    // the key: a change relayouts the graph.
+    const shapeKey = `${status.head.hash}|` + refs.map((r) => `${r.name}=${r.hash}`).join(',') + `|${trunk.join(',')}`
+    if (shapeKey !== this.straightKey) {
+      const trunkTips = refs.filter((r) => trunk.includes(r.name)).map((r) => r.hash)
+      // Only a hint for drawing: if it fails, the graph draws as it would without it.
+      this.straight = await this.straightTips(trunkTips, status.head.hash).catch(() => ({ overTrunk: [], overHead: [] }))
+      this.straightKey = shapeKey
+    }
+    const straight = this.straight
+    const key = `${this.order}|${status.head.branch}|${status.head.hash}|` + refs.map((r) => `${r.name}=${r.hash}`).join(',') + `|${stashes.join(',')}|${trunk.join(',')}` +
+      `|${straight.overTrunk.join(',')}|${straight.overHead.join(',')}`
     if (key !== this.refsKey) {
       this.refsKey = key
       this.refsVersion++
@@ -169,9 +195,82 @@ export class Repo {
       id: this.id, path: this.path, name: this.name,
       head: status.head, refs, status: status.entries,
       operation: this.operation(), refsVersion: this.refsVersion, filter: this.filter, trunk, order: this.order,
+      graph: { straight },
       bisect: existsSync(join(this.gitDir, 'BISECT_START')) ? await this.bisectState() : undefined,
     }
     return this.last
+  }
+
+  private straight: StraightTips = { overTrunk: [], overHead: [] }
+  private straightKey: string | null = null
+  private aheadBehind: Promise<boolean> | null = null
+
+  /**
+   * The branch tips whose first-parent chain runs straight down to the trunk tip, or to HEAD, so
+   * the graph can draw them continuing that lane instead of opening one to the right (ADR-003, "A
+   * branch on top of a reserved line continues it"). The layout streams and cannot know this when
+   * a tip arrives; git can, cheaply:
+   *
+   * 1. One for-each-ref over refs/heads and refs/remotes prints, for every ref, how far ahead of
+   *    and behind each base it is (`%(ahead-behind:<base>)`, git 2.41+; one walk for all refs).
+   *    A ref that is not behind and is ahead is a candidate: it contains the base.
+   * 2. Containing the base is not enough: a branch that merged main contains main, but its own
+   *    line (first parents) never reaches it. For each candidate, `rev-list --first-parent` over
+   *    at most ahead + 1 commits must meet the base. Candidates are branches not merged yet, so
+   *    they are few, and each check is bounded by the branch's own length.
+   *
+   * `trunkTips` are the hashes of the trunk refs (main, origin/main). When they differ, the base
+   * is the one that contains the others (the newest); if they have diverged there is none, and
+   * overTrunk is empty. Older git returns empty lists: the graph draws as it did before.
+   */
+  async straightTips(trunkTips: readonly string[], head: string | undefined): Promise<StraightTips> {
+    const none: StraightTips = { overTrunk: [], overHead: [] }
+    // The bases go inside a --format atom: take nothing there but a commit hash.
+    const isHash = (h: string | undefined): h is string => !!h && /^[0-9a-f]{40,64}$/.test(h)
+    const trunks = [...new Set(trunkTips)].filter(isHash)
+    if (!isHash(head)) head = undefined
+    const bases = [...new Set([...trunks, ...(head ? [head] : [])])]
+    if (!bases.length || !(await this.hasAheadBehind())) return none
+    const out = await this.read(['for-each-ref', `--format=%(refname)%00%(objectname)${bases.map((b) => `%00%(ahead-behind:${b})`).join('')}`,
+      'refs/heads', 'refs/remotes'])
+    // For each tip hash, ahead/behind against each base.
+    const tips = new Map<string, { ahead: number; behind: number }[]>()
+    for (const line of out.split('\n')) {
+      const [name, hash, ...ab] = line.split('\x00')
+      if (!name || !hash || name.endsWith('/HEAD') || tips.has(hash)) continue
+      tips.set(hash, ab.map((s) => {
+        const [ahead = NaN, behind = NaN] = s.split(' ').map(Number)
+        return { ahead, behind }
+      }))
+    }
+    const over = (tip: string, base: string) => {
+      const r = tips.get(tip)?.[bases.indexOf(base)]
+      return r && r.behind === 0 && r.ahead > 0 ? r.ahead : 0
+    }
+    // The trunk tip: the trunk ref that contains all the others.
+    const trunk = trunks.find((t) => tips.has(t) && trunks.every((u) => u === t || over(t, u) > 0))
+
+    const checks: { tip: string; trunk: number; head: number }[] = []
+    for (const tip of tips.keys()) {
+      const c = { tip, trunk: trunk ? over(tip, trunk) : 0, head: head ? over(tip, head) : 0 }
+      if (c.trunk || c.head) checks.push(c)
+    }
+    const result: StraightTips = { overTrunk: [], overHead: [] }
+    await Promise.all(checks.slice(0, MAX_STRAIGHT_CANDIDATES).map(async (c) => {
+      const chain = (await this.read(['rev-list', '--first-parent', '-n', String(Math.max(c.trunk, c.head) + 1), c.tip, '--'])).split('\n')
+      if (c.trunk && chain.slice(0, c.trunk + 1).includes(trunk!)) result.overTrunk.push(c.tip)
+      if (c.head && chain.slice(0, c.head + 1).includes(head!)) result.overHead.push(c.tip)
+    }))
+    // Stable order, so the refs key does not change with the order the checks finish in.
+    result.overTrunk.sort()
+    result.overHead.sort()
+    return result
+  }
+
+  /** `%(ahead-behind:...)` arrived in git 2.41. Asked once per repository. */
+  private hasAheadBehind(): Promise<boolean> {
+    this.aheadBehind ??= this.read(['version']).then(supportsAheadBehind, () => false)
+    return this.aheadBehind
   }
 
   get lastSnapshot(): RepoSnapshot | null {

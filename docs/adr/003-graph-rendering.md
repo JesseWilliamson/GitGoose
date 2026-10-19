@@ -5,7 +5,7 @@
 ## Decision
 
 - Layout (`packages/graph`) is a pure, incremental lane assignment over commits in topological
-  order (date or topological, see "Commit order" below), with lane 0 kept for the main line (see "Lane 0 is the trunk" below; it used to be HEAD's). Output per row: node lane, colour, and edges split
+  order (date or topological, see "Commit order" below), with lane 0 kept for the main line (see "Lane 0 is the trunk" below; it used to be HEAD's), which a branch on top of it continues (see the last section). Output per row: node lane, colour, and edges split
   at the node into `pass`, `top` and `bottom` parts.
 - Rendering is a virtualized list (`@tanstack/react-virtual`). Each visible row draws its own
   small SVG from its edges. Only ~40 rows exist in the DOM at any time.
@@ -93,3 +93,58 @@ almost exactly as fast as the plain walk. GitGoose writes the commit-graph in th
 repository lacks one (ADR-004), so the slow column only applies to the first open of a repository
 without one. `bench --check` now also holds topological order with a commit-graph to the
 first-page budget.
+
+## A branch on top of a reserved line continues it (added in Plan 4, phase 2)
+
+The two reservations above (lane 0 held for the trunk, HEAD's lane seeded at the top) have a cost.
+A branch sitting on top of main has its tip arrive *before* main's tip, while lane 0 is still
+held, so it opened a lane to the right and curved back into lane 0 at main's tip:
+
+```
+ before           after
+ │ ╭─● Z          ● Z   topic
+ │ │ ● Y          ● Y
+ │ │ ● X          ● X
+ ●─╯   B main     ● B   main
+ ●     A          ● A
+```
+
+Tower draws the right-hand picture because it reserves nothing. We keep the reservations (a
+checkout must not reshuffle the graph) and add one exception, driven by git:
+
+- **Git says which tips are straight over a reserved line.** When the refs change, `Repo.straightTips`
+  runs one `for-each-ref` with `%(ahead-behind:<trunk tip>)` and `%(ahead-behind:<HEAD>)` (git
+  2.41+, one walk for all refs). A branch not behind and ahead contains the base; a bounded
+  `rev-list --first-parent -n <ahead+1>` then checks its own line actually runs down to it (a
+  branch that merged main contains main without its first parents ever reaching it). The tip
+  hashes go on the snapshot as `graph.straight: { overTrunk, overHead }`, and into the refs key.
+- **The layout honours it** (`LayoutOptions.straight`):
+  - *Rule A.* A tip (no lane waits for it) in `overTrunk` arriving while lane 0 is held takes lane
+    0 and the hold ends. Its first-parent chain brings the line down to the trunk tip in lane 0.
+    A second such tip finds lane 0 taken and curves in as before.
+  - *Rule B.* A tip in `overHead` arriving while HEAD's lane is still pending takes that column;
+    the pending (dashed) line steps aside to the first free column on its right, with a `pass`
+    edge on that row whose `to` differs from its `from`. That is the only diagonal pass the layout
+    emits; `edgePath` draws it as an S-curve that clears the node.
+  - When HEAD itself is in `overTrunk` (topic checked out, on top of main), HEAD's lane is lane 0
+    from the top, as when HEAD is a trunk tip: one straight line from the WIP row to the trunk.
+  - When HEAD is a trunk tip, rules A and B pick the same tip: lane 0 for the branch, and the
+    dashed line steps to lane 1 and curves into HEAD.
+- Without hints (older git, no trunk, no HEAD commit) the layout is exactly what it was.
+
+The trunk tip is the trunk ref that contains the others (origin/main one ahead of main: origin/main).
+If main and origin/main have diverged there is no such line, and `overTrunk` is empty.
+
+**Rejected: inferring it in the layout.** The layout streams. When Z arrives nobody knows whether
+its line will reach B. A bounded retroactive fix is possible: when B arrives with exactly one
+incoming lane k and lane 0 still held, rename lane k to lane 0 on every row since that lane's tip.
+It needs no git at all, but it edits rows that are already on screen (and in the virtualized
+list's memoized rows), spans page boundaries, and breaks the property that pushing page 2 never
+changes page 1, which the paging-equivalence test and the renderer's swap-in both rely on. One
+extra `for-each-ref`, run only when the refs change, is simpler and deterministic, and the layout
+stays a pure single pass. The cost is one walk per ref change; candidates are branches not yet
+merged, so the `rev-list` checks are few and each is bounded by its branch's length (at most 64
+are checked).
+
+Both lists are verified with the first-parent check, so a hint always means "this is one line".
+(Whether rule B strictly needs it is the question in `docs/learn/07-straight-lanes.md`.)

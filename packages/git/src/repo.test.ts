@@ -5,7 +5,7 @@ import { basename, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { AskpassServer, isSecretPrompt } from './askpass'
 import { buildPatch } from './patch'
-import { Repo } from './repo'
+import { Repo, supportsAheadBehind } from './repo'
 import { resolveBlocks } from '@gitgoose/shared'
 
 const open = (r: FixtureRepo) => Repo.open(r.dir, { env: r.env() as Record<string, string> })
@@ -648,5 +648,128 @@ describe('askpass', () => {
   it('classifies prompts', () => {
     expect(isSecretPrompt("Enter passphrase for key '/home/a/.ssh/id_ed25519': ")).toBe(true)
     expect(isSecretPrompt('Are you sure you want to continue connecting (yes/no/[fingerprint])? ')).toBe(false)
+  })
+})
+
+describe('straight tips (a branch on top of the trunk or HEAD continues its lane)', () => {
+  /** main: A-B. */
+  function base() {
+    const r = initRepo()
+    const A = r.commit('A', { 'a.txt': 'a\n' })
+    const B = r.commit('B', { 'b.txt': 'b\n' })
+    return { r, A, B }
+  }
+  const straight = async (r: FixtureRepo) => (await (await open(r)).snapshot()).graph.straight
+
+  it('knows which git versions have %(ahead-behind)', () => {
+    expect(supportsAheadBehind('git version 2.41.0')).toBe(true)
+    expect(supportsAheadBehind('git version 2.47.1.windows.1')).toBe(true)
+    expect(supportsAheadBehind('git version 3.0.0')).toBe(true)
+    expect(supportsAheadBehind('git version 2.40.1')).toBe(false)
+    expect(supportsAheadBehind('git version 1.9.5')).toBe(false)
+    expect(supportsAheadBehind('not git')).toBe(false)
+  })
+
+  it('lists a branch on top of main, over the trunk and over HEAD', async () => {
+    const { r } = base()
+    r.checkout('-b', 'topic')
+    r.commit('X'); r.commit('Y')
+    const Z = r.commit('Z')
+    r.checkout('main')
+    expect(await straight(r)).toEqual({ overTrunk: [Z], overHead: [Z] })
+    // Checked out, topic is HEAD itself: still over the trunk, and nothing is over HEAD.
+    r.checkout('topic')
+    expect(await straight(r)).toEqual({ overTrunk: [Z], overHead: [] })
+  })
+
+  it('leaves out a branch that merged main: it contains main, but its own line never reaches it', async () => {
+    const { r, A } = base()
+    r.checkout('-b', 'topic', A)
+    r.commit('X', { 'x.txt': 'x\n' })
+    r.merge('main')
+    expect(r.git('rev-list', '--count', 'topic..main').trim()).toBe('0') // behind = 0: a candidate
+    r.checkout('main')
+    expect(await straight(r)).toEqual({ overTrunk: [], overHead: [] })
+  })
+
+  it('leaves out a branch behind main, and a branch beside it', async () => {
+    const { r, A } = base()
+    r.git('branch', 'old', A)
+    r.checkout('-b', 'side', A)
+    r.commit('S', { 's.txt': 's\n' })
+    r.checkout('main')
+    expect(await straight(r)).toEqual({ overTrunk: [], overHead: [] })
+  })
+
+  it('lists every branch on top of main, local and remote', async () => {
+    const { r, B } = base()
+    const tips: string[] = []
+    for (const name of ['one', 'two', 'three']) {
+      r.checkout('-b', name, B)
+      tips.push(r.commit(name))
+    }
+    r.git('update-ref', 'refs/remotes/origin/one', tips[0]!)
+    // A branch on top of another one is on top of main too.
+    r.checkout('-b', 'four', 'one')
+    tips.push(r.commit('four'))
+    r.checkout('main')
+    const s = await straight(r)
+    expect(s.overTrunk).toEqual([...tips].sort())
+    expect(s.overHead).toEqual([...tips].sort())
+  })
+
+  it('takes the newest trunk ref as the trunk tip, and gives up when they have diverged', async () => {
+    const { r, B } = base()
+    const O = r.commit('O on origin/main')
+    r.git('update-ref', 'refs/remotes/origin/main', O)
+    r.git('reset', '-q', '--hard', B) // main is one behind origin/main
+    r.checkout('-b', 'onOrigin', O)
+    const T = r.commit('T')
+    r.checkout('-b', 'onMain', B)
+    const U = r.commit('U')
+    r.checkout('main')
+    // onMain sits on main (HEAD) but not on the trunk line, which runs through origin/main.
+    expect(await straight(r)).toEqual({ overTrunk: [T], overHead: [O, T, U].sort() })
+    // Diverged: main gets a commit origin/main does not have. No trunk tip, so no overTrunk.
+    r.commit('D')
+    expect((await straight(r)).overTrunk).toEqual([])
+  })
+
+  it('works with HEAD detached, and with an unborn HEAD', async () => {
+    const { r } = base()
+    r.checkout('-b', 'topic')
+    const X = r.commit('X')
+    const Y = r.commit('Y')
+    r.checkout('--detach', X)
+    // HEAD is X (no branch there): topic is on top of it and of main.
+    expect(await straight(r)).toEqual({ overTrunk: [Y], overHead: [Y] })
+
+    const empty = initRepo()
+    expect(await straight(empty)).toEqual({ overTrunk: [], overHead: [] })
+  })
+
+  it('never fails the snapshot: a base that is not a hash is ignored', async () => {
+    const { r, B } = base()
+    r.checkout('-b', 'topic')
+    const X = r.commit('X')
+    const repo = await open(r)
+    expect(await repo.straightTips([B, 'main)%(refname'], 'not-a-hash')).toEqual({ overTrunk: [X], overHead: [] })
+    expect(await repo.straightTips([], undefined)).toEqual({ overTrunk: [], overHead: [] })
+  })
+
+  it('is part of the snapshot, and read again when the refs move', async () => {
+    const { r } = base()
+    r.checkout('-b', 'topic')
+    r.commit('X')
+    r.checkout('main')
+    const repo = await open(r)
+    const first = await repo.snapshot()
+    expect(first.graph.straight.overTrunk).toHaveLength(1)
+    expect((await repo.snapshot()).refsVersion).toBe(first.refsVersion)
+    // main moves on: topic is no longer on top of it.
+    r.commit('C')
+    const next = await repo.snapshot()
+    expect(next.graph.straight).toEqual({ overTrunk: [], overHead: [] })
+    expect(next.refsVersion).toBeGreaterThan(first.refsVersion)
   })
 })

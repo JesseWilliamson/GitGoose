@@ -132,6 +132,23 @@ export interface RepoSnapshot {
   bisect?: BisectState
   /** The order the log (and search over it) lists commits in. */
   order: CommitOrder
+  /** What git knows about the history's shape that the streaming graph layout cannot see in time. */
+  graph: SnapshotGraph
+}
+
+export interface SnapshotGraph {
+  /** Branch tips that sit straight on top of the trunk or of HEAD, so they can continue its lane. */
+  straight: StraightTips
+}
+
+/**
+ * Tips (commit hashes) whose first-parent chain runs down to the trunk tip (`overTrunk`) or to
+ * HEAD (`overHead`). Empty when git is older than 2.41 (no `%(ahead-behind)`), with no trunk, or
+ * with no HEAD commit. See ADR-003, "A branch on top of a reserved line continues it".
+ */
+export interface StraightTips {
+  overTrunk: string[]
+  overHead: string[]
 }
 
 export type ChangeKind = 'added' | 'modified' | 'deleted' | 'renamed' | 'copied' | 'typechange' | 'unmerged'
