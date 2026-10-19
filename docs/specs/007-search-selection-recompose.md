@@ -79,6 +79,20 @@ For a run of non-merge commits on the current branch with only non-merge commits
 Authors: one original author keeps authorship; several make you the author with a
 `Co-authored-by` trailer for each.
 
+Chat: **Chat** beside the plan opens the conversation the proposal came from (spec 006,
+threads): "put the tests in their own commit". A revised plan comes back as a `json:plan`
+card, repaired exactly like the first proposal; **Apply** makes it the editor's plan as one
+undo step, so Ctrl+Z returns to what you had.
+
+## Ask about lines
+
+Select lines in any diff and **Ask**: a thread with an `ask` anchor (the lines, at the commit
+they were read at), docked under the diff. The first question goes with Ask's context (the
+lines, the definition around them, definitions of what they use, their history and blame);
+follow-ups go to the same agent session. Answered threads are saved per repository and listed
+under their commit's details ("Questions"), which reopens them. The thread rules (sessions,
+replay after a restart, permissions, artifacts) are spec 006's.
+
 ## Questions worth thinking about
 
 - The line view walks *down* first parents with `log.index` but needs a separate child map to walk
