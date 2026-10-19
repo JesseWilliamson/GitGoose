@@ -45,7 +45,7 @@ test('add, rename, re-point and remove a remote from the sidebar; removing is un
   expect(r.git('config', 'remote.mirror.url').trim()).toBe(other)
   expect(r.git('config', 'remote.mirror.pushurl').trim()).toBe('/tmp/push-here.git')
   await remoteHeader(page, 'mirror').click()
-  await expect(page.locator('[data-testid="remote-section"][data-name="mirror"]')).toContainText('Not fetched yet')
+  await expect(page.locator('[data-testid="sidebar-empty"][data-for="remote:mirror"]')).toHaveText('Not fetched yet')
   await app.close()
 })
 
@@ -130,7 +130,7 @@ test('clean up merged and stale branches in one undoable step', async () => {
   await expect(ref(page, 'refs/heads/old-work')).toContainText('stale')
   await expect(ref(page, 'refs/heads/main')).not.toContainText('merged')
 
-  await sectionHeader(page, 'Local').click({ button: 'right' })
+  await sectionHeader(page, 'Branches').click({ button: 'right' })
   await item(page, 'Clean up branches…').click()
   const list = page.getByTestId('cleanup-list')
   await expect(list.getByRole('checkbox', { name: 'done' })).toBeChecked()

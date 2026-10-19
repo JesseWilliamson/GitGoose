@@ -1,7 +1,7 @@
 import { DropdownMenu } from 'radix-ui'
 import {
  checkoutPull, createPull, hasGitHubRemote, openPull, lfsPull, lfsTrack, lfsUntrack, bisectMark, hideInGraph, showInGraph, soloInGraph, unsoloInGraph, addRemote, addSubmodule, addWorktree, removeSubmodule, syncSubmodules, updateSubmodules, lockWorktree, pruneWorktrees, removeWorktree, checkRemoteTags, cleanupBranches, clearPushUrl, deleteRemoteTag, editRemoteUrl, fastForward, fetchAll, fetchRemote, pushBranch, pushTags, pushTo, remoteNames, removeRemote, renameRemote, setUpstream,
- savePatches, stashToBranch, checkout, cherryPick, cherryPickMany, compare, compareSinceFork, copy, fixupInto, pop, reword, squashCommit, squashTogether, stashApply, stashDrop, copyCommits, dropCommits, moveCommits, currentBranchRef, deleteBranch, deleteRemoteBranch, deleteTag, dropOptions,
+ savePatches, stashToBranch, checkout, forcePushBranch, pinBranch, publishBranch, pruneRemote, pull, pullRemoteBranch, revealInHistory, trackRemoteBranch, cherryPick, cherryPickMany, compare, compareSinceFork, copy, fixupInto, pop, reword, squashCommit, squashTogether, stashApply, stashDrop, copyCommits, dropCommits, moveCommits, currentBranchRef, deleteBranch, deleteRemoteBranch, deleteTag, dropOptions,
   merge, newBranch, newTag, push, rebase, renameBranch, reset, revert, shortRef,
 } from '../lib/actions'
 import { shortHash, stashLabel } from '../lib/format'
@@ -89,59 +89,126 @@ export function GraphMenu({ repoId }: { repoId: string }) {
     const remotes = remoteNames(view)
     const hidden = snap.filter.hidden.includes(r.name)
     const soloed = snap.filter.solo.includes(r.name)
+    const pinned = view.pins.includes(name)
     const worktree = r.kind === 'local' ? view.worktrees.find((w) => !w.current && w.branch === name) : undefined
     /** Remote branches with the same name, the usual thing to track (all remote branches can be typed). */
     const tracking = r.kind === 'local' ? snap.refs.filter((x) => x.kind === 'remote' && x.name !== r.upstream && x.shortName.endsWith(`/${name}`)) : []
-    return (
-      <CM.Content>
-        <CM.Label>{r.kind === 'tag' ? `Tag ${name}` : r.kind === 'remote' ? `Remote branch ${name}` : `Branch ${name}`}</CM.Label>
-        <BranchActions repoId={repoId} r={r} />
-        {!isHead && snap.head.hash && (
-          <CM.Sub label="Compare">
-            <CM.Item onSelect={() => compare(repoId, snap.head.hash!, r.name, headName, name)}>{name} with {headName}</CM.Item>
-            <CM.Item onSelect={() => void compareSinceFork(repoId, snap.head.hash!, r.name)}>What {name} changed since it forked from {headName}</CM.Item>
-          </CM.Sub>
-        )}
-        <CM.Separator />
-        <CM.Item onSelect={() => newBranch(repoId, r.name)}>Create branch here…</CM.Item>
-        {r.kind === 'local' && (
-          <>
-            {isHead ? <CM.Item onSelect={() => push(repoId)}>Push {name}</CM.Item> : <CM.Item onSelect={() => void pushBranch(repoId, name)}>Push {name}</CM.Item>}
-            <PerRemote names={remotes} label={(n) => `Push to ${n}…`} onPick={(n) => pushTo(repoId, name, n)} />
-            {r.kind === 'local' && remotes.length > 0 && (
-              <CM.Sub label={r.upstream ? 'Track another remote branch' : 'Track a remote branch'}>
-                {tracking.map((t) => <CM.Item key={t.name} onSelect={() => void setUpstream(repoId, name, t.name)}>{t.shortName}</CM.Item>)}
-                <CM.Separator />
-                <CM.Item onSelect={() => ask(`Track a remote branch with ${name}`, 'Remote branch', 'Track', (u) => void setUpstream(repoId, name, u.trim()), { placeholder: `origin/${name}` })}>Other…</CM.Item>
-              </CM.Sub>
-            )}
-            {r.upstream && <CM.Item onSelect={() => void setUpstream(repoId, name, null)}>Stop tracking {shortRef(r.upstream)}</CM.Item>}
-            {hasGitHubRemote(view) && <CM.Item onSelect={() => createPull(repoId, name)}>Create pull request…</CM.Item>}
-            {aiOn && <CM.Item onSelect={() => startReview(repoId, { kind: 'branch', branch: name })}>Review {name} with AI</CM.Item>}
-            {aiOn && <CM.Item onSelect={() => startWalkthrough(repoId, { kind: 'branch', branch: name })}>Walk me through {name}</CM.Item>}
-            <CM.Item onSelect={() => showImpact(repoId, { kind: 'branch', branch: name })}>What could {name} affect?</CM.Item>
-            {worktree ? <CM.Item onSelect={() => void openRepo(worktree.path)}>Open the worktree with {name}</CM.Item>
-              : !isHead && <CM.Item onSelect={() => addWorktree(repoId, name)}>Check out in a new worktree…</CM.Item>}
-            <CM.Item onSelect={() => renameBranch(repoId, name)}>Rename {name}…</CM.Item>
-            {!isHead && <CM.Item danger onSelect={() => void deleteBranch(repoId, name)}>Delete {name}</CM.Item>}
-          </>
-        )}
-        {r.kind === 'remote' && head && head.upstream !== r.name && (
-          <CM.Item onSelect={() => void setUpstream(repoId, head.shortName, r.name)}>Make {headName} track {name}</CM.Item>
-        )}
-        {r.kind === 'remote' && <CM.Item danger onSelect={() => deleteRemoteBranch(repoId, r.name)}>Delete {name} on remote…</CM.Item>}
-        {r.kind === 'tag' && (
-          <>
-            <PerRemote names={remotes} label={(n) => `Push ${name} to ${n}`} onPick={(n) => void pushTags(repoId, n, name)} />
-            <CM.Item danger onSelect={() => void deleteTag(repoId, name)}>Delete tag {name}</CM.Item>
-            <PerRemote names={remotes} danger label={(n) => `Delete ${name} on ${n}…`} onPick={(n) => deleteRemoteTag(repoId, n, name)} />
-          </>
-        )}
-        <CM.Separator />
+    const upstream = r.upstream ? snap.refs.find((x) => x.name === r.upstream) : undefined
+    // Not checked out, nothing of its own, behind its upstream: moving it forward loses nothing.
+    const canFastForward = r.kind === 'local' && !isHead && !!upstream && (r.behind ?? 0) > 0 && (r.ahead ?? 0) === 0
+    const compareItem = !isHead && snap.head.hash && (
+      <CM.Sub label="Compare">
+        <CM.Item onSelect={() => compare(repoId, snap.head.hash!, r.name, headName, name)}>{name} with {headName}</CM.Item>
+        <CM.Item onSelect={() => void compareSinceFork(repoId, snap.head.hash!, r.name)}>What {name} changed since it forked from {headName}</CM.Item>
+      </CM.Sub>
+    )
+    const graphItems = (
+      <>
+        <CM.Item onSelect={() => void revealInHistory(repoId, r.hash)}>Reveal in History</CM.Item>
         {hidden ? <CM.Item onSelect={() => showInGraph(repoId, r.name)}>Show in the graph</CM.Item>
           : !isHead && <CM.Item onSelect={() => hideInGraph(repoId, r.name)}>Hide in the graph</CM.Item>}
         {soloed ? <CM.Item onSelect={() => unsoloInGraph(repoId, r.name)}>Stop soloing {name}</CM.Item>
           : <CM.Item onSelect={() => soloInGraph(repoId, r.name)}>{snap.filter.solo.length ? `Solo ${name} too` : `Solo ${name} (show only it)`}</CM.Item>}
+      </>
+    )
+    const mergeItems = head && !isHead && (
+      <>
+        <CM.Item onSelect={() => void merge(repoId, r.name)}>Merge {name} into {headName}</CM.Item>
+        <CM.Sub label="Merge options">
+          <CM.Item onSelect={() => void merge(repoId, r.name, { noFf: true })}>Always create a merge commit</CM.Item>
+          <CM.Item onSelect={() => void merge(repoId, r.name, { squash: true })}>Squash {name} into {headName}</CM.Item>
+          <CM.Item onSelect={() => void merge(repoId, r.name, { noCommit: true })}>Merge without committing</CM.Item>
+        </CM.Sub>
+        <CM.Item onSelect={() => void rebase(repoId, r.name)}>Rebase {headName} onto {name}</CM.Item>
+      </>
+    )
+
+    // Tower's order for a local branch: check out; new things from it; bring it into HEAD; sync
+    // with its remote; look at it; pin; rename and delete; copy.
+    if (r.kind === 'local') {
+      return (
+        <CM.Content>
+          <CM.Label>Branch {name}</CM.Label>
+          {!isHead && <CM.Item onSelect={() => void checkout(repoId, r.name)}>Check out {name}</CM.Item>}
+          {worktree ? <CM.Item onSelect={() => void openRepo(worktree.path)}>Open the worktree with {name}</CM.Item>
+            : !isHead && <CM.Item onSelect={() => addWorktree(repoId, name)}>Check out in a new worktree…</CM.Item>}
+          <CM.Item onSelect={() => newBranch(repoId, r.name)}>Create branch from {name}…</CM.Item>
+          {mergeItems && <><CM.Separator />{mergeItems}</>}
+          <CM.Separator />
+          {isHead && r.upstream && <CM.Item onSelect={() => void pull(repoId)}>Pull {shortRef(r.upstream)}</CM.Item>}
+          {canFastForward && <CM.Item onSelect={() => void fastForward(repoId, name)}>Fast-forward {name} to {shortRef(r.upstream!)}</CM.Item>}
+          {r.upstream && !r.upstreamGone
+            ? (isHead ? <CM.Item onSelect={() => push(repoId)}>Push {name}</CM.Item> : <CM.Item onSelect={() => void pushBranch(repoId, name)}>Push {name}</CM.Item>)
+            : <PerRemote names={remotes} label={(n) => `Publish ${name} to ${n}`} onPick={(n) => void publishBranch(repoId, name, n)} />}
+          {r.upstream && !r.upstreamGone && <CM.Item danger onSelect={() => forcePushBranch(repoId, name)}>Force push {name} with lease…</CM.Item>}
+          <PerRemote names={remotes} label={(n) => `Push to ${n}…`} onPick={(n) => pushTo(repoId, name, n)} />
+          {remotes.length > 0 && (
+            <CM.Sub label={r.upstream ? 'Track another remote branch' : 'Track a remote branch'}>
+              {tracking.map((t) => <CM.Item key={t.name} onSelect={() => void setUpstream(repoId, name, t.name)}>{t.shortName}</CM.Item>)}
+              <CM.Separator />
+              <CM.Item onSelect={() => ask(`Track a remote branch with ${name}`, 'Remote branch', 'Track', (u) => void setUpstream(repoId, name, u.trim()), { placeholder: `origin/${name}` })}>Other…</CM.Item>
+            </CM.Sub>
+          )}
+          {r.upstream && <CM.Item onSelect={() => void setUpstream(repoId, name, null)}>Stop tracking {shortRef(r.upstream)}</CM.Item>}
+          {hasGitHubRemote(view) && <CM.Item onSelect={() => createPull(repoId, name)}>Create pull request…</CM.Item>}
+          <CM.Separator />
+          {compareItem}
+          {aiOn && <CM.Item onSelect={() => startReview(repoId, { kind: 'branch', branch: name })}>Review {name} with AI</CM.Item>}
+          {aiOn && <CM.Item onSelect={() => startWalkthrough(repoId, { kind: 'branch', branch: name })}>Walk me through {name}</CM.Item>}
+          <CM.Item onSelect={() => showImpact(repoId, { kind: 'branch', branch: name })}>What could {name} affect?</CM.Item>
+          <CM.Separator />
+          {pinned ? <CM.Item onSelect={() => void pinBranch(repoId, name, false)}>Unpin {name}</CM.Item>
+            : <CM.Item onSelect={() => void pinBranch(repoId, name, true)}>Pin {name}</CM.Item>}
+          {graphItems}
+          <CM.Separator />
+          <CM.Item onSelect={() => renameBranch(repoId, name)}>Rename {name}…</CM.Item>
+          {!isHead && <CM.Item danger onSelect={() => void deleteBranch(repoId, name)}>Delete {name}</CM.Item>}
+          <CM.Separator />
+          <CM.Item onSelect={() => copy(name, 'Copied name')}>Copy name</CM.Item>
+        </CM.Content>
+      )
+    }
+
+    if (r.kind === 'remote') {
+      const local = name.slice(name.indexOf('/') + 1)
+      const hasLocal = snap.refs.some((x) => x.name === `refs/heads/${local}`)
+      return (
+        <CM.Content>
+          <CM.Label>Remote branch {name}</CM.Label>
+          {!hasLocal && <CM.Item onSelect={() => trackRemoteBranch(repoId, r.name)}>Track {name}…</CM.Item>}
+          <CM.Item onSelect={() => void checkout(repoId, r.name)}>Check out {name}</CM.Item>
+          <CM.Item onSelect={() => newBranch(repoId, r.name)}>Create branch from {name}…</CM.Item>
+          {head && snap.head.hash && (
+            <>
+              <CM.Separator />
+              <CM.Item onSelect={() => void pullRemoteBranch(repoId, r.name)}>Pull {name} into {headName}</CM.Item>
+              {mergeItems}
+              {head.upstream !== r.name && <CM.Item onSelect={() => void setUpstream(repoId, head.shortName, r.name)}>Make {headName} track {name}</CM.Item>}
+            </>
+          )}
+          <CM.Separator />
+          {compareItem}
+          {graphItems}
+          <CM.Separator />
+          <CM.Item danger onSelect={() => deleteRemoteBranch(repoId, r.name)}>Delete {name} on remote…</CM.Item>
+          <CM.Separator />
+          <CM.Item onSelect={() => copy(name, 'Copied name')}>Copy name</CM.Item>
+        </CM.Content>
+      )
+    }
+
+    return (
+      <CM.Content>
+        <CM.Label>Tag {name}</CM.Label>
+        <CM.Item onSelect={() => void checkout(repoId, r.name)}>Check out {name}</CM.Item>
+        <PerRemote names={remotes} label={(n) => `Push ${name} to ${n}`} onPick={(n) => void pushTags(repoId, n, name)} />
+        <CM.Item onSelect={() => newBranch(repoId, r.name)}>Create branch from {name}…</CM.Item>
+        <CM.Separator />
+        {compareItem}
+        <CM.Item onSelect={() => void revealInHistory(repoId, r.hash)}>Reveal in History</CM.Item>
+        <CM.Separator />
+        <CM.Item danger onSelect={() => void deleteTag(repoId, name)}>Delete tag {name}</CM.Item>
+        <PerRemote names={remotes} danger label={(n) => `Delete ${name} on ${n}…`} onPick={(n) => deleteRemoteTag(repoId, n, name)} />
         <CM.Separator />
         <CM.Item onSelect={() => copy(name, 'Copied name')}>Copy name</CM.Item>
       </CM.Content>
@@ -155,6 +222,7 @@ export function GraphMenu({ repoId }: { repoId: string }) {
       <CM.Content>
         <CM.Label>Remote {name}{remote ? ` · ${remote.fetchUrl}` : ''}</CM.Label>
         <CM.Item onSelect={() => void fetchRemote(repoId, name)}>Fetch {name}</CM.Item>
+        <CM.Item onSelect={() => void pruneRemote(repoId, name)}>Prune {name} (forget branches deleted there)</CM.Item>
         {snap.filter.hidden.includes(`refs/remotes/${name}/*`)
           ? <CM.Item onSelect={() => showInGraph(repoId, `refs/remotes/${name}/*`)}>Show {name}'s branches in the graph</CM.Item>
           : <CM.Item onSelect={() => hideInGraph(repoId, `refs/remotes/${name}/*`)}>Hide {name}'s branches in the graph</CM.Item>}

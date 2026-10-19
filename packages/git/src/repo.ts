@@ -6,7 +6,7 @@ import type {
 import { countConflicts } from '@gitgoose/shared'
 import { existsSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { lstat, readFile, realpath, rm, writeFile, chmod, mkdir } from 'node:fs/promises'
+import { lstat, readFile, realpath, rm, stat, writeFile, chmod, mkdir } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { enclosingDefinition, findDefinitions, NOT_NAMES, parseGrep, type Definition } from '@gitgoose/codegraph'
@@ -932,6 +932,15 @@ export class Repo {
       actions.unshift({ kind: 'config-value', key: PIN_KEY, value: to, add: false }, { kind: 'config-value', key: PIN_KEY, value: from, add: true })
     }
     return this.record(label, actions, (await this.currentHead()).hash)
+  }
+
+  /** When anything was last fetched here (FETCH_HEAD's time, unix seconds), or null when never. */
+  async lastFetched(): Promise<number | null> {
+    try {
+      return Math.floor((await stat(join(this.commonDir, 'FETCH_HEAD'))).mtimeMs / 1000)
+    } catch {
+      return null
+    }
   }
 
   // ---------------------------------------------------------------- pins

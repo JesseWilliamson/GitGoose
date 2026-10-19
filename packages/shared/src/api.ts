@@ -211,6 +211,8 @@ export interface GitGooseApi {
   renameBranch(repoId: string, from: string, to: string): Promise<UndoId>
   /** Rename a branch into a sidebar folder: `topic` into `feature` becomes `feature/topic`. Undoable. */
   renameBranchInto(repoId: string, branch: string, folder: string): Promise<UndoId>
+  /** When this repository last fetched (unix seconds), or null: for the tracking badge's tooltip. */
+  lastFetched(repoId: string): Promise<number | null>
   /** Branch names pinned to the top of the sidebar (git config gitgoose.pin, shared by worktrees). */
   pinnedBranches(repoId: string): Promise<string[]>
   /** Pin or unpin a branch; null when it already was (or was not). Undoable. */
@@ -340,7 +342,7 @@ export const API_METHODS = [
   'snapshot', 'logPage', 'commitDetails', 'diff', 'fileHistory', 'blame', 'search', 'searchCommits', 'listFiles', 'stashList', 'reflog', 'setGraphFilter', 'submodules', 'updateSubmodules', 'syncSubmodules', 'addSubmodule', 'removeSubmodule', 'worktrees', 'addWorktree', 'removeWorktree', 'lockWorktree', 'pruneWorktrees',
   'lastCommitMessage',
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'codePeek', 'codeGraphStatus', 'reindexCode', 'impact', 'askThreads', 'saveAskThread', 'deleteAskThread', 'reviewLearnings', 'setReviewLearnings', 'linters', 'decideLinter', 'pushCheckPlan', 'pushCheckRules', 'setPushChecks', 'changeInsights', 'applySuggestion', 'writeFileChecked', 'workingText', 'lfsInfo', 'lfsInstall', 'lfsTrack', 'lfsPull', 'lfsLocks', 'lfsLock', 'commandLog', 'bisectMark', 'bisectReset', 'identity', 'setIdentity', 'commitTemplate', 'recentAuthors',
-  'checkout', 'createBranch', 'renameBranch', 'renameBranchInto', 'pinnedBranches', 'pinBranch', 'deleteBranch', 'merge', 'rebase', 'reset',
+  'checkout', 'createBranch', 'renameBranch', 'renameBranchInto', 'lastFetched', 'pinnedBranches', 'pinBranch', 'deleteBranch', 'merge', 'rebase', 'reset',
   'cherryPick', 'cherryPickMany', 'cherryPickOnto', 'applyFileFrom', 'commitsText', 'recomposeApply', 'compareFiles', 'mergeBase', 'restoreFile', 'diffTool', 'mergeTool', 'imagePair', 'savePatches', 'pickPatch', 'applyPatch', 'openFileAt', 'saveFileAt', 'editableCommits', 'dropCommits', 'moveCommits', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'preparedMessage', 'redo', 'redoList', 'revert', 'createTag', 'deleteTag',
   'fetch', 'pull', 'push', 'deleteRemoteBranch', 'remotes', 'addRemote', 'removeRemote', 'renameRemote', 'setRemoteUrl',
   'pushTags', 'deleteRemoteTag', 'remoteTags', 'setUpstream', 'fastForward', 'deleteBranches', 'mergedBranches',
