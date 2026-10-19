@@ -70,6 +70,7 @@ test('tool calls, thoughts and plans show inline; a permission card shows the co
   await expect(card.getByTestId('tool-diff')).toContainText('+new line')
   await expect(card.getByTestId('tool-input')).toContainText('"line": 1')
   await expect(panel.getByTestId('thread-plan')).toContainText('Add a line')
+  await expect(panel.getByTestId('thread-meta')).toHaveText('Commands: /compact')
   // Thoughts are folded until asked for.
   const thought = panel.getByTestId('thread-thought')
   await expect(thought).not.toContainText('The README needs a line.')
