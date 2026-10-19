@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { create } from 'zustand'
 import { askLogin, askToRedact, ensureAi, whatFor } from './ai'
 import { api, toUiError } from './api'
-import { reportError, updateRepo, useStore } from './store'
+import { reportError, updateRepo } from './store'
 
 /**
  * The renderer's copy of the conversations on screen. Main sends every event of a thread as
@@ -130,8 +130,4 @@ export const useRails = create<Record<string, boolean>>(() => ({}))
 
 export function toggleRail(kind: string): void {
   useRails.setState((s) => ({ [kind]: !s[kind] }))
-}
-
-export function useAiAvailable(): boolean {
-  return useStore((s) => (s.settings?.aiProvider ?? 'off') !== 'off')
 }

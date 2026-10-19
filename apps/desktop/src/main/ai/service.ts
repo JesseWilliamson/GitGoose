@@ -107,6 +107,8 @@ interface ThreadRec {
   built: BuiltPrompt | null
   task: AiTask | null
   active: { requestId: string; abort: AbortController } | null
+  /** A send is working out its turn (opening the session, building the context). */
+  starting: boolean
   /** A view shows it; when the last one closes, the idle grace starts. */
   open: boolean
   idle: ReturnType<typeof setTimeout> | null
@@ -252,7 +254,8 @@ export class AiService {
     rec.built = built
     rec.task = task
     rec.system = built.system
-    rec.open = keep
+    // Not held yet: the view holds it when it shows the chat. Until then the idle grace runs
+    // from the end of this turn, so a thread nobody opens does not keep a session forever.
     // The artifact protocol only for a conversation that goes on; a one-shot prompt stays as it was.
     const protocol = keep ? `\n\n${artifactProtocol(rec.thread.anchor, true)}` : ''
     let proposal: AiResult['proposal']
@@ -303,10 +306,17 @@ export class AiService {
     this.ready()
     const rec = this.threads.get(threadId)
     if (!rec) throw new AiError('This conversation is closed. Open it again.', 'ai-thread-gone')
-    if (rec.active) throw new AiError('The AI is still answering. Wait for it, or stop it.', 'ai-busy')
+    if (rec.active || rec.starting) throw new AiError('The AI is still answering. Wait for it, or stop it.', 'ai-busy')
     const message = text.trim()
     if (!message) throw new AiError('Write a message first.', 'ai-empty')
-    const out = await this.outgoing(rec, message, undefined, opts.redact === true)
+    // Busy from here: a second send while the session opens would race this one.
+    rec.starting = true
+    let out: Outgoing
+    try {
+      out = await this.outgoing(rec, message, undefined, opts.redact === true)
+    } finally {
+      rec.starting = false
+    }
     const requestId = randomUUID()
     // The thread shows what was sent: redacted, if the user chose that.
     const shown = opts.redact ? redactSecrets(message).text : message
@@ -351,7 +361,7 @@ export class AiService {
   saveThread(repoId: string, thread: AiThread): void {
     const path = this.deps.repo(repoId).path
     const all = this.deps.settings().aiThreads
-    const list = [{ ...thread, repoId: '' }, ...(all[path] ?? []).filter((t) => t.id !== thread.id)].slice(0, MAX_THREADS)
+    const list = [compact(thread), ...(all[path] ?? []).filter((t) => t.id !== thread.id)].slice(0, MAX_THREADS)
     this.deps.setSettings({ aiThreads: { ...all, [path]: list } })
   }
 
@@ -396,14 +406,14 @@ export class AiService {
 
   private async newRec(repoId: string, repo: Repo | null, anchor: ThreadAnchor, keep: boolean, saved?: AiThread): Promise<ThreadRec> {
     const now = Date.now()
-    const head = saved?.head ?? (repo ? (await repo.runner.run(['rev-parse', '--verify', '-q', 'HEAD'], { readOnly: true }).then((r) => r.stdout.trim(), () => '')) : '')
+    const head = saved?.head ?? (repo && keep ? (await repo.runner.run(['rev-parse', '--verify', '-q', 'HEAD'], { readOnly: true }).then((r) => r.stdout.trim(), () => '')) : '')
     const thread: AiThread = saved
       ? { ...saved, repoId, turns: saved.turns.map((t) => (t.status === 'running' ? { ...t, status: 'error', error: { message: 'GitGoose closed before the answer finished.' } } : t)) }
       : { id: randomUUID(), repoId, anchor, title: '', turns: [], createdAt: now, updatedAt: now, head }
     const rec: ThreadRec = {
       thread, repoId, path: repo?.path ?? null, cwd: repo?.path ?? tmpdir(), keep, sessionId: null, primed: false,
       // A thread from disk is told its history again from its transcript, when it needs a session.
-      history: saved ? null : [], system: '', built: null, task: null, active: null, open: false, idle: null,
+      history: saved ? null : [], system: '', built: null, task: null, active: null, starting: false, open: false, idle: null,
     }
     this.threads.set(thread.id, rec)
     return rec
@@ -420,7 +430,8 @@ export class AiService {
     const history = await this.historyOf(rec)
     const first = async (): Promise<string> => opening ?? await this.opening(rec, message)
     if (anthropic) {
-      const logical = history.length ? message : await first()
+      // The API takes the system prompt on its own: a feature's opening is its message as given.
+      const logical = history.length || opening !== undefined ? message : await first()
       const text = guardTurn(logical, redact)
       if (!rec.system) rec.system = 'You help people understand and change the code in their git repository.'
       const messages = [...history.flatMap((h) => [{ role: 'user' as const, content: h.user }, { role: 'assistant' as const, content: h.agent }]), { role: 'user' as const, content: text }]
@@ -466,7 +477,8 @@ export class AiService {
       // Ask's own prompt, with the question in it: the lines, their function, definitions, history.
       const built = await buildPrompt(repo, { kind: 'ask', rev: anchor.rev === 'worktree' ? null : anchor.rev, path: anchor.path, startLine: anchor.lines[0], endLine: anchor.lines[1], question: message, earlier: [] })
       rec.system = built.system
-      return `${built.system}\n\n${built.prompt}\n\n${artifactProtocol(anchor, false)}`
+      const api = this.deps.settings().aiProvider === 'anthropic'
+      return `${api ? '' : `${built.system}\n\n`}${built.prompt}\n\n${artifactProtocol(anchor, false)}`
     }
     return openingMessage(await anchorContext(repo, anchor), anchor, message)
   }
@@ -666,6 +678,23 @@ export class AiService {
   stop(): void {
     for (const rec of [...this.threads.values()]) this.dispose(rec)
     this.agent.stop()
+  }
+}
+
+/**
+ * A thread as it is saved: what the conversation needs to be read and continued, not every
+ * byte that streamed. A feature's own answer (raw JSON the view already turned into its
+ * result) keeps 8k characters, other text 40k, tool output what acp.ts kept (20k a piece).
+ */
+export function compact(thread: AiThread): AiThread {
+  const cut = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}\n… (${text.length - max} more characters not kept)` : text)
+  return {
+    ...thread,
+    repoId: '',
+    turns: thread.turns.slice(-200).map((t) => ({
+      ...t,
+      blocks: t.blocks.map((b) => (b.type === 'text' || b.type === 'thought' ? { ...b, text: cut(b.text, t.feature ? 8_000 : 40_000) } : b)),
+    })),
   }
 }
 

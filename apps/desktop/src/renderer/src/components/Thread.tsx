@@ -73,6 +73,14 @@ export function Thread({ thread, repoId, testids = {}, placeholder, hint, hideFe
           : <AgentTurn key={t.id} turn={t} thread={thread} repoId={repoId} testid={testids.agent ?? 'thread-agent'} retry={t === last ? retry : undefined} />))}
         <div ref={end} />
       </div>
+      {(thread.mode || !!thread.commands?.length) && (
+        // What the agent says about itself (ACP current_mode_update, available_commands_update).
+        <div className="shrink-0 truncate border-t border-line px-3 py-0.5 text-[11px] text-faint" data-testid="thread-meta"
+          title={thread.commands?.length ? 'Slash commands the agent offers: type one as your message' : undefined}>
+          {thread.mode && <>Mode: {thread.mode}</>}{thread.mode && thread.commands?.length ? ' · ' : ''}
+          {thread.commands?.length ? <>Commands: {thread.commands.map((c) => `/${c}`).join(' ')}</> : null}
+        </div>
+      )}
       <div className="flex shrink-0 gap-2 border-t border-line p-2">
         <textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} data-testid={testids.input ?? 'thread-input'}
           placeholder={placeholder ?? 'Ask a follow-up (Enter sends, Shift+Enter for a new line)'}
