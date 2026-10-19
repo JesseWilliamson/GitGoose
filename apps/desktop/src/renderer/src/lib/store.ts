@@ -1,8 +1,9 @@
 import { GraphLayout, type Row } from '@gitgoose/graph'
-import { SETTINGS, type SidebarPrefs, type PullRequestList, type CodeGraphStatus, type Commit, type DiffTarget, type GitHubStatus, type GitGooseEvent, type AskThread, type LfsInfo, type PushCheckResult, type Ref, type Remote, type RepoSnapshot, type Submodule, type Worktree, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitgoose/shared'
+import { SETTINGS, type SidebarPrefs, type PullRequestList, type CodeGraphStatus, type Commit, type DiffTarget, type GitHubStatus, type GitGooseEvent, type AskThread, type ThreadAnchor, type LfsInfo, type PushCheckResult, type Ref, type Remote, type RepoSnapshot, type Submodule, type Worktree, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitgoose/shared'
 import { create } from 'zustand'
 import { api, toUiError, type UiError } from './api'
 import { onAiEvent } from './ai'
+import { onThreadUpdate } from './thread'
 import { opName } from './format'
 import { followRewrite } from './rewrite'
 import type { ReviewState } from './review'
@@ -57,8 +58,10 @@ export interface RepoView {
   review: ReviewState | null
   walkthrough: WalkthroughState | null
   impact: ImpactState | null
-  /** The question thread open under the diff, if any. */
-  ask: AskThread | null
+  /** The question thread open under the diff, if any: what it is about, and its thread once opened. */
+  ask: { anchor: Extract<ThreadAnchor, { kind: 'ask' }>; path: string; threadId: string | null } | null
+  /** The AI panel (Mod+Shift+A): open or not, and its conversation (null: a new one). */
+  chat: { open: boolean; threadId: string | null; nonce?: number }
   /** Saved threads (newest first), loaded with the repository. */
   askThreads: AskThread[]
   /** Local branches already in HEAD: safe to delete. */
@@ -498,7 +501,7 @@ function newView(snap: RepoSnapshot): RepoView {
     id: snap.id, snapshot: snap, logVersion: 0,
     selected: snap.status.length ? { kind: 'wip' } : snap.head.hash ? { kind: 'commit', hash: snap.head.hash } : { kind: 'wip' },
     center: snap.operation && snap.status.some((e) => e.kind === 'unmerged') ? { kind: 'conflicts' } : { kind: 'graph' },
-    editable: [], redo: [], stashes: [], undo: [], remotes: [], merged: [], pins: [], lastFetched: null, worktrees: [], submodules: [], lfs: null, pulls: null, pullsLoading: false, review: null, walkthrough: null, impact: null, ask: null, askThreads: [], remoteTags: null, progress: null, busy: null, worktreeTick: 0,
+    editable: [], redo: [], stashes: [], undo: [], remotes: [], merged: [], pins: [], lastFetched: null, worktrees: [], submodules: [], lfs: null, pulls: null, pullsLoading: false, review: null, walkthrough: null, impact: null, ask: null, chat: { open: false, threadId: null }, askThreads: [], remoteTags: null, progress: null, busy: null, worktreeTick: 0,
     codegraph: { state: 'indexing', done: 0, total: 0 },
     line: null,
   }
@@ -619,6 +622,9 @@ function onEvent(e: GitGooseEvent): void {
     case 'ai-permission':
     case 'ai-permission-closed':
       onAiEvent(e)
+      break
+    case 'ai-update':
+      onThreadUpdate(e)
       break
   }
 }

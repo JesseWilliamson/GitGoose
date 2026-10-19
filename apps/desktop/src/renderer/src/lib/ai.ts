@@ -1,4 +1,4 @@
-import { AI_AUTH_REQUIRED, type AgentAuthMethod, type AiPermissionRequest, type AiResult, type AiTask, type RecomposeProposal } from '@gitgoose/shared'
+import { AI_AUTH_REQUIRED, type AgentAuthMethod, type AiPermissionRequest, type AiResult, type AiTask, type RecomposeProposal, type ThreadAnchor } from '@gitgoose/shared'
 import { create } from 'zustand'
 import { api, toUiError } from './api'
 import { attention, choose, useStore } from './store'
@@ -22,10 +22,18 @@ export interface AiUi {
   /** Fix with AI: waiting for, or showing, a proposed new version of one file. */
   fix: { repoId: string; path: string; title: string; requestId: string | null; before: string | null; after: string | null; note: string; error: string | null } | null
   /** Recompose with AI: waiting for a plan (requestId set), failed, or under review. */
-  recompose: { repoId: string; hashes: string[]; requestId: string | null; proposal: RecomposeProposal | null; error: string | null } | null
+  recompose: {
+    repoId: string; hashes: string[]; requestId: string | null; proposal: RecomposeProposal | null; error: string | null
+    /** The conversation the plan came from (the chat column beside the plan). */
+    threadId?: string
+    /** A plan applied from the chat: the editor takes it as one undo step (see lib/artifacts.ts). */
+    incoming?: { commits: RecomposeProposal['commits']; nonce: number }
+  } | null
+  /** A commit message applied from a chat, for the commit box of that repository to take (undoable there). */
+  draft: { repoId: string; message: string; nonce: number } | null
 }
 
-export const useAi = create<AiUi>(() => ({ consent: null, login: null, permissions: [], output: null, proposal: null, recompose: null, fix: null }))
+export const useAi = create<AiUi>(() => ({ consent: null, login: null, permissions: [], output: null, proposal: null, recompose: null, fix: null, draft: null }))
 
 const textListeners = new Map<string, (text: string) => void>()
 
@@ -70,30 +78,18 @@ export interface AiRun {
  * `before` runs once the provider is set up and agreed to, just before the request: for questions
  * that only make sense when the request will really happen (which linters a review may run).
  */
-export function startAi(repoId: string | null, task: AiTask, onText?: (text: string) => void, opts: { before?: () => Promise<void> } = {}): AiRun {
+export function startAi(repoId: string | null, task: AiTask, onText?: (text: string) => void, opts: { before?: () => Promise<void>; keepThread?: boolean } = {}): AiRun {
   const requestId = crypto.randomUUID()
   const done = (async (): Promise<AiResult | null> => {
-    const status = await api.aiStatus()
-    if (status.provider === 'off' || !status.ready) {
-      attention({
-        title: status.provider === 'off' ? 'AI features are off' : `Finish setting up ${status.label}`,
-        detail: 'Choose an agent or add an API key in Settings → AI.',
-        actions: [{ label: 'Open settings', variant: 'primary', run: openSettings }],
-      })
-      return null
-    }
-    if (!status.consented) {
-      const ok = await new Promise<boolean>((resolve) => useAi.setState({ consent: { label: status.label, what: WHAT[task.kind], resolve } }))
-      if (!ok) return null
-      await api.aiConsent()
-    }
+    if (!(await ensureAi(WHAT[task.kind]))) return null
     await opts.before?.()
     if (onText) textListeners.set(requestId, onText)
     try {
       let redact = false
       for (let attempt = 0; ; attempt++) {
         try {
-          return await api.aiRun(requestId, repoId ?? '', task, redact ? { redact } : undefined)
+          const o = { ...(redact ? { redact } : {}), ...(opts.keepThread ? { keepThread: true } : {}) }
+          return await api.aiRun(requestId, repoId ?? '', task, Object.keys(o).length ? o : undefined)
         } catch (e) {
           const err = e as { code?: string; message?: string }
           if (err.code === 'ai-cancelled') return null
@@ -103,9 +99,7 @@ export function startAi(repoId: string | null, task: AiTask, onText?: (text: str
             continue
           }
           if (err.code !== AI_AUTH_REQUIRED || attempt > 0) throw e
-          const info = await api.aiAgentInfo()
-          const ok = await new Promise<boolean>((resolve) => useAi.setState({ login: { agent: info.name, methods: info.authMethods, repoId, resolve } }))
-          if (!ok) return null
+          if (!(await askLogin(repoId))) return null
         }
       }
     } finally {
@@ -116,11 +110,53 @@ export function startAi(repoId: string | null, task: AiTask, onText?: (text: str
 }
 
 /**
+ * Before anything is sent: is a provider set up, and has the user agreed to send `what` to it?
+ * False when they have to do something first (already reported or asked).
+ */
+export async function ensureAi(what: string): Promise<boolean> {
+  const status = await api.aiStatus()
+  if (status.provider === 'off' || !status.ready) {
+    attention({
+      title: status.provider === 'off' ? 'AI features are off' : `Finish setting up ${status.label}`,
+      detail: 'Choose an agent or add an API key in Settings → AI.',
+      actions: [{ label: 'Open settings', variant: 'primary', run: openSettings }],
+    })
+    return false
+  }
+  if (!status.consented) {
+    const ok = await new Promise<boolean>((resolve) => useAi.setState({ consent: { label: status.label, what, resolve } }))
+    if (!ok) return false
+    await api.aiConsent()
+  }
+  return true
+}
+
+/** The agent needs a login: show its methods. True once the user says they have logged in. */
+export async function askLogin(repoId: string | null): Promise<boolean> {
+  const info = await api.aiAgentInfo()
+  return new Promise<boolean>((resolve) => useAi.setState({ login: { agent: info.name, methods: info.authMethods, repoId, resolve } }))
+}
+
+/** What a conversation about each anchor sends, for the consent notice. */
+export function whatFor(anchor: ThreadAnchor): string {
+  switch (anchor.kind) {
+    case 'review': case 'changestack': return `${WHAT.review}, and what you write`
+    case 'explain': return `${WHAT['explain-commit']}, and what you write`
+    case 'recompose': return `${WHAT.recompose}, and what you write`
+    case 'walkthrough': return `${WHAT.walkthrough}, and what you write`
+    case 'impact': return `${WHAT['assess-impact']}, and what you write`
+    case 'ask': return `${WHAT.ask}, and what you write`
+    case 'free': return "the repository's name and current commit, and what you write (an agent can ask to read files in the repository)"
+    case 'task': return WHAT[anchor.task]
+  }
+}
+
+/**
  * The secret scan in main stopped a request. Main's message is a sentence, a blank line, then the
  * (masked) list; the list goes in the dialog's detail box. Cancel comes first so Enter is the safe
  * answer, and closing the dialog counts as Cancel.
  */
-function askToRedact(message: string): Promise<boolean> {
+export function askToRedact(message: string): Promise<boolean> {
   const cut = message.indexOf('\n\n')
   return new Promise((resolve) => choose(
     'Possible secrets in this request',

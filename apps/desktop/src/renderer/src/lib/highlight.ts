@@ -50,6 +50,15 @@ export function languageFor(path: string): string | null {
   return EXT[ext] ?? null
 }
 
+/** A fenced code block's language ("ts", "python", "sh") as a file name tokenize() understands, or null. */
+export function fenceFile(lang: string): string | null {
+  const l = lang.toLowerCase()
+  if (l in LANGS) return `x.${Object.entries(EXT).find(([, v]) => v === l)?.[0] ?? l}`
+  if (l in EXT) return `x.${l}`
+  const alias: Record<string, string> = { typescript: 'ts', javascript: 'js', shell: 'sh', console: 'sh', python: 'py', rust: 'rs', golang: 'go', ruby: 'rb', yml: 'yaml' }
+  return alias[l] ? `x.${alias[l]}` : null
+}
+
 let highlighter: Promise<HighlighterCore> | null = null
 const loaded = new Set<string>()
 

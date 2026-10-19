@@ -310,7 +310,7 @@ export class AiService {
     const requestId = randomUUID()
     // The thread shows what was sent: redacted, if the user chose that.
     const shown = opts.redact ? redactSecrets(message).text : message
-    void this.turn(rec, requestId, out, { text: shown }).catch(() => {}).finally(() => this.persist(rec))
+    void this.turn(rec, requestId, out, { text: shown }).catch(() => {})
     return requestId
   }
 
@@ -551,6 +551,8 @@ export class AiService {
         p.resolve(null)
         if (!p.thread) this.deps.emit({ type: 'ai-permission-closed', permissionId: id })
       }
+      // Saved before the renderer can hear 'done' and read it back (the Ask list does).
+      this.persist(rec)
       if (!rec.open && rec.keep) this.release(rec)
     }
   }

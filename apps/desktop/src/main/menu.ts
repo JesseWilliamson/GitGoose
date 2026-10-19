@@ -69,6 +69,7 @@ export function installMenu(): void {
         { label: 'Toggle Compact Graph', click: cmd('toggle-graph-style') },
         // Holding Shift shows the line for as long as it is held; this keeps it on.
         { label: 'Line View', accelerator: 'CmdOrCtrl+L', click: cmd('line-view'), registerAccelerator: false },
+        { label: 'AI Chat', accelerator: 'CmdOrCtrl+Shift+A', click: cmd('ai-chat'), registerAccelerator: false },
         { type: 'separator' },
         { label: 'Working Copy', accelerator: 'CmdOrCtrl+Alt+1', click: cmd('ws-working-copy'), registerAccelerator: false },
         { label: 'History', accelerator: 'CmdOrCtrl+Alt+2', click: cmd('ws-history'), registerAccelerator: false },
