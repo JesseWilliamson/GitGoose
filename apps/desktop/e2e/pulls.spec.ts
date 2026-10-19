@@ -27,7 +27,8 @@ test('pull requests: listed only on request, checked out from a fork, created fr
   }] })
   const { app, page } = await launch(r.dir, { GITGOOSE_GITHUB_URL: gh.url, GITGOOSE_GITHUB_CLIENT_ID: 'test-client' })
   await expect(page.getByTestId('commit-row').first()).toBeVisible()
-  const section = page.getByTestId('sidebar').getByRole('button', { name: /^Pull requests/ })
+  // Pull Requests is a Workspace item in the sidebar.
+  const section = page.locator('[data-testid="workspace-item"][data-item="pulls"]')
 
   // Signed out: opening the list says how to get one; GitHub is not asked.
   await section.click()

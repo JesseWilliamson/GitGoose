@@ -1,285 +1,557 @@
-import type { Ref } from '@gitgoose/shared'
+import type { GraphFilter, Ref } from '@gitgoose/shared'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import clsx from 'clsx'
-import { Archive, Boxes, ChevronDown, ChevronRight, Cloud, Eye, EyeOff, Focus, FolderTree, GitBranch, GitPullRequest, HardDrive, History, Plus, RefreshCw, Tag } from 'lucide-react'
-import { ContextMenu } from 'radix-ui'
-import { useMemo, useState, type ReactNode } from 'react'
-import { addRemote, addWorktree, checkoutPull, hasGitHubRemote, lfsPull, lfsSetUp, loadPulls, checkout, hideInGraph, showAllInGraph, showInGraph, isStale, pop, remoteNames, stashApply, stashDrop, stashToBranch } from '../lib/actions'
+import {
+  Archive, Boxes, ChevronDown, ChevronRight, Cloud, Eye, EyeOff, Focus, Folder, FolderTree, GitBranch, GitPullRequest, HardDrive, History,
+  Laptop, ListTree, Pin, Plus, RefreshCw, Settings2, Tag,
+} from 'lucide-react'
+import { ContextMenu, DropdownMenu } from 'radix-ui'
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import {
+  addRemote, addSubmodule, addWorktree, checkout, checkoutPull, deleteBranch, deleteRemoteBranch, deleteTag, hasGitHubRemote, hideInGraph, isStale, lfsPull,
+  lfsSetUp, loadPulls, newBranch, newTag, pop, remoteNames, restoreGraphFilter, revealInHistory, showAllInGraph, showBranchHistory, showHistory, showInGraph,
+  showWorkingCopy, stashDrop,
+} from '../lib/actions'
 import { relativeTime, stashLabel } from '../lib/format'
 import { refShown } from '../lib/graphFilter'
-import { ensureLoaded, openRepo, updateRepo, useStore, type RepoView } from '../lib/store'
-import { REF_MIME } from '../lib/dnd'
+import { shortcutOf } from '../lib/keys'
+import { foldersOf } from '../lib/refTree'
+import {
+  defaultOpen, focusable, folderKey, openKeyOf, parentIndex, refKey, rowHeight, sidebarRows, type RefSection, type SidebarRow, type WorkspaceItem,
+} from '../lib/sidebarRows'
+import { onCommand, openRepo, saveSettings, updateRepo, updateSidebarPrefs, useSetting, useSidebarPrefs, useStore, type RepoView } from '../lib/store'
 import { GraphMenu } from './menus'
-import { CM } from './ui'
+import { DM } from './ui'
 
+const isMac = window.gitgoose?.platform === 'darwin'
+const TAG_LIMITS: Record<string, number> = { '50': 50, '100': 100, '250': 250, all: Infinity }
+
+/**
+ * The sidebar: Workspace, Pinned, Branches (a folder tree), Remotes, Tags, Submodules,
+ * Worktrees and Git LFS, with the filter box and the + and gear menus at the bottom.
+ *
+ * Everything in it is one flat list of rows (lib/sidebarRows.ts), virtualized: a repository
+ * with thousands of branches and tags renders the rows on screen and no more. Which sections,
+ * folders and remotes are open is kept per repository (settings → sidebar), so it survives a
+ * restart; the keyboard moves a cursor through the rows (↑↓, ←→ to fold, Enter checks out,
+ * Space shows the history, Delete deletes with Undo, Mod+0 goes to HEAD's branch).
+ */
 export function Sidebar({ view }: { view: RepoView }) {
   const [filter, setFilter] = useState('')
   const snap = view.snapshot
-  const f = filter.trim().toLowerCase()
-  const match = (r: Ref) => !f || r.shortName.toLowerCase().includes(f)
+  const prefs = useSidebarPrefs(snap.path)
+  const folders = useSetting('sidebarFolders')
+  const tagLimit = TAG_LIMITS[useSetting('sidebarTags')] ?? Infinity
+  const github = hasGitHubRemote(view)
+  const remotes = remoteNames(view)
+  const remotesKey = remotes.join('\0')
+  const worktreeCount = view.worktrees.length
+  const isOpen = (key: string) => prefs.open?.[key] ?? defaultOpen(key, worktreeCount)
+  const rows = useMemo(() => sidebarRows({
+    refs: snap.refs, headBranch: snap.head.branch, pins: view.pins, remotes, stashes: view.stashes, hasGitHub: github,
+    pulls: view.pulls, pullsLoading: view.pullsLoading, worktrees: view.worktrees, submodules: view.submodules, lfs: view.lfs,
+    folders, tagLimit, filter, showReflog: prefs.reflog !== false, isOpen,
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- isOpen reads prefs.open; remotes by value
+  }), [snap.refs, snap.head.branch, view.pins, remotesKey, view.stashes, github, view.pulls, view.pullsLoading, view.worktrees, view.submodules, view.lfs, folders, tagLimit, filter, prefs])
 
-  const locals = snap.refs.filter((r) => r.kind === 'local' && match(r))
-  const tags = snap.refs.filter((r) => r.kind === 'tag' && match(r)).reverse()
-  const remotes = useMemo(() => {
-    const m = new Map<string, Ref[]>(remoteNames(view).map((n) => [n, []]))
-    for (const r of snap.refs) {
-      if (r.kind !== 'remote' || !match(r)) continue
-      const remote = r.shortName.split('/')[0]!
-      m.get(remote)?.push(r)
+  /** What badges and marks need, worked out once per change instead of once per row. */
+  const look = useMemo<RowContext>(() => ({
+    repoId: view.id,
+    headBranch: snap.head.branch,
+    filter: snap.filter,
+    merged: prefs.merged === false ? new Set() : new Set(view.merged),
+    stale: prefs.stale !== false,
+    prs: new Map(view.pulls?.state === 'ok' ? view.pulls.pulls.filter((p) => !p.fromFork).map((p) => [p.branch, p]) : []),
+    elsewhere: new Map(view.worktrees.filter((w) => !w.current && w.branch).map((w) => [w.branch!, w.path])),
+    onRemote: view.remoteTags ? { remote: view.remoteTags.remote, names: new Set(view.remoteTags.names) } : null,
+    lastFetched: view.lastFetched,
+  }), [view.id, snap.head.branch, snap.filter, prefs.merged, prefs.stale, view.merged, view.pulls, view.worktrees, view.remoteTags, view.lastFetched])
+
+  const [cursor, setCursor] = useState<string | null>(null)
+  useEffect(() => setCursor(null), [view.id])
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const virt = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollRef.current,
+    // Row heights are fixed per kind, so the estimate is exact and nothing is measured.
+    estimateSize: (i) => rowHeight(rows[i]!),
+    overscan: 12,
+  })
+
+  const toggle = (key: string) => {
+    const next = !isOpen(key)
+    if (next && key === 'ws:pulls' && !view.pulls && !view.pullsLoading) void loadPulls(view.id)
+    updateSidebarPrefs(snap.path, (p) => ({ ...p, open: { ...p.open, [key]: next } }))
+  }
+  const openAll = (keys: string[]) => updateSidebarPrefs(snap.path, (p) => ({ ...p, open: { ...p.open, ...Object.fromEntries(keys.map((k) => [k, true])) } }))
+
+  // A click on a branch shows its history (solos it); a double-click checks it out. The first
+  // click of a double-click has already soloed it by then, so the double-click puts the filter
+  // back first: checking out is all it means.
+  const lastClick = useRef<{ ref: string; before: GraphFilter } | null>(null)
+  const clickRef = (e: { detail: number; metaKey: boolean; ctrlKey: boolean }, r: Ref, key: string) => {
+    setCursor(key)
+    if (e.detail > 1) return
+    if (r.kind === 'tag' || prefs.click === 'reveal') {
+      lastClick.current = null
+      void revealInHistory(view.id, r.hash)
+      return
     }
-    return m
-  }, [snap.refs, view.remotes, f])
-  const merged = new Set(view.merged)
-  /** Pull requests by their branch name (same-repository PRs only), from the last time the list was loaded. */
-  const prByBranch = new Map(view.pulls?.state === 'ok' ? view.pulls.pulls.filter((p) => !p.fromFork).map((p) => [p.branch, p]) : [])
-  /** Branches checked out in another worktree (git will not check them out here). */
-  const elsewhere = new Map(view.worktrees.filter((w) => !w.current && w.branch).map((w) => [w.branch!, w.path]))
-  /** After "Check which tags are on <remote>": the tags it does not have. */
-  const onRemote = view.remoteTags ? new Set(view.remoteTags.names) : null
-  /** Branches in the graph out of all of them, as in "Viewing 1181/1181". */
+    lastClick.current = { ref: r.name, before: snap.filter }
+    showBranchHistory(view.id, r.name, isMac ? e.metaKey : e.ctrlKey)
+    void revealInHistory(view.id, r.hash)
+  }
+  const doubleClickRef = (r: Ref) => {
+    const last = lastClick.current
+    lastClick.current = null
+    if (last?.ref === r.name) restoreGraphFilter(view.id, last.before)
+    if (r.kind !== 'local' || r.shortName !== snap.head.branch) void checkout(view.id, r.name)
+  }
+
+  const workspace = (item: WorkspaceItem) => {
+    if (item === 'working-copy') showWorkingCopy(view.id)
+    else if (item === 'history') showHistory(view.id)
+    else if (item === 'reflog') updateRepo(view.id, { center: { kind: 'reflog' } })
+    else toggle(`ws:${item}`)
+  }
+
+  /** Put the cursor on HEAD's branch, opening the folders around it, and scroll there. */
+  const goToHead = () => {
+    const b = snap.head.branch
+    if (!b) return
+    const r = snap.refs.find((x) => x.name === `refs/heads/${b}`)
+    if (!r) return
+    setFilter('')
+    openAll(['section:branches', ...foldersOf(b).map((p) => folderKey('branches', p))])
+    setCursor(refKey('branches', r))
+    void revealInHistory(view.id, r.hash)
+  }
+  // Scroll to the cursor whenever it moves (keyboard, Mod+0), once its row exists.
+  const cursorIndex = cursor ? rows.findIndex((r) => r.key === cursor) : -1
+  useEffect(() => {
+    if (cursorIndex >= 0) virt.scrollToIndex(cursorIndex, { align: 'auto' })
+  }, [cursorIndex, virt])
+
+  // Workspace shortcuts that need the sidebar itself (the others are plain actions, see App).
+  useEffect(() => onCommand((name) => {
+    if (name === 'ws-stashes' || name === 'ws-pulls') {
+      const key = `ws:${name.slice(3)}`
+      if (!isOpen('section:workspace')) toggle('section:workspace')
+      if (!isOpen(key)) toggle(key)
+      setCursor(key)
+    } else if (name === 'select-head-branch') goToHead()
+  }))
+
+  const activate = (row: SidebarRow, how: 'enter' | 'space' | 'click') => {
+    const k = openKeyOf(row)
+    if (row.kind === 'ref') {
+      if (how === 'enter') doubleClickRef(row.ref)
+      else clickRef({ detail: 1, metaKey: false, ctrlKey: false }, row.ref, row.key)
+    } else if (row.kind === 'workspace') workspace(row.item)
+    else if (k) toggle(k)
+    else if (row.kind === 'stash') updateRepo(view.id, { selected: { kind: 'commit', hash: row.stash.hash }, center: { kind: 'graph' } })
+    else if (row.kind === 'worktree' && how === 'enter' && !row.worktree.current) void openRepo(row.worktree.path)
+    else if (row.kind === 'more-tags') void saveSettings({ sidebarTags: 'all' })
+  }
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if ((e.target as HTMLElement).tagName === 'INPUT') return
+    const mod = isMac ? e.metaKey : e.ctrlKey
+    // Mod+0 is Actual Size everywhere else; in the sidebar it goes to HEAD's branch.
+    if (mod && e.key === '0') {
+      e.preventDefault()
+      e.stopPropagation()
+      goToHead()
+      return
+    }
+    if (mod || e.altKey) return
+    const at = cursorIndex
+    const row = at >= 0 ? rows[at] : undefined
+    const move = (from: number, step: 1 | -1) => {
+      for (let i = from + step; i >= 0 && i < rows.length; i += step) {
+        if (focusable(rows[i]!)) return setCursor(rows[i]!.key)
+      }
+    }
+    switch (e.key) {
+      case 'ArrowDown': e.preventDefault(); return move(at, 1)
+      case 'ArrowUp': e.preventDefault(); return move(at < 0 ? rows.length : at, -1)
+      case 'ArrowLeft': {
+        e.preventDefault()
+        if (!row) return
+        const k = openKeyOf(row)
+        if (k && isOpen(k) && !(filter && row.kind !== 'header')) return toggle(k)
+        const p = parentIndex(rows, at)
+        if (p >= 0) setCursor(rows[p]!.key)
+        return
+      }
+      case 'ArrowRight': {
+        e.preventDefault()
+        if (!row) return
+        const k = openKeyOf(row)
+        if (k && !isOpen(k)) return toggle(k)
+        if (k) move(at, 1)
+        return
+      }
+      case 'Enter': e.preventDefault(); if (row) activate(row, 'enter'); return
+      case ' ': e.preventDefault(); if (row) activate(row, 'space'); return
+      case 'Escape':
+        // Back to every branch (leave the branch's history).
+        if (snap.filter.solo.length) { e.preventDefault(); showHistory(view.id) }
+        return
+      case 'Delete':
+      case 'Backspace': {
+        if (!row) return
+        e.preventDefault()
+        // Each of these is undoable (deleting on a remote asks first).
+        if (row.kind === 'ref' && row.ref.kind === 'local' && row.ref.shortName !== snap.head.branch) void deleteBranch(view.id, row.ref.shortName)
+        else if (row.kind === 'ref' && row.ref.kind === 'tag') void deleteTag(view.id, row.ref.shortName)
+        else if (row.kind === 'ref' && row.ref.kind === 'remote') deleteRemoteBranch(view.id, row.ref.name)
+        else if (row.kind === 'stash') void stashDrop(view.id, row.stash.index)
+        return
+      }
+    }
+  }
+
   const branches = snap.refs.filter((r) => r.kind === 'local' || r.kind === 'remote')
   const shown = branches.filter((r) => refShown(r, snap.filter, snap.head.branch)).length
-  const menuFor = (section: 'local' | 'remotes' | 'tags' | 'worktrees' | 'submodules' | 'lfs') => () => useStore.setState({ menu: { kind: 'section', section } })
-
-  const jump = async (hash: string) => {
-    updateRepo(view.id, { selected: { kind: 'commit', hash }, center: { kind: 'graph' } })
-    await ensureLoaded(view.id, hash)
-  }
+  const soloed = snap.filter.solo.map((r) => r.replace(/^refs\/(heads|remotes|tags)\//, ''))
 
   return (
     <aside className="flex h-full min-h-0 w-full flex-col bg-panel">
-      <div className="flex h-6 items-center gap-1.5 px-3 pt-1.5 text-xs text-muted" data-testid="sidebar-viewing">
+      <div className="flex h-6 shrink-0 items-center gap-1.5 px-3 pt-1.5 text-xs text-muted" data-testid="sidebar-viewing">
         <Eye size={12} className="shrink-0" />
-        <span className="min-w-0 flex-1 truncate">Viewing {shown.toLocaleString()}/{branches.length.toLocaleString()}</span>
+        <span className="min-w-0 flex-1 truncate">
+          {soloed.length ? `Viewing the history of ${soloed.join(', ')}` : `Viewing ${shown.toLocaleString()}/${branches.length.toLocaleString()}`}
+        </span>
         {shown < branches.length && <button onClick={() => showAllInGraph(view.id)} className="shrink-0 font-medium text-accent hover:underline">Show all</button>}
-      </div>
-      <div className="p-2">
-        <input
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          placeholder="Filter branches and tags"
-          className="h-7 w-full rounded-md border border-line bg-bg px-2 text-xs outline-none focus:border-accent"
-        />
       </div>
       <ContextMenu.Root>
         <ContextMenu.Trigger asChild>
-          <div className="min-h-0 flex-1 overflow-y-auto pb-4" data-testid="sidebar">
-            <Section title="Local" count={locals.length} icon={<GitBranch size={13} />} onContextMenu={menuFor('local')}>
-              {locals.map((r) => {
-                const head = r.shortName === snap.head.branch
+          <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto pt-1 pb-2 outline-none" data-testid="sidebar" tabIndex={0} onKeyDown={onKeyDown}>
+            <div style={{ height: virt.getTotalSize(), position: 'relative' }}>
+              {virt.getVirtualItems().map((item) => {
+                const row = rows[item.index]!
                 return (
-                  <RefItem key={r.name} r={r} label={r.shortName} view={view} onJump={jump} head={head}>
-                    {(r.ahead ?? 0) > 0 && <span className="text-[10px] text-add">↑{r.ahead}</span>}
-                    {(r.behind ?? 0) > 0 && <span className="text-[10px] text-warn">↓{r.behind}</span>}
-                    {r.upstreamGone && <span className="text-[10px] text-faint" title="Upstream deleted">gone</span>}
-                    {!head && merged.has(r.shortName) && <Badge title={`Already in ${snap.head.branch ?? 'HEAD'}: safe to delete`}>merged</Badge>}
-                    {!head && isStale(r) && <Badge title="No commits for 90 days">stale</Badge>}
-                    {elsewhere.has(r.shortName) && <Badge title={`Checked out in ${elsewhere.get(r.shortName)}`}>worktree</Badge>}
-                    {prByBranch.has(r.shortName) && <Badge title={`Pull request #${prByBranch.get(r.shortName)!.number}: ${prByBranch.get(r.shortName)!.title}`}>#{prByBranch.get(r.shortName)!.number}</Badge>}
-                  </RefItem>
+                  <SidebarRowView key={row.key} row={row} top={item.start} cursor={row.key === cursor} view={view} look={look}
+                    onToggle={toggle} onWorkspace={workspace} onClickRef={clickRef} onDoubleClickRef={doubleClickRef} onCursor={setCursor} />
                 )
               })}
-            </Section>
-            <Section title="Remotes" count={remotes.size} icon={<Cloud size={13} />} onContextMenu={menuFor('remotes')}
-              action={<button title="Add remote" aria-label="Add remote" onClick={() => addRemote(view.id)} className="rounded p-0.5 text-faint hover:bg-hover hover:text-fg"><Plus size={13} /></button>}>
-              {[...remotes.entries()].filter(([, refs]) => !f || refs.length).map(([remote, refs]) => (
-                <Section key={remote} title={remote} count={refs.length} icon={null} defaultOpen={false} depth={1}
-                  testId="remote-section" onContextMenu={() => useStore.setState({ menu: { kind: 'remote', remote } })}>
-                  {refs.map((r) => (
-                    <RefItem key={r.name} r={r} label={r.shortName.slice(remote.length + 1)} view={view} onJump={jump} depth={1} />
-                  ))}
-                  {refs.length === 0 && <Empty depth={1}>Not fetched yet</Empty>}
-                </Section>
-              ))}
-              {remotes.size === 0 && <Empty>No remotes</Empty>}
-            </Section>
-            {hasGitHubRemote(view) && (
-              <Section title="Pull requests" count={view.pulls?.state === 'ok' ? view.pulls.pulls.length : 0} icon={<GitPullRequest size={13} />} defaultOpen={false}
-                onOpen={() => { if (!view.pulls && !view.pullsLoading) void loadPulls(view.id) }}
-                action={<button title="Refresh pull requests (asks GitHub)" aria-label="Refresh pull requests" onClick={() => void loadPulls(view.id)}
-                  className="rounded p-0.5 text-faint hover:bg-hover hover:text-fg"><RefreshCw size={12} className={view.pullsLoading ? 'animate-spin' : ''} /></button>}>
-                {view.pullsLoading && !view.pulls && <Empty>Asking GitHub…</Empty>}
-                {view.pulls?.state === 'signed-out' && (
-                  <div className="py-1 pr-3 pl-8 text-xs text-muted">
-                    <button className="text-accent hover:underline" onClick={() => useStore.setState({ page: 'settings' })}>Sign in with GitHub</button> to see pull requests.
-                  </div>
-                )}
-                {view.pulls?.state === 'ok' && view.pulls.pulls.length === 0 && <Empty>No open pull requests</Empty>}
-                {view.pulls?.state === 'ok' && view.pulls.pulls.map((p) => (
-                  <div key={p.number} data-testid="pull-item" data-number={p.number}
-                    onDoubleClick={() => void checkoutPull(view.id, p.number)}
-                    onContextMenu={() => useStore.setState({ menu: { kind: 'pull', number: p.number } })}
-                    title={`#${p.number} ${p.title}\n${p.author} wants to merge ${p.branch} into ${p.base}\nDouble-click to check it out`}
-                    className="flex h-6 cursor-default items-center gap-1.5 pr-3 pl-8 text-[13px] hover:bg-hover">
-                    <span className="shrink-0 text-[11px] text-faint">#{p.number}</span>
-                    <span className="min-w-0 flex-1 truncate">{p.title}</span>
-                    {p.draft && <Badge title="Draft">draft</Badge>}
-                    {p.fromFork && <Badge title="From a fork">fork</Badge>}
-                  </div>
-                ))}
-              </Section>
-            )}
-            <Section title="Tags" count={tags.length} icon={<Tag size={13} />} defaultOpen={false} onContextMenu={menuFor('tags')}>
-              {tags.map((r) => (
-                <RefItem key={r.name} r={r} label={r.shortName} view={view} onJump={jump}>
-                  {onRemote && !onRemote.has(r.shortName) && <Badge title={`Not on ${view.remoteTags!.remote}`}>local only</Badge>}
-                </RefItem>
-              ))}
-            </Section>
-            {/* Collapsed while there is only this one; re-keyed so it opens when a second appears. */}
-            <Section key={view.worktrees.length > 1 ? 'many' : 'one'} title="Worktrees" count={view.worktrees.length} icon={<FolderTree size={13} />} defaultOpen={view.worktrees.length > 1}
-              onContextMenu={menuFor('worktrees')}
-              action={<button title="Add worktree" aria-label="Add worktree" onClick={() => addWorktree(view.id)} className="rounded p-0.5 text-faint hover:bg-hover hover:text-fg"><Plus size={13} /></button>}>
-              {view.worktrees.map((w) => {
-                const folder = w.path.split(/[\\/]/).filter(Boolean).pop()
-                return (
-                  <div key={w.path} data-testid="worktree-item" data-path={w.path}
-                    onClick={() => { const r = snap.refs.find((x) => x.kind === 'local' && x.shortName === w.branch); if (r) void jump(r.hash) }}
-                    onDoubleClick={() => !w.current && void openRepo(w.path)}
-                    onContextMenu={() => useStore.setState({ menu: { kind: 'worktree', path: w.path } })}
-                    title={`${w.path}${w.current ? '\nThis tab' : '\nDouble-click to open it in a tab'}`}
-                    className={clsx('flex h-6 cursor-default items-center gap-1.5 pr-3 pl-8 text-[13px] hover:bg-hover', w.current && 'font-semibold')}>
-                    {w.current && <span className="-ml-4 w-3 text-[10px] text-accent">✓</span>}
-                    <span className="min-w-0 flex-1 truncate">{w.branch ?? `detached at ${w.head?.slice(0, 7) ?? '?'}`}</span>
-                    <span className="max-w-24 truncate text-[10px] text-faint">{folder}</span>
-                    {w.locked !== undefined && <Badge title={w.locked || 'Locked'}>locked</Badge>}
-                    {w.prunable && <Badge title={w.prunable}>missing</Badge>}
-                  </div>
-                )
-              })}
-            </Section>
-            {view.submodules.length > 0 && (
-              <Section title="Submodules" count={view.submodules.length} icon={<Boxes size={13} />} onContextMenu={menuFor('submodules')}>
-                {view.submodules.map((m) => (
-                  <div key={m.path} data-testid="submodule-item" data-path={m.path}
-                    onDoubleClick={() => m.checkedOut && void openRepo(`${snap.path}/${m.path}`)}
-                    onContextMenu={() => useStore.setState({ menu: { kind: 'submodule', path: m.path } })}
-                    title={`${m.path}\n${m.url}${m.checkedOut ? '\nDouble-click to open it in a tab' : ''}`}
-                    className="flex h-6 cursor-default items-center gap-1.5 pr-3 pl-8 text-[13px] hover:bg-hover">
-                    <span className="min-w-0 flex-1 truncate">{m.path}</span>
-                    {!m.checkedOut && <Badge title="Not cloned yet: Update to check it out">not cloned</Badge>}
-                    {m.checkedOut && m.recorded && m.checkedOut !== m.recorded && <Badge title={`At ${m.checkedOut.slice(0, 7)}; this repository records ${m.recorded.slice(0, 7)}`}>moved</Badge>}
-                    {m.dirty && <Badge title="Has uncommitted changes inside">changes</Badge>}
-                  </div>
-                ))}
-              </Section>
-            )}
-            {view.lfs?.used && (
-              <Section title="Git LFS" count={view.lfs.files.length} icon={<HardDrive size={13} />} defaultOpen={false} onContextMenu={menuFor('lfs')}>
-                {!view.lfs.ready && (
-                  <div className="flex items-center gap-2 py-1 pr-3 pl-8 text-xs text-warn" data-testid="lfs-setup">
-                    <span className="min-w-0 flex-1">Not set up here: LFS files stay pointers.</span>
-                    <button className="font-medium text-accent hover:underline" onClick={() => void lfsSetUp(view.id)}>Set up</button>
-                  </div>
-                )}
-                {view.lfs.patterns.map((p) => (
-                  <div key={p.pattern} data-testid="lfs-pattern" onContextMenu={() => useStore.setState({ menu: { kind: 'lfs-pattern', pattern: p.pattern } })}
-                    title={`From ${p.source}`} className="flex h-6 cursor-default items-center gap-1.5 pr-3 pl-8 font-mono text-[12px] hover:bg-hover">
-                    <span className="min-w-0 flex-1 truncate">{p.pattern}</span>
-                    {p.lockable && <Badge title="Lockable: checked out read-only until you lock it">lockable</Badge>}
-                  </div>
-                ))}
-                {view.lfs.files.some((f) => !f.downloaded) && (
-                  <div className="flex items-center gap-2 py-1 pr-3 pl-8 text-xs text-muted">
-                    <span className="min-w-0 flex-1">{view.lfs.files.filter((f) => !f.downloaded).length} not downloaded</span>
-                    <button className="font-medium text-accent hover:underline" onClick={() => void lfsPull(view.id)}>Pull</button>
-                  </div>
-                )}
-              </Section>
-            )}
-            <Section title="Stashes" count={view.stashes.length} icon={<Archive size={13} />}>
-              {view.stashes.map((s) => (
-                <StashItem key={s.ref} repoId={view.id} index={s.index} message={s.message} date={s.date}
-                  selected={view.selected.kind === 'commit' && view.selected.hash === s.hash}
-                  onSelect={() => updateRepo(view.id, { selected: { kind: 'commit', hash: s.hash }, center: { kind: 'graph' } })} />
-              ))}
-              {view.stashes.length === 0 && <Empty>No stashes</Empty>}
-            </Section>
-            <button onClick={() => updateRepo(view.id, { center: { kind: 'reflog' } })} data-testid="open-reflog"
-              title="Every place HEAD has been: recover deleted branches and lost commits"
-              className={clsx('mt-1 flex h-7 w-full items-center gap-1.5 pr-2 pl-[27px] text-[12px] font-semibold hover:text-fg', view.center.kind === 'reflog' ? 'text-fg' : 'text-muted')}>
-              <History size={13} /> Reflog
-            </button>
+            </div>
           </div>
         </ContextMenu.Trigger>
         <GraphMenu repoId={view.id} />
       </ContextMenu.Root>
+      <div className="shrink-0 border-t border-line p-2">
+        <input
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Escape' && filter) { e.preventDefault(); setFilter('') } }}
+          placeholder="Filter branches and tags"
+          data-testid="sidebar-filter"
+          className="h-7 w-full rounded-md border border-line bg-bg px-2 text-xs outline-none focus:border-accent"
+        />
+        <div className="mt-1.5 flex items-center gap-1">
+          <AddMenu view={view} />
+          <span className="flex-1" />
+          <GearMenu path={snap.path} />
+        </div>
+      </div>
     </aside>
   )
 }
 
-function Section({ title, count, icon, children, defaultOpen = true, depth = 0, action, onContextMenu, testId, onOpen }: {
-  title: string; count: number; icon: ReactNode; children: ReactNode; defaultOpen?: boolean; depth?: number
-  /** Called when the user opens the section (to load what it shows on demand). */
-  onOpen?: () => void
-  /** A small button at the end of the header (Add remote). */
-  action?: ReactNode
-  /** Right-click on the header: records the menu target (the sidebar's menu renders it). */
-  onContextMenu?: () => void
-  testId?: string
+interface RowContext {
+  repoId: string
+  headBranch: string | undefined
+  filter: GraphFilter
+  merged: Set<string>
+  stale: boolean
+  prs: Map<string, { number: number; title: string }>
+  elsewhere: Map<string, string>
+  onRemote: { remote: string; names: Set<string> } | null
+  lastFetched: number | null
+}
+
+const ICONS: Record<string, ReactNode> = {
+  workspace: <Laptop size={13} />, pinned: <Pin size={13} />, branches: <GitBranch size={13} />, remotes: <Cloud size={13} />, tags: <Tag size={13} />,
+  submodules: <Boxes size={13} />, worktrees: <FolderTree size={13} />, lfs: <HardDrive size={13} />,
+}
+const WORKSPACE: Record<WorkspaceItem, { label: string; icon: ReactNode; command: string; title: string }> = {
+  'working-copy': { label: 'Working Copy', icon: <Laptop size={13} />, command: 'ws-working-copy', title: 'Your uncommitted changes' },
+  history: { label: 'History', icon: <ListTree size={13} />, command: 'ws-history', title: 'Every branch in the graph' },
+  stashes: { label: 'Stashes', icon: <Archive size={13} />, command: 'ws-stashes', title: 'Changes put aside' },
+  pulls: { label: 'Pull Requests', icon: <GitPullRequest size={13} />, command: 'ws-pulls', title: 'Open pull requests on GitHub (asks GitHub when opened)' },
+  reflog: { label: 'Reflog', icon: <History size={13} />, command: 'ws-reflog', title: 'Every place HEAD has been: recover deleted branches and lost commits' },
+}
+const sectionMenu = { branches: 'local', remotes: 'remotes', tags: 'tags', worktrees: 'worktrees', submodules: 'submodules', lfs: 'lfs' } as const
+
+/**
+ * Where a row's text starts: 16px per level. Rows that fold (folders, remotes) hang their chevron
+ * to the left of that, so a folder's name and its branches' names line up.
+ */
+const pad = (depth: number) => 16 + depth * 16
+const FOLD = 14
+
+/**
+ * One row. Memoized: scrolling re-renders the list each frame, but a row's props (its offset is a
+ * number) stay equal, so React skips it.
+ */
+const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, look, onToggle, onWorkspace, onClickRef, onDoubleClickRef, onCursor }: {
+  row: SidebarRow; top: number; cursor: boolean; view: RepoView; look: RowContext
+  onToggle: (key: string) => void
+  onWorkspace: (item: WorkspaceItem) => void
+  onClickRef: (e: { detail: number; metaKey: boolean; ctrlKey: boolean }, r: Ref, key: string) => void
+  onDoubleClickRef: (r: Ref) => void
+  onCursor: (key: string) => void
 }) {
-  const [open, setOpen] = useState(defaultOpen)
-  return (
-    <div className={depth ? '' : 'mt-1'} data-testid={testId} data-name={title}>
-      <div className="flex h-7 items-center pr-2" onContextMenu={onContextMenu}>
-        <button onClick={() => { if (!open) onOpen?.(); setOpen(!open) }} style={{ paddingLeft: 8 + depth * 16 }}
-          className={clsx('flex h-full min-w-0 flex-1 items-center gap-1.5 text-[12px] hover:text-fg', depth ? 'font-medium text-muted' : 'font-semibold text-muted')}>
-          {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-          {icon}
-          <span className="flex-1 truncate text-left">{title}</span>
-          <span className="text-[11px] font-normal text-faint">{count}</span>
-        </button>
-        {action && <span className="ml-1">{action}</span>}
-      </div>
-      {open && <div>{children}</div>}
-    </div>
-  )
+  const style: React.CSSProperties = { position: 'absolute', top: 0, left: 0, right: 0, height: rowHeight(row), transform: `translateY(${top}px)` }
+  const base = clsx('flex cursor-default items-center gap-1.5 pr-3 text-[13px]', cursor ? 'bg-select' : 'hover:bg-hover')
+  /** Rows without a menu of their own: no menu opens (the list's menu would say "Nothing here"). */
+  const noMenu = (e: React.MouseEvent) => e.preventDefault()
+  const id = look.repoId
+  switch (row.kind) {
+    case 'header': {
+      const menu = (sectionMenu as Record<string, (typeof sectionMenu)[keyof typeof sectionMenu]>)[row.section]
+      return (
+        <div style={style} data-testid="sidebar-section" data-section={row.section} data-name={row.title}
+          className={clsx('flex items-center pr-2', cursor && 'bg-select')}
+          onContextMenu={menu ? () => useStore.setState({ menu: { kind: 'section', section: menu } }) : noMenu}>
+          <button onClick={() => { onCursor(row.key); onToggle(row.key) }} style={{ paddingLeft: 8 }}
+            className="flex h-full min-w-0 flex-1 items-center gap-1.5 text-[12px] font-semibold text-muted hover:text-fg">
+            {row.open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+            {ICONS[row.section]}
+            <span className="flex-1 truncate text-left">{row.title}</span>
+            {row.section !== 'workspace' && <span className="text-[11px] font-normal text-faint">{row.count}</span>}
+          </button>
+          {row.section === 'remotes' && <SmallButton label="Add remote" onClick={() => addRemote(id)}><Plus size={13} /></SmallButton>}
+          {row.section === 'worktrees' && <SmallButton label="Add worktree" onClick={() => addWorktree(id)}><Plus size={13} /></SmallButton>}
+        </div>
+      )
+    }
+    case 'workspace': {
+      const w = WORKSPACE[row.item]
+      const key = shortcutOf(w.command, useStore.getState().settings?.keybindings)
+      const active = row.item === 'working-copy' ? view.selected.kind === 'wip' && view.center.kind === 'graph'
+        : row.item === 'history' ? view.center.kind === 'graph' && !view.snapshot.filter.solo.length && view.selected.kind !== 'wip'
+        : row.item === 'reflog' ? view.center.kind === 'reflog' : false
+      const prefs = useStore.getState().settings?.sidebar[view.snapshot.path]
+      const changes = row.item === 'working-copy' ? view.snapshot.status.length : 0
+      const body = (
+        <div style={{ ...style, paddingLeft: pad(1) }} data-testid="workspace-item" data-item={row.item} title={`${w.title}${key ? ` (${key})` : ''}`}
+          onClick={() => { onCursor(row.key); onWorkspace(row.item) }} onContextMenu={noMenu}
+          className={clsx(base, active ? 'font-semibold text-fg' : 'text-muted')}>
+          {row.open !== undefined ? (row.open ? <ChevronDown size={12} className="-ml-3.5 shrink-0" /> : <ChevronRight size={12} className="-ml-3.5 shrink-0" />) : null}
+          <span className="shrink-0">{w.icon}</span>
+          <span className="min-w-0 flex-1 truncate">{w.label}</span>
+          {row.item === 'working-copy' && changes > 0 && <span className="text-[11px] text-faint">{changes}</span>}
+          {row.item === 'stashes' && prefs?.stashCount !== false && <span className="text-[11px] text-faint" data-testid="stash-count">{row.count}</span>}
+          {row.item === 'pulls' && (
+            <SmallButton label="Refresh pull requests" title="Refresh pull requests (asks GitHub)" onClick={(e) => { e.stopPropagation(); void loadPulls(id) }}>
+              <RefreshCw size={11} className={view.pullsLoading ? 'animate-spin' : ''} />
+            </SmallButton>
+          )}
+        </div>
+      )
+      // The Reflog item keeps the testid tests and docs know it by.
+      return row.item === 'reflog' ? <div data-testid="open-reflog" style={{ display: 'contents' }}>{body}</div> : body
+    }
+    case 'folder':
+      return (
+        <div style={{ ...style, paddingLeft: pad(row.depth) - FOLD }} data-testid="sidebar-folder" data-path={row.path} data-section={sectionName(row.section)}
+          onClick={() => { onCursor(row.key); onToggle(row.key) }} onContextMenu={noMenu} className={clsx(base, 'text-muted')}>
+          {row.open ? <ChevronDown size={12} className="shrink-0" /> : <ChevronRight size={12} className="shrink-0" />}
+          <Folder size={12} className="shrink-0" />
+          <span className="min-w-0 flex-1 truncate">{row.name}</span>
+          <span className="text-[11px] text-faint">{row.count}</span>
+        </div>
+      )
+    case 'remote': {
+      const hidden = look.filter.hidden.includes(`refs/remotes/${row.remote}/*`)
+      return (
+        <div style={{ ...style, paddingLeft: pad(1) - FOLD }} data-testid="remote-section" data-name={row.remote} className={clsx(base, 'text-muted')}
+          onContextMenu={() => useStore.setState({ menu: { kind: 'remote', remote: row.remote } })}>
+          <button onClick={() => { onCursor(row.key); onToggle(row.key) }} className="flex h-full min-w-0 flex-1 items-center gap-1.5 font-medium hover:text-fg">
+            {row.open ? <ChevronDown size={12} className="shrink-0" /> : <ChevronRight size={12} className="shrink-0" />}
+            <Cloud size={12} className="shrink-0" />
+            <span className={clsx('min-w-0 flex-1 truncate text-left', hidden && 'text-faint line-through')}>{row.remote}</span>
+            <span className="text-[11px] font-normal text-faint">{row.count}</span>
+          </button>
+        </div>
+      )
+    }
+    case 'ref':
+      return <RefRow row={row} style={style} cursor={cursor} look={look} onClick={onClickRef} onDoubleClick={onDoubleClickRef} />
+    case 'stash': {
+      const s = row.stash
+      const selected = view.selected.kind === 'commit' && view.selected.hash === s.hash
+      return (
+        <div style={{ ...style, paddingLeft: pad(2) }} data-testid="stash-item"
+          onClick={() => { onCursor(row.key); updateRepo(id, { selected: { kind: 'commit', hash: s.hash }, center: { kind: 'graph' } }) }}
+          onDoubleClick={() => pop(id, s.index)}
+          onContextMenu={() => useStore.setState({ menu: { kind: 'stash', stash: s } })}
+          title={`${s.message}\n${relativeTime(s.date)}\nClick to see its changes, double-click to pop`}
+          className={clsx(base, (selected || cursor) && 'bg-select')}>
+          <span className="min-w-0 flex-1 truncate">{stashLabel(s.message)}</span>
+          <span className="text-[10px] text-faint">{relativeTime(s.date)}</span>
+        </div>
+      )
+    }
+    case 'pull': {
+      const p = row.pull
+      return (
+        <div style={{ ...style, paddingLeft: pad(2) }} data-testid="pull-item" data-number={p.number}
+          onClick={() => onCursor(row.key)}
+          onDoubleClick={() => void checkoutPull(id, p.number)}
+          onContextMenu={() => useStore.setState({ menu: { kind: 'pull', number: p.number } })}
+          title={`#${p.number} ${p.title}\n${p.author} wants to merge ${p.branch} into ${p.base}\nDouble-click to check it out`}
+          className={base}>
+          <span className="shrink-0 text-[11px] text-faint">#{p.number}</span>
+          <span className="min-w-0 flex-1 truncate">{p.title}</span>
+          {p.draft && <Badge title="Draft">draft</Badge>}
+          {p.fromFork && <Badge title="From a fork">fork</Badge>}
+        </div>
+      )
+    }
+    case 'pulls-signin':
+      return (
+        <div style={{ ...style, paddingLeft: pad(2) }} className="flex items-center text-xs text-muted" onContextMenu={noMenu}>
+          <button className="text-accent hover:underline" onClick={() => useStore.setState({ page: 'settings' })}>Sign in with GitHub</button>&nbsp;to see pull requests.
+        </div>
+      )
+    case 'worktree': {
+      const w = row.worktree
+      const folder = w.path.split(/[\\/]/).filter(Boolean).pop()
+      return (
+        <div style={{ ...style, paddingLeft: pad(1) }} data-testid="worktree-item" data-path={w.path}
+          onClick={() => {
+            onCursor(row.key)
+            const r = view.snapshot.refs.find((x) => x.kind === 'local' && x.shortName === w.branch)
+            if (r) void revealInHistory(id, r.hash)
+          }}
+          onDoubleClick={() => !w.current && void openRepo(w.path)}
+          onContextMenu={() => useStore.setState({ menu: { kind: 'worktree', path: w.path } })}
+          title={`${w.path}${w.current ? '\nThis tab' : '\nDouble-click to open it in a tab'}`}
+          className={clsx(base, w.current && 'font-semibold')}>
+          {w.current && <span className="-ml-4 w-3 text-[10px] text-accent">✓</span>}
+          <span className="min-w-0 flex-1 truncate">{w.branch ?? `detached at ${w.head?.slice(0, 7) ?? '?'}`}</span>
+          <span className="max-w-24 truncate text-[10px] text-faint">{folder}</span>
+          {w.locked !== undefined && <Badge title={w.locked || 'Locked'}>locked</Badge>}
+          {w.prunable && <Badge title={w.prunable}>missing</Badge>}
+        </div>
+      )
+    }
+    case 'submodule': {
+      const m = row.submodule
+      return (
+        <div style={{ ...style, paddingLeft: pad(1) }} data-testid="submodule-item" data-path={m.path}
+          onClick={() => onCursor(row.key)}
+          onDoubleClick={() => m.checkedOut && void openRepo(`${view.snapshot.path}/${m.path}`)}
+          onContextMenu={() => useStore.setState({ menu: { kind: 'submodule', path: m.path } })}
+          title={`${m.path}\n${m.url}${m.checkedOut ? '\nDouble-click to open it in a tab' : ''}`}
+          className={base}>
+          <span className="min-w-0 flex-1 truncate">{m.path}</span>
+          {!m.checkedOut && <Badge title="Not cloned yet: Update to check it out">not cloned</Badge>}
+          {m.checkedOut && m.recorded && m.checkedOut !== m.recorded && <Badge title={`At ${m.checkedOut.slice(0, 7)}; this repository records ${m.recorded.slice(0, 7)}`}>moved</Badge>}
+          {m.dirty && <Badge title="Has uncommitted changes inside">changes</Badge>}
+        </div>
+      )
+    }
+    case 'lfs-setup':
+      return (
+        <div style={{ ...style, paddingLeft: pad(1) }} className="flex items-center gap-2 pr-3 text-xs text-warn" data-testid="lfs-setup" onContextMenu={noMenu}>
+          <span className="min-w-0 flex-1 truncate">Not set up here: LFS files stay pointers.</span>
+          <button className="font-medium text-accent hover:underline" onClick={() => void lfsSetUp(id)}>Set up</button>
+        </div>
+      )
+    case 'lfs-pattern':
+      return (
+        <div style={{ ...style, paddingLeft: pad(1) }} data-testid="lfs-pattern" onClick={() => onCursor(row.key)}
+          onContextMenu={() => useStore.setState({ menu: { kind: 'lfs-pattern', pattern: row.pattern.pattern } })}
+          title={`From ${row.pattern.source}`} className={clsx(base, 'font-mono text-[12px]')}>
+          <span className="min-w-0 flex-1 truncate">{row.pattern.pattern}</span>
+          {row.pattern.lockable && <Badge title="Lockable: checked out read-only until you lock it">lockable</Badge>}
+        </div>
+      )
+    case 'lfs-missing':
+      return (
+        <div style={{ ...style, paddingLeft: pad(1) }} className="flex items-center gap-2 pr-3 text-xs text-muted" onContextMenu={noMenu}>
+          <span className="min-w-0 flex-1">{row.count} not downloaded</span>
+          <button className="font-medium text-accent hover:underline" onClick={() => void lfsPull(id)}>Pull</button>
+        </div>
+      )
+    case 'more-tags':
+      return (
+        <div style={{ ...style, paddingLeft: pad(1) }} className="flex items-center text-xs text-faint" data-testid="more-tags" onContextMenu={noMenu}>
+          {row.hidden.toLocaleString()} older {row.hidden === 1 ? 'tag' : 'tags'} ·&nbsp;
+          <button className="font-medium text-accent hover:underline" onClick={() => void saveSettings({ sidebarTags: 'all' })}>Show all</button>
+        </div>
+      )
+    case 'empty':
+      return (
+        <div style={{ ...style, paddingLeft: pad(row.depth) }} className="flex items-center text-xs text-faint" data-testid="sidebar-empty" data-for={row.for} onContextMenu={noMenu}>
+          {row.text}
+        </div>
+      )
+  }
+})
+
+function sectionName(s: RefSection): string {
+  return typeof s === 'string' ? s : 'remotes'
 }
 
-function Badge({ title, children }: { title: string; children: ReactNode }) {
-  return <span title={title} className="rounded bg-hover px-1 text-[10px] text-faint">{children}</span>
-}
-
-function Empty({ children, depth = 0 }: { children: ReactNode; depth?: number }) {
-  return <div className="py-1 text-xs text-faint" style={{ paddingLeft: 32 + depth * 16 }}>{children}</div>
-}
-
-function RefItem({ r, label, view, onJump, head, depth = 0, children }: {
-  r: Ref; label: string; view: RepoView; onJump: (hash: string) => void; head?: boolean; depth?: number; children?: ReactNode
+function RefRow({ row, style, cursor, look, onClick, onDoubleClick }: {
+  row: Extract<SidebarRow, { kind: 'ref' }>; style: React.CSSProperties; cursor: boolean; look: RowContext
+  onClick: (e: React.MouseEvent, r: Ref, key: string) => void
+  onDoubleClick: (r: Ref) => void
 }) {
-  const selected = view.selected.kind === 'commit' && view.selected.hash === r.hash
-  const filter = view.snapshot.filter
+  const r = row.ref
+  const head = r.kind === 'local' && r.shortName === look.headBranch
+  const filter = look.filter
   const remote = r.kind === 'remote' ? `refs/remotes/${r.shortName.split('/')[0]}/*` : null
   const hidden = filter.hidden.includes(r.name) || (!!remote && filter.hidden.includes(remote))
   const soloed = filter.solo.includes(r.name)
   /** Out of the graph: hidden, or not among the soloed refs. HEAD's branch always shows. */
-  const out = !head && !refShown(r, filter, view.snapshot.head.branch)
+  const out = !head && r.kind !== 'tag' && !refShown(r, filter, look.headBranch)
+  const pr = r.kind === 'local' ? look.prs.get(r.shortName) : undefined
+  const fetched = look.lastFetched ? `, last fetched ${relativeTime(look.lastFetched)}` : ''
+  const tracking = r.upstream ? `Tracks ${r.upstream.replace(/^refs\/remotes\//, '')}${fetched}` : ''
+  // Badge order: ↑n ↓n, gone, merged, stale, worktree, #PR, local only.
+  const badges: ReactNode[] = []
+  if ((r.ahead ?? 0) > 0) badges.push(<span key="ahead" className="text-[10px] text-add" title={`${r.ahead} to push. ${tracking}`}>↑{r.ahead}</span>)
+  if ((r.behind ?? 0) > 0) badges.push(<span key="behind" className="text-[10px] text-warn" title={`${r.behind} to pull. ${tracking}`}>↓{r.behind}</span>)
+  if (r.upstreamGone) badges.push(<span key="gone" className="text-[10px] text-faint" title="Upstream deleted on the remote">gone</span>)
+  if (r.kind === 'local' && !head) {
+    if (look.merged.has(r.shortName)) badges.push(<Badge key="merged" title={`Already in ${look.headBranch ?? 'HEAD'}: safe to delete`}>merged</Badge>)
+    if (look.stale && isStale(r)) badges.push(<Badge key="stale" title="No commits for 90 days">stale</Badge>)
+  }
+  if (r.kind === 'local' && look.elsewhere.has(r.shortName)) badges.push(<Badge key="wt" title={`Checked out in ${look.elsewhere.get(r.shortName)}`}>worktree</Badge>)
+  if (pr) badges.push(<Badge key="pr" title={`Pull request #${pr.number}: ${pr.title}`}>#{pr.number}</Badge>)
+  if (r.kind === 'tag' && look.onRemote && !look.onRemote.names.has(r.shortName)) badges.push(<Badge key="local" title={`Not on ${look.onRemote.remote}`}>local only</Badge>)
   return (
     <div
-      draggable={r.kind !== 'tag'}
-      onDragStart={(e) => {
-        e.dataTransfer.setData(REF_MIME, JSON.stringify(r))
-        e.dataTransfer.effectAllowed = 'move'
-      }}
-      onClick={() => void onJump(r.hash)}
-      onDoubleClick={() => !head && void checkout(view.id, r.name)}
+      style={{ ...style, paddingLeft: pad(row.depth) }}
+      onClick={(e) => onClick(e, r, row.key)}
+      onDoubleClick={() => onDoubleClick(r)}
+      onMouseDown={(e) => e.detail > 1 && e.preventDefault()}
       onContextMenu={() => useStore.setState({ menu: { kind: 'ref', ref: r, hash: r.hash } })}
       data-testid="sidebar-ref"
       data-ref={r.name}
+      data-section={sectionName(row.section)}
       data-upstream={r.upstream ?? ''}
-      title={`${r.name}\nDouble-click to check out`}
-      style={{ paddingLeft: 32 + depth * 16 }}
-      className={clsx('group flex h-6 cursor-default items-center gap-1.5 pr-3 text-[13px]', selected ? 'bg-select' : 'hover:bg-hover', head && 'font-semibold')}
+      title={`${r.name}${tracking ? `\n${tracking}` : ''}\n${r.kind === 'tag' ? 'Click to show it in the graph' : 'Click to show its history, double-click to check out'}`}
+      className={clsx('group flex cursor-default items-center gap-1.5 pr-3 text-[13px]', cursor ? 'bg-select' : 'hover:bg-hover', head && 'font-semibold')}
     >
       {head && <span className="-ml-4 w-3 text-[10px] text-accent">✓</span>}
-      <span className={clsx('min-w-[4.5rem] flex-1 truncate', out && 'text-faint line-through decoration-faint/50')} data-testid="ref-label">{label}</span>
+      <span className={clsx('min-w-[4.5rem] flex-1 truncate', out && 'text-faint line-through decoration-faint/50')} data-testid="ref-label">{row.label}</span>
       {/* Badges give way before the branch name does: the name is what you are looking for. They
           wrap onto a second line that is cut off, so a badge that does not fit disappears whole
           instead of showing as "sta". */}
-      {children && <span className="flex h-4 min-w-0 shrink flex-wrap items-center justify-end gap-x-1 overflow-hidden">{children}</span>}
-      {soloed && <span title="Soloed: the graph shows only soloed branches"><Focus size={12} className="text-accent" /></span>}
-      {!head && (
+      {badges.length > 0 && <span className="flex h-4 min-w-0 shrink flex-wrap items-center justify-end gap-x-1 overflow-hidden">{badges}</span>}
+      {soloed && <span title="Showing its history: the graph shows only the branches you picked"><Focus size={12} className="text-accent" /></span>}
+      {!head && r.kind !== 'tag' && (
         <button
-          onClick={(e) => { e.stopPropagation(); if (filter.hidden.includes(r.name)) showInGraph(view.id, r.name); else hideInGraph(view.id, r.name) }}
+          onClick={(e) => { e.stopPropagation(); if (filter.hidden.includes(r.name)) showInGraph(look.repoId, r.name); else hideInGraph(look.repoId, r.name) }}
+          onDoubleClick={(e) => e.stopPropagation()}
           title={hidden ? 'Show in the graph' : 'Hide in the graph'} aria-label={hidden ? 'Show in the graph' : 'Hide in the graph'} data-testid="toggle-hidden"
           className={clsx('rounded p-0.5 text-faint hover:text-fg', hidden ? '' : 'opacity-0 group-hover:opacity-100')}>
           {hidden ? <EyeOff size={12} /> : <Eye size={12} />}
@@ -289,31 +561,66 @@ function RefItem({ r, label, view, onJump, head, depth = 0, children }: {
   )
 }
 
-function StashItem({ repoId, index, message, date, selected, onSelect }: {
-  repoId: string; index: number; message: string; date: number; selected: boolean; onSelect: () => void
-}) {
+function SmallButton({ label, title, onClick, children }: { label: string; title?: string; onClick: (e: React.MouseEvent) => void; children: ReactNode }) {
   return (
-    <ContextMenu.Root>
-      <ContextMenu.Trigger asChild>
-        <div
-          onContextMenu={(e) => e.stopPropagation()}
-          onClick={onSelect}
-          onDoubleClick={() => pop(repoId, index)}
-          data-testid="stash-item"
-          title={`${message}\n${relativeTime(date)}\nClick to see its changes, double-click to pop`}
-          className={clsx('flex h-6 items-center gap-1.5 pr-3 pl-8 text-[13px]', selected ? 'bg-select' : 'hover:bg-hover')}
-        >
-          <span className="min-w-0 flex-1 truncate">{stashLabel(message)}</span>
-          <span className="text-[10px] text-faint">{relativeTime(date)}</span>
-        </div>
-      </ContextMenu.Trigger>
-      <CM.Content>
-        <CM.Item onSelect={() => pop(repoId, index)}>Pop (apply and delete)</CM.Item>
-        <CM.Item onSelect={() => void stashApply(repoId, index)}>Apply</CM.Item>
-        <CM.Item onSelect={() => stashToBranch(repoId, index)}>Create a branch from this stash…</CM.Item>
-        <CM.Separator />
-        <CM.Item danger onSelect={() => void stashDrop(repoId, index)}>Drop</CM.Item>
-      </CM.Content>
-    </ContextMenu.Root>
+    <button title={title ?? label} aria-label={label} onClick={onClick} onDoubleClick={(e) => e.stopPropagation()} className="ml-1 rounded p-0.5 text-faint hover:bg-hover hover:text-fg">
+      {children}
+    </button>
+  )
+}
+
+function Badge({ title, children }: { title: string; children: ReactNode }) {
+  return <span title={title} className="rounded bg-hover px-1 text-[10px] text-faint">{children}</span>
+}
+
+/** The + below the sidebar: everything new that the sidebar lists. */
+function AddMenu({ view }: { view: RepoView }) {
+  const id = view.id
+  const head = view.snapshot.head.hash
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <button aria-label="New…" title="Create a branch, tag, remote, submodule or worktree" data-testid="sidebar-add" className="rounded p-1 text-muted hover:bg-hover hover:text-fg">
+          <Plus size={14} />
+        </button>
+      </DropdownMenu.Trigger>
+      <DM.Content>
+        <DM.Item onSelect={() => newBranch(id)}>Create branch…</DM.Item>
+        <DM.Item disabled={!head} onSelect={() => head && newTag(id, head)}>Create tag…</DM.Item>
+        <DM.Separator />
+        <DM.Item onSelect={() => addRemote(id)}>Add remote…</DM.Item>
+        <DM.Item onSelect={() => addSubmodule(id)}>Add submodule…</DM.Item>
+        <DM.Item onSelect={() => addWorktree(id)}>Add worktree…</DM.Item>
+      </DM.Content>
+    </DropdownMenu.Root>
+  )
+}
+
+/** The gear below the sidebar: how it shows things. Folders is for every repository, the rest for this one. */
+function GearMenu({ path }: { path: string }) {
+  const prefs = useSidebarPrefs(path)
+  const folders = useSetting('sidebarFolders')
+  const set = (patch: Partial<typeof prefs>) => updateSidebarPrefs(path, (p) => ({ ...p, ...patch }))
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <button aria-label="Sidebar options" title="Sidebar options" data-testid="sidebar-gear" className="rounded p-1 text-muted hover:bg-hover hover:text-fg">
+          <Settings2 size={14} />
+        </button>
+      </DropdownMenu.Trigger>
+      <DM.Content align="end">
+        <DM.Check checked={folders} onChange={(v) => void saveSettings({ sidebarFolders: v })} testId="gear-folders">Group refs in folders (all repositories)</DM.Check>
+        <DM.Separator />
+        <DM.Label>This repository</DM.Label>
+        <DM.Check checked={prefs.merged !== false} onChange={(v) => set({ merged: v })} testId="gear-merged">Show merged badge</DM.Check>
+        <DM.Check checked={prefs.stale !== false} onChange={(v) => set({ stale: v })} testId="gear-stale">Show stale badge</DM.Check>
+        <DM.Check checked={prefs.reflog !== false} onChange={(v) => set({ reflog: v })} testId="gear-reflog">Show reflog</DM.Check>
+        <DM.Check checked={prefs.stashCount !== false} onChange={(v) => set({ stashCount: v })} testId="gear-stash-count">Show stash count</DM.Check>
+        <DM.Separator />
+        <DM.Label>Click a branch</DM.Label>
+        <DM.Check checked={prefs.click !== 'reveal'} onChange={(v) => set({ click: v ? 'history' : 'reveal' })} testId="gear-click-history">Show its history</DM.Check>
+        <DM.Check checked={prefs.click === 'reveal'} onChange={(v) => set({ click: v ? 'reveal' : 'history' })} testId="gear-click-reveal">Reveal its commit</DM.Check>
+      </DM.Content>
+    </DropdownMenu.Root>
   )
 }
