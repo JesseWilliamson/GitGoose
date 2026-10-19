@@ -2,7 +2,7 @@ import { DEFAULT_LAYOUT, setCollapsed } from '@gitgoose/shared'
 import { useEffect } from 'react'
 import { applyPatchFile, applyPatchFromClipboard, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, redo, stash, undo } from '../lib/actions'
 import { comboOf, keymap } from '../lib/keys'
-import { closeTab, onCommand, runCommand, updateRepo, saveSettings, setting, useActiveRepo, useStore } from '../lib/store'
+import { closeTab, onCommand, runCommand, updateRepo, saveSettings, setting, toggleLine, useActiveRepo, useStore } from '../lib/store'
 import { AttentionBar } from './AttentionBar'
 import { OmniSearch } from './OmniSearch'
 import { Dialogs, PromptDialog, Toasts } from './Dialogs'
@@ -69,6 +69,7 @@ function useCommands() {
         case 'apply-patch-clipboard': return void applyPatchFromClipboard(id)
         case 'reflog': return updateRepo(id, { center: { kind: 'reflog' } })
         case 'command-log': return updateRepo(id, { center: { kind: 'commands' } })
+        case 'line-view': return toggleLine(id)
       }
     }
     const off = onCommand(handle)

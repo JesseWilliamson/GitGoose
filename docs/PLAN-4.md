@@ -230,7 +230,7 @@ lands where the user aimed. Release Shift: everything comes back. A bar over the
 Shift+arrows keep their meaning inside the view (they already select along the lane, spec 007).
 Alt is not involved; Ctrl/Cmd-click still toggles.
 
-Also pinnable: View → "Line view" (Ctrl/Cmd+Shift+L) keeps it on until toggled, for people who
+Also pinnable: View → "Line view" (Ctrl/Cmd+L; Shift+L is Fetch, see As built) keeps it on until toggled, for people who
 want Tower's "show only this branch" feel; Esc releases it.
 
 ### Design
@@ -256,6 +256,31 @@ all rows; the selected row's `getBoundingClientRect().top` is unchanged across b
 The interesting idea: a "branch" is not a git object, it is a path in the DAG; first-parent is how
 git itself defines the path (`--first-parent`, `rebase`, `log` ordering), and the layout's
 lane-inheritance rule is the same definition drawn.
+
+### As built (where reality refined the plan)
+
+- **Shortcut.** Mod+Shift+L has been Fetch since the first keymap, so Line View is **Mod+L**
+  (rebindable in Settings like every command). Taking Fetch's key would have silently changed a
+  shortcut people already use.
+- **Edges.** One straight `pass` per row leaves a gap wherever the line changes lane (topic's X in
+  lane 1, its parent A in lane 0). Rows draw a `top` edge from the line's row above (curving in
+  when that lane differs, as the full graph does) and a straight `bottom` edge when the commit has
+  a parent, so the line is continuous and ends cleanly at the top and bottom. HEAD's dashed
+  pending edges are kept so the uncommitted-changes row still joins HEAD.
+- **Keeping the row still.** Scrolling alone cannot keep the cursor row in place when the line has
+  fewer rows above it than the screen shows (the e2e case: A is row 5 of all, row 2 of its line).
+  The list adds space above the line (`paddingStart`) and a minimum height below for as long as
+  it is collapsed. For the same reason the bar floats over the bottom of the graph instead of
+  taking a row above it: inserting a bar would push every row down by its height.
+- **Growing with pages.** `lineThrough` runs again per page (O(line length), once per page, never
+  per frame) rather than keeping a walk cursor; the walk up never changes with new pages (children
+  come before parents), so the result is the old line plus rows at the bottom, which the tests
+  assert. Near the end of the line the list keeps loading pages until the next first parent
+  arrives.
+- **The line is frozen** at the commit Shift was first held on: a Shift-click inside the view moves
+  the selection's cursor but must not re-walk the line under the pointer.
+- **The test file** `lineView.test.ts` runs real git, so it is type-checked by `tsconfig.node.json`
+  (the renderer's config has browser types only).
 
 ---
 
@@ -579,7 +604,7 @@ branch since its fork point (a PR, when the branch has one). Opened from the Rev
 
 - [x] 1a blue selection · [x] 1b no month headers · [x] 1c double-click checks out · [x] 1d topological order
 - [x] 2 straight lanes
-- [ ] 3 line view
+- [x] 3 line view
 - [ ] 4a sidebar · [ ] 4b drag-and-drop matrix
 - [ ] 5a threads · [ ] 5b Copilot
 - [ ] 6a dsviz skill + extensions (2.2.0) · [ ] 6b dsviz in GitGoose

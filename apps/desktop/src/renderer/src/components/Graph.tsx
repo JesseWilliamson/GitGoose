@@ -4,11 +4,12 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import clsx from 'clsx'
 import { Archive, Cloud, Laptop, Tag } from 'lucide-react'
 import { ContextMenu } from 'radix-ui'
-import { memo, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { bisectMark, bisectReset, checkout, checkoutRow, moveCommits, showAllInGraph, squashOnto } from '../lib/actions'
 import { avatarSrc, useAvatarVariant } from '../lib/avatar'
 import { authorLine, formatDate, laneColor, shortHash, stashLabel } from '../lib/format'
-import { ensureLoaded, getLog, loadMore, selectCommit, selectedHashes, selectionCursor, updateRepo, useSetting, useStore, type RepoView } from '../lib/store'
+import { lineEnded, lineIndexOf, lineThrough } from '../lib/lineView'
+import { ensureLoaded, getLog, loadMore, selectCommit, selectedHashes, selectionCursor, setLine, updateRepo, useSetting, useStore, type RepoView } from '../lib/store'
 import { AvatarStack, type StackedAuthor } from './Avatar'
 import { cellWidth, GraphCell, ROW_H, ROW_H_COMPACT, WipCell } from './GraphCell'
 import { GraphMenu } from './menus'
@@ -23,6 +24,8 @@ const AVATAR = 30
 const AVATAR_COMPACT = 18
 /** The one-line layout's branch / tag column, left of the graph. */
 const REFS_W = 160
+/** How long Shift must be held, with no click, before the graph shows only the selected line. */
+const HOLD_MS = 150
 
 /** A local and a remote branch with the same name share one pill, like GitKraken. */
 interface Pill {
@@ -96,24 +99,63 @@ function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
   const look = useMemo<RowLook>(() => ({ compact, rowH, dateFormat, showRemotes, showTags, avatars, avatarVariant }),
     [compact, rowH, dateFormat, showRemotes, showTags, avatars, avatarVariant])
   const snap = view.snapshot
-  const showWip = snap.status.length > 0 || !snap.head.hash
+
+  // The line view (lib/lineView.ts): only the rows on the line through `anchor`, or all rows.
+  // `visible` maps list position → log row. It is walked again when a page loads (the line grows
+  // down as first parents arrive): one array per page, never per frame, and no relayout.
+  // A line whose commit is gone (amended, rebased) moves to the selection, else to HEAD.
+  const cursor = selectionCursor(view.selected)
+  const anchor = view.line ? [view.line.hash, cursor, snap.head.hash].find((h) => h && log.index.has(h)) ?? null : null
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the log is mutated in place; logVersion says when
+  const visible = useMemo(() => (anchor ? lineThrough(log, anchor) : null), [anchor, log, view.logVersion])
+  const headRow = snap.head.hash ? log.index.get(snap.head.hash) : undefined
+  // The uncommitted changes sit on HEAD's line: in the line view they show only on that line.
+  const showWip = (snap.status.length > 0 || !snap.head.hash) && (!visible || (headRow !== undefined && lineIndexOf(visible, headRow) >= 0))
   const offset = showWip ? 1 : 0
-  const count = log.commits.length + offset + (log.done ? 0 : 1)
+  const rowCount = visible ? visible.length : log.commits.length
+  // More rows can still come: the history is not all loaded, and (in the line view) the line has
+  // not ended at a root commit, below which nothing belongs to it.
+  const more = !log.done && !(visible && lineEnded(log, visible))
+  const count = rowCount + offset + (more ? 1 : 0)
+  /** The log row at list position `item`: -1 for the WIP row, -2 for the "Loading…" row. */
+  const rowOf = (item: number): number => {
+    const k = item - offset
+    if (k < 0) return -1
+    if (k >= rowCount) return -2
+    return visible ? visible[k]! : k
+  }
+  /** The list position of log row `row` (-1: the WIP row), or -1 when it is not shown. */
+  const itemOf = (row: number): number => {
+    if (row < 0) return showWip ? 0 : -1
+    if (!visible) return row + offset
+    const k = lineIndexOf(visible, row)
+    return k < 0 ? -1 : k + offset
+  }
+
   const scrollRef = useRef<HTMLDivElement>(null)
+  /**
+   * Space added above and below the line view's rows so the selected row can stay exactly where
+   * it was on screen when the graph collapses (a short line has too few rows above it to scroll
+   * to the same place). Zero when all rows show.
+   */
+  const [space, setSpace] = useState({ top: 0, min: 0 })
   const virt = useVirtualizer({
     count,
     getScrollElement: () => scrollRef.current,
     // Every row is the same height, so the virtualizer's estimate is exact and it never measures.
     estimateSize: () => rowH,
+    paddingStart: space.top,
     overscan: 15,
   })
 
   const items = virt.getVirtualItems()
   const lastVisible = items.length ? items[items.length - 1]!.index : 0
-  // Fetch the next page when the user gets within a few hundred rows of the end.
+  // Fetch the next page when the user gets within a few hundred rows of the end. A line ends
+  // where its next first parent is not loaded yet, so near the end of the line it loads on (page
+  // after page if it must) until the parent arrives or the history ends.
   useEffect(() => {
-    if (!log.done && lastVisible > log.commits.length - 400) void loadMore(view.id)
-  }, [lastVisible, view.logVersion, view.id, log])
+    if (more && lastVisible > offset + rowCount - (visible ? 50 : 400)) void loadMore(view.id)
+  }, [lastVisible, view.logVersion, view.id, more, visible, offset, rowCount])
 
   /** Bisect marks on rows: what was marked good / bad / skipped, and the culprit once found. */
   const bisectMarks = useMemo(() => {
@@ -140,13 +182,9 @@ function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
   const editableSet = useMemo(() => new Set(view.editable), [view.editable])
   const stashByHash = useMemo(() => new Map(view.stashes.map((s) => [s.hash, s])), [view.stashes])
   // Keep the selected row in view when it changes (keyboard navigation, jumping to a parent).
-  let selectedIndex = -1
-  const cursor = selectionCursor(view.selected)
-  if (view.selected.kind === 'wip') selectedIndex = showWip ? 0 : -1
-  else if (cursor) {
-    const ci = log.index.get(cursor)
-    if (ci !== undefined) selectedIndex = ci + offset
-  }
+  /** The log row the keyboard moves from: -1 for the WIP row, undefined for none. */
+  const cursorRow = view.selected.kind === 'wip' ? -1 : cursor ? log.index.get(cursor) : undefined
+  const selectedIndex = cursorRow === undefined ? -1 : itemOf(cursorRow)
   const lastScrolled = useRef(-1)
   useEffect(() => {
     if (selectedIndex >= 0 && selectedIndex !== lastScrolled.current) {
@@ -155,21 +193,110 @@ function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
     }
   }, [selectedIndex, virt])
 
+  // When the graph collapses to a line or expands again, the selected row stays where it was on
+  // screen: a Shift-click that follows lands where the user aimed. Before the browser paints, work
+  // out where the row was (from the previous render's list) and scroll the new list to match.
+  // (The list's own top does not move: the line bar floats over it, see LineBar. Runs on every
+  // render, so it reads nothing from the DOM that would force a layout while scrolling.)
+  const scrollTop = useRef(0)
+  const before = useRef<{ key: string; itemOf: (row: number) => number; pad: number } | null>(null)
+  const pendingScroll = useRef<number | null>(null)
+  const viewKey = anchor ? `line:${anchor}` : 'all'
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const scrollTo = (y: number) => {
+      el.scrollTop = y
+      scrollTop.current = el.scrollTop
+    }
+    if (pendingScroll.current !== null) {
+      scrollTo(pendingScroll.current)
+      pendingScroll.current = null
+    }
+    const prev = before.current
+    if (prev && prev.key !== viewKey) {
+      const was = cursorRow === undefined ? -1 : prev.itemOf(cursorRow)
+      const now = selectedIndex
+      let next = { top: 0, min: 0 }
+      if (was >= 0 && now >= 0) {
+        // The row's distance from the top of the list's viewport, before; the same after.
+        const y = prev.pad + was * rowH - scrollTop.current
+        const top = visible ? Math.max(0, y - now * rowH) : 0
+        const target = top + now * rowH - y
+        next = { top, min: visible ? target + el.clientHeight : 0 }
+        lastScrolled.current = now
+        if (next.top === space.top && next.min === space.min) scrollTo(target)
+        else pendingScroll.current = target
+      }
+      if (next.top !== space.top || next.min !== space.min) setSpace(next)
+    }
+    before.current = { key: viewKey, itemOf, pad: space.top }
+  })
+
+  // Hold Shift (no click, no other modifier) with a commit selected: show only its line until Shift
+  // is let go. Shift-click and Shift+arrows work as ever inside it. A Shift released in another
+  // window never arrives here, so leaving the window lets go too.
+  const hold = useRef<number | null>(null)
+  const cancelHold = () => {
+    if (hold.current !== null) window.clearTimeout(hold.current)
+    hold.current = null
+  }
+  useEffect(() => {
+    const release = () => {
+      cancelHold()
+      if (useStore.getState().repos[view.id]?.line?.pinned === false) setLine(view.id, null)
+    }
+    const onKeyUp = (e: KeyboardEvent) => e.key === 'Shift' && release()
+    // Esc lets go of a pinned line (View → Line View), unless something else has the keyboard.
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || !useStore.getState().repos[view.id]?.line?.pinned) return
+      const t = e.target as Node
+      if (t !== document.body && !scrollRef.current?.contains(t)) return
+      setLine(view.id, null)
+    }
+    window.addEventListener('keyup', onKeyUp)
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('blur', release)
+    window.addEventListener('mousedown', cancelHold, true)
+    return () => {
+      cancelHold()
+      window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('blur', release)
+      window.removeEventListener('mousedown', cancelHold, true)
+    }
+  }, [view.id])
+
   // The last row may be the "Loading…" placeholder; keyboard selection stops at the last commit.
   // Landing there scrolls near the end, which loads the next page, so End can be pressed again.
-  const lastSelectable = offset + log.commits.length - 1
+  const lastSelectable = offset + rowCount - 1
   const select = (wanted: number, range = false) => {
     const i = Math.min(Math.max(wanted, 0), lastSelectable)
     if (i < 0) return
-    if (showWip && i === 0) {
+    const r = rowOf(i)
+    if (r === -1) {
       if (!range) updateRepo(view.id, { selected: { kind: 'wip' } })
     } else {
-      const c = log.commits[i - offset]
+      const c = log.commits[r]
       if (c) selectCommit(view.id, c.hash, { range })
     }
   }
 
   const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Shift') {
+      if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey && !view.line && hold.current === null) {
+        hold.current = window.setTimeout(() => {
+          hold.current = null
+          const v = useStore.getState().repos[view.id]
+          const sel = v?.selected
+          const hash = sel && sel.kind !== 'wip' ? selectionCursor(sel) : null
+          if (hash && !v!.line) setLine(view.id, { hash, pinned: false })
+        }, HOLD_MS)
+      }
+      return
+    }
+    // Shift as part of a shortcut (Ctrl+Shift+…) is not a hold.
+    if (e.ctrlKey || e.metaKey || e.altKey) cancelHold()
     const cur = selectedIndex < 0 ? -1 : selectedIndex
     // Shift+arrows grow the selection from where it started, like Shift-click.
     if (e.key === 'ArrowDown' || e.key === 'j') { e.preventDefault(); select(cur + 1, e.shiftKey) }
@@ -197,19 +324,20 @@ function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
             data-testid="graph-scroll"
             tabIndex={0}
             onKeyDown={onKeyDown}
+            onScroll={(e) => { scrollTop.current = e.currentTarget.scrollTop }}
             className="min-h-0 flex-1 overflow-auto outline-none"
           >
-            <div style={{ height: virt.getTotalSize(), position: 'relative' }}>
+            <div style={{ height: virt.getTotalSize(), minHeight: space.min, position: 'relative' }}>
               {items.map((item) => {
                 const i = item.index
                 const style = { position: 'absolute' as const, top: 0, left: 0, right: 0, height: item.size, transform: `translateY(${item.start}px)` }
-                if (showWip && i === 0) {
+                const r = rowOf(i)
+                if (r === -1) {
                   return <WipRow key="wip" style={style} view={view} cellW={cellWidth(wipLanes)} look={look} selected={view.selected.kind === 'wip'}
                     lane={log.layout.headLane} color={log.layout.headColor} />
                 }
-                const ci = i - offset
-                const commit = log.commits[ci]
-                const row = log.rows[ci]
+                const commit = log.commits[r]
+                const row = log.rows[r]
                 if (!commit || !row) {
                   return (
                     <div key="loading" style={style} className="flex items-center gap-2 px-3 text-xs text-faint">
@@ -217,6 +345,9 @@ function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
                     </div>
                   )
                 }
+                // In the line view a row draws only the line: joined to the line's row above (its
+                // child on the line), and on down when the commit has a parent.
+                const up = visible && i - offset > 0 ? log.rows[visible[i - offset - 1]!] : undefined
                 return (
                   <CommitRow
                     key={commit.hash}
@@ -233,6 +364,9 @@ function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
                     bisect={bisectMarks?.get(commit.hash)}
                     showPending={showWip}
                     look={look}
+                    lineAbove={visible ? (up ? up.lane : -1) : undefined}
+                    lineAboveColor={up?.color}
+                    lineBelow={visible ? commit.parents.length > 0 : undefined}
                   />
                 )
               })}
@@ -241,6 +375,27 @@ function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
         </ContextMenu.Trigger>
         <GraphMenu repoId={view.id} />
       </ContextMenu.Root>
+      {visible && anchor && <LineBar view={view} hash={anchor} hidden={log.commits.length - visible.length} />}
+    </div>
+  )
+}
+
+/**
+ * Says the graph shows one line of history, and how to get the rest back. It floats over the
+ * bottom of the graph instead of taking a row of its own: pushing the list down would move the
+ * very row the user is about to Shift-click.
+ */
+function LineBar({ view, hash, hidden }: { view: RepoView; hash: string; hidden: number }) {
+  const pinned = view.line?.pinned
+  return (
+    <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-3">
+      <div className="pointer-events-auto flex min-w-0 items-center gap-2 rounded-md border border-line bg-panel px-3 py-1 text-[12px] shadow-lg" data-testid="line-bar">
+        <span className="min-w-0 truncate">
+          Showing the line through <span className="font-mono">{shortHash(hash)}</span> · {hidden} {hidden === 1 ? 'commit' : 'commits'} hidden ·{' '}
+          {pinned ? 'Esc to show all' : 'release Shift to show all'}
+        </span>
+        {pinned && <button onClick={() => setLine(view.id, null)} className="shrink-0 rounded px-1.5 font-medium text-accent hover:bg-hover">Show all</button>}
+      </div>
     </div>
   )
 }
@@ -307,6 +462,10 @@ const CommitRow = memo(function CommitRow(props: {
   stash?: StashEntry
   showPending: boolean
   look: RowLook
+  /** The line view's edges for this row (see GraphCell); undefined when all rows show. */
+  lineAbove?: number
+  lineAboveColor?: number
+  lineBelow?: boolean
 }) {
   const { commit, row, repoId, look } = props
   /** The author, then any co-authors from the commit's trailers: one avatar each, stacked. */
@@ -466,7 +625,8 @@ const CommitRow = memo(function CommitRow(props: {
           {labelled && <span className="h-0.5 min-w-2 flex-1" style={{ background: lane, opacity: 0.85 }} />}
         </div>
       )}
-      <GraphCell row={row} width={cellW} showPending={props.showPending} isHead={props.isHead} h={look.rowH} stash={!!commit.stash} refLine={labelled} />
+      <GraphCell row={row} width={cellW} showPending={props.showPending} isHead={props.isHead} h={look.rowH} stash={!!commit.stash} refLine={labelled}
+        lineAbove={props.lineAbove} lineAboveColor={props.lineAboveColor} lineBelow={props.lineBelow} />
       <div className="relative flex min-w-0 flex-1 items-center gap-2.5 border-b border-line/50 pr-5 pl-1" data-testid="row-body">
         <span data-testid="row-avatar" className="flex shrink-0">
           <AvatarStack people={people} size={look.compact ? AVATAR_COMPACT : AVATAR} max={look.compact ? 2 : 3} />

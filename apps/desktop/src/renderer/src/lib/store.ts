@@ -71,6 +71,11 @@ export interface RepoView {
   worktreeTick: number
   /** The code graph (ADR-008): Peek and Impact wait while it indexes. */
   codegraph: CodeGraphStatus
+  /**
+   * The graph shows only the line of history through `hash` (lib/lineView.ts): while Shift is
+   * held, or until toggled off when `pinned` (View → Line View).
+   */
+  line: { hash: string; pinned: boolean } | null
 }
 
 /** Toasts are for outcomes that need nothing from the user: successes and notes. */
@@ -254,6 +259,8 @@ export interface LogData {
   commits: Commit[]
   rows: Row[]
   index: Map<string, number>
+  /** hash → the commits whose first parent it is, in graph order (for the line view's walk up). */
+  firstChildren: Map<string, string[]>
   layout: GraphLayout
   generation: number
   done: boolean
@@ -282,7 +289,7 @@ function emptyLog(snap: RepoSnapshot | undefined, generation: number): LogData {
   // The trunk (main, origin/main) keeps the leftmost lane, so a checkout does not move it.
   const trunk = snap ? snap.refs.filter((r) => snap.trunk.includes(r.name)).map((r) => r.hash) : []
   return {
-    commits: [], rows: [], index: new Map(),
+    commits: [], rows: [], index: new Map(), firstChildren: new Map(),
     // Branches on top of the trunk or HEAD continue its lane (git worked out which, see straightTips).
     layout: new GraphLayout({ head: snap?.head.hash, trunk, straight: snap?.graph.straight }),
     generation, done: false, loading: null, maxWidth: 1,
@@ -376,6 +383,12 @@ function loadInto(id: string, log: LogData, firstPage = FIRST_PAGE): Promise<voi
           log.index.set(c.hash, log.commits.length)
           log.commits.push(c)
           log.rows.push(rows[i]!)
+          const parent = c.parents[0]
+          if (parent !== undefined) {
+            const children = log.firstChildren.get(parent)
+            if (children) children.push(c.hash)
+            else log.firstChildren.set(parent, [c.hash])
+          }
           if (rows[i]!.width > log.maxWidth) log.maxWidth = rows[i]!.width
         }
         log.done = page.done
@@ -457,6 +470,23 @@ export function selectCommit(id: string, hash: string, mods: { range?: boolean; 
   updateRepo(id, { selected: next })
 }
 
+/**
+ * Show only the line of history through `hash` (or show everything again with null). `pinned`
+ * keeps it until toggled off; otherwise it lasts while Shift is held (see GraphList).
+ */
+export function setLine(id: string, line: RepoView['line']): void {
+  updateRepo(id, { line })
+}
+
+/** View → Line View: pin the line through the selected commit (or HEAD), or show everything again. */
+export function toggleLine(id: string): void {
+  const v = get().repos[id]
+  if (!v) return
+  if (v.line?.pinned) return setLine(id, null)
+  const hash = selectionCursor(v.selected) ?? v.snapshot.head.hash
+  if (hash) setLine(id, { hash, pinned: true })
+}
+
 /** Load pages until `hash` is in the log (for jumping to a search hit or a parent commit). */
 export async function ensureLoaded(id: string, hash: string): Promise<number | undefined> {
   for (;;) {
@@ -476,6 +506,7 @@ function newView(snap: RepoSnapshot): RepoView {
     center: snap.operation && snap.status.some((e) => e.kind === 'unmerged') ? { kind: 'conflicts' } : { kind: 'graph' },
     editable: [], redo: [], stashes: [], undo: [], remotes: [], merged: [], worktrees: [], submodules: [], lfs: null, pulls: null, pullsLoading: false, review: null, walkthrough: null, impact: null, ask: null, askThreads: [], remoteTags: null, progress: null, busy: null, worktreeTick: 0,
     codegraph: { state: 'indexing', done: 0, total: 0 },
+    line: null,
   }
 }
 
