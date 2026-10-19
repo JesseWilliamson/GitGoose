@@ -7,11 +7,10 @@ async function dragRef(page: Page, from: string, to: string) {
   await page.locator(`[data-testid="ref-pill"][data-ref="${from}"]`).dragTo(page.locator(`[data-testid="ref-pill"][data-ref="${to}"]`))
 }
 
-test('drags a branch onto the checked-out branch to merge it', async () => {
+test('drags a branch onto the checked-out branch to merge it (no chooser: the drop is the merge)', async () => {
   const r = makeFixture('branches')
   const { app, page } = await launch(r.dir)
   await dragRef(page, 'refs/heads/wip', 'refs/heads/main')
-  await page.getByRole('menuitem', { name: 'Merge wip into main' }).click()
   await expect(page.getByTestId('commit-row').first()).toContainText('Merge')
   expect(r.git('log', '-1', '--format=%P').trim().split(' ')).toHaveLength(2)
   await app.close()
@@ -31,12 +30,13 @@ test('right-clicking the commit at a branch tip offers the branch actions too', 
   await app.close()
 })
 
-test('drags the checked-out branch onto another to rebase it', async () => {
+test('Alt-drags a branch onto the checked-out branch to rebase it onto that branch', async () => {
   const r = makeFixture('branches')
   r.checkout('wip')
   const { app, page } = await launch(r.dir)
-  await dragRef(page, 'refs/heads/wip', 'refs/heads/main')
-  await page.getByRole('menuitem', { name: 'Rebase wip onto main' }).click()
+  await page.keyboard.down('Alt')
+  await dragRef(page, 'refs/heads/main', 'refs/heads/wip')
+  await page.keyboard.up('Alt')
   await expect.poll(() => r.git('merge-base', 'wip', 'main').trim()).toBe(r.git('rev-parse', 'main').trim())
   await app.close()
 })

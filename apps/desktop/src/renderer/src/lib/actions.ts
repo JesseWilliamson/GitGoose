@@ -1,5 +1,6 @@
 import { parseGitHubRemote, type DiffTarget, type GraphFilter, type PullMode, type Ref, type RepoSnapshot, type ResetMode, type Worktree } from '@gitgoose/shared'
 import { api, toUiError, type UiError } from './api'
+import type { DropPlan } from './dnd'
 import { withPushChecks } from './pushchecks'
 import { activeRepo, addRepo, alertConflicts, ensureLoaded, choose, onSnapshot, openRepo, refreshAux, reportError, setting, toast, updateRepo, useStore } from './store'
 
@@ -637,9 +638,9 @@ export const pushBranch = (id: string, branch: string) =>
   withPushChecks(id, branch, () => void run(id, `Push ${branch}`, () => api.push(id, { branch }), { success: `Pushed ${branch}` }))
 
 /** Force-push a branch (checked out or not) with lease, after the push checks and (setting) a confirmation. */
-export function forcePushBranch(id: string, branch: string, remote?: string, remoteBranch?: string): void {
+export function forcePushBranch(id: string, branch: string, remote?: string, remoteBranch?: string, opts: { confirmed?: boolean } = {}): void {
   const go = () => void withPushChecks(id, branch, () => void run(id, `Force push ${branch}`, () => api.push(id, { branch, remote, remoteBranch, force: true }), { success: `Force-pushed ${branch}` }))
-  if (!setting('confirmForcePush')) return go()
+  if (opts.confirmed || !setting('confirmForcePush')) return go()
   confirmAction(`Force push ${branch}?`, `Overwrites ${remoteBranch ? `${remote}/${remoteBranch}` : remote ? `${branch} on ${remote}` : 'its remote branch'} with yours (with --force-with-lease, so it refuses if someone else pushed meanwhile). Undo cannot reverse changes to a remote.`, 'Force push', go)
 }
 
@@ -908,54 +909,59 @@ export const stashDrop = (id: string, index: number) => run(id, 'Drop stash', ()
 
 // ------------------------------------------------------------------ drag and drop
 
-export interface DropOption {
-  label: string
-  run: () => void
-}
-
 /**
- * What dropping branch `source` onto `target` can mean. GitKraken's rule of thumb: the
- * operations act on the branch that is checked out, so the options depend on which side is HEAD.
+ * Run what a drop means (lib/dnd.ts decided it; the badge said it). Each operation is one of the
+ * actions above, so drops get the same undo, conflict handling and error reporting as menus.
+ * Only drops that change a remote ask first (`plan.confirm`): undo cannot reach a remote.
  */
-export function dropOptions(id: string, snap: RepoSnapshot, source: Ref, target: { ref?: Ref; hash: string }): DropOption[] {
-  const head = currentBranchRef(snap)
-  const src = shortRef(source)
-  const targetName = target.ref ? shortRef(target.ref) : target.hash.slice(0, 7)
-  const targetRev = target.ref?.name ?? target.hash
-  if (target.ref && target.ref.name === source.name) return []
-  const opts: DropOption[] = []
-
-  if (head && target.ref?.name === head.name) {
-    // Dropped onto the checked-out branch: bring the source into it.
-    opts.push({ label: `Merge ${src} into ${targetName}`, run: () => void merge(id, source.name) })
-    opts.push({ label: `Fast-forward ${targetName} to ${src}`, run: () => void merge(id, source.name, { ffOnly: true }) })
-    opts.push({ label: `Squash ${src} into ${targetName}`, run: () => void merge(id, source.name, { squash: true }) })
-    opts.push({ label: `Rebase ${targetName} onto ${src}`, run: () => void rebase(id, source.name) })
-  } else if (head && source.name === head.name) {
-    // Dragged the checked-out branch onto something else.
-    opts.push({ label: `Rebase ${src} onto ${targetName}`, run: () => void rebase(id, targetRev) })
-    opts.push({ label: `Merge ${targetName} into ${src}`, run: () => void merge(id, targetRev) })
-    opts.push({ label: `Reset ${src} to ${targetName} (keep changes)`, run: () => void reset(id, target.hash, 'mixed') })
-    opts.push({ label: `Reset ${src} to ${targetName} (hard)`, run: () => void reset(id, target.hash, 'hard') })
-  } else if (target.ref?.kind === 'local' && source.kind !== 'tag') {
-    opts.push({
-      label: `Check out ${targetName} and merge ${src} into it`,
-      run: () => void run(id, `Merge ${src} into ${targetName}`, async () => [
-        await api.checkout(id, target.ref!.name),
-        await api.merge(id, source.name),
-      ]),
-    })
+export function performDrop(id: string, plan: DropPlan): void {
+  const op = plan.op
+  const ask = (go: () => void) => {
+    if (!plan.confirm) return go()
+    const force = op.op === 'push' && op.force
+    confirmAction(`${plan.label}?`, force ? 'Overwrites the remote branch with yours; --force-with-lease refuses if someone else pushed meanwhile. Undo cannot reverse changes to a remote.'
+      : 'This changes the remote, which undo cannot reverse.', plan.label.replace(/ \(.*\)$/, ''), go, force)
   }
-  if (source.kind === 'local' && !(head && source.name === head.name)) {
-    opts.push({
-      label: `Check out ${src} and rebase it onto ${targetName}`,
-      run: () => void run(id, `Rebase ${src} onto ${targetName}`, async () => [
-        await api.checkout(id, source.name),
-        await api.rebase(id, targetRev),
-      ]),
-    })
+  switch (op.op) {
+    case 'merge': return void merge(id, op.ref)
+    case 'rebase': return void rebase(id, op.onto)
+    case 'merge-into':
+      return void run(id, `Merge ${shortRef(op.ref)} into ${op.branch}`, async () => [await api.checkout(id, `refs/heads/${op.branch}`), await api.merge(id, op.ref)])
+    case 'rebase-onto':
+      return void run(id, `Rebase ${op.branch} onto ${shortRef(op.onto)}`, async () => [await api.checkout(id, `refs/heads/${op.branch}`), await api.rebase(id, op.onto)])
+    case 'push':
+      return ask(() => op.force
+        ? forcePushBranch(id, op.branch, op.remote, op.remoteBranch, { confirmed: true })
+        : void withPushChecks(id, op.branch, () => void run(id, `Push ${op.branch}`, () => api.push(id, { branch: op.branch, remote: op.remote, remoteBranch: op.remoteBranch }), {
+          success: `Pushed ${op.branch} to ${op.remote}${op.remoteBranch ? `/${op.remoteBranch}` : ''}`,
+        })))
+    case 'push-tag': return ask(() => void pushTags(id, op.remote, op.tag))
+    case 'pull': return void pullRemoteBranch(id, `refs/remotes/${op.remote}/${op.branch}`, op.rebase)
+    case 'new-branch': return newBranch(id, op.at)
+    case 'new-tag': return newTag(id, op.at)
+    case 'rename-into': return void renameBranchInto(id, op.branch, op.folder)
+    case 'pin': return void pinBranch(id, op.branch, true)
+    case 'add-worktree': return addWorktree(id, op.branch)
+    case 'create-pr': return createPull(id, op.branch)
+    case 'track': return op.checkout ? void checkout(id, op.ref) : trackRemoteBranch(id, op.ref, op.name)
+    case 'set-upstream': return void setUpstream(id, op.branch, op.upstream)
+    case 'cherry-pick': return void (op.hashes.length === 1 ? cherryPick(id, op.hashes[0]!) : cherryPickMany(id, op.hashes))
+    case 'revert':
+      // Newest first, as they are listed: each revert applies cleanly on top of the last.
+      return void run(id, op.hashes.length === 1 ? `Revert ${op.hashes[0]!.slice(0, 7)}` : `Revert ${op.hashes.length} commits`, async () => {
+        const ids: (number | null)[] = []
+        for (const h of op.hashes) ids.push(await api.revert(id, h))
+        return ids
+      })
+    case 'cherry-pick-onto': return void run(id, plan.label.replace(/ \(.*\)$/, ''), () => api.cherryPickOnto(id, op.branch, op.hashes))
+    case 'move': return void moveCommits(id, op.hashes, op.target, op.where)
+    case 'squash':
+      return void run(id, `${op.fixup ? 'Fixup' : 'Squash'} into ${op.target.slice(0, 7)}`, () => api.squashOnto(id, op.hashes, op.target, { fixup: op.fixup }))
+    case 'stash-apply': return op.pop ? pop(id, op.index) : void stashApply(id, op.index)
+    case 'apply-file':
+      return void run(id, plan.label, () => api.applyFileFrom(id, op.rev, op.paths, { stash: op.stash }), { success: `Applied ${op.paths.length === 1 ? op.paths[0] : `${op.paths.length} files`}` })
+    case 'stash-files': return void stashWith(id, { paths: op.paths })
   }
-  return opts
 }
 
 export function copy(text: string, what = 'Copied'): void {

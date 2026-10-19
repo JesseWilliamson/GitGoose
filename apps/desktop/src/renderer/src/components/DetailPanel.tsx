@@ -166,6 +166,7 @@ function WipPanel({ view }: { view: RepoView }) {
               const t = unstagedTarget(e)
               return (
                 <FileRow key={e.path} {...layout} path={e.path} kind={statusKind(e.worktree === '.' ? e.index : e.worktree)} testId="unstaged-file"
+                  drag={{ kind: 'files', rev: 'worktree', paths: [e.path] }}
                   selected={isOpen(view, t)} onClick={() => openFile(view, t)}
                   menu={<FileMenu view={view} target={t}>
                     <CM.Item onSelect={() => void stage([e.path])}>Stage</CM.Item>
@@ -195,6 +196,7 @@ function WipPanel({ view }: { view: RepoView }) {
               const t: DiffTarget = { kind: 'staged', path: e.path }
               return (
                 <FileRow key={e.path} {...layout} path={e.path} oldPath={e.origPath} kind={statusKind(e.index)} testId="staged-file"
+                  drag={{ kind: 'files', rev: 'worktree', paths: [e.path] }}
                   selected={isOpen(view, t)} onClick={() => openFile(view, t)}
                   menu={<FileMenu view={view} target={t}>
                     <CM.Item onSelect={() => void unstage([e.path])}>Unstage</CM.Item>
@@ -738,6 +740,7 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
           const t: DiffTarget = { kind: 'commit', hash: d.hash, path: f.path }
           return (
             <FileRow key={f.path} {...layout} path={f.path} oldPath={f.oldPath} kind={f.change} selected={isOpen(view, t)} testId="commit-file"
+              drag={{ kind: 'files', rev: d.hash, paths: [f.path], stash: !!stash }}
               onClick={() => openFile(view, t)}
               menu={<FileMenu view={view} target={t} />}
               stats={f.binary ? <span className="text-[11px] text-faint">bin</span> : (

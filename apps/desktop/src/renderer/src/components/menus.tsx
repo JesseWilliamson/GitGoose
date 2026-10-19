@@ -1,7 +1,7 @@
 import { DropdownMenu } from 'radix-ui'
 import {
  checkoutPull, createPull, hasGitHubRemote, openPull, lfsPull, lfsTrack, lfsUntrack, bisectMark, hideInGraph, showInGraph, soloInGraph, unsoloInGraph, addRemote, addSubmodule, addWorktree, removeSubmodule, syncSubmodules, updateSubmodules, lockWorktree, pruneWorktrees, removeWorktree, checkRemoteTags, cleanupBranches, clearPushUrl, deleteRemoteTag, editRemoteUrl, fastForward, fetchAll, fetchRemote, pushBranch, pushTags, pushTo, remoteNames, removeRemote, renameRemote, setUpstream,
- savePatches, stashToBranch, checkout, forcePushBranch, pinBranch, publishBranch, pruneRemote, pull, pullRemoteBranch, revealInHistory, trackRemoteBranch, cherryPick, cherryPickMany, compare, compareSinceFork, copy, fixupInto, pop, reword, squashCommit, squashTogether, stashApply, stashDrop, copyCommits, dropCommits, moveCommits, currentBranchRef, deleteBranch, deleteRemoteBranch, deleteTag, dropOptions,
+ savePatches, stashToBranch, checkout, forcePushBranch, pinBranch, publishBranch, pruneRemote, pull, pullRemoteBranch, revealInHistory, trackRemoteBranch, cherryPick, cherryPickMany, compare, compareSinceFork, copy, fixupInto, pop, reword, squashCommit, squashTogether, stashApply, stashDrop, copyCommits, dropCommits, moveCommits, currentBranchRef, deleteBranch, deleteRemoteBranch, deleteTag,
   merge, newBranch, newTag, push, rebase, renameBranch, reset, revert, shortRef,
 } from '../lib/actions'
 import { shortHash, stashLabel } from '../lib/format'
@@ -492,29 +492,6 @@ export function CheckoutMenu() {
       <DM.Content>
         {choice.branches.map((b) => (
           <DM.Item key={b.name} onSelect={() => { close(); void checkout(active, b.name) }}>Check out {shortRef(b)}</DM.Item>
-        ))}
-      </DM.Content>
-    </DropdownMenu.Root>
-  )
-}
-
-/** The menu that appears where a branch was dropped, offering what the drop can mean. */
-export function DropMenu() {
-  const drop = useStore((s) => s.drop)
-  const active = useStore((s) => (s.active ? s.repos[s.active] : null))
-  if (!drop || !active) return null
-  const options = dropOptions(active.id, active.snapshot, drop.source, drop.target)
-  const close = () => useStore.setState({ drop: null })
-  return (
-    <DropdownMenu.Root open onOpenChange={(o) => !o && close()}>
-      <DropdownMenu.Trigger asChild>
-        <span style={{ position: 'fixed', left: drop.x, top: drop.y, width: 1, height: 1 }} />
-      </DropdownMenu.Trigger>
-      <DM.Content>
-        <DM.Label>Drop {shortRef(drop.source)} on {drop.target.ref ? shortRef(drop.target.ref) : drop.target.hash.slice(0, 7)}</DM.Label>
-        {options.length === 0 && <DM.Item onSelect={close} disabled>Nothing to do</DM.Item>}
-        {options.map((o) => (
-          <DM.Item key={o.label} onSelect={() => { close(); o.run() }}>{o.label}</DM.Item>
         ))}
       </DM.Content>
     </DropdownMenu.Root>
