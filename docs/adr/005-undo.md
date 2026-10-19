@@ -18,6 +18,9 @@ refuses if HEAD has moved since (another tool changed the repository).
 | checkout | check out the previous branch or commit |
 | create / delete / rename branch or tag | delete / recreate (with upstream) / rename back |
 | stash push / pop / drop | pop that stash (found by its commit, wherever it now sits) / `stash store` the saved stash commit |
+| cherry-pick onto a branch that is not checked out (drag and drop, ADR-009) | `update-ref` the branch back, given the new tip as its old value |
+| apply one file's change from a commit or stash | write back blobs saved with `git hash-object -w`; after an `apply --3way`, also put the paths' saved index entries back |
+| pin / unpin a branch (`gitgoose.pin`), and a rename that carries a pin | remove / add that one value (`config --unset-all --fixed-value` / `--add`) |
 
 ## Why
 

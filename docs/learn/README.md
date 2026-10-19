@@ -13,6 +13,7 @@ exercises: delete the implementation, rebuild it until the tests pass, then comp
 | 5 | [Three-way merge](05-three-way-merge.md) | ~150 lines | Myers' diff, diff3, and why "conflict" is a precise idea |
 | 6 | [Code graph](06-codegraph.md) | ~120 lines + a language | what "good enough" code intelligence costs, and when regexes are the right tool |
 | 7 | [Straight lanes](07-straight-lanes.md) | ~25 lines | letting git answer what a streaming algorithm cannot know in time |
+| 8 | [Drop matrix](08-drop-matrix.md) | ~150 lines | turning a UI gesture into a lookup table, and cherry-picking without a checkout |
 
 ## The routine for each exercise
 

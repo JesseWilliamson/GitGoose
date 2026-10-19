@@ -66,7 +66,8 @@ export function DragBadge() {
       // Accepting the drag is what lets it drop here (and gives the "move" pointer).
       e.preventDefault()
       if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
-      light(at.el, at.target.kind === 'row' && at.target.where !== 'onto' ? at.target.where : 'on')
+      // A line between rows only where commits will land between rows; anything else outlines the target.
+      light(at.el, at.plan.op.op === 'move' ? at.plan.op.where : 'on')
       const b = badge.current
       if (!b || !label.current || !alt.current) return
       label.current.textContent = at.plan.label + (at.plan.confirm ? ' (asks first)' : '')
