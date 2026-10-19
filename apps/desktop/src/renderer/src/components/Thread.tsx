@@ -160,7 +160,10 @@ const STATUS_ICON: Record<AiToolCall['status'], ReactNode> = {
 }
 
 function ToolCard({ tool }: { tool: AiToolCall }) {
-  const [open, setOpen] = useState(tool.content.some((c) => c.type === 'diff'))
+  // Open by itself once the call has a diff to show (it usually arrives in a later update),
+  // until the user folds or unfolds it.
+  const [chosen, setOpen] = useState<boolean | null>(null)
+  const open = chosen ?? tool.content.some((c) => c.type === 'diff')
   return (
     <div className="my-1.5 rounded-md border border-line bg-panel text-xs" data-testid="tool-card" data-status={tool.status} data-kind={tool.kind}>
       <button className="flex w-full items-center gap-2 px-2 py-1 text-left" onClick={() => setOpen(!open)}>
