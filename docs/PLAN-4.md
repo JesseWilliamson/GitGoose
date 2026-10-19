@@ -395,6 +395,47 @@ Exercise for Jesse (docs/learn/08-drop-matrix.md): write `dropPlan` yourself fro
 tests are the spec. Question: why does "cherry-pick onto a branch that is not checked out" need
 `merge-tree`, and what would go wrong with a plain `cherry-pick` after a temporary checkout?
 
+### As built (where reality refined the plan)
+
+- **Workspace shortcuts are Mod+Alt+1…5**, not Mod+1…5: Mod+1…9 have always switched tabs, and
+  Mod+0 is Actual Size. Taking them would have silently changed keys people use. Inside the
+  sidebar Mod+0 still goes to HEAD's branch (Tower's key, scoped to where it means that), and
+  Mod+Alt+0 does it from anywhere; all are rebindable. `comboOf` now reads digits by key code,
+  so Alt+1 is "1" on a Mac (where it types "¡").
+- **`dropPlan` returns the operation as data** (`{ label, op, confirm? }`), not a `run` closure.
+  The tests then say exactly what each drop does without mocking the API, and `performDrop` in
+  `lib/actions.ts` runs it with the existing actions. Same split as `dropOptions` had, minus the
+  closure.
+- **No React state per drag move.** One document-level controller (`DragBadge.tsx`) handles every
+  drop target; targets only declare `data-drop-target`. The browser hides a drag's data until the
+  drop, so the source is kept in a module variable from dragstart to dragend.
+- **Rows without an Alt alternative** do the same with Alt as without (an Alt held by accident
+  should not make a drop silently fail). The badge's second line shows the alternative only when
+  there is one.
+- **Alt-dropping HEAD's own commit reverts it.** Picking HEAD onto itself is refused, but the e2e
+  found the same check blocked the revert; the revert is now allowed.
+- **"Pull into HEAD" really pulls** (`pull <remote> <branch>`, a fetch): that is what the label
+  says, and the user asked for it by dropping. Its Alt is `--rebase`.
+- **`applyFileFrom` tries a plain `git apply` first** and only falls back to `--3way`: `--3way`
+  implies `--index` and refuses any file with unstaged edits, which is exactly the file a user is
+  likely to drop a change onto. When --3way runs, the paths' index entries are saved for undo too
+  (new undo action `index-entries`).
+- **Pins follow renames** (a new undo action `config-value` adds or removes one value of the
+  multi-valued `gitgoose.pin`), so "rename into folder" does not silently unpin.
+- **Delete in the sidebar** runs the delete with Undo, and git's "not fully merged" question
+  still appears; there is no extra "are you sure" (house rule: undo instead of confirmation).
+- **Click a branch = show its history** persists through the graph filter (it is the existing
+  filter), so it survives a restart like a solo from the menu does. The first click of a
+  double-click has already soloed the branch, so the double-click puts the filter back before it
+  checks out.
+- **Both Merge and Rebase stay in the branch menu** instead of "Alt swaps the two": both are
+  visible, which a context menu needs more than a hidden variant (Alt is the drag modifier).
+- **Tags default to the newest 250** in the sidebar (View ▸ Tags), with an "N older tags · Show
+  all" row; the filter box always searches every tag.
+- **Profile** (`pnpm bench`, layer 4): the 3,000-commit dev repository plus 2,000 generated
+  branches (in 25 folders) and tags, every section open: ~2,100 rows, 39 in the DOM, 58 fps
+  scrolling against a 60 fps idle ceiling, first sidebar rows 1.2 s after launch.
+
 ---
 
 ## Phase 5: conversational AI, tool calls on screen, and GitHub Copilot
@@ -605,7 +646,7 @@ branch since its fork point (a PR, when the branch has one). Opened from the Rev
 - [x] 1a blue selection · [x] 1b no month headers · [x] 1c double-click checks out · [x] 1d topological order
 - [x] 2 straight lanes
 - [x] 3 line view
-- [ ] 4a sidebar · [ ] 4b drag-and-drop matrix
+- [x] 4a sidebar · [x] 4b drag-and-drop matrix
 - [ ] 5a threads · [ ] 5b Copilot
 - [ ] 6a dsviz skill + extensions (2.2.0) · [ ] 6b dsviz in GitGoose
 - [ ] 7 Change Stack

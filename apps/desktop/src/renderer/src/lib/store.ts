@@ -1,5 +1,5 @@
 import { GraphLayout, type Row } from '@gitgoose/graph'
-import { SETTINGS, type PullRequestList, type CodeGraphStatus, type Commit, type DiffTarget, type GitHubStatus, type GitGooseEvent, type AskThread, type LfsInfo, type PushCheckResult, type Ref, type Remote, type RepoSnapshot, type Submodule, type Worktree, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitgoose/shared'
+import { SETTINGS, type SidebarPrefs, type PullRequestList, type CodeGraphStatus, type Commit, type DiffTarget, type GitHubStatus, type GitGooseEvent, type AskThread, type LfsInfo, type PushCheckResult, type Ref, type Remote, type RepoSnapshot, type Submodule, type Worktree, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitgoose/shared'
 import { create } from 'zustand'
 import { api, toUiError, type UiError } from './api'
 import { onAiEvent } from './ai'
@@ -63,6 +63,10 @@ export interface RepoView {
   askThreads: AskThread[]
   /** Local branches already in HEAD: safe to delete. */
   merged: string[]
+  /** Branches pinned to the top of the sidebar (git config gitgoose.pin). */
+  pins: string[]
+  /** When the repository last fetched (unix seconds), for the tracking badge's tooltip. */
+  lastFetched: number | null
   /** Tag names on a remote, after the user asked to check (the only way it is read: network). */
   remoteTags: { remote: string; names: string[] } | null
   progress: string | null
@@ -143,14 +147,6 @@ export type Dialog =
   /** Branch cleanup: pick merged or stale branches to delete. */
   | { kind: 'cleanup'; repoId: string }
 
-export interface DropRequest {
-  x: number
-  y: number
-  source: Ref
-  /** Where it was dropped: a ref pill, or just a commit row. */
-  target: { ref?: Ref; hash: string }
-}
-
 /** Double-click on a commit where several local branches point: which one to check out. */
 export interface CheckoutChoice {
   x: number
@@ -185,7 +181,6 @@ interface State {
   omni: { query: string } | null
   /** What the settings page's search box starts with (the omni search opens settings this way). */
   settingsQuery: string
-  drop: DropRequest | null
   checkoutChoice: CheckoutChoice | null
   menu: MenuTarget
   /** Progress text for a clone in flight. */
@@ -207,7 +202,6 @@ export const useStore = create<State>(() => ({
   attentions: [],
   omni: null,
   settingsQuery: '',
-  drop: null,
   checkoutChoice: null,
   menu: null,
   cloneProgress: null,
@@ -504,7 +498,7 @@ function newView(snap: RepoSnapshot): RepoView {
     id: snap.id, snapshot: snap, logVersion: 0,
     selected: snap.status.length ? { kind: 'wip' } : snap.head.hash ? { kind: 'commit', hash: snap.head.hash } : { kind: 'wip' },
     center: snap.operation && snap.status.some((e) => e.kind === 'unmerged') ? { kind: 'conflicts' } : { kind: 'graph' },
-    editable: [], redo: [], stashes: [], undo: [], remotes: [], merged: [], worktrees: [], submodules: [], lfs: null, pulls: null, pullsLoading: false, review: null, walkthrough: null, impact: null, ask: null, askThreads: [], remoteTags: null, progress: null, busy: null, worktreeTick: 0,
+    editable: [], redo: [], stashes: [], undo: [], remotes: [], merged: [], pins: [], lastFetched: null, worktrees: [], submodules: [], lfs: null, pulls: null, pullsLoading: false, review: null, walkthrough: null, impact: null, ask: null, askThreads: [], remoteTags: null, progress: null, busy: null, worktreeTick: 0,
     codegraph: { state: 'indexing', done: 0, total: 0 },
     line: null,
   }
@@ -583,11 +577,11 @@ export function onSnapshot(snap: RepoSnapshot): void {
 
 export async function refreshAux(id: string): Promise<void> {
   try {
-    const [stashes, undo, editable, redo, remotes, merged, worktrees, submodules, lfs] = await Promise.all([
+    const [stashes, undo, editable, redo, remotes, merged, worktrees, submodules, lfs, pins, lastFetched] = await Promise.all([
       api.stashList(id), api.undoList(id), api.editableCommits(id), api.redoList(id), api.remotes(id), api.mergedBranches(id), api.worktrees(id), api.submodules(id),
-      api.lfsInfo(id).catch(() => null),
+      api.lfsInfo(id).catch(() => null), api.pinnedBranches(id), api.lastFetched(id),
     ])
-    updateRepo(id, { stashes, undo, editable, redo, remotes, merged, worktrees, submodules, lfs })
+    updateRepo(id, { stashes, undo, editable, redo, remotes, merged, worktrees, submodules, lfs, pins, lastFetched })
   } catch {
     // The tab was closed meanwhile.
   }
@@ -663,6 +657,24 @@ export function applyTheme(settings: Settings): void {
 /** Row height for code panes (diff, blame), derived from the code font size so rows never overlap. */
 export function codeLineHeight(fontSize: number): number {
   return Math.round(fontSize * 1.6)
+}
+
+/** The sidebar's state for a repository (folds, gear options), empty until the user changes something. */
+const NO_PREFS: SidebarPrefs = {}
+export function useSidebarPrefs(path: string): SidebarPrefs {
+  return useStore((s) => s.settings?.sidebar[path] ?? NO_PREFS)
+}
+
+/**
+ * Change the sidebar's state for a repository. The store changes at once (a fold must not wait
+ * for a round trip to the main process), then the settings file.
+ */
+export function updateSidebarPrefs(path: string, change: (p: SidebarPrefs) => SidebarPrefs): void {
+  const settings = get().settings
+  if (!settings) return
+  const sidebar = { ...settings.sidebar, [path]: change(settings.sidebar[path] ?? {}) }
+  set({ settings: { ...settings, sidebar } })
+  void api.setSettings({ sidebar }).catch((e) => reportError('Could not save the sidebar layout', e))
 }
 
 export async function saveSettings(patch: Partial<Settings>): Promise<void> {

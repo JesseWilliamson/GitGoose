@@ -1,12 +1,13 @@
-import { DEFAULT_LAYOUT, setCollapsed } from '@gitgoose/shared'
+import { DEFAULT_LAYOUT, setCollapsed, type Settings } from '@gitgoose/shared'
 import { useEffect } from 'react'
-import { applyPatchFile, applyPatchFromClipboard, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, redo, stash, undo } from '../lib/actions'
+import { applyPatchFile, applyPatchFromClipboard, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, redo, showHistory, showWorkingCopy, stash, undo } from '../lib/actions'
 import { comboOf, keymap } from '../lib/keys'
 import { closeTab, onCommand, runCommand, updateRepo, saveSettings, setting, toggleLine, useActiveRepo, useStore } from '../lib/store'
 import { AttentionBar } from './AttentionBar'
 import { OmniSearch } from './OmniSearch'
 import { Dialogs, PromptDialog, Toasts } from './Dialogs'
-import { CheckoutMenu, DropMenu } from './menus'
+import { CheckoutMenu } from './menus'
+import { DragBadge } from './DragBadge'
 import { SettingsPage } from './SettingsPage'
 import { AiDialogs } from './AiDialogs'
 import { StatusBar } from './StatusBar'
@@ -39,6 +40,8 @@ function useCommands() {
         case 'zoom-reset': return void saveSettings({ uiScale: 1 })
         case 'commit-order-date': return void saveSettings({ commitOrder: 'date' })
         case 'commit-order-topo': return void saveSettings({ commitOrder: 'topo' })
+        case 'sidebar-tags-50': case 'sidebar-tags-100': case 'sidebar-tags-250': case 'sidebar-tags-all':
+          return void saveSettings({ sidebarTags: name.slice('sidebar-tags-'.length) as Settings['sidebarTags'] })
         case 'toggle-graph-style': return void saveSettings({ graphStyle: setting('graphStyle') === 'compact' ? 'comfortable' : 'compact' })
         case 'toggle-sidebar': return toggleSlot('left')
         case 'toggle-details': return toggleSlot('right')
@@ -70,6 +73,10 @@ function useCommands() {
         case 'reflog': return updateRepo(id, { center: { kind: 'reflog' } })
         case 'command-log': return updateRepo(id, { center: { kind: 'commands' } })
         case 'line-view': return toggleLine(id)
+        // Workspace items (the sidebar handles Stashes, Pull Requests and the current branch itself).
+        case 'ws-working-copy': return showWorkingCopy(id)
+        case 'ws-history': return showHistory(id)
+        case 'ws-reflog': return updateRepo(id, { center: { kind: 'reflog' } })
       }
     }
     const off = onCommand(handle)
@@ -134,7 +141,7 @@ export function App() {
       <Dialogs />
       <AiDialogs />
       <PromptDialog />
-      <DropMenu />
+      <DragBadge />
       <CheckoutMenu />
       <Toasts />
     </div>
