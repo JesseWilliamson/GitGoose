@@ -9,7 +9,7 @@ export interface FakeAnthropic {
   url: string
   server: Server
   /** Request bodies received, parsed. */
-  requests: { model: string; system?: string; messages: { role: string; content: string }[]; headers: Record<string, string | string[] | undefined> }[]
+  requests: { model: string; max_tokens?: number; system?: string; messages: { role: string; content: string }[]; headers: Record<string, string | string[] | undefined> }[]
   close(): Promise<void>
 }
 
