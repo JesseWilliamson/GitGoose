@@ -32,6 +32,8 @@ export const COMMANDS: KeyCommand[] = [
   { id: 'zoom-reset', label: 'Actual size', defaults: ['mod+0'] },
   { id: 'toggle-sidebar', label: 'Show or hide the sidebar', defaults: ['mod+b'] },
   { id: 'toggle-details', label: 'Show or hide the details panel', defaults: ['mod+alt+b'] },
+  // Mod+L, not the plan's Mod+Shift+L: that one has been Fetch for a long time.
+  { id: 'line-view', label: 'Show only the selected line of history, or everything again', defaults: ['mod+l'] },
   { id: 'toggle-graph-style', label: 'Switch the graph between two-line and one-line rows', defaults: [] },
 ]
 
