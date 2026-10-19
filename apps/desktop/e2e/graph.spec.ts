@@ -89,14 +89,14 @@ test('a co-authored commit stacks the avatars and names everyone on the row', as
   await app.close()
 })
 
-test('Tower look: two-line rows beside hollow nodes, text indented by the lanes, month headings', async () => {
+test('Tower look: two-line rows beside hollow nodes, text indented by the lanes, no month headings', async () => {
   const r = makeFixture('linear')
   for (let i = 0; i < 12; i++) {
     r.checkout('-b', `b${i}`, 'main~4')
     r.commit(`work on b${i}`, { [`b${i}.txt`]: 'x\n' })
   }
   r.checkout('main')
-  // A commit made now (fixture commits are from 2023): it opens a month of its own.
+  // A commit made now (fixture commits are from 2023): a new month, which once got a heading.
   execFileSync('git', ['commit', '-q', '--allow-empty', '-m', 'just now'], {
     cwd: r.dir, env: { ...process.env, GIT_AUTHOR_NAME: 'Ada Lovelace', GIT_AUTHOR_EMAIL: 'ada@example.com', GIT_COMMITTER_NAME: 'Ada Lovelace', GIT_COMMITTER_EMAIL: 'ada@example.com' },
   })
@@ -107,13 +107,12 @@ test('Tower look: two-line rows beside hollow nodes, text indented by the lanes,
   await expect(head.getByTestId('row-sha')).toHaveText(r.head().slice(0, 7))
   await expect(head.getByTestId('row-avatar')).toContainText('AL')
   await expect(head.locator('[data-testid="ref-pill"][data-ref="refs/heads/main"]')).toBeVisible()
-  // The newest commit opens this month; the 2023 commits open another heading further down.
-  await expect(head.getByTestId('month-header')).toHaveText(new RegExp(String(new Date().getFullYear())))
+  // No month headings: the first row of a month is as tall as any other, its node centred.
   const plain = page.getByTestId('commit-row').filter({ hasText: 'Commit 4' })
-  await expect(plain.getByTestId('month-header')).toHaveCount(0)
-  // A row with a heading is taller by the heading, and its node sits in the lower part.
-  expect((await head.boundingBox())!.height).toBe(52 + 26)
-  await expect(head.locator('[data-testid="commit-node"] circle').last()).toHaveAttribute('cy', String(26 + 26))
+  expect((await head.boundingBox())!.height).toBe(52)
+  expect((await plain.boundingBox())!.height).toBe(52)
+  await expect(head.locator('[data-testid="commit-node"] circle').last()).toHaveAttribute('cy', '26')
+  await expect(page.getByTestId('month-header')).toHaveCount(0)
   // Nodes are hollow: the page colour inside, the lane colour as the ring.
   await expect(plain.locator('[data-testid="commit-node"] circle').last()).toHaveAttribute('fill', 'var(--gs-bg)')
   // Thirteen lanes where the text moves aside for twelve: a node past the last lane is left out
@@ -149,7 +148,6 @@ test('one-line rows: the same graph, branch pills in a column on the left joined
   await page.evaluate(() => window.gitgoose.setSettings({ graphStyle: 'compact' }))
   const head = page.locator(`[data-testid="commit-row"][data-hash="${r.head()}"]`)
   await expect.poll(async () => (await head.boundingBox())!.height).toBe(28)
-  await expect(page.getByTestId('month-header')).toHaveCount(0)
   // The pill is in the column on the left, joined to the node by a line; the node is the same
   // hollow ring as in two-line rows, and the avatar, hash, author and date share the one line.
   await expect(head.getByTestId('refs-cell').locator('[data-testid="ref-pill"][data-ref="refs/heads/main"]')).toBeVisible()

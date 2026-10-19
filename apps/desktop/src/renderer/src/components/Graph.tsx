@@ -7,10 +7,10 @@ import { ContextMenu } from 'radix-ui'
 import { memo, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { bisectMark, bisectReset, checkout, moveCommits, showAllInGraph, squashOnto } from '../lib/actions'
 import { avatarSrc, useAvatarVariant } from '../lib/avatar'
-import { authorLine, formatDate, laneColor, monthLabel, sameMonth, shortHash, stashLabel } from '../lib/format'
-import { ensureLoaded, getLog, loadMore, selectCommit, selectedHashes, selectionCursor, updateRepo, useSetting, useStore, type LogData, type RepoView } from '../lib/store'
+import { authorLine, formatDate, laneColor, shortHash, stashLabel } from '../lib/format'
+import { ensureLoaded, getLog, loadMore, selectCommit, selectedHashes, selectionCursor, updateRepo, useSetting, useStore, type RepoView } from '../lib/store'
 import { AvatarStack, type StackedAuthor } from './Avatar'
-import { cellWidth, GraphCell, HEADER_H, ROW_H, ROW_H_COMPACT, WipCell } from './GraphCell'
+import { cellWidth, GraphCell, ROW_H, ROW_H_COMPACT, WipCell } from './GraphCell'
 import { GraphMenu } from './menus'
 import { Spinner } from './ui'
 
@@ -85,32 +85,6 @@ export interface RowLook {
   showTags: boolean
 }
 
-/**
- * Which rows open a new month, as a flag per commit, grown as pages arrive. Kept outside React
- * state and extended rather than rebuilt: the virtualizer asks for every row's height when the
- * count changes, and that must cost a lookup, not a Date per row.
- */
-function useMonthStarts(log: LogData): Uint8Array {
-  const cache = useRef<{ commits: Commit[]; flags: Uint8Array; n: number }>({ commits: log.commits, flags: new Uint8Array(0), n: 0 })
-  const c = cache.current
-  if (c.commits !== log.commits) Object.assign(c, { commits: log.commits, flags: new Uint8Array(0), n: 0 })
-  const total = log.commits.length
-  if (c.n < total) {
-    if (c.flags.length < total) {
-      const grown = new Uint8Array(Math.max(total, c.flags.length * 2))
-      grown.set(c.flags)
-      c.flags = grown
-    }
-    for (let i = c.n; i < total; i++) {
-      // Commit date: the order the log is in, so headings only ever go back in time down the list
-      // (author dates do not: a rebase keeps them while giving the commits new places).
-      c.flags[i] = i === 0 || !sameMonth(log.commits[i - 1]!.commitDate, log.commits[i]!.commitDate) ? 1 : 0
-    }
-    c.n = total
-  }
-  return c.flags
-}
-
 function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
   const rowH = compact ? ROW_H_COMPACT : ROW_H
   const dateFormat = useSetting('dateFormat')
@@ -125,14 +99,12 @@ function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
   const showWip = snap.status.length > 0 || !snap.head.hash
   const offset = showWip ? 1 : 0
   const count = log.commits.length + offset + (log.done ? 0 : 1)
-  const monthStarts = useMonthStarts(log)
-  // One-line rows are a dense list: no month headings.
-  const headers = !compact
   const scrollRef = useRef<HTMLDivElement>(null)
   const virt = useVirtualizer({
     count,
     getScrollElement: () => scrollRef.current,
-    estimateSize: (i) => rowH + (headers && monthStarts[i - offset] ? HEADER_H : 0),
+    // Every row is the same height, so the virtualizer's estimate is exact and it never measures.
+    estimateSize: () => rowH,
     overscan: 15,
   })
 
@@ -249,7 +221,6 @@ function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
                   <CommitRow
                     key={commit.hash}
                     top={item.start}
-                    month={headers && monthStarts[ci] ? monthLabel(commit.commitDate) : null}
                     repoId={view.id}
                     commit={commit}
                     row={row}
@@ -323,8 +294,6 @@ const BISECT_PILL: Record<BisectMark, string> = {
 const CommitRow = memo(function CommitRow(props: {
   bisect?: BisectMark
   top: number
-  /** "March 2026" when this row is the first of its month: the row grows by HEADER_H for the heading. */
-  month: string | null
   repoId: string
   commit: Commit
   row: Row
@@ -355,8 +324,6 @@ const CommitRow = memo(function CommitRow(props: {
   const pills = useMemo(() => (props.refs ? pillsFor(props.refs, props.headBranch, { remotes: look.showRemotes, tags: look.showTags }) : []),
     [props.refs, props.headBranch, look.showRemotes, look.showTags])
   const lane = laneColor(row.color)
-  const header = props.month ? HEADER_H : 0
-  const height = look.rowH + header
   const cellW = cellWidth(row.width)
   /** One-line rows: pills (or a stash or bisect mark) in the column on the left, joined to the node by a line. */
   const labelled = look.compact && (pills.length > 0 || !!props.stash || !!props.bisect)
@@ -377,7 +344,7 @@ const CommitRow = memo(function CommitRow(props: {
       e.preventDefault()
       e.dataTransfer.dropEffect = 'move'
       const box = (e.currentTarget as HTMLElement).getBoundingClientRect()
-      const y = (e.clientY - box.top - header) / (box.height - header)
+      const y = (e.clientY - box.top) / box.height
       setDropAt(y < 1 / 3 ? 'above' : y > 2 / 3 ? 'below' : 'onto')
       return
     }
@@ -460,16 +427,16 @@ const CommitRow = memo(function CommitRow(props: {
     'data-selected': props.selected || undefined,
   }
   const dropMarks = dropAt === 'onto' ? (
-    <div data-testid="drop-onto" className="pointer-events-none absolute inset-x-0 bottom-0 rounded-sm outline outline-2 -outline-offset-2 outline-accent" style={{ top: header }} title="Squash into this commit" />
+    <div data-testid="drop-onto" className="pointer-events-none absolute inset-0 rounded-sm outline outline-2 -outline-offset-2 outline-accent" title="Squash into this commit" />
   ) : dropAt && (
-    <div data-testid="drop-line" className={clsx('pointer-events-none absolute inset-x-0 h-0.5 bg-accent', dropAt === 'above' ? '' : 'bottom-0')} style={dropAt === 'above' ? { top: header } : undefined} />
+    <div data-testid="drop-line" className={clsx('pointer-events-none absolute inset-x-0 h-0.5 bg-accent', dropAt === 'above' ? 'top-0' : 'bottom-0')} />
   )
 
   return (
     <div
       {...rowProps}
       className={clsx('group flex items-stretch text-[13px]', dropping && 'outline outline-2 -outline-offset-2 outline-accent')}
-      style={{ position: 'absolute', top: 0, left: 0, right: 0, height, transform: `translateY(${props.top}px)` }}
+      style={{ position: 'absolute', top: 0, left: 0, right: 0, height: look.rowH, transform: `translateY(${props.top}px)` }}
     >
       {/* The selected row's tint: the one selection blue (bg-select, as on the WIP row, the sidebar
           and the palette), not the lane colour, so "selected" reads the same on every branch. A
@@ -477,7 +444,7 @@ const CommitRow = memo(function CommitRow(props: {
           distinct, and the lines on the left stay clean. */}
       <div
         className={clsx('pointer-events-none absolute right-2 rounded-md', props.selected ? 'bg-select' : 'group-hover:bg-hover')}
-        style={{ left: textX - 2, top: header + 2, bottom: 2 }}
+        style={{ left: textX - 2, top: 2, bottom: 2 }}
         data-testid="row-tint"
       />
       {/* One-line rows: the branch and tag pills in a column of their own, left of the graph, with
@@ -488,20 +455,8 @@ const CommitRow = memo(function CommitRow(props: {
           {labelled && <span className="h-0.5 min-w-2 flex-1" style={{ background: lane, opacity: 0.85 }} />}
         </div>
       )}
-      {/* Centred across the row, not tucked against the lanes: the heading then sits in the gap
-          above the row's own text and clear of the lines running up the left. */}
-      {props.month && (
-        <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-center text-[11px] font-semibold tracking-wider text-faint uppercase"
-          style={{ height: HEADER_H }} data-testid="month-header">
-          {props.month}
-        </div>
-      )}
-      <GraphCell row={row} width={cellW} showPending={props.showPending} isHead={props.isHead} h={look.rowH} offset={header} stash={!!commit.stash} refLine={labelled} />
-      <div
-        className="relative flex min-w-0 flex-1 items-center gap-2.5 border-b border-line/50 pr-5 pl-1"
-        style={{ marginTop: header }}
-        data-testid="row-body"
-      >
+      <GraphCell row={row} width={cellW} showPending={props.showPending} isHead={props.isHead} h={look.rowH} stash={!!commit.stash} refLine={labelled} />
+      <div className="relative flex min-w-0 flex-1 items-center gap-2.5 border-b border-line/50 pr-5 pl-1" data-testid="row-body">
         <span data-testid="row-avatar" className="flex shrink-0">
           <AvatarStack people={people} size={look.compact ? AVATAR_COMPACT : AVATAR} max={look.compact ? 2 : 3} />
         </span>

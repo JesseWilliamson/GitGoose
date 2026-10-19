@@ -60,7 +60,7 @@ export const SETTINGS = {
     { value: 'compact', label: 'One-line rows, branches on the left' },
   ], {
     label: 'Graph layout', section: 'Appearance', keywords: 'compact density row height columns tower',
-    description: 'Two-line rows: author and branches over hash and subject, with month headings. One-line rows: the same graph, each commit on one shorter line, branch and tag names in a column on the left.',
+    description: 'Two-line rows: author and branches over hash and subject. One-line rows: the same graph, each commit on one shorter line, branch and tag names in a column on the left.',
   }),
 
   // ---------------------------------------------------------------- Graph
