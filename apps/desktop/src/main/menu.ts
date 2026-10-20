@@ -66,7 +66,7 @@ export function installMenu(): void {
         { label: 'Toggle Details', accelerator: 'CmdOrCtrl+Alt+B', click: cmd('toggle-details'), registerAccelerator: false },
         { label: 'Hide Side Panels', click: cmd('layout-wide-graph') },
         { label: 'Reset Panel Sizes', click: cmd('layout-default') },
-        { label: 'Toggle Compact Graph', click: cmd('toggle-graph-style') },
+        { label: 'Toggle Comfy / Compact Graph', click: cmd('toggle-graph-style') },
         // Holding Shift shows the line for as long as it is held; this keeps it on.
         { label: 'Line View', accelerator: 'CmdOrCtrl+L', click: cmd('line-view'), registerAccelerator: false },
         { label: 'AI Chat', accelerator: 'CmdOrCtrl+Shift+A', click: cmd('ai-chat'), registerAccelerator: false },

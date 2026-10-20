@@ -25,9 +25,10 @@ diff (a chain is one `diff oldest^ newest`), copy as patch (a chain is a numbere
 
 ## Line view
 
-With a commit (or a range) selected, hold Shift for 150 ms without clicking: the graph shows only
-the *line of history through the cursor commit* and hides everything else. Release Shift and
-everything comes back. Leaving the window counts as a release (the keyup would never arrive).
+View → Line View (Mod+L), or the command palette, with a commit selected: the graph shows only
+the *line of history through the cursor commit* and hides everything else, until Mod+L again, Esc
+in the graph or the bar's "Show all". (It used to come on while Shift was held; that made every
+Shift-click and Shift+arrow flicker the graph, so it is a toggle only.)
 
 - **What the line is** (`lib/lineView.ts`, `lineThrough`): down, the commit's first parent, its
   first parent, and so on while they are loaded; up, the child whose first parent it is *and* whose
@@ -40,14 +41,13 @@ everything comes back. Leaving the window counts as a release (the keyup would n
   runs again per page; near the end of the line the list keeps loading until the next first
   parent arrives). The uncommitted-changes row shows only when HEAD is on the line.
 - **Nothing moves under the pointer**: the cursor row keeps its screen position when the graph
-  collapses and when it expands (the list scrolls, and pads above a short line), so a Shift-click
-  that follows lands where it was aimed. The bar ("Showing the line through abc1234 · N commits
-  hidden · release Shift to show all") floats over the bottom of the graph for the same reason.
+  collapses and when it expands (the list scrolls, and pads above a short line), so the eye does
+  not have to find it again. The bar ("Showing the line through abc1234 · N commits hidden · Esc
+  to show all") floats over the bottom of the graph for the same reason.
 - **Inside it**: Shift-click and Shift+arrows select as always (along the anchor's lane);
-  Ctrl/Cmd-click toggles. The line stays the one through the commit Shift was first held on.
-- **Pinned**: View → Line View (Mod+L) or the command palette keeps it on until toggled; Esc in
-  the graph or the bar's "Show all" lets go. A pinned line whose commit disappears (amend,
-  rebase) moves to the selection, else to HEAD. (Mod+Shift+L, as first planned, is Fetch.)
+  Ctrl/Cmd-click toggles. The line stays the one through the commit it was turned on at.
+- A line whose commit disappears (amend, rebase) moves to the selection, else to HEAD.
+  (Mod+Shift+L, as first planned, is Fetch.)
 
 ## Recompose with AI
 

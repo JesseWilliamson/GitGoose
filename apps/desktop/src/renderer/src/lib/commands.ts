@@ -47,8 +47,8 @@ export function commandEntries(): CommandEntry[] {
     add('Repository', 'Add remote…', () => addRemote(id))
     add('Repository', 'Change who you commit as…', () => useStore.setState({ dialog: { kind: 'identity', repoId: id } }))
     add('Repository', 'Add worktree…', () => addWorktree(id))
-    add('Layout', active.line?.pinned ? 'Line view: show all commits' : 'Line view: show only the selected line of history',
-      () => toggleLine(id), `${modName()}+L, or hold Shift`)
+    add('Layout', active.line ? 'Line view: show all commits' : 'Line view: show only the selected line of history',
+      () => toggleLine(id), `${modName()}+L`)
     add('Repository', 'What could the uncommitted changes affect?', () => showImpact(id, { kind: 'working' }))
     if ((useStore.getState().settings?.aiProvider ?? 'off') !== 'off') {
       add('AI', active.chat.open ? 'Hide the AI panel' : 'Chat with the AI about this repository', () => toggleChat(id), `${modName()}+Shift+A`)
@@ -86,8 +86,8 @@ export function commandEntries(): CommandEntry[] {
   add('App', 'Keyboard shortcuts', () => useStore.setState({ dialog: { kind: 'shortcuts' } }), '?')
   if (settings) {
     const compact = settings.graphStyle === 'compact'
-    add('Layout', compact ? 'Graph: two-line rows' : 'Graph: one-line rows',
-      () => void saveSettings({ graphStyle: compact ? 'comfortable' : 'compact' }), 'Also in Settings → Appearance')
+    add('Layout', compact ? 'Graph: comfy (two-line rows)' : 'Graph: compact (one-line rows)',
+      () => void saveSettings({ graphStyle: compact ? 'comfy' : 'compact' }), 'Also in Settings → Appearance')
     const topo = settings.commitOrder === 'topo'
     add('Layout', topo ? 'Commit order: by date' : 'Commit order: topological',
       () => void saveSettings({ commitOrder: topo ? 'date' : 'topo' }), 'Also in Settings → Graph')

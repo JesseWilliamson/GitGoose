@@ -79,10 +79,10 @@ export interface RepoView {
   /** The code graph (ADR-008): Peek and Impact wait while it indexes. */
   codegraph: CodeGraphStatus
   /**
-   * The graph shows only the line of history through `hash` (lib/lineView.ts): while Shift is
-   * held, or until toggled off when `pinned` (View → Line View).
+   * The graph shows only the line of history through `hash` (lib/lineView.ts), until toggled off
+   * (View → Line View, Esc).
    */
-  line: { hash: string; pinned: boolean } | null
+  line: { hash: string } | null
 }
 
 /** Toasts are for outcomes that need nothing from the user: successes and notes. */
@@ -467,21 +467,18 @@ export function selectCommit(id: string, hash: string, mods: { range?: boolean; 
   updateRepo(id, { selected: next })
 }
 
-/**
- * Show only the line of history through `hash` (or show everything again with null). `pinned`
- * keeps it until toggled off; otherwise it lasts while Shift is held (see GraphList).
- */
+/** Show only the line of history through `hash` (or show everything again with null). */
 export function setLine(id: string, line: RepoView['line']): void {
   updateRepo(id, { line })
 }
 
-/** View → Line View: pin the line through the selected commit (or HEAD), or show everything again. */
+/** View → Line View: show the line through the selected commit (or HEAD), or show everything again. */
 export function toggleLine(id: string): void {
   const v = get().repos[id]
   if (!v) return
-  if (v.line?.pinned) return setLine(id, null)
+  if (v.line) return setLine(id, null)
   const hash = selectionCursor(v.selected) ?? v.snapshot.head.hash
-  if (hash) setLine(id, { hash, pinned: true })
+  if (hash) setLine(id, { hash })
 }
 
 /** Load pages until `hash` is in the log (for jumping to a search hit or a parent commit). */
