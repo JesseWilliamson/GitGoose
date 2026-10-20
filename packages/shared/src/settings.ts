@@ -73,12 +73,14 @@ export const SETTINGS = {
   fileTree: bool(false, { label: 'Show changed files as a tree', section: 'Appearance', keywords: 'folder list view', description: 'In the changes and commit file lists. Also the toggle beside their filter box.' }),
   dateFormat: choice('relative', [{ value: 'relative', label: 'Relative (3 days ago)' }, { value: 'absolute', label: 'Absolute (12 Mar 2026)' }, { value: 'both', label: 'Both' }],
     { label: 'Dates', section: 'Appearance' }),
-  graphStyle: choice('comfortable', [
-    { value: 'comfortable', label: 'Two-line rows' },
-    { value: 'compact', label: 'One-line rows, branches on the left' },
+  // 'comfy' was 'comfortable' until the layouts were renamed; an old saved value is not an option
+  // any more, so it falls back to the default, which is the same layout.
+  graphStyle: choice('comfy', [
+    { value: 'comfy', label: 'Comfy: two-line rows' },
+    { value: 'compact', label: 'Compact: one-line rows, branches on the left' },
   ], {
-    label: 'Graph layout', section: 'Appearance', keywords: 'compact density row height columns',
-    description: 'Two-line rows: author and branches over hash and subject. One-line rows: the same graph, each commit on one shorter line, branch and tag names in a column on the left.',
+    label: 'Graph layout', section: 'Appearance', keywords: 'comfy comfortable compact density row height columns',
+    description: 'Comfy: author and branches over hash and subject. Compact: the same graph, each commit on one shorter line, branch and tag names in a column on the left.',
   }),
 
   sidebarFolders: bool(true, {

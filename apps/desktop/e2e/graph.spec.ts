@@ -213,6 +213,59 @@ test('one-line rows: the same graph, branch pills in a column on the left joined
   await app.close()
 })
 
+test('compact rows: author and date are columns, lined up on the right whatever the date says', async () => {
+  const r = makeFixture('linear')
+  // Dates the row shows differently: "2 h ago", "3 days ago", and the fixture's absolute ones.
+  const now = Math.floor(Date.now() / 1000)
+  r.git('commit', '-q', '--allow-empty', '-m', 'three days old', `--date=${now - 3 * 86400} +0000`)
+  r.git('commit', '-q', '--allow-empty', '-m', 'two hours old', `--date=${now - 2 * 3600} +0000`)
+  const { app, page } = await launch(r.dir)
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1400, 640))
+  await page.evaluate(() => window.gitgoose.setSettings({ graphStyle: 'compact', dateFormat: 'relative' }))
+  const dates = page.getByTestId('row-date')
+  await expect(dates.first()).toHaveText('2 h ago')
+  await expect(dates.nth(1)).toHaveText('3 days ago')
+  for (const id of ['row-date', 'row-author']) {
+    const boxes = await page.getByTestId(id).evaluateAll((els) => els.map((el) => {
+      const b = el.getBoundingClientRect()
+      return [b.left, b.right]
+    }))
+    expect(boxes.length).toBeGreaterThan(3)
+    expect(new Set(boxes.map((b) => b.join())).size, `${id} columns line up`).toBe(1)
+  }
+  await app.close()
+})
+
+test('a commit message with a long unbroken token wraps instead of scrolling sideways', async () => {
+  const r = makeFixture('linear')
+  const token = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9'.repeat(8)
+  r.git('commit', '-q', '--allow-empty', '-m', 'long token', '-m', `token: ${token}`)
+  const { app, page } = await launch(r.dir)
+  await page.getByTestId('commit-row').filter({ hasText: 'long token' }).click()
+  const body = page.locator('pre', { hasText: token.slice(0, 40) })
+  await expect(body).toBeVisible()
+  const { scroll, client } = await body.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }))
+  expect(scroll).toBeLessThanOrEqual(client)
+  await app.close()
+})
+
+test('a detached HEAD gets a HEAD pill, in both layouts', async () => {
+  const r = makeFixture('linear')
+  r.git('checkout', '-q', 'HEAD~2')
+  const head = r.git('rev-parse', 'HEAD').trim()
+  const { app, page } = await launch(r.dir)
+  const row = page.locator(`[data-testid="commit-row"][data-hash="${head}"]`)
+  await expect(row.getByTestId('head-pill')).toHaveText('HEAD')
+  await expect(page.getByTestId('head-pill')).toHaveCount(1)
+  await page.evaluate(() => window.gitgoose.setSettings({ graphStyle: 'compact' }))
+  await expect(row.getByTestId('refs-cell').getByTestId('head-pill')).toBeVisible()
+  await expect(row.locator('svg [data-testid="ref-line"]')).toHaveCount(1)
+  // On a branch, the branch's pill says where HEAD is: no HEAD pill.
+  r.checkout('main')
+  await expect(page.getByTestId('head-pill')).toHaveCount(0)
+  await app.close()
+})
+
 test('Ctrl+P opens the search on commands only; Ctrl+K and Ctrl+F on everything', async () => {
   const r = makeFixture('linear')
   const { app, page } = await launch(r.dir)

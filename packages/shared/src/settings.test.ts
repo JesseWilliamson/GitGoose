@@ -47,7 +47,7 @@ describe('settings schema', () => {
     expect(on.graphStyle).toBe('compact')
     expect('compactRows' in on).toBe(false)
     const off = migrateSettings({ settingsVersion: 2, compactRows: false })
-    expect(off.graphStyle).toBe('comfortable')
+    expect(off.graphStyle).toBe('comfy')
     expect(off.settingsVersion).toBe(4)
   })
 
@@ -55,6 +55,11 @@ describe('settings schema', () => {
     const d = defaultSettings()
     expect(d.contextLines).toBe(3)
     expect(d.avatars).toBe('initials')
-    expect(d.graphStyle).toBe('comfortable')
+    expect(d.graphStyle).toBe('comfy')
+  })
+
+  it('reads the layout saved before the rename (comfortable) as comfy', () => {
+    expect(validateSetting('graphStyle', 'comfortable')).toBe('comfy')
+    expect(validateSetting('graphStyle', 'compact')).toBe('compact')
   })
 })

@@ -2,7 +2,7 @@ import type { Row } from '@gitgoose/graph'
 import type { AvatarSource, Commit, Ref, StashEntry } from '@gitgoose/shared'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import clsx from 'clsx'
-import { Archive, Cloud, Laptop, Tag } from 'lucide-react'
+import { Archive, Cloud, Crosshair, Laptop, Tag } from 'lucide-react'
 import { ContextMenu } from 'radix-ui'
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { bisectMark, bisectReset, checkout, checkoutRow, showAllInGraph } from '../lib/actions'
@@ -22,8 +22,6 @@ const AVATAR = 30
 const AVATAR_COMPACT = 18
 /** The one-line layout's branch / tag column, left of the graph. */
 const REFS_W = 160
-/** How long Shift must be held, with no click, before the graph shows only the selected line. */
-const HOLD_MS = 150
 
 /** A local and a remote branch with the same name share one pill. */
 interface Pill {
@@ -35,7 +33,7 @@ interface Pill {
   isHead: boolean
 }
 
-function pillsFor(refs: Ref[], headBranch: string | undefined, show: { remotes: boolean; tags: boolean }): Pill[] {
+function pillsFor(refs: readonly Ref[], headBranch: string | undefined, show: { remotes: boolean; tags: boolean }): Pill[] {
   const byName = new Map<string, Pill>()
   const out: Pill[] = []
   for (const r of refs) {
@@ -64,7 +62,7 @@ function pillsFor(refs: Ref[], headBranch: string | undefined, show: { remotes: 
 }
 
 /**
- * Two layouts (Settings → Appearance → Graph layout), the same graph in both. Comfortable is
+ * Two layouts (Settings → Appearance → Graph layout), the same graph in both. Comfy is
  * two-line rows beside the nodes: author and branch pills over hash and subject. Compact is one
  * shorter line per commit, with the branch and tag pills moved to a column on the left of the
  * graph, joined to their node by a line, so the line of text is just avatar, hash, subject,
@@ -192,7 +190,7 @@ function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
   }, [selectedIndex, virt])
 
   // When the graph collapses to a line or expands again, the selected row stays where it was on
-  // screen: a Shift-click that follows lands where the user aimed. Before the browser paints, work
+  // screen, so the eye does not have to find it again. Before the browser paints, work
   // out where the row was (from the previous render's list) and scroll the new list to match.
   // (The list's own top does not move: the line bar floats over it, see LineBar. Runs on every
   // render, so it reads nothing from the DOM that would force a layout while scrolling.)
@@ -231,38 +229,16 @@ function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
     before.current = { key: viewKey, itemOf, pad: space.top }
   })
 
-  // Hold Shift (no click, no other modifier) with a commit selected: show only its line until Shift
-  // is let go. Shift-click and Shift+arrows work as ever inside it. A Shift released in another
-  // window never arrives here, so leaving the window lets go too.
-  const hold = useRef<number | null>(null)
-  const cancelHold = () => {
-    if (hold.current !== null) window.clearTimeout(hold.current)
-    hold.current = null
-  }
+  // Esc lets go of the line view (View → Line View), unless something else has the keyboard.
   useEffect(() => {
-    const release = () => {
-      cancelHold()
-      if (useStore.getState().repos[view.id]?.line?.pinned === false) setLine(view.id, null)
-    }
-    const onKeyUp = (e: KeyboardEvent) => e.key === 'Shift' && release()
-    // Esc lets go of a pinned line (View → Line View), unless something else has the keyboard.
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.defaultPrevented || !useStore.getState().repos[view.id]?.line?.pinned) return
+      if (e.key !== 'Escape' || e.defaultPrevented || !useStore.getState().repos[view.id]?.line) return
       const t = e.target as Node
       if (t !== document.body && !scrollRef.current?.contains(t)) return
       setLine(view.id, null)
     }
-    window.addEventListener('keyup', onKeyUp)
     window.addEventListener('keydown', onKeyDown)
-    window.addEventListener('blur', release)
-    window.addEventListener('mousedown', cancelHold, true)
-    return () => {
-      cancelHold()
-      window.removeEventListener('keyup', onKeyUp)
-      window.removeEventListener('keydown', onKeyDown)
-      window.removeEventListener('blur', release)
-      window.removeEventListener('mousedown', cancelHold, true)
-    }
+    return () => window.removeEventListener('keydown', onKeyDown)
   }, [view.id])
 
   // The last row may be the "Loading…" placeholder; keyboard selection stops at the last commit.
@@ -281,20 +257,6 @@ function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
   }
 
   const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Shift') {
-      if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey && !view.line && hold.current === null) {
-        hold.current = window.setTimeout(() => {
-          hold.current = null
-          const v = useStore.getState().repos[view.id]
-          const sel = v?.selected
-          const hash = sel && sel.kind !== 'wip' ? selectionCursor(sel) : null
-          if (hash && !v!.line) setLine(view.id, { hash, pinned: false })
-        }, HOLD_MS)
-      }
-      return
-    }
-    // Shift as part of a shortcut (Ctrl+Shift+…) is not a hold.
-    if (e.ctrlKey || e.metaKey || e.altKey) cancelHold()
     const cur = selectedIndex < 0 ? -1 : selectedIndex
     // Shift+arrows grow the selection from where it started, like Shift-click.
     if (e.key === 'ArrowDown' || e.key === 'j') { e.preventDefault(); select(cur + 1, e.shiftKey) }
@@ -356,6 +318,7 @@ function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
                     refs={refsByHash.get(commit.hash)}
                     headBranch={snap.head.branch}
                     isHead={commit.hash === snap.head.hash}
+                    detachedHead={!!snap.head.detached && commit.hash === snap.head.hash}
                     selected={selectedSet.has(commit.hash)}
                     editable={editableSet.has(commit.hash)}
                     stash={commit.stash ? stashByHash.get(commit.hash) : undefined}
@@ -381,18 +344,16 @@ function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
 /**
  * Says the graph shows one line of history, and how to get the rest back. It floats over the
  * bottom of the graph instead of taking a row of its own: pushing the list down would move the
- * very row the user is about to Shift-click.
+ * very rows the user is looking at.
  */
 function LineBar({ view, hash, hidden }: { view: RepoView; hash: string; hidden: number }) {
-  const pinned = view.line?.pinned
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-3">
       <div className="pointer-events-auto flex min-w-0 items-center gap-2 rounded-md border border-line bg-panel px-3 py-1 text-[12px] shadow-lg" data-testid="line-bar">
         <span className="min-w-0 truncate">
-          Showing the line through <span className="font-mono">{shortHash(hash)}</span> · {hidden} {hidden === 1 ? 'commit' : 'commits'} hidden ·{' '}
-          {pinned ? 'Esc to show all' : 'release Shift to show all'}
+          Showing the line through <span className="font-mono">{shortHash(hash)}</span> · {hidden} {hidden === 1 ? 'commit' : 'commits'} hidden · Esc to show all
         </span>
-        {pinned && <button onClick={() => setLine(view.id, null)} className="shrink-0 rounded px-1.5 font-medium text-accent hover:bg-hover">Show all</button>}
+        <button onClick={() => setLine(view.id, null)} className="shrink-0 rounded px-1.5 font-medium text-accent hover:bg-hover">Show all</button>
       </div>
     </div>
   )
@@ -457,6 +418,8 @@ const CommitRow = memo(function CommitRow(props: {
   refs: Ref[] | undefined
   headBranch: string | undefined
   isHead: boolean
+  /** HEAD is detached at this commit: it gets a HEAD pill, since no branch pill says "you are here". */
+  detachedHead: boolean
   selected: boolean
   /** On the part of the current branch that can be reordered (dropPlan reads it from the store; kept so a change re-renders). */
   editable: boolean
@@ -478,10 +441,11 @@ const CommitRow = memo(function CommitRow(props: {
   )
   const pills = useMemo(() => (props.refs ? pillsFor(props.refs, props.headBranch, { remotes: look.showRemotes, tags: look.showTags }) : []),
     [props.refs, props.headBranch, look.showRemotes, look.showTags])
+  const head = props.detachedHead
   const lane = laneColor(row.color)
   const cellW = cellWidth(row.width)
   /** One-line rows: pills (or a stash or bisect mark) in the column on the left, joined to the node by a line. */
-  const labelled = look.compact && (pills.length > 0 || !!props.stash || !!props.bisect)
+  const labelled = look.compact && (head || pills.length > 0 || !!props.stash || !!props.bisect)
   /** Where the row's text starts: past the branch column (one-line rows) and the graph. */
   const textX = (look.compact ? REFS_W : 0) + cellW
 
@@ -499,9 +463,10 @@ const CommitRow = memo(function CommitRow(props: {
   /** Where a drop lands on this row (above, onto, below) is worked out from the pointer: see DragBadge. */
   const dropTarget = useMemo(() => JSON.stringify({ kind: 'row', hash: commit.hash, where: 'onto' } satisfies DropTarget), [commit.hash])
 
-  /** The pills and marks, at most `max` branch pills before a "+N". */
+  /** The pills and marks, at most `max` branch pills before a "+N" (HEAD counts as one). */
   const marks = (max: number) => (
     <>
+      {head && <HeadPill />}
       {props.bisect && (
         <span className={clsx('flex h-[18px] shrink-0 items-center rounded border px-1.5 text-[11px] font-medium', BISECT_PILL[props.bisect])} data-testid="bisect-pill">{props.bisect}</span>
       )}
@@ -510,12 +475,12 @@ const CommitRow = memo(function CommitRow(props: {
           <Archive size={10} /> {props.stash.ref}
         </span>
       )}
-      {pills.slice(0, max).map((p) => (
+      {pills.slice(0, max - Number(head)).map((p) => (
         <RefPill key={p.key} pill={p} color={row.color} repoId={repoId} hash={commit.hash} />
       ))}
-      {pills.length > max && (
-        <span className="shrink-0 rounded-[4px] bg-raised px-1.5 text-[11px] font-medium text-muted" title={pills.slice(max).map((p) => p.label).join('\n')}>
-          +{pills.length - max}
+      {pills.length > max - Number(head) && (
+        <span className="shrink-0 rounded-[4px] bg-raised px-1.5 text-[11px] font-medium text-muted" title={pills.slice(max - Number(head)).map((p) => p.label).join('\n')}>
+          +{pills.length - max + Number(head)}
         </span>
       )}
     </>
@@ -591,12 +556,16 @@ const CommitRow = memo(function CommitRow(props: {
         </span>
         {look.compact ? (
           // One line: the pills are already in the column on the left. The subject is the one
-          // thing that must not be squeezed out, so the rest keeps a fixed width or goes.
+          // thing that must not be squeezed out, so the rest keeps a fixed width or goes. Fixed
+          // widths are also what make author and date columns: every row's right edge is the same,
+          // so the same width from it lines them up, whatever the date says ("2 h ago", "Mar 12").
           <>
             <span className="shrink-0 font-mono text-[12px] text-faint" data-testid="row-sha">{shortHash(commit.hash)}</span>
             <span className={clsx('min-w-0 flex-1 truncate', props.stash && 'text-muted italic')}>{subject}</span>
             <span className="hidden w-32 shrink-0 truncate text-[12px] text-muted @xl:block" data-testid="row-author" title={authorsTitle}>{authors}</span>
-            <span className="shrink-0 text-[12px] text-faint" data-testid="row-date">{formatDate(commit.authorDate, look.dateFormat)}</span>
+            <span className={clsx('shrink-0 truncate text-right text-[12px] text-faint tabular-nums', look.dateFormat === 'both' ? 'w-44' : 'w-24')} data-testid="row-date">
+              {formatDate(commit.authorDate, look.dateFormat)}
+            </span>
           </>
         ) : (
           <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
@@ -647,6 +616,20 @@ function RefPill({ pill, color, repoId, hash }: { pill: Pill; color: number; rep
       <span className="truncate">{pill.label}</span>
       {pill.local && !pill.isHead && <Laptop size={10} className="shrink-0 opacity-70" />}
       {pill.remotes.length > 0 && <Cloud size={10} className="shrink-0 opacity-70" />}
+    </span>
+  )
+}
+
+/**
+ * Where a detached HEAD is: the checked-out branch's look (solid accent), since it answers the
+ * same question, "where am I?". It is not a ref, so it has none of a branch pill's handlers: a
+ * right-click, drag or double-click on it is one on its row (the commit).
+ */
+function HeadPill() {
+  return (
+    <span data-testid="head-pill" title="HEAD is detached here: new commits belong to no branch until you create one"
+      className="flex h-[18px] shrink-0 items-center gap-1 rounded-[4px] bg-accent px-1.5 text-[11px] font-semibold text-accent-fg">
+      <Crosshair size={10} className="shrink-0" /> HEAD
     </span>
   )
 }
