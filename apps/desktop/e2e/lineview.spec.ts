@@ -19,24 +19,27 @@ const row = (page: Page, hash: string) => page.locator(`[data-testid="commit-row
 const selected = (page: Page) => page.locator('[data-testid="commit-row"][data-selected]')
 const top = async (page: Page, hash: string) => (await row(page, hash).boundingBox())!.y
 
-test('hold Shift: only the selected line shows, and the selected row stays where it was', async () => {
+const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
+
+test('Mod+L: only the selected line shows, and the selected row stays where it was', async () => {
   const { r, A, B, X, Y, Z } = setup()
   const { app, page } = await launch(r.dir)
   await row(page, Y).click()
   const y = await top(page, Y)
 
-  // A tap is not a hold.
-  await page.keyboard.press('Shift')
+  // Holding Shift is only for Shift-click and Shift+arrows now: it does not collapse the graph.
+  await page.keyboard.down('Shift')
   await page.waitForTimeout(300)
   await expect(page.getByTestId('line-bar')).toHaveCount(0)
+  await page.keyboard.up('Shift')
 
-  await page.keyboard.down('Shift')
-  await expect(page.getByTestId('line-bar')).toContainText(`Showing the line through ${Y.slice(0, 7)} · 1 commit hidden · release Shift to show all`)
+  await page.keyboard.press(`${mod}+l`)
+  await expect(page.getByTestId('line-bar')).toContainText(`Showing the line through ${Y.slice(0, 7)} · 1 commit hidden · Esc to show all`)
   for (const h of [Z, Y, X, A]) await expect(row(page, h)).toBeVisible()
   await expect(row(page, B)).toHaveCount(0)
   expect(await top(page, Y)).toBe(y)
 
-  await page.keyboard.up('Shift')
+  await page.keyboard.press(`${mod}+l`)
   await expect(page.getByTestId('line-bar')).toHaveCount(0)
   await expect(row(page, B)).toBeVisible()
   expect(await top(page, Y)).toBe(y)
@@ -45,35 +48,28 @@ test('hold Shift: only the selected line shows, and the selected row stays where
   // A must still not move (the list makes room above the line instead of scrolling past its top).
   await row(page, A).click()
   const a = await top(page, A)
-  await page.keyboard.down('Shift')
+  await page.keyboard.press(`${mod}+l`)
   await expect(page.getByTestId('line-bar')).toContainText(`through ${A.slice(0, 7)} · 3 commits hidden`)
   await expect(row(page, Z)).toHaveCount(0)
   expect(await top(page, A)).toBe(a)
   expect(await top(page, B)).toBe(a - (await row(page, A).boundingBox())!.height)
-  await page.keyboard.up('Shift')
+  await page.keyboard.press('Escape')
   await expect(row(page, Z)).toBeVisible()
   expect(await top(page, A)).toBe(a)
   await app.close()
 })
 
-test('a Shift-click inside the line view selects along the line; leaving the window lets go', async () => {
-  const { r, B, Y, Z } = setup()
+test('a Shift-click inside the line view selects along the line, and keeps the line', async () => {
+  const { r, Y, Z } = setup()
   const { app, page } = await launch(r.dir)
   await row(page, Y).click()
-  await page.keyboard.down('Shift')
+  await page.keyboard.press(`${mod}+l`)
   await expect(page.getByTestId('line-bar')).toBeVisible()
-  // Shift is still held: this is a Shift-click.
-  await row(page, Z).click()
+  await row(page, Z).click({ modifiers: ['Shift'] })
   await expect(selected(page)).toHaveCount(2)
   for (const h of [Y, Z]) await expect(row(page, h)).toHaveAttribute('data-selected', 'true')
   // Still the line through Y, not through the new cursor.
   await expect(page.getByTestId('line-bar')).toContainText(Y.slice(0, 7))
-
-  // A Shift released in another window never arrives: losing focus must not leave it collapsed.
-  await page.evaluate(() => window.dispatchEvent(new Event('blur')))
-  await expect(page.getByTestId('line-bar')).toHaveCount(0)
-  await expect(row(page, B)).toBeVisible()
-  await page.keyboard.up('Shift')
   await app.close()
 })
 
@@ -92,11 +88,6 @@ test('View → Line View keeps the line until Esc; the uncommitted changes show 
   await expect(row(page, B)).toHaveCount(0)
   // HEAD (main, at B) is not on topic's line, so neither are the changes waiting to go on top of it.
   await expect(page.getByTestId('wip-row')).toHaveCount(0)
-  // Holding and releasing Shift does not undo a pinned line.
-  await page.keyboard.down('Shift')
-  await page.waitForTimeout(300)
-  await page.keyboard.up('Shift')
-  await expect(page.getByTestId('line-bar')).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('line-bar')).toHaveCount(0)
   await expect(row(page, B)).toBeVisible()
