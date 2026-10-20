@@ -220,7 +220,14 @@ export class GraphLayout {
     for (const p of rest) {
       let target = lanes.findIndex((l) => l?.hash === p)
       if (target < 0) {
-        target = this.freeSlot(lane)
+        // A merge of the trunk tip (a branch that merged main in) goes straight to the held lane 0,
+        // where the trunk will arrive. A free column would make the line come back across every
+        // lane in between to reach it.
+        target = this.trunk?.has(p) && lanes[0] === null ? 0 : this.freeSlot(lane)
+        lanes[target] = { hash: p }
+      } else if (lanes[target]!.pending) {
+        // Merging HEAD: from here down the lane is a real parent line, not only the dashed one to
+        // the "uncommitted changes" row, so it must not be hidden with it when there are none.
         lanes[target] = { hash: p }
       }
       edges.push({ part: 'bottom', from: lane, to: target, color: this.colorOf(target) })

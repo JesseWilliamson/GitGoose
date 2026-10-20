@@ -145,6 +145,29 @@ describe('layout', () => {
     expect(rows[1]!.edges).toContainEqual({ part: 'top', from: 1, to: 0, color: 1 })
   })
 
+  it('sends a merge of the trunk tip straight to lane 0, not around through a new lane', () => {
+    // feature (F, checked out) merged main (B) in: M's second parent is the trunk tip, held in lane 0.
+    const commits = [c('M', 'F', 'B'), c('F', 'A'), c('B', 'A'), c('A')]
+    const rows = layout(commits, { head: 'M', trunk: ['B'] })
+    expect(rows.map((r) => r.lane)).toEqual([1, 1, 0, 0])
+    expect(rows[0]!.edges).toContainEqual({ part: 'bottom', from: 1, to: 0, color: 0 })
+    // Nothing goes past lane 1, so no line crosses the feature lane to get back to lane 0.
+    expect(rows.map((r) => r.width)).toEqual([2, 2, 2, 2])
+    checkInvariants(commits, rows)
+  })
+
+  it('draws a merge of HEAD solid: the line below the merge is not the dashed one to the WIP row', () => {
+    // HEAD = B on main; dev merged main in (M), so M's second parent is HEAD.
+    const commits = [c('D2', 'M'), c('M', 'D1', 'B'), c('D1', 'A'), c('B', 'A'), c('A')]
+    const rows = layout(commits, { head: 'B', trunk: ['B'] })
+    expect(rows.map((r) => r.lane)).toEqual([1, 1, 1, 0, 0])
+    // Above the merge: still HEAD's dashed line. Below it: the merge's line, into HEAD.
+    expect(rows[1]!.edges).toContainEqual({ part: 'pass', from: 0, to: 0, color: 0, pending: true })
+    expect(rows[2]!.edges).toContainEqual({ part: 'pass', from: 0, to: 0, color: 0 })
+    expect(rows[3]!.edges).toContainEqual({ part: 'top', from: 0, to: 0, color: 0 })
+    checkInvariants(commits, rows)
+  })
+
   it('gives lane 0 to whichever trunk tip comes first', () => {
     // origin/main (O) is ahead of local main (B); the trunk line runs through both.
     const rows = layout([c('O', 'B'), c('F', 'A'), c('B', 'A'), c('A')], { head: 'F', trunk: ['B', 'O'] })
