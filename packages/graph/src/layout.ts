@@ -177,8 +177,9 @@ export class GraphLayout {
     if (this.trunk?.has(commit.hash)) {
       lane = 0
       this.trunk = null
-    } else if (tip && this.trunk && this.overTrunk.has(commit.hash)) {
+    } else if (tip && this.trunk && this.overTrunk.has(commit.hash) && lanes[0] === null) {
       // Rule A: its first-parent chain leads to the trunk tip, which will come down lane 0 anyway.
+      // Only take lane 0 if it is unoccupied; otherwise a second-parent reservation would be lost.
       lane = 0
       this.trunk = null
     } else if (tip && this.overHead.has(commit.hash) && (moved = lanes.findIndex((l) => l?.pending)) >= 0) {

@@ -279,6 +279,18 @@ describe('layout', () => {
         for (const e of r.edges) expect(e.color).toBe(e.part === 'top' ? e.from : e.to)
       }
     })
+
+    it('does not take lane 0 when a second-parent reservation already occupies it', () => {
+      // HEAD = M (merge of X and B), trunk = B, overTrunk = [Z]. M's second parent B reserves
+      // lane 0 before Z arrives. Z must not overwrite that reservation; it goes to a free lane.
+      const commits = [c('M', 'X', 'B'), c('Z', 'B'), c('X', 'A'), c('B', 'A'), c('A')]
+      const rows = layout(commits, { head: 'M', trunk: ['B'], straight: { overTrunk: ['Z'], overHead: [] } })
+      // M takes lane 1 (HEAD), Z must NOT take lane 0 (B is reserved there), so Z goes to lane 2.
+      expect(rows.map((r) => [r.hash, r.lane])).toEqual([['M', 1], ['Z', 2], ['X', 1], ['B', 0], ['A', 0]])
+      // B must end up in lane 0 where it was reserved by M's second parent.
+      expect(rows.find((r) => r.hash === 'B')!.lane).toBe(0)
+      checkInvariants(commits, rows)
+    })
   })
 
   /** What Repo.straightTips computes, the slow and obvious way: is the base on the tip's first-parent chain? */
