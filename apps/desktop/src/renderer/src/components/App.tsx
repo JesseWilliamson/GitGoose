@@ -43,7 +43,7 @@ function useCommands() {
         case 'commit-order-topo': return void saveSettings({ commitOrder: 'topo' })
         case 'sidebar-tags-50': case 'sidebar-tags-100': case 'sidebar-tags-250': case 'sidebar-tags-all':
           return void saveSettings({ sidebarTags: name.slice('sidebar-tags-'.length) as Settings['sidebarTags'] })
-        case 'toggle-graph-style': return void saveSettings({ graphStyle: setting('graphStyle') === 'compact' ? 'comfortable' : 'compact' })
+        case 'toggle-graph-style': return void saveSettings({ graphStyle: setting('graphStyle') === 'compact' ? 'comfy' : 'compact' })
         case 'toggle-sidebar': return toggleSlot('left')
         case 'toggle-details': return toggleSlot('right')
         case 'layout-default': return void saveSettings({ layout: structuredClone(DEFAULT_LAYOUT) })
