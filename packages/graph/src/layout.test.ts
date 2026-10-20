@@ -16,9 +16,12 @@ function ascii(rows: Row[]): string[] {
   })
 }
 
-function logOf(dir: string): LayoutCommit[] {
-  // Same revisions and order as the app's LogStream.
-  const out = execFileSync('git', ['log', '--topo-order', '--format=%H %P', '--branches', '--remotes', '--tags', 'HEAD', '--'],
+/** The two orders the app can walk in (Settings → Graph → Commit order); the layout must handle both. */
+const ORDERS = ['--date-order', '--topo-order'] as const
+
+function logOf(dir: string, order: (typeof ORDERS)[number] = '--date-order'): LayoutCommit[] {
+  // Same revisions and orders as the app's LogStream.
+  const out = execFileSync('git', ['log', order, '--format=%H %P', '--branches', '--remotes', '--tags', 'HEAD', '--'],
     { cwd: dir, encoding: 'utf8', maxBuffer: 1 << 30 })
   return out.split('\n').filter(Boolean).map((l) => {
     const [hash, ...parents] = l.split(' ')
@@ -31,14 +34,22 @@ function logOf(dir: string): LayoutCommit[] {
  * - every parent link is drawn: a 'bottom' edge from the child's lane to some lane L, then that
  *   lane passes straight down until a 'top' edge brings it into the parent's node
  * - lines never jump: a 'pass' edge stays in its column, and two lines never share a column
+ * - the one exception is the dashed line to HEAD, which rule B moves aside: it may cross the row
+ *   diagonally, out of the node's column into a free one on its right
  */
 function checkInvariants(commits: LayoutCommit[], rows: Row[]): void {
   const index = new Map(commits.map((c, i) => [c.hash, i]))
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i]!
-    const cols = row.edges.filter((e) => e.part === 'pass').map((e) => e.from)
-    expect(new Set(cols).size, `row ${i}: two lines share a column`).toBe(cols.length)
-    expect(cols, `row ${i}: a line passes through the node`).not.toContain(row.lane)
+    const passes = row.edges.filter((e) => e.part === 'pass')
+    for (const side of ['from', 'to'] as const) {
+      const cols = passes.map((e) => e[side])
+      expect(new Set(cols).size, `row ${i}: two lines share a column`).toBe(cols.length)
+    }
+    const diagonal = passes.filter((e) => e.from !== e.to)
+    expect(diagonal.every((e) => e.pending && e.from === row.lane && e.to > e.from), `row ${i}: a line jumps`).toBe(true)
+    expect(passes.map((e) => e.to), `row ${i}: a line passes through the node`).not.toContain(row.lane)
+    expect(passes.filter((e) => e.from === e.to).map((e) => e.from), `row ${i}: a line passes through the node`).not.toContain(row.lane)
     for (const p of commits[i]!.parents) {
       const j = index.get(p)
       if (j === undefined) continue // parent outside the loaded range
@@ -147,6 +158,139 @@ describe('layout', () => {
     expect(rows[1]!.edges).toContainEqual({ part: 'top', from: 1, to: 0, color: 1, pending: true })
   })
 
+  describe('a branch on top of a reserved line continues it', () => {
+    // main: A-B, topic: X-Y-Z on B (Z newest, so it arrives before B).
+    const onTop = [c('Z', 'Y'), c('Y', 'X'), c('X', 'B'), c('B', 'A'), c('A')]
+
+    /** Follow HEAD's dashed line from the top of the first row down to HEAD; returns its columns. */
+    function pendingPath(rows: Row[], head: string, headLane: number): number[] {
+      const cols: number[] = []
+      let col = headLane
+      for (const r of rows) {
+        cols.push(col)
+        const e = r.edges.find((x) => x.pending && x.from === col)
+        expect(e, `${r.hash}: the dashed line to HEAD is cut`).toBeDefined()
+        if (r.hash === head) {
+          expect(e!.part).toBe('top')
+          return cols
+        }
+        expect(e!.part).toBe('pass')
+        col = e!.to
+      }
+      throw new Error('HEAD never reached')
+    }
+
+    it('branch on top of trunk: the tip takes the held lane 0', () => {
+      // Without the hint, Z opens lane 1 (lane 0 is held for B) and curves in at B.
+      expect(layout(onTop, { trunk: ['B'] }).map((r) => r.lane)).toEqual([1, 1, 1, 0, 0])
+      const rows = layout(onTop, { trunk: ['B'], straight: { overTrunk: ['Z'], overHead: [] } })
+      expect(ascii(rows)).toEqual(['* Z', '* Y', '* X', '* B', '* A'])
+      checkInvariants(onTop, rows)
+      // Checked out elsewhere (HEAD = A, behind main): HEAD's line runs beside the branch.
+      const behind = layout(onTop, { head: 'A', trunk: ['B'], straight: { overTrunk: ['Z'], overHead: ['Z', 'B'] } })
+      expect(behind.map((r) => r.lane)).toEqual([0, 0, 0, 0, 0])
+      checkInvariants(onTop, behind)
+    })
+
+    it('branch on top of trunk, checked out: HEAD shares lane 0 with the trunk from the top', () => {
+      const g = new GraphLayout({ head: 'Z', trunk: ['B'], straight: { overTrunk: ['Z'], overHead: [] } })
+      expect(g.headLane).toBe(0)
+      const rows = g.push(onTop)
+      expect(rows.map((r) => r.lane)).toEqual([0, 0, 0, 0, 0])
+      expect(rows[0]!.edges).toContainEqual({ part: 'top', from: 0, to: 0, color: 0, pending: true })
+      checkInvariants(onTop, rows)
+    })
+
+    it('branch on top of HEAD with WIP: the tip takes HEAD\'s column, the dashed line steps aside', () => {
+      // HEAD = B = main. Z is over both the trunk and HEAD: lane 0 for the branch, dashed line to lane 1.
+      const g = new GraphLayout({ head: 'B', trunk: ['B'], straight: { overTrunk: ['Z'], overHead: ['Z'] } })
+      const rows = g.push(onTop)
+      expect(rows.map((r) => r.lane)).toEqual([0, 0, 0, 0, 0])
+      expect(rows[0]!.edges).toContainEqual({ part: 'pass', from: 0, to: 1, color: 1, pending: true })
+      expect(rows[1]!.edges).toContainEqual({ part: 'pass', from: 1, to: 1, color: 1, pending: true })
+      // ...and curves into B, where it ends.
+      expect(rows[3]!.edges).toContainEqual({ part: 'top', from: 1, to: 0, color: 1, pending: true })
+      expect(pendingPath(rows, 'B', g.headLane)).toEqual([0, 1, 1, 1])
+      checkInvariants(onTop, rows)
+
+      // HEAD off the trunk (H on a side branch from A, older than Z): rule B alone, in lane 1.
+      const side = [c('Z', 'Y'), c('Y', 'H'), c('H', 'A'), c('B', 'A'), c('A')]
+      const g2 = new GraphLayout({ head: 'H', trunk: ['B'], straight: { overTrunk: [], overHead: ['Z'] } })
+      const rows2 = g2.push(side)
+      expect(rows2.map((r) => [r.hash, r.lane])).toEqual([['Z', 1], ['Y', 1], ['H', 1], ['B', 0], ['A', 0]])
+      expect(pendingPath(rows2, 'H', g2.headLane)).toEqual([1, 2, 2])
+      checkInvariants(side, rows2)
+    })
+
+    it('two branches on top of trunk: the first takes lane 0, the second curves in as before', () => {
+      // P-Q on B as well; Z is newer than Q.
+      const two = [c('Z', 'Y'), c('Q', 'P'), c('Y', 'X'), c('P', 'B'), c('X', 'B'), c('B', 'A'), c('A')]
+      const rows = layout(two, { trunk: ['B'], straight: { overTrunk: ['Z', 'Q'], overHead: [] } })
+      expect(rows.map((r) => [r.hash, r.lane])).toEqual([['Z', 0], ['Q', 1], ['Y', 0], ['P', 1], ['X', 0], ['B', 0], ['A', 0]])
+      checkInvariants(two, rows)
+    })
+
+    it('merge in the chain is not straight: git leaves it out, and the layout is as before', () => {
+      // topic merged main (M = merge of X and B): its first-parent chain never reaches B, so
+      // Repo.straightTips does not list it, and the layout is unchanged.
+      const merged = [c('M', 'X', 'B'), c('X', 'A'), c('B', 'A'), c('A')]
+      const rows = layout(merged, { trunk: ['B'], straight: { overTrunk: [], overHead: [] } })
+      expect(rows).toEqual(layout(merged, { trunk: ['B'] }))
+      expect(rows.map((r) => r.lane)).toEqual([1, 1, 0, 0])
+      checkInvariants(merged, rows)
+    })
+
+    it('only applies to tips: a commit some lane already waits for keeps that lane', () => {
+      // feature (F) on top of Z: Z is not a tip, so it stays in F's lane whatever the hint says.
+      const stacked = [c('F', 'Z'), ...onTop]
+      const rows = layout(stacked, { trunk: ['B'], straight: { overTrunk: ['F', 'Z'], overHead: [] } })
+      expect(rows.map((r) => r.lane)).toEqual([0, 0, 0, 0, 0, 0])
+      checkInvariants(stacked, rows)
+    })
+
+    it('colours stay per column, including the dashed line that steps aside', () => {
+      const two = [c('Z', 'Y'), c('Q', 'P'), c('Y', 'X'), c('P', 'B'), c('X', 'B'), c('B', 'A'), c('A')]
+      const rows = layout(two, { head: 'B', trunk: ['B'], straight: { overTrunk: ['Z', 'Q'], overHead: ['Z', 'Q'] } })
+      for (const r of rows) {
+        expect(r.color).toBe(r.lane)
+        for (const e of r.edges) expect(e.color).toBe(e.part === 'top' ? e.from : e.to)
+      }
+    })
+  })
+
+  /** What Repo.straightTips computes, the slow and obvious way: is the base on the tip's first-parent chain? */
+  function straightOf(dir: string, base: string): string[] {
+    const git = (...a: string[]) => execFileSync('git', a, { cwd: dir, encoding: 'utf8' })
+    const tips = new Set(git('for-each-ref', '--format=%(objectname)', 'refs/heads', 'refs/remotes').split('\n').filter(Boolean))
+    return [...tips].filter((t) => t !== base && git('rev-list', '--first-parent', t).split('\n').includes(base))
+  }
+
+  const straightShapes = SHAPES.filter((s) => s !== 'empty').flatMap((s) => ORDERS.map((o) => [s, o] as const))
+  it.each(straightShapes)('satisfies invariants with straight tips on the %s fixture in %s', (shape: Shape, order) => {
+    const r = makeFixture(shape)
+    const commits = logOf(r.dir, order)
+    const main = r.git('rev-parse', 'main').trim()
+    for (const head of new Set([r.head(), main, ...commits.map((x) => x.hash).slice(0, 5)])) {
+      const opts = { head, trunk: [main], straight: { overTrunk: straightOf(r.dir, main), overHead: straightOf(r.dir, head) } }
+      const rows = layout(commits, opts)
+      checkInvariants(commits, rows)
+      expect(rows.find((x) => x.hash === main)!.lane).toBe(0)
+      // Paging gives the same rows.
+      const g = new GraphLayout(opts)
+      expect([...g.push(commits.slice(0, 2)), ...g.push(commits.slice(2, 5)), ...g.push(commits.slice(5))]).toEqual(rows)
+    }
+  })
+
+  it('gives the same result page by page with straight tips', () => {
+    const two = [c('Z', 'Y'), c('Q', 'P'), c('Y', 'X'), c('P', 'B'), c('X', 'B'), c('B', 'A'), c('A')]
+    const opts = { head: 'B', trunk: ['B'], straight: { overTrunk: ['Z', 'Q'], overHead: ['Z', 'Q'] } }
+    const whole = layout(two, opts)
+    for (let cut = 1; cut < two.length; cut++) {
+      const g = new GraphLayout(opts)
+      expect([...g.push(two.slice(0, cut)), ...g.push(two.slice(cut))]).toEqual(whole)
+    }
+  })
+
   it('handles octopus merges and multiple roots', () => {
     const rows = layout([c('O', 'a', 'b', 'c'), c('c', 'r'), c('b', 'r'), c('a', 'r'), c('r'), c('orphan')])
     expect(rows[0]!.edges.filter((e) => e.part === 'bottom').map((e) => e.to)).toEqual([0, 1, 2])
@@ -166,9 +310,10 @@ describe('layout', () => {
     expect([...g2.push(commits.slice(0, 101)), ...g2.push(commits.slice(101))]).toEqual(layout(commits, opts))
   })
 
-  it.each(SHAPES.filter((s) => s !== 'empty'))('satisfies invariants on the %s fixture', (shape: Shape) => {
+  const shapesByOrder = SHAPES.filter((s) => s !== 'empty').flatMap((s) => ORDERS.map((o) => [s, o] as const))
+  it.each(shapesByOrder)('satisfies invariants on the %s fixture in %s', (shape: Shape, order) => {
     const r = makeFixture(shape)
-    const commits = logOf(r.dir)
+    const commits = logOf(r.dir, order)
     const head = r.head()
     checkInvariants(commits, layout(commits, { head }))
     const rows = layout(commits, { head })
@@ -182,8 +327,8 @@ describe('layout', () => {
     }
   })
 
-  it('satisfies invariants on a large generated history', () => {
-    const commits = logOf(makeLargeRepo(2000))
+  it.each(ORDERS)('satisfies invariants on a large generated history in %s', (order) => {
+    const commits = logOf(makeLargeRepo(2000), order)
     checkInvariants(commits, layout(commits, { head: commits[0]!.hash }))
     checkInvariants(commits, layout(commits, { head: commits[700]!.hash, trunk: [commits[3]!.hash] }))
   })

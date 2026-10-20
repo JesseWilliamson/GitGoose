@@ -32,7 +32,18 @@ export const COMMANDS: KeyCommand[] = [
   { id: 'zoom-reset', label: 'Actual size', defaults: ['mod+0'] },
   { id: 'toggle-sidebar', label: 'Show or hide the sidebar', defaults: ['mod+b'] },
   { id: 'toggle-details', label: 'Show or hide the details panel', defaults: ['mod+alt+b'] },
+  // Mod+L, not the plan's Mod+Shift+L: that one has been Fetch for a long time.
+  { id: 'line-view', label: 'Show only the selected line of history, or everything again', defaults: ['mod+l'] },
+  { id: 'ai-chat', label: 'Show or hide the AI panel (chat about this repository)', defaults: ['mod+shift+a'] },
   { id: 'toggle-graph-style', label: 'Switch the graph between two-line and one-line rows', defaults: [] },
+  // Tower's Workspace keys are Mod+1…5; here Mod+1…9 switch tabs (and Mod+0 is Actual Size), so
+  // the Workspace takes Mod+Alt and the same digits. In the sidebar, Mod+0 goes to HEAD's branch too.
+  { id: 'ws-working-copy', label: 'Workspace: Working Copy', defaults: ['mod+alt+1'] },
+  { id: 'ws-history', label: 'Workspace: History (every branch)', defaults: ['mod+alt+2'] },
+  { id: 'ws-stashes', label: 'Workspace: Stashes', defaults: ['mod+alt+3'] },
+  { id: 'ws-pulls', label: 'Workspace: Pull Requests', defaults: ['mod+alt+4'] },
+  { id: 'ws-reflog', label: 'Workspace: Reflog', defaults: ['mod+alt+5'] },
+  { id: 'select-head-branch', label: 'Go to the current branch in the sidebar', defaults: ['mod+alt+0'] },
 ]
 
 const mac = typeof window !== 'undefined' && window.gitgoose?.platform === 'darwin'
@@ -43,6 +54,9 @@ export function comboOf(e: KeyboardEvent): string | null {
   if (!mod) return null
   let key = e.key.toLowerCase()
   if (['control', 'meta', 'shift', 'alt'].includes(key)) return null
+  // A digit by its key, not its character: Alt+1 types "¡" on a Mac and Shift+1 "!".
+  const digit = /^Digit(\d)$/.exec(e.code ?? '')
+  if (digit) key = digit[1]!
   // "+" is shift+"=" on most layouts; treat both as "=" so zoom in works either way.
   let shift = e.shiftKey
   if (key === '+') {

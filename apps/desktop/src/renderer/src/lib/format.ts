@@ -83,18 +83,6 @@ export function formatDate(unixSeconds: number, mode: 'relative' | 'absolute' | 
   return relativeTime(unixSeconds)
 }
 
-/** "March 2026": the heading the graph puts over the first commit of each month. */
-export function monthLabel(unixSeconds: number): string {
-  return new Date(unixSeconds * 1000).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
-}
-
-/** The same month and year, in local time: when two consecutive rows differ, a heading goes between them. */
-export function sameMonth(a: number, b: number): boolean {
-  const da = new Date(a * 1000)
-  const db = new Date(b * 1000)
-  return da.getFullYear() === db.getFullYear() && da.getMonth() === db.getMonth()
-}
-
 /**
  * Who wrote a commit, GitHub-style: the author, then the co-authors from its trailers. One or
  * two are named ("Ada Lovelace and Grace Hopper"); more are counted, since the row has one line

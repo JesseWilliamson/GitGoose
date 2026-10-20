@@ -1,8 +1,9 @@
 import { GraphLayout, type Row } from '@gitgoose/graph'
-import { SETTINGS, type PullRequestList, type CodeGraphStatus, type Commit, type DiffTarget, type GitHubStatus, type GitGooseEvent, type AskThread, type LfsInfo, type PushCheckResult, type Ref, type Remote, type RepoSnapshot, type Submodule, type Worktree, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitgoose/shared'
+import { SETTINGS, type SidebarPrefs, type PullRequestList, type CodeGraphStatus, type Commit, type DiffTarget, type GitHubStatus, type GitGooseEvent, type AskThread, type ThreadAnchor, type LfsInfo, type PushCheckResult, type Ref, type Remote, type RepoSnapshot, type Submodule, type Worktree, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitgoose/shared'
 import { create } from 'zustand'
 import { api, toUiError, type UiError } from './api'
 import { onAiEvent } from './ai'
+import { onThreadUpdate } from './thread'
 import { opName } from './format'
 import { followRewrite } from './rewrite'
 import type { ReviewState } from './review'
@@ -57,12 +58,18 @@ export interface RepoView {
   review: ReviewState | null
   walkthrough: WalkthroughState | null
   impact: ImpactState | null
-  /** The question thread open under the diff, if any. */
-  ask: AskThread | null
+  /** The question thread open under the diff, if any: what it is about, and its thread once opened. */
+  ask: { anchor: Extract<ThreadAnchor, { kind: 'ask' }>; path: string; threadId: string | null } | null
+  /** The AI panel (Mod+Shift+A): open or not, and its conversation (null: a new one). */
+  chat: { open: boolean; threadId: string | null; nonce?: number }
   /** Saved threads (newest first), loaded with the repository. */
   askThreads: AskThread[]
   /** Local branches already in HEAD: safe to delete. */
   merged: string[]
+  /** Branches pinned to the top of the sidebar (git config gitgoose.pin). */
+  pins: string[]
+  /** When the repository last fetched (unix seconds), for the tracking badge's tooltip. */
+  lastFetched: number | null
   /** Tag names on a remote, after the user asked to check (the only way it is read: network). */
   remoteTags: { remote: string; names: string[] } | null
   progress: string | null
@@ -71,6 +78,11 @@ export interface RepoView {
   worktreeTick: number
   /** The code graph (ADR-008): Peek and Impact wait while it indexes. */
   codegraph: CodeGraphStatus
+  /**
+   * The graph shows only the line of history through `hash` (lib/lineView.ts): while Shift is
+   * held, or until toggled off when `pinned` (View → Line View).
+   */
+  line: { hash: string; pinned: boolean } | null
 }
 
 /** Toasts are for outcomes that need nothing from the user: successes and notes. */
@@ -138,12 +150,11 @@ export type Dialog =
   /** Branch cleanup: pick merged or stale branches to delete. */
   | { kind: 'cleanup'; repoId: string }
 
-export interface DropRequest {
+/** Double-click on a commit where several local branches point: which one to check out. */
+export interface CheckoutChoice {
   x: number
   y: number
-  source: Ref
-  /** Where it was dropped: a ref pill, or just a commit row. */
-  target: { ref?: Ref; hash: string }
+  branches: Ref[]
 }
 
 export type MenuTarget =
@@ -173,7 +184,7 @@ interface State {
   omni: { query: string } | null
   /** What the settings page's search box starts with (the omni search opens settings this way). */
   settingsQuery: string
-  drop: DropRequest | null
+  checkoutChoice: CheckoutChoice | null
   menu: MenuTarget
   /** Progress text for a clone in flight. */
   cloneProgress: string | null
@@ -194,7 +205,7 @@ export const useStore = create<State>(() => ({
   attentions: [],
   omni: null,
   settingsQuery: '',
-  drop: null,
+  checkoutChoice: null,
   menu: null,
   cloneProgress: null,
   page: null,
@@ -245,6 +256,8 @@ export interface LogData {
   commits: Commit[]
   rows: Row[]
   index: Map<string, number>
+  /** hash → the commits whose first parent it is, in graph order (for the line view's walk up). */
+  firstChildren: Map<string, string[]>
   layout: GraphLayout
   generation: number
   done: boolean
@@ -273,7 +286,9 @@ function emptyLog(snap: RepoSnapshot | undefined, generation: number): LogData {
   // The trunk (main, origin/main) keeps the leftmost lane, so a checkout does not move it.
   const trunk = snap ? snap.refs.filter((r) => snap.trunk.includes(r.name)).map((r) => r.hash) : []
   return {
-    commits: [], rows: [], index: new Map(), layout: new GraphLayout({ head: snap?.head.hash, trunk }),
+    commits: [], rows: [], index: new Map(), firstChildren: new Map(),
+    // Branches on top of the trunk or HEAD continue its lane (git worked out which, see straightTips).
+    layout: new GraphLayout({ head: snap?.head.hash, trunk, straight: snap?.graph.straight }),
     generation, done: false, loading: null, maxWidth: 1,
   }
 }
@@ -365,6 +380,12 @@ function loadInto(id: string, log: LogData, firstPage = FIRST_PAGE): Promise<voi
           log.index.set(c.hash, log.commits.length)
           log.commits.push(c)
           log.rows.push(rows[i]!)
+          const parent = c.parents[0]
+          if (parent !== undefined) {
+            const children = log.firstChildren.get(parent)
+            if (children) children.push(c.hash)
+            else log.firstChildren.set(parent, [c.hash])
+          }
           if (rows[i]!.width > log.maxWidth) log.maxWidth = rows[i]!.width
         }
         log.done = page.done
@@ -446,6 +467,23 @@ export function selectCommit(id: string, hash: string, mods: { range?: boolean; 
   updateRepo(id, { selected: next })
 }
 
+/**
+ * Show only the line of history through `hash` (or show everything again with null). `pinned`
+ * keeps it until toggled off; otherwise it lasts while Shift is held (see GraphList).
+ */
+export function setLine(id: string, line: RepoView['line']): void {
+  updateRepo(id, { line })
+}
+
+/** View → Line View: pin the line through the selected commit (or HEAD), or show everything again. */
+export function toggleLine(id: string): void {
+  const v = get().repos[id]
+  if (!v) return
+  if (v.line?.pinned) return setLine(id, null)
+  const hash = selectionCursor(v.selected) ?? v.snapshot.head.hash
+  if (hash) setLine(id, { hash, pinned: true })
+}
+
 /** Load pages until `hash` is in the log (for jumping to a search hit or a parent commit). */
 export async function ensureLoaded(id: string, hash: string): Promise<number | undefined> {
   for (;;) {
@@ -463,8 +501,9 @@ function newView(snap: RepoSnapshot): RepoView {
     id: snap.id, snapshot: snap, logVersion: 0,
     selected: snap.status.length ? { kind: 'wip' } : snap.head.hash ? { kind: 'commit', hash: snap.head.hash } : { kind: 'wip' },
     center: snap.operation && snap.status.some((e) => e.kind === 'unmerged') ? { kind: 'conflicts' } : { kind: 'graph' },
-    editable: [], redo: [], stashes: [], undo: [], remotes: [], merged: [], worktrees: [], submodules: [], lfs: null, pulls: null, pullsLoading: false, review: null, walkthrough: null, impact: null, ask: null, askThreads: [], remoteTags: null, progress: null, busy: null, worktreeTick: 0,
+    editable: [], redo: [], stashes: [], undo: [], remotes: [], merged: [], pins: [], lastFetched: null, worktrees: [], submodules: [], lfs: null, pulls: null, pullsLoading: false, review: null, walkthrough: null, impact: null, ask: null, chat: { open: false, threadId: null }, askThreads: [], remoteTags: null, progress: null, busy: null, worktreeTick: 0,
     codegraph: { state: 'indexing', done: 0, total: 0 },
+    line: null,
   }
 }
 
@@ -541,11 +580,11 @@ export function onSnapshot(snap: RepoSnapshot): void {
 
 export async function refreshAux(id: string): Promise<void> {
   try {
-    const [stashes, undo, editable, redo, remotes, merged, worktrees, submodules, lfs] = await Promise.all([
+    const [stashes, undo, editable, redo, remotes, merged, worktrees, submodules, lfs, pins, lastFetched] = await Promise.all([
       api.stashList(id), api.undoList(id), api.editableCommits(id), api.redoList(id), api.remotes(id), api.mergedBranches(id), api.worktrees(id), api.submodules(id),
-      api.lfsInfo(id).catch(() => null),
+      api.lfsInfo(id).catch(() => null), api.pinnedBranches(id), api.lastFetched(id),
     ])
-    updateRepo(id, { stashes, undo, editable, redo, remotes, merged, worktrees, submodules, lfs })
+    updateRepo(id, { stashes, undo, editable, redo, remotes, merged, worktrees, submodules, lfs, pins, lastFetched })
   } catch {
     // The tab was closed meanwhile.
   }
@@ -584,6 +623,9 @@ function onEvent(e: GitGooseEvent): void {
     case 'ai-permission-closed':
       onAiEvent(e)
       break
+    case 'ai-update':
+      onThreadUpdate(e)
+      break
   }
 }
 
@@ -621,6 +663,24 @@ export function applyTheme(settings: Settings): void {
 /** Row height for code panes (diff, blame), derived from the code font size so rows never overlap. */
 export function codeLineHeight(fontSize: number): number {
   return Math.round(fontSize * 1.6)
+}
+
+/** The sidebar's state for a repository (folds, gear options), empty until the user changes something. */
+const NO_PREFS: SidebarPrefs = {}
+export function useSidebarPrefs(path: string): SidebarPrefs {
+  return useStore((s) => s.settings?.sidebar[path] ?? NO_PREFS)
+}
+
+/**
+ * Change the sidebar's state for a repository. The store changes at once (a fold must not wait
+ * for a round trip to the main process), then the settings file.
+ */
+export function updateSidebarPrefs(path: string, change: (p: SidebarPrefs) => SidebarPrefs): void {
+  const settings = get().settings
+  if (!settings) return
+  const sidebar = { ...settings.sidebar, [path]: change(settings.sidebar[path] ?? {}) }
+  set({ settings: { ...settings, sidebar } })
+  void api.setSettings({ sidebar }).catch((e) => reportError('Could not save the sidebar layout', e))
 }
 
 export async function saveSettings(patch: Partial<Settings>): Promise<void> {

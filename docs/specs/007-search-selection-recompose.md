@@ -23,6 +23,32 @@ cherry-pick all (oldest first, commits already on the branch skipped, one undo e
 diff (a chain is one `diff oldest^ newest`), copy as patch (a chain is a numbered
 `format-patch` series), copy SHAs, Recompose with AI.
 
+## Line view
+
+With a commit (or a range) selected, hold Shift for 150 ms without clicking: the graph shows only
+the *line of history through the cursor commit* and hides everything else. Release Shift and
+everything comes back. Leaving the window counts as a release (the keyup would never arrive).
+
+- **What the line is** (`lib/lineView.ts`, `lineThrough`): down, the commit's first parent, its
+  first parent, and so on while they are loaded; up, the child whose first parent it is *and* whose
+  row is in the same lane (the one the layout handed its lane down to), and so on. Where no child
+  continues the lane, the line came in from a fork and the walk stops. This is git's own
+  definition of a branch's path (`--first-parent`), drawn the way the lane layout draws it.
+- **How it shows**: `GraphList` maps list positions to log rows through a `Uint32Array`; no
+  relayout, no array per frame. Rows draw only the line, in their colour, nodes in their lanes,
+  turning where the line changes lane. Pages that load while it is on extend it downward (the walk
+  runs again per page; near the end of the line the list keeps loading until the next first
+  parent arrives). The uncommitted-changes row shows only when HEAD is on the line.
+- **Nothing moves under the pointer**: the cursor row keeps its screen position when the graph
+  collapses and when it expands (the list scrolls, and pads above a short line), so a Shift-click
+  that follows lands where it was aimed. The bar ("Showing the line through abc1234 · N commits
+  hidden · release Shift to show all") floats over the bottom of the graph for the same reason.
+- **Inside it**: Shift-click and Shift+arrows select as always (along the anchor's lane);
+  Ctrl/Cmd-click toggles. The line stays the one through the commit Shift was first held on.
+- **Pinned**: View → Line View (Mod+L) or the command palette keeps it on until toggled; Esc in
+  the graph or the bar's "Show all" lets go. A pinned line whose commit disappears (amend,
+  rebase) moves to the selection, else to HEAD. (Mod+Shift+L, as first planned, is Fetch.)
+
 ## Recompose with AI
 
 For a run of non-merge commits on the current branch with only non-merge commits after it
@@ -53,7 +79,24 @@ For a run of non-merge commits on the current branch with only non-merge commits
 Authors: one original author keeps authorship; several make you the author with a
 `Co-authored-by` trailer for each.
 
+Chat: **Chat** beside the plan opens the conversation the proposal came from (spec 006,
+threads): "put the tests in their own commit". A revised plan comes back as a `json:plan`
+card, repaired exactly like the first proposal; **Apply** makes it the editor's plan as one
+undo step, so Ctrl+Z returns to what you had.
+
+## Ask about lines
+
+Select lines in any diff and **Ask**: a thread with an `ask` anchor (the lines, at the commit
+they were read at), docked under the diff. The first question goes with Ask's context (the
+lines, the definition around them, definitions of what they use, their history and blame);
+follow-ups go to the same agent session. Answered threads are saved per repository and listed
+under their commit's details ("Questions"), which reopens them. The thread rules (sessions,
+replay after a restart, permissions, artifacts) are spec 006's.
+
 ## Questions worth thinking about
+
+- The line view walks *down* first parents with `log.index` but needs a separate child map to walk
+  *up*. Why does git make one direction free and the other something you must build?
 
 - Why can the commits after the range never conflict, when a normal rebase could?
 - A unit moved to an earlier commit than its neighbour in the same file: why does `git apply`

@@ -89,10 +89,11 @@ export function verifyWalkthrough(raw: unknown, paths: string[], hunks: Walkthro
     if (s) h.summary = s
   }
   const effort = Math.min(5, Math.max(1, Math.round(Number(o.effort)) || 3))
-  return { summary: str(o.summary, 3000), effort, effortWhy: str(o.effortWhy, 300), groups, sequence: checkSequence(o.sequence) }
+  return { summary: str(o.summary, 3000), effort, effortWhy: str(o.effortWhy, 300), groups, sequence: verifySequence(o.sequence) }
 }
 
-function checkSequence(raw: unknown): SequenceDiagram | null {
+/** A sequence diagram the model drew, kept only if it uses its own participants and stays small (also json:diagram in chat). */
+export function verifySequence(raw: unknown): SequenceDiagram | null {
   if (!raw || typeof raw !== 'object') return null
   const x = raw as Record<string, unknown>
   const participants = (Array.isArray(x.participants) ? x.participants : []).filter((p): p is string => typeof p === 'string' && !!p.trim()).map((p) => p.trim().slice(0, 40))

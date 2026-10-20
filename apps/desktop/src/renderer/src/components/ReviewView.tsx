@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { applySuggestion, dismissFinding, fixWithAi, rememberDismissal, startReview, stopReview, targetFor } from '../lib/review'
 import { api } from '../lib/api'
 import { toast, updateRepo, useStore, type RepoView } from '../lib/store'
+import { RailToggle, ThreadRail, useRailOpen } from './ThreadRail'
 import { Button, Spinner } from './ui'
 
 export const SEVERITY_STYLE: Record<FindingSeverity, string> = {
@@ -23,6 +24,7 @@ export function ReviewView({ view }: { view: RepoView }) {
   const r = view.review
   const [showDropped, setShowDropped] = useState(false)
   const focused = useRef<HTMLDivElement>(null)
+  const chat = useRailOpen('review')
   useEffect(() => {
     focused.current?.scrollIntoView({ block: 'center' })
   }, [r?.focus])
@@ -48,9 +50,11 @@ export function ReviewView({ view }: { view: RepoView }) {
         </div>
         {r.requestId ? <Button onClick={() => stopReview(view.id)}><Spinner /> Stop</Button>
           : <Button onClick={() => startReview(view.id, r.scope, { incremental: true })} title="Only what changed since this review is sent again">Review again</Button>}
+        {result && <RailToggle kind="review" />}
         <Button variant="ghost" onClick={() => updateRepo(view.id, { center: { kind: 'graph' } })}>Back to graph</Button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="flex min-h-0 flex-1">
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
         {r.error && <div className="m-4 rounded-md border border-del/40 bg-del/10 p-3 text-[13px] text-del">{r.error}</div>}
         {result?.summary && <p className="selectable mx-4 mt-4 text-[13px] text-muted" data-testid="review-summary">{result.summary}</p>}
         {result?.incremental && (
@@ -98,6 +102,7 @@ export function ReviewView({ view }: { view: RepoView }) {
                   <span className="text-[11px] text-faint">{f.type}</span>
                   {f.source && <span className="rounded border border-line px-1 text-[10px] text-muted" data-testid="finding-source" title={f.source === 'scan' ? "Found by GitGoose's built-in secret scan, not the AI" : 'Reported by a linter, not the AI'}>{f.tool}</span>}
                   {f.status && <span className={clsx('text-[10px]', f.status === 'new' ? 'text-accent' : 'text-faint')} data-testid="finding-status">{f.status === 'new' ? 'new' : 'still open'}</span>}
+                  {f.fromChat && <span className="rounded bg-accent/15 px-1 text-[10px] text-accent" data-testid="finding-from-chat" title="Applied from the chat beside the review">from chat</span>}
                   <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">{f.title}</span>
                   <button className="font-mono text-[11px] text-accent hover:underline" onClick={() => open(f)} title="Show in the diff">
                     lines {f.startLine}{f.endLine !== f.startLine ? `-${f.endLine}` : ''}
@@ -138,6 +143,12 @@ export function ReviewView({ view }: { view: RepoView }) {
             )}
           </div>
         )}
+      </div>
+      {chat && result && !r.requestId && (
+        <ThreadRail repoId={view.id} kind="review" anchor={{ kind: 'review', scope: r.scope }} threadId={r.threadId}
+          onThread={(id) => updateRepo(view.id, (v) => (v.review ? { review: { ...v.review, threadId: id } } : {}))}
+          hint="Ask about a finding, push back on one, or ask for more. Revised findings come back as a card you can apply." />
+      )}
       </div>
     </div>
   )

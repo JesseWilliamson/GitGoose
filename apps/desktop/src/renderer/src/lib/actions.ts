@@ -1,5 +1,6 @@
 import { parseGitHubRemote, type DiffTarget, type GraphFilter, type PullMode, type Ref, type RepoSnapshot, type ResetMode, type Worktree } from '@gitgoose/shared'
 import { api, toUiError, type UiError } from './api'
+import type { DropPlan } from './dnd'
 import { withPushChecks } from './pushchecks'
 import { activeRepo, addRepo, alertConflicts, ensureLoaded, choose, onSnapshot, openRepo, refreshAux, reportError, setting, toast, updateRepo, useStore } from './store'
 
@@ -187,6 +188,22 @@ export const checkout = (id: string, ref: string) =>
       return true
     },
   })
+
+/**
+ * Double-click on a commit row: check out what is there. A local branch at the commit is what
+ * you almost always mean, so that wins over a detached checkout; several branches ask which one
+ * (a menu at the pointer, `at`); none checks the commit out detached. HEAD's own commit does
+ * nothing. Every path goes through checkout(), so each is undoable and offers the stash when local
+ * changes are in the way.
+ */
+export function checkoutRow(id: string, hash: string, at: { x: number; y: number }): void {
+  const snap = useStore.getState().repos[id]?.snapshot
+  if (!snap || hash === snap.head.hash) return
+  const locals = snap.refs.filter((r) => r.kind === 'local' && r.hash === hash)
+  if (locals.length === 1) void checkout(id, locals[0]!.name)
+  else if (locals.length > 1) useStore.setState({ checkoutChoice: { ...at, branches: locals } })
+  else void checkout(id, hash)
+}
 
 export function newBranch(id: string, at?: string): void {
   ask('New branch', 'Branch name', 'Create and check out', (name) => {
@@ -620,6 +637,39 @@ export function pushTo(id: string, branch: string, remote: string): void {
 export const pushBranch = (id: string, branch: string) =>
   withPushChecks(id, branch, () => void run(id, `Push ${branch}`, () => api.push(id, { branch }), { success: `Pushed ${branch}` }))
 
+/** Force-push a branch (checked out or not) with lease, after the push checks and (setting) a confirmation. */
+export function forcePushBranch(id: string, branch: string, remote?: string, remoteBranch?: string, opts: { confirmed?: boolean } = {}): void {
+  const go = () => void withPushChecks(id, branch, () => void run(id, `Force push ${branch}`, () => api.push(id, { branch, remote, remoteBranch, force: true }), { success: `Force-pushed ${branch}` }))
+  if (opts.confirmed || !setting('confirmForcePush')) return go()
+  confirmAction(`Force push ${branch}?`, `Overwrites ${remoteBranch ? `${remote}/${remoteBranch}` : remote ? `${branch} on ${remote}` : 'its remote branch'} with yours (with --force-with-lease, so it refuses if someone else pushed meanwhile). Undo cannot reverse changes to a remote.`, 'Force push', go)
+}
+
+/** Push a branch without an upstream to a remote, and track it there (Tower's Publish). */
+export const publishBranch = (id: string, branch: string, remote: string) =>
+  withPushChecks(id, branch, () => void run(id, `Publish ${branch}`, () => api.push(id, { branch, remote }), { success: `Published ${branch} to ${remote}` }))
+
+/** A local branch tracking a remote one, without checking it out. */
+export function trackRemoteBranch(id: string, remoteRef: string, name?: string): void {
+  const short = shortRef(remoteRef)
+  const create = (n: string) => void run(id, `Create ${n}`, async () => {
+    const created = await api.createBranch(id, n, { at: remoteRef })
+    return [created, await api.setUpstream(id, n, remoteRef)]
+  }, { success: `Created ${n} tracking ${short}` })
+  if (name) return create(name)
+  ask(`Track ${short}`, 'Local branch name', 'Create branch', (n) => create(n.trim()), { initial: short.slice(short.indexOf('/') + 1) })
+}
+
+/** Pull one remote branch into HEAD (fetches it first, like Pull). */
+export function pullRemoteBranch(id: string, remoteRef: string, rebase = false): Promise<boolean> {
+  const short = shortRef(remoteRef)
+  const slash = short.indexOf('/')
+  return run(id, `Pull ${short}`, () => api.pull(id, { remote: short.slice(0, slash), branch: short.slice(slash + 1), mode: rebase ? 'rebase' : 'merge' }), { success: `Pulled ${short}` })
+}
+
+/** Forget remote branches that were deleted on the remote (fetch --prune). */
+export const pruneRemote = (id: string, remote: string) =>
+  run(id, `Prune ${remote}`, () => api.fetch(id, { remote, prune: true }), { success: `Pruned ${remote}` })
+
 export const setUpstream = (id: string, branch: string, upstream: string | null) =>
   run(id, upstream ? `Track ${shortRef(upstream)}` : `Stop tracking for ${branch}`, () => api.setUpstream(id, branch, upstream))
 
@@ -695,6 +745,42 @@ export const soloInGraph = (id: string, ref: string) =>
   setFilter(id, (f) => ({ hidden: f.hidden.filter((r) => r !== ref), solo: [...f.solo, ref] }))
 export const unsoloInGraph = (id: string, ref: string) => setFilter(id, (f) => ({ ...f, solo: f.solo.filter((r) => r !== ref) }))
 export const showAllInGraph = (id: string) => setFilter(id, () => ({ hidden: [], solo: [] }))
+
+/**
+ * Tower's per-branch history: a click on a branch in the sidebar shows only its history, by
+ * soloing it through the graph filter. `add` (Ctrl/Cmd-click) adds it to the branches shown.
+ */
+export const showBranchHistory = (id: string, ref: string, add = false) =>
+  setFilter(id, (f) => ({ hidden: f.hidden.filter((r) => r !== ref), solo: add ? (f.solo.includes(ref) ? f.solo.filter((r) => r !== ref) : [...f.solo, ref]) : [ref] }))
+
+/** Put the graph filter back as it was (a double-click undoes the click that came before it). */
+export const restoreGraphFilter = (id: string, filter: GraphFilter) => setFilter(id, () => filter)
+
+/** Workspace ▸ History (and Esc in the sidebar): every branch again; hidden ones stay hidden. */
+export function showHistory(id: string): void {
+  const view = useStore.getState().repos[id]
+  if (view?.snapshot.filter.solo.length) setFilter(id, (f) => ({ ...f, solo: [] }))
+  updateRepo(id, (v) => ({ center: { kind: 'graph' }, selected: v.selected.kind === 'wip' && v.snapshot.head.hash ? { kind: 'commit', hash: v.snapshot.head.hash } : v.selected }))
+}
+
+/** Workspace ▸ Working Copy: the uncommitted changes, in the graph's WIP row and the commit panel. */
+export function showWorkingCopy(id: string): void {
+  updateRepo(id, { selected: { kind: 'wip' }, center: { kind: 'graph' } })
+}
+
+/** Jump to a commit in the graph without changing what it shows (Reveal in History). */
+export async function revealInHistory(id: string, hash: string): Promise<void> {
+  updateRepo(id, { selected: { kind: 'commit', hash }, center: { kind: 'graph' } })
+  await ensureLoaded(id, hash)
+}
+
+// ------------------------------------------------------------------ pins
+
+export const pinBranch = (id: string, branch: string, pin: boolean) =>
+  run(id, pin ? `Pin ${branch}` : `Unpin ${branch}`, () => api.pinBranch(id, branch, pin), { quiet: true })
+
+export const renameBranchInto = (id: string, branch: string, folder: string) =>
+  run(id, `Move ${branch} into ${folder}`, () => api.renameBranchInto(id, branch, folder))
 
 // ------------------------------------------------------------------ worktrees
 
@@ -823,54 +909,59 @@ export const stashDrop = (id: string, index: number) => run(id, 'Drop stash', ()
 
 // ------------------------------------------------------------------ drag and drop
 
-export interface DropOption {
-  label: string
-  run: () => void
-}
-
 /**
- * What dropping branch `source` onto `target` can mean. GitKraken's rule of thumb: the
- * operations act on the branch that is checked out, so the options depend on which side is HEAD.
+ * Run what a drop means (lib/dnd.ts decided it; the badge said it). Each operation is one of the
+ * actions above, so drops get the same undo, conflict handling and error reporting as menus.
+ * Only drops that change a remote ask first (`plan.confirm`): undo cannot reach a remote.
  */
-export function dropOptions(id: string, snap: RepoSnapshot, source: Ref, target: { ref?: Ref; hash: string }): DropOption[] {
-  const head = currentBranchRef(snap)
-  const src = shortRef(source)
-  const targetName = target.ref ? shortRef(target.ref) : target.hash.slice(0, 7)
-  const targetRev = target.ref?.name ?? target.hash
-  if (target.ref && target.ref.name === source.name) return []
-  const opts: DropOption[] = []
-
-  if (head && target.ref?.name === head.name) {
-    // Dropped onto the checked-out branch: bring the source into it.
-    opts.push({ label: `Merge ${src} into ${targetName}`, run: () => void merge(id, source.name) })
-    opts.push({ label: `Fast-forward ${targetName} to ${src}`, run: () => void merge(id, source.name, { ffOnly: true }) })
-    opts.push({ label: `Squash ${src} into ${targetName}`, run: () => void merge(id, source.name, { squash: true }) })
-    opts.push({ label: `Rebase ${targetName} onto ${src}`, run: () => void rebase(id, source.name) })
-  } else if (head && source.name === head.name) {
-    // Dragged the checked-out branch onto something else.
-    opts.push({ label: `Rebase ${src} onto ${targetName}`, run: () => void rebase(id, targetRev) })
-    opts.push({ label: `Merge ${targetName} into ${src}`, run: () => void merge(id, targetRev) })
-    opts.push({ label: `Reset ${src} to ${targetName} (keep changes)`, run: () => void reset(id, target.hash, 'mixed') })
-    opts.push({ label: `Reset ${src} to ${targetName} (hard)`, run: () => void reset(id, target.hash, 'hard') })
-  } else if (target.ref?.kind === 'local' && source.kind !== 'tag') {
-    opts.push({
-      label: `Check out ${targetName} and merge ${src} into it`,
-      run: () => void run(id, `Merge ${src} into ${targetName}`, async () => [
-        await api.checkout(id, target.ref!.name),
-        await api.merge(id, source.name),
-      ]),
-    })
+export function performDrop(id: string, plan: DropPlan): void {
+  const op = plan.op
+  const ask = (go: () => void) => {
+    if (!plan.confirm) return go()
+    const force = op.op === 'push' && op.force
+    confirmAction(`${plan.label}?`, force ? 'Overwrites the remote branch with yours; --force-with-lease refuses if someone else pushed meanwhile. Undo cannot reverse changes to a remote.'
+      : 'This changes the remote, which undo cannot reverse.', plan.label.replace(/ \(.*\)$/, ''), go, force)
   }
-  if (source.kind === 'local' && !(head && source.name === head.name)) {
-    opts.push({
-      label: `Check out ${src} and rebase it onto ${targetName}`,
-      run: () => void run(id, `Rebase ${src} onto ${targetName}`, async () => [
-        await api.checkout(id, source.name),
-        await api.rebase(id, targetRev),
-      ]),
-    })
+  switch (op.op) {
+    case 'merge': return void merge(id, op.ref)
+    case 'rebase': return void rebase(id, op.onto)
+    case 'merge-into':
+      return void run(id, `Merge ${shortRef(op.ref)} into ${op.branch}`, async () => [await api.checkout(id, `refs/heads/${op.branch}`), await api.merge(id, op.ref)])
+    case 'rebase-onto':
+      return void run(id, `Rebase ${op.branch} onto ${shortRef(op.onto)}`, async () => [await api.checkout(id, `refs/heads/${op.branch}`), await api.rebase(id, op.onto)])
+    case 'push':
+      return ask(() => op.force
+        ? forcePushBranch(id, op.branch, op.remote, op.remoteBranch, { confirmed: true })
+        : void withPushChecks(id, op.branch, () => void run(id, `Push ${op.branch}`, () => api.push(id, { branch: op.branch, remote: op.remote, remoteBranch: op.remoteBranch }), {
+          success: `Pushed ${op.branch} to ${op.remote}${op.remoteBranch ? `/${op.remoteBranch}` : ''}`,
+        })))
+    case 'push-tag': return ask(() => void pushTags(id, op.remote, op.tag))
+    case 'pull': return void pullRemoteBranch(id, `refs/remotes/${op.remote}/${op.branch}`, op.rebase)
+    case 'new-branch': return newBranch(id, op.at)
+    case 'new-tag': return newTag(id, op.at)
+    case 'rename-into': return void renameBranchInto(id, op.branch, op.folder)
+    case 'pin': return void pinBranch(id, op.branch, true)
+    case 'add-worktree': return addWorktree(id, op.branch)
+    case 'create-pr': return createPull(id, op.branch)
+    case 'track': return op.checkout ? void checkout(id, op.ref) : trackRemoteBranch(id, op.ref, op.name)
+    case 'set-upstream': return void setUpstream(id, op.branch, op.upstream)
+    case 'cherry-pick': return void (op.hashes.length === 1 ? cherryPick(id, op.hashes[0]!) : cherryPickMany(id, op.hashes))
+    case 'revert':
+      // Newest first, as they are listed: each revert applies cleanly on top of the last.
+      return void run(id, op.hashes.length === 1 ? `Revert ${op.hashes[0]!.slice(0, 7)}` : `Revert ${op.hashes.length} commits`, async () => {
+        const ids: (number | null)[] = []
+        for (const h of op.hashes) ids.push(await api.revert(id, h))
+        return ids
+      })
+    case 'cherry-pick-onto': return void run(id, plan.label.replace(/ \(.*\)$/, ''), () => api.cherryPickOnto(id, op.branch, op.hashes))
+    case 'move': return void moveCommits(id, op.hashes, op.target, op.where)
+    case 'squash':
+      return void run(id, `${op.fixup ? 'Fixup' : 'Squash'} into ${op.target.slice(0, 7)}`, () => api.squashOnto(id, op.hashes, op.target, { fixup: op.fixup }))
+    case 'stash-apply': return op.pop ? pop(id, op.index) : void stashApply(id, op.index)
+    case 'apply-file':
+      return void run(id, plan.label, () => api.applyFileFrom(id, op.rev, op.paths, { stash: op.stash }), { success: `Applied ${op.paths.length === 1 ? op.paths[0] : `${op.paths.length} files`}` })
+    case 'stash-files': return void stashWith(id, { paths: op.paths })
   }
-  return opts
 }
 
 export function copy(text: string, what = 'Copied'): void {

@@ -12,6 +12,7 @@ import { ReviewView } from './ReviewView'
 import { WalkthroughView } from './WalkthroughView'
 import { ImpactView } from './ImpactView'
 import { Sidebar } from './Sidebar'
+import { AiChatPanel } from './AiChatPanel'
 
 /**
  * The repository window: branches on the left, the graph in the centre, details on the right.
@@ -48,6 +49,7 @@ export function Workspace({ view }: { view: RepoView }) {
         <Separator id="sep-right" className="w-px bg-line transition-colors hover:bg-accent data-[separator-state=drag]:bg-accent" />
         <SidePanel slot="right"><DetailPanel view={view} /></SidePanel>
       </Group>
+      {view.chat.open && <AiChatPanel view={view} />}
     </div>
   )
 }

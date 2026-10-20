@@ -120,7 +120,7 @@ const prompts = {
 }
 const askpass = new AskpassServer((message, secret) => prompts.ask(message, secret))
 
-const gitOpts = () => ({ gitPath: getSettings().gitPath || 'git', env: gitEnv, showStashes: getSettings().showStashes, graphFilters: getSettings().graphFilters })
+const gitOpts = () => ({ gitPath: getSettings().gitPath || 'git', env: gitEnv, showStashes: getSettings().showStashes, commitOrder: getSettings().commitOrder, graphFilters: getSettings().graphFilters })
 
 // ------------------------------------------------------------ AI
 
@@ -206,8 +206,12 @@ function createWindow(): BrowserWindow {
 }
 
 let lastShowStashes = getSettings().showStashes
+let lastCommitOrder = getSettings().commitOrder
 let lastCodeGraph = getSettings().codeGraph
-onSettingsChanged((settings) => {
+onSettingsChanged((settings, changed) => {
+  // Saved AI conversations are read through aiThreads, not settings: a saved turn is no reason
+  // to send every window the whole settings file (threads and all) again.
+  if (changed.size === 1 && changed.has('aiThreads')) return
   refreshCredentialEnv()
   ai.onSettings()
   if (settings.codeGraph !== lastCodeGraph) {
@@ -220,6 +224,12 @@ onSettingsChanged((settings) => {
   if (settings.showStashes !== lastShowStashes) {
     lastShowStashes = settings.showStashes
     for (const repo of repos.all()) repo.setShowStashes(settings.showStashes)
+    repos.refreshAll()
+  }
+  // A new order is a new walk: each repository restarts its log and the renderer reloads it once.
+  if (settings.commitOrder !== lastCommitOrder) {
+    lastCommitOrder = settings.commitOrder
+    for (const repo of repos.all()) repo.setCommitOrder(settings.commitOrder)
     repos.refreshAll()
   }
   broadcast({ type: 'settings', settings })

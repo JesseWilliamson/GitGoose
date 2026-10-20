@@ -5,7 +5,9 @@ import {
 import { startReview } from './review'
 import { startWalkthrough } from './walkthrough'
 import { showImpact } from './impact'
-import { saveSettings, useStore } from './store'
+import { modName } from './keys'
+import { saveSettings, toggleLine, useStore } from './store'
+import { toggleChat } from './thread'
 
 export interface CommandEntry {
   id: string
@@ -45,8 +47,11 @@ export function commandEntries(): CommandEntry[] {
     add('Repository', 'Add remote…', () => addRemote(id))
     add('Repository', 'Change who you commit as…', () => useStore.setState({ dialog: { kind: 'identity', repoId: id } }))
     add('Repository', 'Add worktree…', () => addWorktree(id))
+    add('Layout', active.line?.pinned ? 'Line view: show all commits' : 'Line view: show only the selected line of history',
+      () => toggleLine(id), `${modName()}+L, or hold Shift`)
     add('Repository', 'What could the uncommitted changes affect?', () => showImpact(id, { kind: 'working' }))
     if ((useStore.getState().settings?.aiProvider ?? 'off') !== 'off') {
+      add('AI', active.chat.open ? 'Hide the AI panel' : 'Chat with the AI about this repository', () => toggleChat(id), `${modName()}+Shift+A`)
       add('AI', 'Review uncommitted changes', () => startReview(id, { kind: 'working' }))
       add('AI', 'Review staged changes', () => startReview(id, { kind: 'staged' }))
       add('AI', 'Review what will be pushed', () => startReview(id, { kind: 'outgoing' }))
@@ -83,6 +88,9 @@ export function commandEntries(): CommandEntry[] {
     const compact = settings.graphStyle === 'compact'
     add('Layout', compact ? 'Graph: two-line rows' : 'Graph: one-line rows',
       () => void saveSettings({ graphStyle: compact ? 'comfortable' : 'compact' }), 'Also in Settings → Appearance')
+    const topo = settings.commitOrder === 'topo'
+    add('Layout', topo ? 'Commit order: by date' : 'Commit order: topological',
+      () => void saveSettings({ commitOrder: topo ? 'date' : 'topo' }), 'Also in Settings → Graph')
     add('App', `Theme: ${settings.theme === 'light' ? 'dark' : 'light'}`, () => void saveSettings({ theme: settings.theme === 'light' ? 'dark' : 'light' }))
     for (const p of settings.recentRepos) add('Recent', p.split(/[\\/]/).pop() ?? p, () => reopen(p), p)
   }

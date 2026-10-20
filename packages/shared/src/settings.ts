@@ -1,5 +1,6 @@
 import type { GraphFilter } from './index'
-import type { AskThread, PushCheck, ReviewLearning } from './ai'
+import type { AiThread, PushCheck, ReviewLearning } from './ai'
+import { askToThread } from './thread'
 import { DEFAULT_LAYOUT, normalizeLayout, type PaneLayout } from './layout'
 
 /**
@@ -10,6 +11,23 @@ import { DEFAULT_LAYOUT, normalizeLayout, type PaneLayout } from './layout'
  * `internal` entries are app state that lives in the same file (recent repos, column widths)
  * and never appear on the page.
  */
+
+/**
+ * The sidebar's state for one repository (internal setting `sidebar`, by repository path): which
+ * sections, folders and remotes are open (only those the user changed; the rest use their
+ * default), and the gear menu's per-repository options.
+ */
+export interface SidebarPrefs {
+  open?: Record<string, boolean>
+  /** Badges: "merged" (already in HEAD) and "stale" (no commits for 90 days). Default on. */
+  merged?: boolean
+  stale?: boolean
+  /** The Reflog item in Workspace, and the stash count beside Stashes. Default on. */
+  reflog?: boolean
+  stashCount?: boolean
+  /** What a single click on a branch does: show its history (solo it in the graph), or only jump to its commit. */
+  click?: 'history' | 'reveal'
+}
 
 interface Meta {
   label: string
@@ -60,8 +78,16 @@ export const SETTINGS = {
     { value: 'compact', label: 'One-line rows, branches on the left' },
   ], {
     label: 'Graph layout', section: 'Appearance', keywords: 'compact density row height columns tower',
-    description: 'Two-line rows: author and branches over hash and subject, with month headings. One-line rows: the same graph, each commit on one shorter line, branch and tag names in a column on the left.',
+    description: 'Two-line rows: author and branches over hash and subject. One-line rows: the same graph, each commit on one shorter line, branch and tag names in a column on the left.',
   }),
+
+  sidebarFolders: bool(true, {
+    label: 'Group branches and tags in folders', section: 'Appearance', keywords: 'sidebar tree folder slash',
+    description: 'In the sidebar, names with a slash (feature/login) sit in folders. Also in the gear menu below the sidebar.',
+  }),
+  sidebarTags: choice('250', [
+    { value: '50', label: 'Newest 50' }, { value: '100', label: 'Newest 100' }, { value: '250', label: 'Newest 250' }, { value: 'all', label: 'All' },
+  ], { label: 'Tags in the sidebar', section: 'Appearance', keywords: 'sidebar tags limit', description: 'Newest first. Also View ▸ Tags. The filter box always searches all of them.' }),
 
   // ---------------------------------------------------------------- Graph
   avatars: choice('initials', [
@@ -75,6 +101,13 @@ export const SETTINGS = {
   showRemoteBranches: bool(true, { label: 'Show remote branches on the graph', section: 'Graph' }),
   showTags: bool(true, { label: 'Show tags on the graph', section: 'Graph' }),
   showStashes: bool(true, { label: 'Show stashes on the graph', section: 'Graph', description: 'Each stash as a node beside the commit it was made on.' }),
+  commitOrder: choice('date', [
+    { value: 'date', label: 'Date (newest first; branches interleaved by time)' },
+    { value: 'topo', label: 'Topological (each branch kept together)' },
+  ], {
+    label: 'Commit order', section: 'Graph', keywords: 'sort topological topo date order',
+    description: "Date: newest first, branches interleaved by time (GitKraken, Tower). Topological: each branch's commits kept together; dates run out of order.",
+  }),
 
   // ---------------------------------------------------------------- Git
   gitPath: text('git', { label: 'Git executable', section: 'Git', placeholder: 'git', description: 'Applies to repositories opened after the change.' }),
@@ -149,6 +182,10 @@ export const SETTINGS = {
     description: 'Used when Agent is "Custom command". It must speak the Agent Client Protocol on stdin/stdout.',
   }),
   anthropicModel: text('claude-opus-5-5', { label: 'Model (API key only)', section: 'AI', placeholder: 'claude-opus-5-5' }),
+  anthropicMaxTokens: num(8192, 1024, 64000, 1024, {
+    label: 'Longest answer (API key only)', section: 'AI', unit: 'tokens', keywords: 'max_tokens length limit',
+    description: 'The most one answer may use. Long reviews and walkthroughs need room; a lower limit costs less.',
+  }),
   /** Providers the user agreed to send content to, e.g. "agent:npx -y …" or "anthropic". */
   reviewProfile: choice('chill', [{ value: 'quiet', label: 'Quiet: only real problems' }, { value: 'chill', label: 'Chill: no nits or style' }, { value: 'assertive', label: 'Assertive: everything, nits too' }],
     { label: 'Review style', section: 'AI', keywords: 'code review findings nits coderabbit', description: 'How much AI review says. Findings are always checked against the diff before they are shown.' }),
@@ -177,13 +214,18 @@ export const SETTINGS = {
   keybindings: { kind: 'keybindings' as const, default: {} as Record<string, string>, label: 'Shortcuts', section: 'Keyboard' as const, description: 'Click a shortcut, then press the new keys. Esc cancels; Backspace restores the default.' },
 
   // ---------------------------------------------------------------- app state
-  settingsVersion: internal(3),
+  settingsVersion: internal(4),
   recentRepos: internal<string[]>([]),
   openRepos: internal<string[]>([]),
-  /** Questions asked about code, per repository path, newest first (kept to 100). */
-  askThreads: internal<Record<string, AskThread[]>>({}),
+  /**
+   * AI conversations, per repository path, most recently used first (kept to 100): Ask threads
+   * about lines, the AI panel's, and the ones under reviews, walkthroughs and the rest.
+   */
+  aiThreads: internal<Record<string, AiThread[]>>({}),
   /** Review learnings per repository path ("do not flag X"), from dismissed findings. */
   reviewLearnings: internal<Record<string, ReviewLearning[]>>({}),
+  /** The sidebar's open sections and gear options, per repository path (see SidebarPrefs). */
+  sidebar: internal<Record<string, SidebarPrefs>>({}),
   /** Hidden and soloed branches, per repository path (empty filters are not stored). */
   graphFilters: internal<Record<string, GraphFilter>>({}),
   /** Pane arrangement (packages/shared/src/layout.ts); repaired with normalizeLayout when read. */
@@ -254,7 +296,24 @@ export function migrateSettings(stored: Record<string, unknown>): Settings {
     if (s.compactRows === true && s.graphStyle === undefined) s.graphStyle = 'compact'
     delete s.compactRows
   }
-  s.settingsVersion = 3
+  if (version < 4) {
+    // v3 kept Ask's question threads on their own; they are AI threads with an ask anchor now.
+    const old = s.askThreads
+    if (old && typeof old === 'object' && !Array.isArray(old) && s.aiThreads === undefined) {
+      s.aiThreads = Object.fromEntries(Object.entries(old as Record<string, unknown>).map(([path, list]) => [
+        path,
+        (Array.isArray(list) ? list : []).flatMap((t) => {
+          try {
+            return [askToThread(t)]
+          } catch {
+            return []
+          }
+        }),
+      ]))
+    }
+    delete s.askThreads
+  }
+  s.settingsVersion = 4
   const out = defaultSettings() as Record<string, unknown>
   for (const k of Object.keys(SETTINGS)) if (k in s) out[k] = validateSetting(k as SettingKey, s[k])
   return out as Settings

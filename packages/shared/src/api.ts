@@ -2,7 +2,10 @@ import type {
   BlameLine, ChangedFile, ChangeInsights, CodeGraphStatus, CodePeek, CommandRecord, GraphFilter, ImageSide, LfsInfo, LfsLock, Identity, Person, Commit, CommitDetails, CommitSummary, ConflictFile, DiffTarget, FileDiff, RepoSnapshot,
   ReflogEntry, Remote, SearchField, Submodule, Worktree, StashEntry, UndoEntry,
 } from './index'
-import type { AgentInfo, AiPermissionRequest, AiResult, AiRunOptions, AiStatus, AiTask, AskThread, ImpactResult, LinterInfo, PushCheck, PushCheckPlan, ReviewLearning, ReviewScope } from './ai'
+import type {
+  AgentInfo, AiArtifactResult, AiPermissionRequest, AiResult, AiRunOptions, AiStatus, AiTask, AiThread, AiUpdate, ArtifactKind, AskThread, ImpactResult, LinterInfo, PermissionAnswer, PushCheck, PushCheckPlan,
+  ReviewLearning, ReviewScope, ThreadAnchor,
+} from './ai'
 import type { DeviceCodeInfo, GitHubAccount, GitHubStatus, PullRequest, PullRequestList } from './github'
 import type { Settings } from './settings'
 
@@ -96,8 +99,31 @@ export interface GitGooseApi {
   aiStatus(): Promise<AiStatus>
   /** The user agreed to send content to the configured provider (asked once per provider/agent). */
   aiConsent(): Promise<AiStatus>
-  /** Run a task. Text streams as 'ai-text' events with the same requestId; tool calls ask via 'ai-permission'. */
+  /**
+   * Run a task: a thread whose first message is the task's prompt, closed when the answer is in
+   * (or, with opts.keepThread, kept for the view to chat on: AiResult.threadId). Text streams as
+   * 'ai-text' events with the same requestId; tool calls ask via 'ai-permission'.
+   */
   aiRun(requestId: string, repoId: string, task: AiTask, opts?: AiRunOptions): Promise<AiResult>
+  /**
+   * Open a conversation for a view: a new one about `anchor`, or `resume` a saved one. Nothing is
+   * sent and no agent starts until the first message. Its events arrive as 'ai-update'.
+   */
+  aiThreadOpen(repoId: string, anchor: ThreadAnchor, resume?: string): Promise<AiThread>
+  /** Send a message; resolves with the turn's request id once it has started (refusals, like a secret in the text, throw first). */
+  aiThreadSend(threadId: string, text: string, opts?: AiRunOptions): Promise<string>
+  aiThreadCancel(threadId: string): Promise<void>
+  /** The view closed: the agent session stays for 10 minutes, then ends. The thread stays saved. */
+  aiThreadClose(threadId: string): Promise<void>
+  /** This repository's saved conversations, most recently used first. */
+  aiThreads(repoId: string): Promise<AiThread[]>
+  aiThreadDelete(repoId: string, threadId: string): Promise<void>
+  /** Answer a permission card in a thread. 'session' also answers the same question for the rest of the session. */
+  aiThreadPermission(permissionId: number, answer: Exclude<PermissionAnswer, 'expired'>): Promise<void>
+  /** Check an artifact (a json:<kind> block) with the feature's own verifier; nothing is applied. */
+  aiThreadArtifact(threadId: string, kind: ArtifactKind, json: string): Promise<AiArtifactResult>
+  /** Open a web link (from an AI answer) in the browser: http, https and mailto only. */
+  openExternal(url: string): Promise<void>
   aiCancel(requestId: string): Promise<void>
   aiRespondPermission(permissionId: number, optionId: string | null): Promise<void>
   /** Start the agent (if needed) and say who it is and how it logs in. */
@@ -162,7 +188,7 @@ export interface GitGooseApi {
   workingText(repoId: string, path: string): Promise<string | null>
   /** What a change could affect: touched definitions, their uses elsewhere, tests, usual companions. Local only. */
   impact(repoId: string, scope: ReviewScope): Promise<ImpactResult>
-  /** Question threads about this repository's code (pinned to commits). */
+  /** Question threads about this repository's code (pinned to commits): the ask-anchored AI threads, in the old shape. */
   askThreads(repoId: string): Promise<AskThread[]>
   saveAskThread(repoId: string, thread: AskThread): Promise<void>
   deleteAskThread(repoId: string, id: string): Promise<void>
@@ -209,6 +235,14 @@ export interface GitGooseApi {
   checkout(repoId: string, ref: string): Promise<UndoId>
   createBranch(repoId: string, name: string, opts?: { at?: string; checkout?: boolean }): Promise<UndoId>
   renameBranch(repoId: string, from: string, to: string): Promise<UndoId>
+  /** Rename a branch into a sidebar folder: `topic` into `feature` becomes `feature/topic`. Undoable. */
+  renameBranchInto(repoId: string, branch: string, folder: string): Promise<UndoId>
+  /** When this repository last fetched (unix seconds), or null: for the tracking badge's tooltip. */
+  lastFetched(repoId: string): Promise<number | null>
+  /** Branch names pinned to the top of the sidebar (git config gitgoose.pin, shared by worktrees). */
+  pinnedBranches(repoId: string): Promise<string[]>
+  /** Pin or unpin a branch; null when it already was (or was not). Undoable. */
+  pinBranch(repoId: string, branch: string, pin: boolean): Promise<UndoId>
   deleteBranch(repoId: string, name: string, opts?: { force?: boolean }): Promise<UndoId>
   merge(repoId: string, ref: string, opts?: { noFf?: boolean; ffOnly?: boolean; squash?: boolean; noCommit?: boolean }): Promise<UndoId>
   /** The message git prepared for the next commit (after a squash merge or a stopped merge), or ''. */
@@ -219,6 +253,13 @@ export interface GitGooseApi {
   /** Several commits, given in graph order (newest first); applied oldest first, one undo entry. */
   cherryPickMany(repoId: string, hashes: string[]): Promise<UndoId>
   /**
+   * Cherry-pick commits (graph order) onto a branch that is not checked out, without checking it
+   * out (merge-tree, git 2.40+). Refused, changing nothing, when they conflict. Undoable.
+   */
+  cherryPickOnto(repoId: string, branch: string, hashes: string[]): Promise<UndoId>
+  /** Apply the change a commit (or stash: `stash`) made to these files to the working tree. Undoable. */
+  applyFileFrom(repoId: string, rev: string, paths: string[], opts?: { stash?: boolean }): Promise<UndoId>
+  /**
    * Replace a run of commits on the current branch with new ones (messages and unit ids from a
    * RecomposeProposal, oldest first). The branch ends at the same tree; one undo entry.
    */
@@ -227,8 +268,8 @@ export interface GitGooseApi {
   rewordCommit(repoId: string, hash: string, message: string): Promise<UndoId>
   /** Fold a commit into the one below it: 'squash' keeps both messages, 'fixup' the lower one's. */
   squashCommit(repoId: string, hash: string, mode: 'squash' | 'fixup'): Promise<UndoId>
-  /** Fold commits into `target` (drag onto), keeping all messages. */
-  squashOnto(repoId: string, hashes: string[], target: string): Promise<UndoId>
+  /** Fold commits into `target` (drag onto), keeping all messages, or (`fixup`) only the target's. */
+  squashOnto(repoId: string, hashes: string[], target: string, opts?: { fixup?: boolean }): Promise<UndoId>
   /** Commit the staged changes into an older commit on the current branch. */
   fixupInto(repoId: string, target: string): Promise<UndoId>
   /** Files that differ between two revisions, or a revision and the working tree (`to` null). */
@@ -268,7 +309,8 @@ export interface GitGooseApi {
 
   // Remotes
   fetch(repoId: string, opts?: { remote?: string; prune?: boolean }): Promise<void>
-  pull(repoId: string, opts?: { mode?: PullMode }): Promise<UndoId>
+  /** Pull HEAD's upstream, or with `remote` and `branch` that remote branch, into HEAD. */
+  pull(repoId: string, opts?: { mode?: PullMode; remote?: string; branch?: string }): Promise<UndoId>
   push(repoId: string, opts?: { force?: boolean; branch?: string; remote?: string; remoteBranch?: string }): Promise<void>
   remotes(repoId: string): Promise<Remote[]>
   addRemote(repoId: string, name: string, url: string): Promise<UndoId>
@@ -323,11 +365,12 @@ export const API_METHODS = [
   'respondPrompt', 'openPath', 'openInEditor', 'openTerminal', 'revealPath', 'logError',
   'githubStatus', 'githubSignIn', 'githubWaitForSignIn', 'githubCancelSignIn', 'githubOpenPage', 'githubSignOut', 'pullRequests', 'createPullRequest', 'checkoutPullRequest', 'openPullRequest',
   'aiStatus', 'aiConsent', 'aiRun', 'aiCancel', 'aiRespondPermission', 'aiAgentInfo', 'aiAuthenticate', 'aiSetApiKey',
+  'aiThreadOpen', 'aiThreadSend', 'aiThreadCancel', 'aiThreadClose', 'aiThreads', 'aiThreadDelete', 'aiThreadPermission', 'aiThreadArtifact', 'openExternal',
   'snapshot', 'logPage', 'commitDetails', 'diff', 'fileHistory', 'blame', 'search', 'searchCommits', 'listFiles', 'stashList', 'reflog', 'setGraphFilter', 'submodules', 'updateSubmodules', 'syncSubmodules', 'addSubmodule', 'removeSubmodule', 'worktrees', 'addWorktree', 'removeWorktree', 'lockWorktree', 'pruneWorktrees',
   'lastCommitMessage',
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'codePeek', 'codeGraphStatus', 'reindexCode', 'impact', 'askThreads', 'saveAskThread', 'deleteAskThread', 'reviewLearnings', 'setReviewLearnings', 'linters', 'decideLinter', 'pushCheckPlan', 'pushCheckRules', 'setPushChecks', 'changeInsights', 'applySuggestion', 'writeFileChecked', 'workingText', 'lfsInfo', 'lfsInstall', 'lfsTrack', 'lfsPull', 'lfsLocks', 'lfsLock', 'commandLog', 'bisectMark', 'bisectReset', 'identity', 'setIdentity', 'commitTemplate', 'recentAuthors',
-  'checkout', 'createBranch', 'renameBranch', 'deleteBranch', 'merge', 'rebase', 'reset',
-  'cherryPick', 'cherryPickMany', 'commitsText', 'recomposeApply', 'compareFiles', 'mergeBase', 'restoreFile', 'diffTool', 'mergeTool', 'imagePair', 'savePatches', 'pickPatch', 'applyPatch', 'openFileAt', 'saveFileAt', 'editableCommits', 'dropCommits', 'moveCommits', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'preparedMessage', 'redo', 'redoList', 'revert', 'createTag', 'deleteTag',
+  'checkout', 'createBranch', 'renameBranch', 'renameBranchInto', 'lastFetched', 'pinnedBranches', 'pinBranch', 'deleteBranch', 'merge', 'rebase', 'reset',
+  'cherryPick', 'cherryPickMany', 'cherryPickOnto', 'applyFileFrom', 'commitsText', 'recomposeApply', 'compareFiles', 'mergeBase', 'restoreFile', 'diffTool', 'mergeTool', 'imagePair', 'savePatches', 'pickPatch', 'applyPatch', 'openFileAt', 'saveFileAt', 'editableCommits', 'dropCommits', 'moveCommits', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'preparedMessage', 'redo', 'redoList', 'revert', 'createTag', 'deleteTag',
   'fetch', 'pull', 'push', 'deleteRemoteBranch', 'remotes', 'addRemote', 'removeRemote', 'renameRemote', 'setRemoteUrl',
   'pushTags', 'deleteRemoteTag', 'remoteTags', 'setUpstream', 'fastForward', 'deleteBranches', 'mergedBranches',
   'stashPush', 'snapshotWorkTree', 'stashBranch', 'stashApply', 'stashPop', 'stashDrop',
@@ -361,6 +404,8 @@ export type GitGooseEvent =
   | { type: 'ai-permission'; request: AiPermissionRequest }
   /** A permission question no longer needs an answer (its request ended). */
   | { type: 'ai-permission-closed'; permissionId: number }
+  /** One event of a conversation (see reduceThread): the renderer folds it into its copy. */
+  | { type: 'ai-update'; threadId: string; requestId: string; update: AiUpdate }
 
 /** Errors cross IPC as data, so the renderer gets git's stderr intact. */
 export interface SerializedError {

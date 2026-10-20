@@ -5,7 +5,7 @@ import { basename, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { AskpassServer, isSecretPrompt } from './askpass'
 import { buildPatch } from './patch'
-import { Repo } from './repo'
+import { Repo, supportsAheadBehind, supportsMergeTreeBase } from './repo'
 import { resolveBlocks } from '@gitgoose/shared'
 
 const open = (r: FixtureRepo) => Repo.open(r.dir, { env: r.env() as Record<string, string> })
@@ -78,6 +78,48 @@ describe('snapshot and log', () => {
     const merge = await repo.commitDetails(r.git('rev-parse', 'HEAD~1').trim())
     expect(merge.parents).toHaveLength(2)
     expect(merge.files.map((f) => f.path).sort()).toEqual(['c.txt', 'd.txt'])
+  })
+
+  it('lists commits in date or topological order, and a change of order restarts the walk', async () => {
+    // Two branches whose commits alternate in time:
+    //   main:  A - m1 - m2 - m3
+    //           \
+    //   side:    s1 - s2 - s3      (s1 before m1, s2 before m2, ...)
+    const r = initRepo()
+    r.commit('A', { 'a.txt': 'a\n' })
+    r.checkout('-b', 'side')
+    r.checkout('main')
+    for (let i = 1; i <= 3; i++) {
+      r.checkout('side')
+      r.commit(`s${i}`, { [`s${i}.txt`]: 'x\n' })
+      r.checkout('main')
+      r.commit(`m${i}`, { [`m${i}.txt`]: 'x\n' })
+    }
+    const repo = await open(r)
+    const subjects = async () => (await repo.logPage(0, 100)).commits.map((c) => c.subject)
+
+    const before = await repo.snapshot()
+    expect(before.order).toBe('date')
+    // Date order: newest first, the two branches interleaved.
+    expect(await subjects()).toEqual(['m3', 's3', 'm2', 's2', 'm1', 's1', 'A'])
+
+    repo.setCommitOrder('topo')
+    const after = await repo.snapshot()
+    expect(after.order).toBe('topo')
+    // A new walk: the renderer sees a new refsVersion and reloads the log.
+    expect(after.refsVersion).toBeGreaterThan(before.refsVersion)
+    const topo = await subjects()
+    // Topological: each branch's commits together (which branch comes first is git's choice).
+    expect(topo).not.toEqual(['m3', 's3', 'm2', 's2', 'm1', 's1', 'A'])
+    expect([['m3', 'm2', 'm1', 's3', 's2', 's1', 'A'], ['s3', 's2', 's1', 'm3', 'm2', 'm1', 'A']]).toContainEqual(topo)
+
+    // Setting the same order again is not a new walk.
+    repo.setCommitOrder('topo')
+    expect((await repo.snapshot()).refsVersion).toBe(after.refsVersion)
+    repo.setCommitOrder('date')
+    await repo.snapshot()
+    expect(await subjects()).toEqual(['m3', 's3', 'm2', 's2', 'm1', 's1', 'A'])
+    repo.dispose()
   })
 })
 
@@ -606,5 +648,289 @@ describe('askpass', () => {
   it('classifies prompts', () => {
     expect(isSecretPrompt("Enter passphrase for key '/home/a/.ssh/id_ed25519': ")).toBe(true)
     expect(isSecretPrompt('Are you sure you want to continue connecting (yes/no/[fingerprint])? ')).toBe(false)
+  })
+})
+
+describe('straight tips (a branch on top of the trunk or HEAD continues its lane)', () => {
+  /** main: A-B. */
+  function base() {
+    const r = initRepo()
+    const A = r.commit('A', { 'a.txt': 'a\n' })
+    const B = r.commit('B', { 'b.txt': 'b\n' })
+    return { r, A, B }
+  }
+  const straight = async (r: FixtureRepo) => (await (await open(r)).snapshot()).graph.straight
+
+  it('knows which git versions have %(ahead-behind)', () => {
+    expect(supportsAheadBehind('git version 2.41.0')).toBe(true)
+    expect(supportsAheadBehind('git version 2.47.1.windows.1')).toBe(true)
+    expect(supportsAheadBehind('git version 3.0.0')).toBe(true)
+    expect(supportsAheadBehind('git version 2.40.1')).toBe(false)
+    expect(supportsAheadBehind('git version 1.9.5')).toBe(false)
+    expect(supportsAheadBehind('not git')).toBe(false)
+  })
+
+  it('lists a branch on top of main, over the trunk and over HEAD', async () => {
+    const { r } = base()
+    r.checkout('-b', 'topic')
+    r.commit('X'); r.commit('Y')
+    const Z = r.commit('Z')
+    r.checkout('main')
+    expect(await straight(r)).toEqual({ overTrunk: [Z], overHead: [Z] })
+    // Checked out, topic is HEAD itself: still over the trunk, and nothing is over HEAD.
+    r.checkout('topic')
+    expect(await straight(r)).toEqual({ overTrunk: [Z], overHead: [] })
+  })
+
+  it('leaves out a branch that merged main: it contains main, but its own line never reaches it', async () => {
+    const { r, A } = base()
+    r.checkout('-b', 'topic', A)
+    r.commit('X', { 'x.txt': 'x\n' })
+    r.merge('main')
+    expect(r.git('rev-list', '--count', 'topic..main').trim()).toBe('0') // behind = 0: a candidate
+    r.checkout('main')
+    expect(await straight(r)).toEqual({ overTrunk: [], overHead: [] })
+  })
+
+  it('leaves out a branch behind main, and a branch beside it', async () => {
+    const { r, A } = base()
+    r.git('branch', 'old', A)
+    r.checkout('-b', 'side', A)
+    r.commit('S', { 's.txt': 's\n' })
+    r.checkout('main')
+    expect(await straight(r)).toEqual({ overTrunk: [], overHead: [] })
+  })
+
+  it('lists every branch on top of main, local and remote', async () => {
+    const { r, B } = base()
+    const tips: string[] = []
+    for (const name of ['one', 'two', 'three']) {
+      r.checkout('-b', name, B)
+      tips.push(r.commit(name))
+    }
+    r.git('update-ref', 'refs/remotes/origin/one', tips[0]!)
+    // A branch on top of another one is on top of main too.
+    r.checkout('-b', 'four', 'one')
+    tips.push(r.commit('four'))
+    r.checkout('main')
+    const s = await straight(r)
+    expect(s.overTrunk).toEqual([...tips].sort())
+    expect(s.overHead).toEqual([...tips].sort())
+  })
+
+  it('takes the newest trunk ref as the trunk tip, and gives up when they have diverged', async () => {
+    const { r, B } = base()
+    const O = r.commit('O on origin/main')
+    r.git('update-ref', 'refs/remotes/origin/main', O)
+    r.git('reset', '-q', '--hard', B) // main is one behind origin/main
+    r.checkout('-b', 'onOrigin', O)
+    const T = r.commit('T')
+    r.checkout('-b', 'onMain', B)
+    const U = r.commit('U')
+    r.checkout('main')
+    // onMain sits on main (HEAD) but not on the trunk line, which runs through origin/main.
+    expect(await straight(r)).toEqual({ overTrunk: [T], overHead: [O, T, U].sort() })
+    // Diverged: main gets a commit origin/main does not have. No trunk tip, so no overTrunk.
+    r.commit('D')
+    expect((await straight(r)).overTrunk).toEqual([])
+  })
+
+  it('works with HEAD detached, and with an unborn HEAD', async () => {
+    const { r } = base()
+    r.checkout('-b', 'topic')
+    const X = r.commit('X')
+    const Y = r.commit('Y')
+    r.checkout('--detach', X)
+    // HEAD is X (no branch there): topic is on top of it and of main.
+    expect(await straight(r)).toEqual({ overTrunk: [Y], overHead: [Y] })
+
+    const empty = initRepo()
+    expect(await straight(empty)).toEqual({ overTrunk: [], overHead: [] })
+  })
+
+  it('never fails the snapshot: a base that is not a hash is ignored', async () => {
+    const { r, B } = base()
+    r.checkout('-b', 'topic')
+    const X = r.commit('X')
+    const repo = await open(r)
+    expect(await repo.straightTips([B, 'main)%(refname'], 'not-a-hash')).toEqual({ overTrunk: [X], overHead: [] })
+    expect(await repo.straightTips([], undefined)).toEqual({ overTrunk: [], overHead: [] })
+  })
+
+  it('is part of the snapshot, and read again when the refs move', async () => {
+    const { r } = base()
+    r.checkout('-b', 'topic')
+    r.commit('X')
+    r.checkout('main')
+    const repo = await open(r)
+    const first = await repo.snapshot()
+    expect(first.graph.straight.overTrunk).toHaveLength(1)
+    expect((await repo.snapshot()).refsVersion).toBe(first.refsVersion)
+    // main moves on: topic is no longer on top of it.
+    r.commit('C')
+    const next = await repo.snapshot()
+    expect(next.graph.straight).toEqual({ overTrunk: [], overHead: [] })
+    expect(next.refsVersion).toBeGreaterThan(first.refsVersion)
+  })
+})
+
+describe('drag-and-drop operations (PLAN-4 phase 4)', () => {
+  /** main: base; topic (from base): T1 edits t.txt; pick (from base): P1 adds p.txt, P2 edits shared.txt. */
+  function picks() {
+    const r = initRepo()
+    r.commit('base', { 'shared.txt': 'one\ntwo\nthree\n', 't.txt': 't\n' })
+    r.git('branch', 'topic')
+    r.git('checkout', '-q', '-b', 'pick')
+    const p1 = r.commit('P1 adds p', { 'p.txt': 'p\n' })
+    r.write('shared.txt', 'one\nTWO\nthree\n')
+    r.git('commit', '-q', '-am', 'P2 edits shared', '--author=Grace Hopper <grace@example.com>')
+    const p2 = r.head()
+    r.checkout('main')
+    r.git('checkout', '-q', 'topic')
+    const t1 = r.commit('T1', { 't.txt': 'topic\n' })
+    r.checkout('main')
+    return { r, p1, p2, t1 }
+  }
+
+  it('knows which git versions have merge-tree --merge-base', () => {
+    expect(supportsMergeTreeBase('git version 2.40.0')).toBe(true)
+    expect(supportsMergeTreeBase('git version 2.39.3 (Apple Git-146)')).toBe(false)
+    expect(supportsMergeTreeBase('git version 3.0.0')).toBe(true)
+    expect(supportsMergeTreeBase('')).toBe(false)
+  })
+
+  it('cherry-picks onto a branch that is not checked out, oldest first, keeping authors; undo moves it back', async () => {
+    const { r, p1, p2, t1 } = picks()
+    const repo = await open(r)
+    const status = r.git('status', '--porcelain')
+    await repo.cherryPickOnto('topic', [p2, p1])
+    // HEAD, the index and the working tree are untouched; topic has both changes on top of T1.
+    expect(r.git('rev-parse', '--abbrev-ref', 'HEAD').trim()).toBe('main')
+    expect(r.git('status', '--porcelain')).toBe(status)
+    expect(r.git('log', '--format=%s|%an', 'topic', '-3').trim().split('\n')).toEqual(['P2 edits shared|Grace Hopper', 'P1 adds p|Ada Lovelace', 'T1|Ada Lovelace'])
+    expect(r.git('show', 'topic:shared.txt')).toBe('one\nTWO\nthree\n')
+    expect(r.git('show', 'topic:t.txt')).toBe('topic\n')
+    await repo.undo()
+    expect(r.git('rev-parse', 'topic').trim()).toBe(t1)
+  })
+
+  it('refuses a cherry-pick onto a branch that conflicts, and changes nothing', async () => {
+    const { r, p2 } = picks()
+    r.git('checkout', '-q', 'topic')
+    r.commit('T2 also edits shared', { 'shared.txt': 'one\nthe second\nthree\n' })
+    const tip = r.git('rev-parse', 'topic').trim()
+    r.checkout('main')
+    const repo = await open(r)
+    await expect(repo.cherryPickOnto('topic', [p2])).rejects.toThrow(/conflicts with topic in shared\.txt/)
+    expect(r.git('rev-parse', 'topic').trim()).toBe(tip)
+    expect(repo.undoList()).toEqual([])
+  })
+
+  it('refuses a cherry-pick onto the checked-out branch or one checked out elsewhere, or a change already there', async () => {
+    const { r, p1 } = picks()
+    const repo = await open(r)
+    await expect(repo.cherryPickOnto('main', [p1])).rejects.toThrow(/main is checked out/)
+    await expect(repo.cherryPickOnto('pick', [p1])).rejects.toThrow(/already on pick/)
+    r.git('worktree', 'add', '-q', `${r.dir}-wt`, 'topic')
+    await expect(repo.cherryPickOnto('topic', [p1])).rejects.toThrow(/checked out in/)
+  })
+
+  it('applies one file\'s change from a commit to the working tree; undo restores the file', async () => {
+    const { r, p2 } = picks()
+    r.write('t.txt', 'my edit\n')
+    const repo = await open(r)
+    await repo.applyFileFrom(p2, ['shared.txt'])
+    expect(read(r, 'shared.txt')).toBe('one\nTWO\nthree\n')
+    // Only that file, and only in the working tree.
+    expect(read(r, 't.txt')).toBe('my edit\n')
+    expect(r.git('diff', '--cached', '--name-only').trim()).toBe('')
+    await repo.undo()
+    expect(read(r, 'shared.txt')).toBe('one\ntwo\nthree\n')
+  })
+
+  it('applies a file added by a commit, and a file from a stash, untracked ones too', async () => {
+    const { r, p1 } = picks()
+    const repo = await open(r)
+    await repo.applyFileFrom(p1, ['p.txt'])
+    expect(read(r, 'p.txt')).toBe('p\n')
+    await repo.undo()
+    expect(existsSync(join(r.dir, 'p.txt'))).toBe(false)
+
+    r.write('shared.txt', 'one\nstashed\nthree\n')
+    r.write('new.txt', 'brand new\n')
+    r.git('stash', 'push', '-q', '-u')
+    const stash = r.git('rev-parse', 'stash@{0}').trim()
+    await repo.applyFileFrom(stash, ['new.txt', 'shared.txt'], { stash: true })
+    expect(read(r, 'new.txt')).toBe('brand new\n')
+    expect(read(r, 'shared.txt')).toBe('one\nstashed\nthree\n')
+    await repo.undo()
+    expect(existsSync(join(r.dir, 'new.txt'))).toBe(false)
+    expect(read(r, 'shared.txt')).toBe('one\ntwo\nthree\n')
+  })
+
+  it('falls back to a three-way merge, leaves conflicts to resolve, and undo puts file and index back', async () => {
+    const { r, p2 } = picks()
+    r.commit('main edits shared', { 'shared.txt': 'one\nzwei\nthree\n' })
+    const repo = await open(r)
+    await repo.applyFileFrom(p2, ['shared.txt'])
+    expect(read(r, 'shared.txt')).toContain('<<<<<<<')
+    expect((await repo.snapshot()).status.find((e) => e.path === 'shared.txt')?.kind).toBe('unmerged')
+    await repo.undo()
+    expect(read(r, 'shared.txt')).toBe('one\nzwei\nthree\n')
+    expect(r.git('status', '--porcelain').trim()).toBe('')
+  })
+
+  it('refuses a file the commit did not change', async () => {
+    const { r, p1 } = picks()
+    const repo = await open(r)
+    await expect(repo.applyFileFrom(p1, ['t.txt'])).rejects.toThrow(/did not change/)
+  })
+
+  it('pins and unpins branches in git config, undoably; a pin follows a rename', async () => {
+    const r = makeFixture('branches')
+    const repo = await open(r)
+    await repo.pinBranch('feature', true)
+    await repo.pinBranch('wip', true)
+    expect(await repo.pins()).toEqual(['feature', 'wip'])
+    expect(r.git('config', '--get-all', 'gitgoose.pin').trim().split('\n')).toEqual(['feature', 'wip'])
+    expect(await repo.pinBranch('wip', true)).toBeNull()
+
+    await repo.pinBranch('feature', false)
+    expect(await repo.pins()).toEqual(['wip'])
+    await repo.undo()
+    expect((await repo.pins()).sort()).toEqual(['feature', 'wip'])
+
+    await repo.renameBranchInto('wip', 'later')
+    expect(r.git('branch', '--list', 'later/wip').trim()).toBe('later/wip')
+    expect((await repo.pins()).sort()).toEqual(['feature', 'later/wip'])
+    await repo.undo()
+    expect(r.git('branch', '--list', 'wip').trim()).toBe('wip')
+    expect((await repo.pins()).sort()).toEqual(['feature', 'wip'])
+    // And redo does it again.
+    await repo.redo()
+    expect((await repo.pins()).sort()).toEqual(['feature', 'later/wip'])
+  })
+
+  it('knows when the repository last fetched (null before the first fetch)', async () => {
+    const r = makeFixture('with-remote')
+    const repo = await open(r)
+    // A fresh clone has no FETCH_HEAD yet.
+    expect(await repo.lastFetched()).toBeNull()
+    r.git('fetch', '-q')
+    const t = await repo.lastFetched()
+    expect(t).not.toBeNull()
+    expect(Math.abs(t! - Date.now() / 1000)).toBeLessThan(60)
+  })
+
+  it('squashes onto a commit as a fixup, keeping the target\'s message', async () => {
+    const r = initRepo()
+    r.commit('one', { '1.txt': '1\n' })
+    const two = r.commit('two', { '2.txt': '2\n' })
+    r.commit('three', { '3.txt': '3\n' })
+    const four = r.commit('four', { '4.txt': '4\n' })
+    const repo = await open(r)
+    await repo.squashOnto([four], two, { fixup: true })
+    expect(r.git('log', '--format=%s').trim().split('\n')).toEqual(['three', 'two', 'one'])
+    expect(r.git('show', '--name-only', '--format=', 'HEAD~1').trim().split('\n')).toEqual(['2.txt', '4.txt'])
   })
 })

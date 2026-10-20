@@ -7,11 +7,10 @@ async function dragRef(page: Page, from: string, to: string) {
   await page.locator(`[data-testid="ref-pill"][data-ref="${from}"]`).dragTo(page.locator(`[data-testid="ref-pill"][data-ref="${to}"]`))
 }
 
-test('drags a branch onto the checked-out branch to merge it', async () => {
+test('drags a branch onto the checked-out branch to merge it (no chooser: the drop is the merge)', async () => {
   const r = makeFixture('branches')
   const { app, page } = await launch(r.dir)
   await dragRef(page, 'refs/heads/wip', 'refs/heads/main')
-  await page.getByRole('menuitem', { name: 'Merge wip into main' }).click()
   await expect(page.getByTestId('commit-row').first()).toContainText('Merge')
   expect(r.git('log', '-1', '--format=%P').trim().split(' ')).toHaveLength(2)
   await app.close()
@@ -31,12 +30,13 @@ test('right-clicking the commit at a branch tip offers the branch actions too', 
   await app.close()
 })
 
-test('drags the checked-out branch onto another to rebase it', async () => {
+test('Alt-drags a branch onto the checked-out branch to rebase it onto that branch', async () => {
   const r = makeFixture('branches')
   r.checkout('wip')
   const { app, page } = await launch(r.dir)
-  await dragRef(page, 'refs/heads/wip', 'refs/heads/main')
-  await page.getByRole('menuitem', { name: 'Rebase wip onto main' }).click()
+  await page.keyboard.down('Alt')
+  await dragRef(page, 'refs/heads/main', 'refs/heads/wip')
+  await page.keyboard.up('Alt')
   await expect.poll(() => r.git('merge-base', 'wip', 'main').trim()).toBe(r.git('rev-parse', 'main').trim())
   await app.close()
 })
@@ -121,4 +121,75 @@ test('asks for credentials when a remote needs them', async () => {
   await expect(page.getByTestId('attention')).toContainText('Fetch failed')
   await app.close()
   server.close()
+})
+
+test('double-clicking a commit row checks out its branch, undoably', async () => {
+  const r = makeFixture('branches')
+  const { app, page } = await launch(r.dir)
+  const branch = () => r.git('rev-parse', '--abbrev-ref', 'HEAD').trim()
+  const wip = r.git('rev-parse', 'wip').trim()
+  // On the subject, not the pill: the pill has its own double-click.
+  await page.locator(`[data-testid="commit-row"][data-hash="${wip}"]`).getByText('F', { exact: true }).dblclick()
+  await expect.poll(branch).toBe('wip')
+  // The two clicks leave exactly this commit selected.
+  await expect(page.locator('[data-testid="commit-row"][data-selected]')).toHaveCount(1)
+  await expect(page.locator(`[data-testid="commit-row"][data-hash="${wip}"]`)).toHaveAttribute('data-selected', 'true')
+  await page.getByTestId('toast-action').filter({ hasText: 'Undo' }).last().click()
+  await expect.poll(branch).toBe('main')
+  await app.close()
+})
+
+test('double-clicking a commit with no branch checks it out detached; with Ctrl held it stays the one selection', async () => {
+  const r = makeFixture('branches')
+  const { app, page } = await launch(r.dir)
+  const b = r.git('rev-parse', 'main~2').trim() // B: no branch points at it
+  expect(r.git('log', '-1', '--format=%s', b).trim()).toBe('B')
+  await page.getByTestId('commit-row').first().click()
+  // A Ctrl-click would toggle; two of them would toggle B on and off again, then add HEAD's row.
+  await page.locator(`[data-testid="commit-row"][data-hash="${b}"]`).getByText('B', { exact: true }).dblclick({ modifiers: ['ControlOrMeta'] })
+  await expect.poll(() => r.git('rev-parse', 'HEAD').trim()).toBe(b)
+  expect(r.git('rev-parse', '--abbrev-ref', 'HEAD').trim()).toBe('HEAD') // detached
+  await expect(page.getByTestId('status-bar')).toContainText(`detached at ${b.slice(0, 7)}`)
+  await expect(page.locator('[data-testid="commit-row"][data-selected]')).toHaveCount(1)
+  await expect(page.locator(`[data-testid="commit-row"][data-hash="${b}"]`)).toHaveAttribute('data-selected', 'true')
+  await app.close()
+})
+
+test("double-clicking HEAD's own row does nothing", async () => {
+  const r = makeFixture('branches')
+  const { app, page } = await launch(r.dir)
+  const head = r.head()
+  await page.locator(`[data-testid="commit-row"][data-hash="${head}"]`).getByText('E', { exact: true }).dblclick()
+  // Give a checkout time to happen, if one wrongly started.
+  await page.waitForTimeout(500)
+  expect(r.git('rev-parse', '--abbrev-ref', 'HEAD').trim()).toBe('main')
+  expect(r.git('rev-parse', 'HEAD').trim()).toBe(head)
+  await expect(page.getByRole('menu')).toHaveCount(0)
+  await expect(page.getByTestId('toast-action')).toHaveCount(0)
+  await app.close()
+})
+
+test('double-clicking a commit where several branches point asks which one to check out', async () => {
+  const r = makeFixture('branches')
+  r.git('branch', 'release', 'wip')
+  const { app, page } = await launch(r.dir)
+  const wip = r.git('rev-parse', 'wip').trim()
+  const branch = () => r.git('rev-parse', '--abbrev-ref', 'HEAD').trim()
+  // A pill's double-click means that branch: it does not reach the row, so no menu.
+  await page.locator('[data-testid="ref-pill"][data-ref="refs/heads/release"]').dblclick()
+  await expect.poll(branch).toBe('release')
+  await expect(page.getByRole('menu')).toHaveCount(0)
+  await page.getByTestId('toast-action').filter({ hasText: 'Undo' }).last().click()
+  await expect.poll(branch).toBe('main')
+
+  await page.locator(`[data-testid="commit-row"][data-hash="${wip}"]`).getByText('F', { exact: true }).dblclick()
+  const menu = page.getByRole('menu')
+  await expect(menu.getByRole('menuitem', { name: 'Check out wip' })).toBeVisible()
+  await expect(menu.getByRole('menuitem')).toHaveCount(2)
+  // Nothing happens until one is picked.
+  expect(r.git('rev-parse', '--abbrev-ref', 'HEAD').trim()).toBe('main')
+  await menu.getByRole('menuitem', { name: 'Check out release' }).click()
+  await expect.poll(() => r.git('rev-parse', '--abbrev-ref', 'HEAD').trim()).toBe('release')
+  await expect(page.getByRole('menu')).toHaveCount(0)
+  await app.close()
 })

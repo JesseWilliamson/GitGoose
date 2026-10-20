@@ -67,6 +67,34 @@ export function installMenu(): void {
         { label: 'Hide Side Panels', click: cmd('layout-wide-graph') },
         { label: 'Reset Panel Sizes', click: cmd('layout-default') },
         { label: 'Toggle Compact Graph', click: cmd('toggle-graph-style') },
+        // Holding Shift shows the line for as long as it is held; this keeps it on.
+        { label: 'Line View', accelerator: 'CmdOrCtrl+L', click: cmd('line-view'), registerAccelerator: false },
+        { label: 'AI Chat', accelerator: 'CmdOrCtrl+Shift+A', click: cmd('ai-chat'), registerAccelerator: false },
+        { type: 'separator' },
+        { label: 'Working Copy', accelerator: 'CmdOrCtrl+Alt+1', click: cmd('ws-working-copy'), registerAccelerator: false },
+        { label: 'History', accelerator: 'CmdOrCtrl+Alt+2', click: cmd('ws-history'), registerAccelerator: false },
+        { label: 'Stashes', accelerator: 'CmdOrCtrl+Alt+3', click: cmd('ws-stashes'), registerAccelerator: false },
+        { label: 'Pull Requests', accelerator: 'CmdOrCtrl+Alt+4', click: cmd('ws-pulls'), registerAccelerator: false },
+        { label: 'Reflog', accelerator: 'CmdOrCtrl+Alt+5', click: cmd('ws-reflog'), registerAccelerator: false },
+        { label: 'Go to the Current Branch', accelerator: 'CmdOrCtrl+Alt+0', click: cmd('select-head-branch'), registerAccelerator: false },
+        {
+          // Long tag lists are shortened in the sidebar (the filter box still finds every tag).
+          label: 'Tags',
+          submenu: [
+            { label: 'Show Newest 50', click: cmd('sidebar-tags-50') },
+            { label: 'Show Newest 100', click: cmd('sidebar-tags-100') },
+            { label: 'Show Newest 250', click: cmd('sidebar-tags-250') },
+            { label: 'Show All', click: cmd('sidebar-tags-all') },
+          ],
+        },
+        { type: 'separator' },
+        {
+          label: 'Commit Order',
+          submenu: [
+            { label: 'By Date', click: cmd('commit-order-date') },
+            { label: 'Topological', click: cmd('commit-order-topo') },
+          ],
+        },
         { type: 'separator' },
         { label: 'Git Command Log', click: cmd('command-log') },
         { type: 'separator' },

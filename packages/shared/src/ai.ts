@@ -70,6 +70,8 @@ export interface ReviewFinding {
   source?: 'scan' | 'lint'
   /** The linter's name (and rule, when it gives one), for source 'lint'. */
   tool?: string
+  /** Applied from a conversation about the review (a json:findings artifact), not the review itself. */
+  fromChat?: boolean
 }
 
 /**
@@ -290,6 +292,11 @@ export interface ReviewLearning {
 export interface AiRunOptions {
   /** Send even though the secret scan found something, with each hit replaced by "[REDACTED kind]". */
   redact?: boolean
+  /**
+   * Keep the conversation open after the answer (AiResult.threadId): the view that shows the
+   * result chats on in the same session. Without it the session is closed straight away.
+   */
+  keepThread?: boolean
 }
 
 export type AiTask =
@@ -388,7 +395,146 @@ export interface AiResult {
   pushChecks?: PushCheckResult[]
   /** resolve-conflict: the file the agent wrote, captured instead of written, for review. */
   proposal?: { path: string; content: string }
+  /** With keepThread: the thread the answer is the first turn of. */
+  threadId?: string
 }
 
 /** The error code an AI request fails with when the agent needs the user to log in first. */
 export const AI_AUTH_REQUIRED = 'ai-auth'
+
+// ------------------------------------------------------------------ threads (spec 006, PLAN-4 5a)
+
+/**
+ * What a thread is about. The anchor decides the context the agent gets first (a system
+ * preamble per anchor in main/ai/prompts.ts) and which artifacts it may send back.
+ */
+export type ThreadAnchor =
+  | { kind: 'review'; scope: ReviewScope }
+  | { kind: 'explain'; hash: string }
+  | { kind: 'recompose'; hashes: string[] }
+  | { kind: 'walkthrough'; scope: ReviewScope }
+  | { kind: 'impact'; scope: ReviewScope }
+  /** Lines of a file at a commit ('worktree' for the working tree); `code` is the lines as they were. */
+  | { kind: 'ask'; rev: string; path: string; lines: [number, number]; code: string }
+  | { kind: 'changestack'; scope: ReviewScope }
+  /** The AI panel: only the repository's name and HEAD go along. */
+  | { kind: 'free' }
+  /** A one-shot request (aiRun) with no view of its own: commit message, push checks, conflict help. Never kept. */
+  | { kind: 'task'; task: AiTask['kind'] }
+
+/**
+ * Structured results an agent may send inside a conversation, each as one fenced block tagged
+ * ```json:<kind>. The renderer parses them and main checks them with the same verifier as the
+ * feature's first answer (findings, plan, walkthrough) before anything can be applied.
+ */
+export type ArtifactKind = 'findings' | 'plan' | 'diagram' | 'commit-message' | 'walkthrough'
+export const ARTIFACT_KINDS: readonly ArtifactKind[] = ['findings', 'plan', 'diagram', 'commit-message', 'walkthrough']
+
+export interface AiToolCall {
+  id: string
+  title: string
+  /** ACP's tool kind: read, edit, delete, move, search, execute, think, fetch, switch_mode, other. */
+  kind: string
+  status: 'pending' | 'in_progress' | 'completed' | 'failed'
+  /** The tool's input as the agent sent it (JSON, cut for size): often the real command where the title is prose. */
+  rawInput?: string
+  locations: string[]
+  content: AiToolContent[]
+}
+
+export type AiToolContent =
+  | { type: 'text'; text: string }
+  /** oldText null: a new file. */
+  | { type: 'diff'; path: string; oldText: string | null; newText: string }
+
+export interface AiPlanEntry {
+  content: string
+  priority: 'high' | 'medium' | 'low'
+  status: 'pending' | 'in_progress' | 'completed'
+}
+
+/** How the user answered a permission card. 'expired': the turn ended before anyone answered. */
+export type PermissionAnswer = 'deny' | 'once' | 'session' | 'expired'
+
+/** A tool call waiting for the user, shown inline in the thread (see AiService.answerPermission). */
+export interface AiPermissionAsk {
+  permissionId: number
+  title: string
+  kind: string
+  paths: string[]
+  rawInput?: string
+  /** Which of the three answers the agent's options allow (Allow for this session always works: GitGoose remembers it). */
+  options: AiPermissionRequest['options']
+  answer?: PermissionAnswer
+}
+
+export type AiBlock =
+  /** Markdown. */
+  | { type: 'text'; text: string }
+  | { type: 'thought'; text: string }
+  | { type: 'tool'; tool: AiToolCall }
+  | { type: 'plan'; entries: AiPlanEntry[] }
+  | { type: 'permission'; permission: AiPermissionAsk }
+  /** A tagged block split out of the text when the turn finished; `json` is the block's body, unchecked. */
+  | { type: 'artifact'; artifact: ArtifactKind; json: string }
+
+export interface AiTurn {
+  /** `${requestId}:u` or `${requestId}:a`. */
+  id: string
+  role: 'user' | 'agent'
+  requestId: string
+  blocks: AiBlock[]
+  /**
+   * The feature's own exchange (the review request and its JSON answer): the view shows the
+   * result itself, so the thread shows this one line instead.
+   */
+  feature?: string
+  /** Agent turns: streaming, finished, stopped, or failed. */
+  status?: 'running' | 'done' | 'cancelled' | 'error'
+  error?: { message: string; code?: string }
+  at: number
+}
+
+export interface AiThread {
+  id: string
+  repoId: string
+  anchor: ThreadAnchor
+  /** For lists: the question, the feature, or the first message. */
+  title: string
+  turns: AiTurn[]
+  createdAt: number
+  updatedAt: number
+  /** HEAD when the thread started (a thread is pinned to what the repository was then). */
+  head: string
+  /** The agent's session mode, and the slash commands it offers (ACP current_mode_update, available_commands_update). */
+  mode?: string
+  commands?: string[]
+}
+
+/**
+ * One event of a thread, from main. A thread is a fold of these (reduceThread, ./thread.ts),
+ * run by main for the copy it keeps and by the renderer for the copy it shows.
+ */
+export type AiUpdate =
+  /** A user turn was sent (and the agent's turn begins). */
+  | { kind: 'turn'; text: string; feature?: string; at: number }
+  /** Streamed text, appended. */
+  | { kind: 'text'; text: string }
+  | { kind: 'thought'; text: string }
+  /** A tool call, whole (main merges tool_call_update into it): replaces the one with the same id. */
+  | { kind: 'tool'; tool: AiToolCall }
+  | { kind: 'plan'; entries: AiPlanEntry[] }
+  | { kind: 'permission'; permission: AiPermissionAsk }
+  | { kind: 'permission-answered'; permissionId: number; answer: PermissionAnswer }
+  | { kind: 'meta'; mode?: string; commands?: string[] }
+  | { kind: 'done'; stopReason: string }
+  | { kind: 'error'; message: string; code?: string }
+
+/** A checked artifact: what Apply would do. Errors are reported as `problem`, never thrown at the card. */
+export type AiArtifactResult =
+  | { kind: 'findings'; review: ReviewResult }
+  | { kind: 'plan'; recompose: RecomposeProposal }
+  | { kind: 'walkthrough'; walkthrough: WalkthroughResult }
+  | { kind: 'commit-message'; message: string }
+  | { kind: 'diagram'; sequence: SequenceDiagram }
+  | { kind: 'problem'; message: string }

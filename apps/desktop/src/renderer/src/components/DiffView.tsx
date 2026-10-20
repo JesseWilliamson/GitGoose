@@ -20,7 +20,7 @@ import { codeLineHeight, ensureLoaded, reportError, saveSettings, updateRepo, us
 import { Button, DM, Spinner } from './ui'
 import { modName } from '../lib/keys'
 import { findingsFor } from '../lib/review'
-import { newThread, openAsk } from '../lib/ask'
+import { askAbout } from '../lib/ask'
 import { useAiEnabled } from '../lib/ai'
 
 
@@ -225,7 +225,7 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
   const askAboutSelection = () => {
     if (!selLines || !diff) return
     const code = diff.hunks.flatMap((h) => h.lines).filter((l) => l.newNo !== undefined && l.newNo >= selLines.start && l.newNo <= selLines.end && l.kind !== '-').map((l) => l.text).join('\n')
-    openAsk(view.id, newThread(peekRev, target.path, selLines.start, selLines.end, code))
+    askAbout(view.id, peekRev, target.path, selLines.start, selLines.end, code)
     window.getSelection()?.removeAllRanges()
     setSelLines(null)
   }
@@ -420,7 +420,7 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
         </button>
       )}
       {peek && <CodePeekPanel repoId={view.id} repoPath={view.snapshot.path} name={peek} rev={peekRev} onClose={() => setPeek(null)} />}
-      {view.ask && view.ask.path === target.path && <AskPanel repoId={view.id} thread={view.ask} />}
+      {view.ask && view.ask.path === target.path && <AskPanel repoId={view.id} ask={view.ask} />}
     </div>
   )
 }

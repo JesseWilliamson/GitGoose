@@ -1,12 +1,12 @@
 import type {
-  BisectState, BlameLine, ChangeInsights, CodePeek, ImpactResult, ReviewScope, ImageSide, LfsInfo, LfsLock, ChangedFile, CommandRecord, GraphFilter, Identity, Person, Signature, Commit, CommitSummary, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
+  BisectState, BlameLine, ChangeInsights, CodePeek, ImpactResult, ReviewScope, ImageSide, LfsInfo, LfsLock, ChangedFile, CommandRecord, CommitOrder, GraphFilter, Identity, Person, Signature, Commit, CommitSummary, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
   LogPage, Ref, Remote, RepoOperation, ReflogEntry, RepoSnapshot, ResetMode, Resolution, SearchField, SelectionRequest,
-  StashEntry, StatusEntry, Submodule, UndoEntry, Worktree,
+  StashEntry, StatusEntry, StraightTips, Submodule, UndoEntry, Worktree,
 } from '@gitgoose/shared'
 import { countConflicts } from '@gitgoose/shared'
 import { existsSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { lstat, readFile, realpath, rm, writeFile, chmod, mkdir } from 'node:fs/promises'
+import { lstat, readFile, realpath, rm, stat, writeFile, chmod, mkdir } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { enclosingDefinition, findDefinitions, NOT_NAMES, parseGrep, type Definition } from '@gitgoose/codegraph'
@@ -47,6 +47,31 @@ function diffArgs(opts: DiffOptions = {}): string[] {
 }
 
 let nextRepoId = 1
+
+/**
+ * At most this many tips are checked for sitting straight on the trunk or HEAD, each with one
+ * bounded rev-list. Real repositories have a handful; past this many the rest draw as before.
+ */
+const MAX_STRAIGHT_CANDIDATES = 64
+
+/** Whether `git version` output names a git with `%(ahead-behind:...)` in for-each-ref (2.41+). */
+export function supportsAheadBehind(version: string): boolean {
+  const m = /git version (\d+)\.(\d+)/.exec(version)
+  if (!m) return false
+  const [major, minor] = [Number(m[1]), Number(m[2])]
+  return major > 2 || (major === 2 && minor >= 41)
+}
+
+/** Whether `git version` output names a git whose `merge-tree --write-tree` takes `--merge-base` (2.40+). */
+export function supportsMergeTreeBase(version: string): boolean {
+  const m = /git version (\d+)\.(\d+)/.exec(version)
+  if (!m) return false
+  const [major, minor] = [Number(m[1]), Number(m[2])]
+  return major > 2 || (major === 2 && minor >= 40)
+}
+
+/** The multi-valued config key that holds pinned branch names (shared by every worktree). */
+const PIN_KEY = 'gitgoose.pin'
 
 /**
  * One open repository. Reads run concurrently; anything that writes goes through `exclusive`,
@@ -158,7 +183,19 @@ export class Repo {
     // Only trunk refs the graph walks: one it leaves out would hold lane 0 empty all the way down.
     const trunk = trunkRefs(refsOut, refs).filter((r) => graphShowsRef(r, this.filter))
     const stashes = this.showStashes ? await this.stashHashes() : []
-    const key = `${status.head.branch}|${status.head.hash}|` + refs.map((r) => `${r.name}=${r.hash}`).join(',') + `|${stashes.join(',')}|${trunk.join(',')}`
+    // Which tips sit straight on top of the trunk or HEAD depends only on the refs, HEAD and the
+    // trunk, so it is worked out again only when those change (it walks history) and is part of
+    // the key: a change relayouts the graph.
+    const shapeKey = `${status.head.hash}|` + refs.map((r) => `${r.name}=${r.hash}`).join(',') + `|${trunk.join(',')}`
+    if (shapeKey !== this.straightKey) {
+      const trunkTips = refs.filter((r) => trunk.includes(r.name)).map((r) => r.hash)
+      // Only a hint for drawing: if it fails, the graph draws as it would without it.
+      this.straight = await this.straightTips(trunkTips, status.head.hash).catch(() => ({ overTrunk: [], overHead: [] }))
+      this.straightKey = shapeKey
+    }
+    const straight = this.straight
+    const key = `${this.order}|${status.head.branch}|${status.head.hash}|` + refs.map((r) => `${r.name}=${r.hash}`).join(',') + `|${stashes.join(',')}|${trunk.join(',')}` +
+      `|${straight.overTrunk.join(',')}|${straight.overHead.join(',')}`
     if (key !== this.refsKey) {
       this.refsKey = key
       this.refsVersion++
@@ -168,10 +205,91 @@ export class Repo {
     this.last = {
       id: this.id, path: this.path, name: this.name,
       head: status.head, refs, status: status.entries,
-      operation: this.operation(), refsVersion: this.refsVersion, filter: this.filter, trunk,
+      operation: this.operation(), refsVersion: this.refsVersion, filter: this.filter, trunk, order: this.order,
+      graph: { straight },
       bisect: existsSync(join(this.gitDir, 'BISECT_START')) ? await this.bisectState() : undefined,
     }
     return this.last
+  }
+
+  private straight: StraightTips = { overTrunk: [], overHead: [] }
+  private straightKey: string | null = null
+  private aheadBehind: Promise<boolean> | null = null
+
+  /**
+   * The branch tips whose first-parent chain runs straight down to the trunk tip, or to HEAD, so
+   * the graph can draw them continuing that lane instead of opening one to the right (ADR-003, "A
+   * branch on top of a reserved line continues it"). The layout streams and cannot know this when
+   * a tip arrives; git can, cheaply:
+   *
+   * 1. One for-each-ref over refs/heads and refs/remotes prints, for every ref, how far ahead of
+   *    and behind each base it is (`%(ahead-behind:<base>)`, git 2.41+; one walk for all refs).
+   *    A ref that is not behind and is ahead is a candidate: it contains the base.
+   * 2. Containing the base is not enough: a branch that merged main contains main, but its own
+   *    line (first parents) never reaches it. For each candidate, `rev-list --first-parent` over
+   *    at most ahead + 1 commits must meet the base. Candidates are branches not merged yet, so
+   *    they are few, and each check is bounded by the branch's own length.
+   *
+   * `trunkTips` are the hashes of the trunk refs (main, origin/main). When they differ, the base
+   * is the one that contains the others (the newest); if they have diverged there is none, and
+   * overTrunk is empty. Older git returns empty lists: the graph draws as it did before.
+   */
+  async straightTips(trunkTips: readonly string[], head: string | undefined): Promise<StraightTips> {
+    const none: StraightTips = { overTrunk: [], overHead: [] }
+    // The bases go inside a --format atom: take nothing there but a commit hash.
+    const isHash = (h: string | undefined): h is string => !!h && /^[0-9a-f]{40,64}$/.test(h)
+    const trunks = [...new Set(trunkTips)].filter(isHash)
+    if (!isHash(head)) head = undefined
+    const bases = [...new Set([...trunks, ...(head ? [head] : [])])]
+    if (!bases.length || !(await this.hasAheadBehind())) return none
+    const out = await this.read(['for-each-ref', `--format=%(refname)%00%(objectname)${bases.map((b) => `%00%(ahead-behind:${b})`).join('')}`,
+      'refs/heads', 'refs/remotes'])
+    // For each tip hash, ahead/behind against each base.
+    const tips = new Map<string, { ahead: number; behind: number }[]>()
+    for (const line of out.split('\n')) {
+      const [name, hash, ...ab] = line.split('\x00')
+      if (!name || !hash || name.endsWith('/HEAD') || tips.has(hash)) continue
+      tips.set(hash, ab.map((s) => {
+        const [ahead = NaN, behind = NaN] = s.split(' ').map(Number)
+        return { ahead, behind }
+      }))
+    }
+    const over = (tip: string, base: string) => {
+      const r = tips.get(tip)?.[bases.indexOf(base)]
+      return r && r.behind === 0 && r.ahead > 0 ? r.ahead : 0
+    }
+    // The trunk tip: the trunk ref that contains all the others.
+    const trunk = trunks.find((t) => tips.has(t) && trunks.every((u) => u === t || over(t, u) > 0))
+
+    const checks: { tip: string; trunk: number; head: number }[] = []
+    for (const tip of tips.keys()) {
+      const c = { tip, trunk: trunk ? over(tip, trunk) : 0, head: head ? over(tip, head) : 0 }
+      if (c.trunk || c.head) checks.push(c)
+    }
+    const result: StraightTips = { overTrunk: [], overHead: [] }
+    await Promise.all(checks.slice(0, MAX_STRAIGHT_CANDIDATES).map(async (c) => {
+      const chain = (await this.read(['rev-list', '--first-parent', '-n', String(Math.max(c.trunk, c.head) + 1), c.tip, '--'])).split('\n')
+      if (c.trunk && chain.slice(0, c.trunk + 1).includes(trunk!)) result.overTrunk.push(c.tip)
+      if (c.head && chain.slice(0, c.head + 1).includes(head!)) result.overHead.push(c.tip)
+    }))
+    // Stable order, so the refs key does not change with the order the checks finish in.
+    result.overTrunk.sort()
+    result.overHead.sort()
+    return result
+  }
+
+  /** `%(ahead-behind:...)` arrived in git 2.41. Asked once per repository. */
+  private hasAheadBehind(): Promise<boolean> {
+    this.aheadBehind ??= this.version().then(supportsAheadBehind)
+    return this.aheadBehind
+  }
+
+  private gitVersion: Promise<string> | null = null
+
+  /** `git version`, asked once per repository. */
+  private version(): Promise<string> {
+    this.gitVersion ??= this.read(['version']).catch(() => '')
+    return this.gitVersion
   }
 
   get lastSnapshot(): RepoSnapshot | null {
@@ -257,6 +375,19 @@ export class Repo {
     this.refsKey = ''
   }
 
+  /** The order the log lists commits in (the commitOrder setting). */
+  private order: CommitOrder = 'date'
+
+  /**
+   * Date or topological order. Like a filter change, it means a new walk: the refs key is reset,
+   * so the next snapshot bumps refsVersion and the renderer reloads the log once, from the top.
+   */
+  setCommitOrder(order: CommitOrder): void {
+    if (order === this.order) return
+    this.order = order
+    this.refsKey = ''
+  }
+
   /**
    * Stash commits, newest first, straight from the stash reflog file: no process, cheap enough
    * to read on every snapshot (dropping stash@{2} changes only the reflog, not refs/stash).
@@ -274,7 +405,7 @@ export class Repo {
     if (!this.last) await this.snapshot()
     if (!this.log) {
       const stashes = this.showStashes ? await this.stashHashes() : []
-      this.log = new LogStream(this.runner, this.graphRevs(), undefined, stashes)
+      this.log = new LogStream(this.runner, this.graphRevs(), undefined, stashes, this.order)
     }
     const generation = this.refsVersion
     const log = this.log
@@ -540,7 +671,7 @@ export class Repo {
         else refNames.set(r.hash, [r.shortName])
       }
       try {
-        return await searchLog(this.runner, this.graphRevs(), q, { refNames, signal: abort.signal })
+        return await searchLog(this.runner, this.graphRevs(), q, { refNames, signal: abort.signal, order: this.order })
       } finally {
         if (this.searching === abort) this.searching = null
       }
@@ -780,9 +911,55 @@ export class Repo {
   }
 
   renameBranch(from: string, to: string): Promise<number> {
+    return this.exclusive(() => this.rename(from, to))
+  }
+
+  /** Drag a branch onto a folder in the sidebar: `topic` dropped on `feature` becomes `feature/topic`. */
+  renameBranchInto(branch: string, folder: string): Promise<number> {
+    const base = branch.slice(branch.lastIndexOf('/') + 1)
+    const to = `${folder.replace(/\/+$/, '')}/${base}`
+    return this.exclusive(() => this.rename(branch, to, `Move ${branch} into ${folder}`))
+  }
+
+  /** `branch -m`, keeping a pin on the branch (git moves its other config, upstream included). */
+  private async rename(from: string, to: string, label = `Rename ${from} to ${to}`): Promise<number> {
+    await this.git(['branch', '-m', from, to])
+    const actions: UndoAction[] = [{ kind: 'rename-branch', from: to, to: from }]
+    if ((await this.pins()).includes(from)) {
+      await this.git(['config', '--unset-all', '--fixed-value', PIN_KEY, from])
+      await this.git(['config', '--add', PIN_KEY, to])
+      // Undo runs these first, then renames back.
+      actions.unshift({ kind: 'config-value', key: PIN_KEY, value: to, add: false }, { kind: 'config-value', key: PIN_KEY, value: from, add: true })
+    }
+    return this.record(label, actions, (await this.currentHead()).hash)
+  }
+
+  /**
+   * When anything was last fetched here (FETCH_HEAD's time, unix seconds), or null when never.
+   * A linked worktree writes its own FETCH_HEAD, so the newer of its and the main one counts.
+   */
+  async lastFetched(): Promise<number | null> {
+    const times = await Promise.all([...new Set([this.gitDir, this.commonDir])].map((d) => stat(join(d, 'FETCH_HEAD')).then((s) => s.mtimeMs, () => 0)))
+    const newest = Math.max(...times)
+    return newest ? Math.floor(newest / 1000) : null
+  }
+
+  // ---------------------------------------------------------------- pins
+
+  /** Pinned branch names, in the order they were pinned. Kept in git config, so every worktree sees them. */
+  async pins(): Promise<string[]> {
+    const r = await this.runner.run(['config', '--get-all', PIN_KEY], { readOnly: true, okCodes: [1] })
+    return [...new Set(r.stdout.split('\n').filter(Boolean))]
+  }
+
+  /** Pin a branch to the top of the sidebar, or unpin it. Undoable; null when nothing changed. */
+  pinBranch(branch: string, pin: boolean): Promise<number | null> {
     return this.exclusive(async () => {
-      await this.git(['branch', '-m', from, to])
-      return this.record(`Rename ${from} to ${to}`, [{ kind: 'rename-branch', from: to, to: from }], (await this.currentHead()).hash)
+      const pinned = (await this.pins()).includes(branch)
+      if (pinned === pin) return null
+      if (pin) await this.git(['config', '--add', PIN_KEY, branch])
+      else await this.git(['config', '--unset-all', '--fixed-value', PIN_KEY, branch])
+      return this.record(pin ? `Pin ${branch}` : `Unpin ${branch}`, [{ kind: 'config-value', key: PIN_KEY, value: branch, add: !pin }], (await this.currentHead()).hash)
     })
   }
 
@@ -1992,6 +2169,101 @@ export class Repo {
     return this.moving(`Cherry-pick ${todo.length} ${todo.length === 1 ? 'commit' : 'commits'}`, () => this.git(['cherry-pick', ...mainline, ...todo]))
   }
 
+  /**
+   * Cherry-pick commits onto a branch that is not checked out, without checking it out.
+   *
+   * `git cherry-pick` only works on HEAD: it needs a working tree to apply the change in. But a
+   * cherry-pick is just a three-way merge of trees, so it can be done in the object database
+   * alone: for commit C, merge C's tree with the branch's tree, taking C's parent as the base
+   * (`merge-tree --write-tree --merge-base C^ <branch> C`, git 2.40+). That gives the tree the
+   * new commit should have; `commit-tree` makes the commit (with C's author and message) and
+   * `update-ref`, given the old value, moves the branch only if nothing moved it meanwhile.
+   * Nothing in the working tree or the index changes, so a conflict cannot be left behind
+   * half-done: merge-tree reports it and the whole thing is refused instead.
+   *
+   * `hashes` are in graph order (newest first); they are applied oldest first. One undo entry.
+   */
+  cherryPickOnto(branch: string, hashes: string[]): Promise<number> {
+    return this.exclusive(async () => {
+      if (!supportsMergeTreeBase(await this.version())) throw new Error('Cherry-picking onto a branch that is not checked out needs git 2.40 or newer.')
+      const ref = `refs/heads/${branch}`
+      const old = await this.revParse(ref).catch(() => '')
+      if (!old) throw new Error(`No branch named ${branch}`)
+      const holder = (await this.worktrees()).find((w) => w.branch === branch)
+      if (holder) {
+        throw new Error(holder.current ? `${branch} is checked out: cherry-pick onto it the usual way.` : `${branch} is checked out in ${holder.path}: cherry-pick there, or check it out here.`)
+      }
+      let tip = old
+      let picked = 0
+      for (const c of [...hashes].reverse()) {
+        const parents = (await this.read(['rev-list', '--parents', '-n', '1', c])).trim().split(' ').slice(1)
+        if (!parents.length) throw new Error(`${c.slice(0, 7)} is a root commit: there is no change to pick.`)
+        const merged = await this.runner.run(['merge-tree', '--write-tree', '--name-only', '-z', `--merge-base=${parents[0]}`, tip, c], { okCodes: [1] })
+        const fields = merged.stdout.split('\0')
+        if (merged.code === 1) {
+          const files = fields.slice(1, fields.indexOf('', 1)).filter(Boolean)
+          throw new Error(`${c.slice(0, 7)} conflicts with ${branch}${files.length ? ` in ${describePaths(files)}` : ''}. Check out ${branch} and cherry-pick it there to resolve the conflict.`)
+        }
+        const tree = fields[0]!.trim()
+        // Already there (an empty pick): nothing to commit.
+        if (tree === (await this.revParse(`${tip}^{tree}`))) continue
+        const raw = await this.read(['cat-file', 'commit', c])
+        const author = /^author (.*) <(.*)> (\d+ [+-]\d{4})$/m.exec(raw)
+        const message = raw.slice(raw.indexOf('\n\n') + 2)
+        const env: Record<string, string> = author ? { GIT_AUTHOR_NAME: author[1]!, GIT_AUTHOR_EMAIL: author[2]!, GIT_AUTHOR_DATE: author[3]! } : {}
+        tip = (await this.git(['commit-tree', tree, '-p', tip, '-F', '-'], { input: message, env })).stdout.trim()
+        picked++
+      }
+      if (!picked) throw new Error(`Those changes are already on ${branch}.`)
+      await this.git(['update-ref', '-m', `gitgoose: cherry-pick ${picked} onto ${branch}`, ref, tip, old])
+      return this.record(`Cherry-pick ${picked === 1 ? hashes[0]!.slice(0, 7) : `${picked} commits`} onto ${branch}`,
+        [{ kind: 'update-ref', ref, to: old, from: tip }], (await this.currentHead()).hash)
+    })
+  }
+
+  /**
+   * Bring the change one commit (or stash) made to some files into the working tree: the
+   * path-limited diff of `rev` against its first parent, applied with `git apply`. A stash's
+   * change is its working tree against its base, plus the untracked files in its third parent.
+   *
+   * A plain apply first: it touches only the working tree, and copes with files that have edits
+   * of their own as long as the lines around the change still match. When it does not apply,
+   * `--3way` merges it instead (and may leave conflict markers to resolve); --3way works through
+   * the index, so their index entries are saved too. Undo puts files and index entries back.
+   */
+  applyFileFrom(rev: string, paths: string[], opts: { stash?: boolean } = {}): Promise<number> {
+    return this.exclusive(async () => {
+      if (!paths.length) throw new Error('No files to apply')
+      const diff = (a: string, b: string) => this.read(['diff', '--binary', ...DIFF_ARGS, a, b, '--', ...paths])
+      let patch: string
+      if (opts.stash) {
+        const third = await this.runner.run(['rev-parse', '--verify', '-q', `${rev}^3`], { readOnly: true, okCodes: [1] })
+        patch = (await diff(`${rev}^1`, rev)) + (third.code === 0 ? await diff(await this.emptyTreeHash(), third.stdout.trim()) : '')
+      } else {
+        const parents = (await this.read(['rev-list', '--parents', '-n', '1', rev])).trim().split(' ').slice(1)
+        patch = await diff(parents[0] ?? (await this.emptyTreeHash()), rev)
+      }
+      if (!patch.trim()) throw new Error(`${describePaths(paths)} did not change in ${rev.slice(0, 7)}.`)
+      const head = await this.currentHead()
+      const saved = await this.saveFiles(paths)
+      const actions: UndoAction[] = [{ kind: 'restore-files', files: saved }]
+      const plain = await this.runner.run(['apply', '--whitespace=nowarn', '-'], { input: patch, okCodes: [1] })
+      if (plain.code !== 0) {
+        const entries = (await this.read(['ls-files', '-s', '-z', '--', ...paths])).split('\0').filter(Boolean).map((l) => {
+          const [meta, path] = l.split('\t') as [string, string]
+          const [mode, blob] = meta.split(' ') as [string, string]
+          return { path, mode, blob }
+        })
+        actions.push({ kind: 'index-entries', paths, entries })
+        const merged = await this.runner.run(['apply', '--3way', '--whitespace=nowarn', '-'], { input: patch, okCodes: [1] })
+        // Exit 1 with conflict markers written is a merge to finish; anything else did not apply.
+        const unmerged = (await this.freshStatus()).entries.some((e) => e.kind === 'unmerged' && paths.includes(e.path))
+        if (merged.code !== 0 && !unmerged) throw new Error((merged.stderr || plain.stderr).trim() || `The change does not apply to ${describePaths(paths)}.`)
+      }
+      return this.record(`Apply ${describePaths(paths)} from ${opts.stash ? 'a stash' : rev.slice(0, 7)}`, actions, head.hash)
+    })
+  }
+
   // ---------------------------------------------------------------- editing history
 
   /**
@@ -2113,15 +2385,16 @@ export class Repo {
    * Squash `hashes` onto `target` (Tower's drag-onto): move them just above it, then fold each
    * into it, keeping all messages.
    */
-  squashOnto(hashes: string[], target: string): Promise<number | null> {
-    return this.reorder(`Squash ${hashes.length === 1 ? hashes[0]!.slice(0, 7) : `${hashes.length} commits`} into ${target.slice(0, 7)}`, async (chain) => {
+  squashOnto(hashes: string[], target: string, opts: { fixup?: boolean } = {}): Promise<number | null> {
+    const action = opts.fixup ? 'fixup' as const : 'squash' as const
+    return this.reorder(`${opts.fixup ? 'Fixup' : 'Squash'} ${hashes.length === 1 ? hashes[0]!.slice(0, 7) : `${hashes.length} commits`} into ${target.slice(0, 7)}`, async (chain) => {
       if (![...hashes, target].every((h) => chain.includes(h)) || hashes.includes(target)) {
         throw new Error('Only commits on the current branch, after its last merge, can be squashed.')
       }
       const moving = chain.filter((h) => hashes.includes(h))
       const rest = chain.filter((h) => !hashes.includes(h))
       const at = rest.indexOf(target) + 1
-      return [...rest.slice(0, at), ...moving.map((h) => ({ hash: h, action: 'squash' as const })), ...rest.slice(at)]
+      return [...rest.slice(0, at), ...moving.map((h) => ({ hash: h, action })), ...rest.slice(at)]
     })
   }
 
@@ -2348,10 +2621,12 @@ export class Repo {
     })
   }
 
-  pull(opts: { mode?: PullMode } = {}): Promise<number | null> {
+  /** Pull HEAD's upstream, or (`remote` and `branch`) a given remote branch into HEAD. */
+  pull(opts: { mode?: PullMode; remote?: string; branch?: string } = {}): Promise<number | null> {
     const mode = { merge: '--no-rebase', rebase: '--rebase', 'ff-only': '--ff-only' }[opts.mode ?? 'merge']
-    return this.moving('Pull', async () => {
-      await this.progress(['pull', '--progress', '--no-edit', mode])
+    const from = opts.remote && opts.branch ? [opts.remote, opts.branch] : []
+    return this.moving(from.length ? `Pull ${from.join('/')}` : 'Pull', async () => {
+      await this.progress(['pull', '--progress', '--no-edit', mode, ...from])
       void this.maintainCommitGraph({ force: true })
     })
   }
@@ -2663,6 +2938,9 @@ export class Repo {
         case 'rename-branch':
           out.push({ kind: 'rename-branch', from: a.to, to: a.from })
           break
+        case 'config-value':
+          out.push({ ...a, add: !a.add })
+          break
         default:
           return null
       }
@@ -2737,6 +3015,15 @@ export class Repo {
         }
         break
       }
+      case 'config-value':
+        if (a.add) await this.git(['config', '--add', a.key, a.value])
+        else await this.git(['config', '--unset-all', '--fixed-value', a.key, a.value], { okCodes: [5] })
+        break
+      case 'index-entries':
+        // --force-remove drops every stage (a conflict left by --3way), then the saved entries go back.
+        await this.git(['update-index', '--force-remove', '--', ...a.paths])
+        for (const e of a.entries) await this.git(['update-index', '--add', '--cacheinfo', `${e.mode},${e.blob},${e.path}`])
+        break
       case 'config':
         if (a.value === null) await this.git(['config', `--${a.scope}`, '--unset', a.key], { okCodes: [5] })
         else await this.git(['config', `--${a.scope}`, a.key, a.value])

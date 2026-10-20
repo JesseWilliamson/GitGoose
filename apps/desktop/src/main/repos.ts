@@ -1,5 +1,5 @@
 import { Repo } from '@gitgoose/git'
-import type { GraphFilter, RepoSnapshot } from '@gitgoose/shared'
+import type { CommitOrder, GraphFilter, RepoSnapshot } from '@gitgoose/shared'
 import watcher from '@parcel/watcher'
 import { relative, sep } from 'node:path'
 
@@ -33,7 +33,7 @@ export class RepoManager {
   private open = new Map<string, Open>()
 
   constructor(
-    private options: () => { gitPath: string; env: Record<string, string>; showStashes?: boolean; graphFilters?: Record<string, GraphFilter> },
+    private options: () => { gitPath: string; env: Record<string, string>; showStashes?: boolean; commitOrder?: CommitOrder; graphFilters?: Record<string, GraphFilter> },
     private emit: (snapshot: RepoSnapshot) => void,
     private onProgress: (repoId: string, text: string | null) => void,
     private onWorktree: (repoId: string) => void,
@@ -58,6 +58,7 @@ export class RepoManager {
 
   async add(repo: Repo): Promise<RepoSnapshot> {
     repo.setShowStashes(this.options().showStashes ?? true)
+    repo.setCommitOrder(this.options().commitOrder ?? 'date')
     const filter = this.options().graphFilters?.[repo.path]
     if (filter) repo.setGraphFilter(filter)
     const entry: Open = { repo, subscriptions: [], timer: null, lastJson: '', held: 0, fired: false }

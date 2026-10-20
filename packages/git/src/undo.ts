@@ -56,6 +56,13 @@ export type UndoAction =
    */
   | { kind: 'submodule-forget'; path: string; name: string; commit: string }
   | { kind: 'submodule-restore'; path: string }
+  /** Add one value to a multi-valued config key, or remove it (pins: `gitgoose.pin`). Local config. */
+  | { kind: 'config-value'; key: string; value: string; add: boolean }
+  /**
+   * Put index entries back for these paths (an `apply --3way` that went through the index):
+   * the paths are removed from the index, then `entries` (what was staged before) re-added.
+   */
+  | { kind: 'index-entries'; paths: string[]; entries: { path: string; mode: string; blob: string }[] }
   /** Put a config value back (null: unset it), in this repository's config or the user's global one. */
   | { kind: 'config'; scope: 'local' | 'global'; key: string; value: string | null }
   /** Write saved blobs back to the working tree. `blob: null` means the file did not exist. */

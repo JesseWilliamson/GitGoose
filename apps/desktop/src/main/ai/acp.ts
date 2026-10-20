@@ -1,6 +1,6 @@
 import * as acp from '@agentclientprotocol/sdk'
 import { realPathOf } from '@gitgoose/git'
-import { AI_AUTH_REQUIRED, type AgentAuthMethod, type AgentInfo } from '@gitgoose/shared'
+import { AI_AUTH_REQUIRED, type AgentAuthMethod, type AgentInfo, type AiToolCall, type AiToolContent, type AiUpdate } from '@gitgoose/shared'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { isAbsolute, relative, resolve } from 'node:path'
@@ -12,10 +12,14 @@ import { Readable, Writable } from 'node:stream'
  * talk JSON-RPC over its stdin/stdout:
  *
  *   initialize          what each side can do; the agent lists its login methods
- *   session/new         a fresh conversation per request, cwd = the repository (requests are
- *                       independent: a shared session would run them one at a time and carry
- *                       every earlier diff along in its context)
- *   session/prompt      the request; the agent streams session/update notifications back
+ *   session/new         one conversation per thread, cwd = the repository. Threads are
+ *                       independent of each other (a shared session would run them one at a
+ *                       time and carry every earlier diff along); within a thread, follow-ups
+ *                       go to the same session, so the agent remembers what it said
+ *   session/prompt      one turn; the agent streams session/update notifications back (text,
+ *                       thoughts, tool calls with their diffs, plans), which we pass on typed
+ *   session/load        reopen a thread's session after the agent restarted, when it can
+ *   session/cancel      stop the turn in progress
  *
  * and the agent calls *us* for anything outside its own process:
  *
@@ -38,13 +42,20 @@ export interface PermissionAsk {
   title: string
   kind: string
   paths: string[]
+  /** The tool's input (JSON, cut for size), when the agent sent one. */
+  rawInput?: string
   options: { optionId: string; name: string; kind: acp.PermissionOptionKind }[]
 }
+
+/** What a turn streams, besides permission questions: the session/update kinds we show. */
+export type AgentUpdate = Extract<AiUpdate, { kind: 'text' | 'thought' | 'tool' | 'plan' | 'meta' }>
 
 /** How one prompt's traffic is handled. */
 export interface PromptHooks {
   /** Called with the whole reply so far, after each streamed chunk. */
   onText?(text: string): void
+  /** Every update, typed (text and thought chunks are deltas; a tool call comes whole each time). */
+  onUpdate?(u: AgentUpdate): void
   /** Ask the user. Resolves to the chosen optionId, or null to cancel. */
   onPermission(ask: PermissionAsk): Promise<string | null>
   /** The one file this prompt may "write" (absolute path); writes are handed to onWrite. */
@@ -62,6 +73,29 @@ export class AgentAuthError extends Error {
 
 const AUTH_REQUIRED = -32000
 
+/** Tool inputs and outputs beyond this are cut: a card shows what happened, not a whole file. */
+const MAX_TOOL_TEXT = 20_000
+
+/** A session belongs to an agent process; after a restart it is gone (unless the agent can load it). */
+export class SessionGoneError extends Error {
+  constructor() {
+    super('The agent restarted, so this conversation has to be reopened.')
+    this.name = 'SessionGoneError'
+  }
+}
+
+interface Session {
+  cwd: string
+  /** The turn in progress (null between turns). */
+  hooks: PromptHooks | null
+  text: string
+  /** Replaying history during session/load: we have it already, so updates are ignored. */
+  loading: boolean
+  tools: Map<string, AiToolCall>
+  /** Tool calls the user allowed "for this session" (see permissionKey). */
+  allowed: Set<string>
+}
+
 interface Running {
   child: ChildProcess
   conn: acp.ClientConnection
@@ -70,8 +104,8 @@ interface Running {
 
 export class AcpAgent {
   private running: Promise<Running> | null = null
-  /** sessionId -> its repository and the prompt it is running. */
-  private bySession = new Map<string, { cwd: string; hooks: PromptHooks; text: string }>()
+  /** sessionId -> its repository and the turn it is running. Cleared when the process goes. */
+  private bySession = new Map<string, Session>()
   /** The agent's last stderr lines: shown when it fails to start or dies. */
   private stderr = ''
   /** How many times the agent process has been started (tests use it to see restarts). */
@@ -179,8 +213,8 @@ export class AcpAgent {
     return e
   }
 
-  /** Run one request in a new session; resolves with the full reply. Abort the signal to cancel. */
-  async prompt(cwd: string, text: string, hooks: PromptHooks, signal?: AbortSignal): Promise<{ text: string; stopReason: string }> {
+  /** A new conversation in `cwd`. */
+  async openSession(cwd: string): Promise<string> {
     const { conn, init } = await this.start()
     let sessionId: string
     try {
@@ -188,22 +222,86 @@ export class AcpAgent {
     } catch (e) {
       throw this.authError(e, init)
     }
-    const entry = { cwd, hooks, text: '' }
+    this.bySession.set(sessionId, newSession(cwd))
+    return sessionId
+  }
+
+  /** The session still exists in the running agent (false after a restart). */
+  hasSession(sessionId: string): boolean {
+    return this.bySession.has(sessionId)
+  }
+
+  /** The running agent can reopen a session it had before a restart (ACP loadSession). */
+  async canLoad(): Promise<boolean> {
+    const { init } = await this.start()
+    return init.agentCapabilities?.loadSession === true
+  }
+
+  /**
+   * Reopen a session from an earlier agent process. The agent replays the conversation as
+   * session/update notifications; we already have it, so they are dropped.
+   */
+  async loadSession(sessionId: string, cwd: string): Promise<void> {
+    const { conn, init } = await this.start()
+    const entry = { ...newSession(cwd), loading: true }
     this.bySession.set(sessionId, entry)
+    try {
+      await conn.agent.request(acp.methods.agent.session.load, { sessionId, cwd, mcpServers: [] })
+    } catch (e) {
+      this.bySession.delete(sessionId)
+      throw this.authError(e, init)
+    } finally {
+      entry.loading = false
+    }
+  }
+
+  /**
+   * One turn in a session; resolves with the turn's whole reply once the agent ends it. Abort
+   * the signal to cancel (session/cancel; the agent then ends the turn as 'cancelled').
+   */
+  async prompt(sessionId: string, prompt: string | acp.ContentBlock[], hooks: PromptHooks, signal?: AbortSignal): Promise<{ text: string; stopReason: string }> {
+    const { conn, init } = await this.start()
+    const entry = this.bySession.get(sessionId)
+    if (!entry) throw new SessionGoneError()
+    if (entry.hooks) throw new Error('This conversation is still answering. Wait for it, or stop it first.')
+    entry.hooks = hooks
+    entry.text = ''
     const cancel = () => void conn.agent.notify(acp.methods.agent.session.cancel, { sessionId }).catch(() => {})
     signal?.addEventListener('abort', cancel, { once: true })
     try {
-      const res = await conn.agent.request(acp.methods.agent.session.prompt, { sessionId, prompt: [{ type: 'text', text }] })
+      const blocks = typeof prompt === 'string' ? [{ type: 'text' as const, text: prompt }] : prompt
+      const res = await conn.agent.request(acp.methods.agent.session.prompt, { sessionId, prompt: blocks })
       return { text: entry.text, stopReason: res.stopReason }
     } catch (e) {
       if (conn.signal.aborted) throw new Error(this.died())
       throw this.authError(e, init)
     } finally {
       signal?.removeEventListener('abort', cancel)
-      this.bySession.delete(sessionId)
-      // Free the agent's memory for it, where the agent supports that (an unstable capability).
-      const caps = init.agentCapabilities?.sessionCapabilities as Record<string, unknown> | undefined
-      if (caps?.close && !conn.signal.aborted) void conn.agent.request(acp.methods.agent.session.close, { sessionId }).catch(() => {})
+      entry.hooks = null
+    }
+  }
+
+  /** End a session: forget it, and free the agent's memory for it where the agent supports that. */
+  closeSession(sessionId: string): void {
+    if (!this.bySession.delete(sessionId)) return
+    const running = this.current
+    // An unstable capability: only agents that advertise it get the request.
+    const caps = running?.init.agentCapabilities?.sessionCapabilities as Record<string, unknown> | undefined
+    if (running && caps?.close && !running.conn.signal.aborted) void running.conn.agent.request(acp.methods.agent.session.close, { sessionId }).catch(() => {})
+  }
+
+  /** Answer later questions like this one in this session without asking ("Allow for this session"). */
+  rememberAllow(sessionId: string, ask: PermissionAsk): void {
+    this.bySession.get(sessionId)?.allowed.add(permissionKey(ask))
+  }
+
+  /** One request in a new session, closed afterwards (tests, and anything that needs no thread). */
+  async ask(cwd: string, text: string, hooks: PromptHooks, signal?: AbortSignal): Promise<{ text: string; stopReason: string }> {
+    const sessionId = await this.openSession(cwd)
+    try {
+      return await this.prompt(sessionId, text, hooks, signal)
+    } finally {
+      this.closeSession(sessionId)
     }
   }
 
@@ -222,30 +320,66 @@ export class AcpAgent {
 
   private onUpdate(n: acp.SessionNotification): void {
     const entry = this.bySession.get(n.sessionId)
-    if (!entry) return
+    const hooks = entry?.hooks
+    if (!entry || entry.loading || !hooks) return
     const u = n.update
-    if (u.sessionUpdate === 'agent_message_chunk' && u.content.type === 'text') {
-      entry.text += u.content.text
-      entry.hooks.onText?.(entry.text)
+    switch (u.sessionUpdate) {
+      case 'agent_message_chunk':
+        if (u.content.type !== 'text') return
+        entry.text += u.content.text
+        hooks.onText?.(entry.text)
+        return hooks.onUpdate?.({ kind: 'text', text: u.content.text })
+      case 'agent_thought_chunk':
+        if (u.content.type === 'text') hooks.onUpdate?.({ kind: 'thought', text: u.content.text })
+        return
+      case 'tool_call':
+      case 'tool_call_update': {
+        // An update names only what changed; the card shows the call as it is now.
+        const old = entry.tools.get(u.toolCallId)
+        const tool: AiToolCall = {
+          id: u.toolCallId,
+          title: u.title ?? old?.title ?? 'Tool call',
+          kind: u.kind ?? old?.kind ?? 'other',
+          status: u.status ?? old?.status ?? 'pending',
+          rawInput: u.rawInput !== undefined && u.rawInput !== null ? cut(json(u.rawInput)) : old?.rawInput,
+          locations: u.locations ? u.locations.map((l) => (l.line ? `${l.path}:${l.line}` : l.path)) : (old?.locations ?? []),
+          content: u.content ? toolContent(u.content) : (old?.content ?? []),
+        }
+        if (tool.rawInput === undefined) delete tool.rawInput
+        entry.tools.set(tool.id, tool)
+        return hooks.onUpdate?.({ kind: 'tool', tool })
+      }
+      case 'plan':
+        return hooks.onUpdate?.({ kind: 'plan', entries: u.entries.map((e) => ({ content: e.content, priority: e.priority, status: e.status })) })
+      case 'current_mode_update':
+        return hooks.onUpdate?.({ kind: 'meta', mode: u.currentModeId })
+      case 'available_commands_update':
+        return hooks.onUpdate?.({ kind: 'meta', commands: u.availableCommands.map((c) => c.name) })
+      default:
+        return
     }
   }
 
   private async onPermission(p: acp.RequestPermissionRequest): Promise<acp.RequestPermissionResponse> {
     const entry = this.bySession.get(p.sessionId)
     const cancelled: acp.RequestPermissionResponse = { outcome: { outcome: 'cancelled' } }
-    if (!entry) return cancelled
+    if (!entry?.hooks) return cancelled
     const paths = (p.toolCall.locations ?? []).map((l) => l.path)
+    const once = p.options.find((o) => o.kind === 'allow_once') ?? p.options.find((o) => o.kind === 'allow_always')
     // The one silent yes: reading files inside the repository.
     if (p.toolCall.kind === 'read' && paths.length && (await allInside(entry.cwd, paths))) {
-      const once = p.options.find((o) => o.kind === 'allow_once')
       if (once) return { outcome: { outcome: 'selected', optionId: once.optionId } }
     }
-    const optionId = await entry.hooks.onPermission({
+    const ask: PermissionAsk = {
       title: p.toolCall.title ?? 'The agent wants to use a tool',
       kind: p.toolCall.kind ?? 'other',
       paths,
+      ...(p.toolCall.rawInput !== undefined && p.toolCall.rawInput !== null ? { rawInput: cut(json(p.toolCall.rawInput)) } : {}),
       options: p.options.map((o) => ({ optionId: o.optionId, name: o.name, kind: o.kind })),
-    })
+    }
+    // The user said yes to exactly this earlier in the session.
+    if (once && entry.allowed.has(permissionKey(ask))) return { outcome: { outcome: 'selected', optionId: once.optionId } }
+    const optionId = await entry.hooks.onPermission(ask)
     return optionId && p.options.some((o) => o.optionId === optionId) ? { outcome: { outcome: 'selected', optionId } } : cancelled
   }
 
@@ -289,6 +423,40 @@ export async function allInside(dir: string, paths: string[]): Promise<boolean> 
     if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) return false
   }
   return true
+}
+
+function newSession(cwd: string): Session {
+  return { cwd, hooks: null, text: '', loading: false, tools: new Map(), allowed: new Set() }
+}
+
+/**
+ * What "Allow for this session" covers: the same kind of tool, the same title and the same
+ * input. Allowing `npm test` once for the session does not allow `rm -rf`.
+ */
+function permissionKey(ask: PermissionAsk): string {
+  return `${ask.kind}\n${ask.title}\n${ask.rawInput ?? ''}`
+}
+
+function json(v: unknown): string {
+  if (typeof v === 'string') return v
+  try {
+    return JSON.stringify(v, null, 2)
+  } catch {
+    return String(v)
+  }
+}
+
+function cut(text: string): string {
+  return text.length > MAX_TOOL_TEXT ? `${text.slice(0, MAX_TOOL_TEXT)}\n… ${text.length - MAX_TOOL_TEXT} more characters` : text
+}
+
+function toolContent(content: acp.ToolCallContent[]): AiToolContent[] {
+  return content.flatMap((c): AiToolContent[] => {
+    if (c.type === 'diff') return [{ type: 'diff', path: c.path, oldText: c.oldText == null ? null : cut(c.oldText), newText: cut(c.newText) }]
+    if (c.type === 'content' && c.content.type === 'text') return [{ type: 'text', text: cut(c.content.text) }]
+    // Terminals: we give the agent none. Images and resources: not shown in a git client.
+    return []
+  })
 }
 
 function toInfo(init: acp.InitializeResponse, launch: AgentLaunch): AgentInfo {

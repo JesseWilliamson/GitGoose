@@ -1,12 +1,13 @@
 import { Repo } from '@gitgoose/git'
 import { fakeAnthropic, makeFixture, tempDir, type FakeAnthropic } from '@gitgoose/fixtures'
 import { defaultSettings, type GitGooseEvent, type Settings } from '@gitgoose/shared'
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { SecretFile } from './keyStore'
 import { buildPrompt, cleanCommitMessage, MAX_DIFF_CHARS } from './prompts'
-import { AiService, previewOf } from './service'
+import { AiService, compact, previewOf } from './service'
+import { reduceThread, type AiThread, type AiUpdate } from '@gitgoose/shared'
 
 const FAKE = join(import.meta.dirname, '../../../e2e/fake-agent.mjs')
 const memoryKeychain = { secure: () => true, encrypt: (s: string) => Buffer.from(s), decrypt: (b: Buffer) => b.toString() }
@@ -16,7 +17,7 @@ afterEach(async () => {
   for (const f of cleanup.splice(0)) await f()
 })
 
-async function setup(patch: Partial<Settings> = {}, anthropic?: FakeAnthropic) {
+async function setup(patch: Partial<Settings> = {}, anthropic?: FakeAnthropic, extra: { threadIdleMs?: number; env?: Record<string, string> } = {}) {
   let settings: Settings = {
     ...defaultSettings(),
     aiProvider: 'agent',
@@ -38,8 +39,11 @@ async function setup(patch: Partial<Settings> = {}, anthropic?: FakeAnthropic) {
       events.push(e)
       // Answer permission questions like a user who allows everything.
       if (e.type === 'ai-permission') queueMicrotask(() => ai.respondPermission(e.request.permissionId, e.request.options[0]!.optionId))
+      // Permission cards in a thread: "Allow for this session".
+      if (e.type === 'ai-update' && e.update.kind === 'permission') queueMicrotask(() => ai.answerPermission(e.update.kind === 'permission' ? e.update.permission.permissionId : 0, 'session'))
     },
     anthropicBaseURL: anthropic?.url,
+    threadIdleMs: extra.threadIdleMs,
   })
   cleanup.push(() => ai.stop(), () => repo.dispose())
   return { ai, events, repo, r, get settings() { return settings } }
@@ -91,9 +95,202 @@ describe('AI service', () => {
     expect(api.requests[0]).toMatchObject({ model: 'claude-opus-5-5' })
     expect(api.requests[0]!.headers['x-api-key']).toBe('sk-ant-test')
     expect(api.requests[0]!.messages[0]!.content).toContain('! [rejected] main -> main')
+    // The system prompt goes on its own, not again at the top of the message.
+    expect(api.requests[0]!.system).toBe('You help people use git.')
+    expect(api.requests[0]!.messages[0]!.content).not.toContain('You help people use git.')
     expect(events.filter((e) => e.type === 'ai-text').length).toBeGreaterThan(0)
     await expect(ai.run('r4', 'x', { kind: 'resolve-conflict', path: 'a.txt' })).rejects.toMatchObject({ code: 'ai-unsupported' })
     expect(ai.agent.starts).toBe(0)
+  })
+})
+
+/** The thread as the renderer would see it: the thread from open, folded over the events. */
+function mirror(events: GitGooseEvent[], start: AiThread): AiThread {
+  return events.reduce((t, e) => (e.type === 'ai-update' && e.threadId === t.id ? reduceThread(t, e.requestId, e.update) : t), start)
+}
+
+/** Resolves once the turn `requestId` has ended (done or error). */
+async function ended(events: GitGooseEvent[], requestId: string): Promise<AiUpdate> {
+  for (let i = 0; i < 400; i++) {
+    const e = events.find((x) => x.type === 'ai-update' && x.requestId === requestId && (x.update.kind === 'done' || x.update.kind === 'error'))
+    if (e?.type === 'ai-update') return e.update
+    await new Promise((r) => setTimeout(r, 15))
+  }
+  throw new Error(`turn ${requestId} did not end`)
+}
+
+const replyOf = (t: AiThread) => t.turns.at(-1)!.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('')
+
+describe('threads', () => {
+  it('follow-ups go to the same session: the agent remembers, the renderer mirror matches main', async () => {
+    const t = await setup()
+    t.ai.consent()
+    const thread = await t.ai.openThread('x', { kind: 'free' })
+    // Opening sends nothing and starts nothing.
+    expect(t.ai.agent.starts).toBe(0)
+    const r1 = await t.ai.sendThread(thread.id, 'hello there')
+    await ended(t.events, r1)
+    const r2 = await t.ai.sendThread(thread.id, 'and again')
+    await ended(t.events, r2)
+    const seen = mirror(t.events, thread)
+    expect(replyOf(seen)).toBe('Turn 2. You said: and again.')
+    expect(seen.turns.map((x) => x.role)).toEqual(['user', 'agent', 'user', 'agent'])
+    // Saved for the repository, the same as the mirror.
+    expect(t.settings.aiThreads[t.repo.path]![0]).toEqual({ ...seen, repoId: '' })
+    expect(t.ai.listThreads('x')[0]!.id).toBe(thread.id)
+    expect(t.ai.agent.starts).toBe(1)
+  })
+
+  it('the first message carries the anchor context and the artifact protocol; later ones only the text', async () => {
+    const log = join(tempDir(), 'prompts.log')
+    process.env.FAKE_AGENT_LOG = log
+    cleanup.push(() => void delete process.env.FAKE_AGENT_LOG)
+    const t = await setup()
+    t.ai.consent()
+    const thread = await t.ai.openThread('x', { kind: 'free' })
+    await ended(t.events, await t.ai.sendThread(thread.id, 'first'))
+    await ended(t.events, await t.ai.sendThread(thread.id, 'second'))
+    const [one, two] = readFileSync(log, 'utf8').split('\n---\n')
+    expect(one).toContain('HEAD: main at')
+    expect(one).toContain('```json:commit-message')
+    expect(one!.trim().endsWith('first')).toBe(true)
+    expect(two!.trim()).toBe('second')
+  })
+
+  it('a feature run with keepThread is the first turn of a thread; a findings artifact is checked like the review', async () => {
+    const t = await setup()
+    t.ai.consent()
+    const res = await t.ai.run('rv', 'x', { kind: 'review', scope: { kind: 'staged' }, profile: 'chill' }, { keepThread: true })
+    expect(res.review!.findings).toHaveLength(1)
+    const thread = await t.ai.openThread('x', { kind: 'review', scope: { kind: 'staged' } }, res.threadId)
+    expect(thread.turns.map((x) => [x.role, x.feature, x.status])).toEqual([['user', 'Review: Staged changes', undefined], ['agent', 'Review: Staged changes', 'done']])
+    const r = await t.ai.sendThread(thread.id, 'Anything else? FAKE:findings')
+    await ended(t.events, r)
+    const art = mirror(t.events, thread).turns.at(-1)!.blocks.find((b) => b.type === 'artifact')
+    expect(art).toMatchObject({ type: 'artifact', artifact: 'findings' })
+    if (art?.type !== 'artifact') return
+    const checked = await t.ai.checkArtifact(thread.id, 'findings', art.json)
+    expect(checked.kind).toBe('findings')
+    if (checked.kind !== 'findings') return
+    // The invented file is thrown out exactly as in the review itself; what is left is marked.
+    expect(checked.review.findings.map((f) => [f.title, f.fromChat])).toEqual([['Found in chat', true]])
+    expect(checked.review.dropped.map((d) => d.title)).toEqual(['Invented in chat'])
+    // An artifact the anchor does not take is refused.
+    expect(await t.ai.checkArtifact(thread.id, 'plan', '{}')).toMatchObject({ kind: 'problem' })
+  })
+
+  it('a feature thread nobody opens still ends its session after the idle grace', async () => {
+    const t = await setup({}, undefined, { threadIdleMs: 60 })
+    t.ai.consent()
+    const res = await t.ai.run('w1', 'x', { kind: 'review', scope: { kind: 'staged' }, profile: 'chill' }, { keepThread: true })
+    expect(t.ai.liveThreads()).toEqual([res.threadId])
+    await new Promise((ok) => setTimeout(ok, 150))
+    expect(t.ai.liveThreads()).toEqual([])
+    // Saved, so the rail can still open it later.
+    expect(t.ai.listThreads('x').map((x) => x.id)).toEqual([res.threadId])
+  })
+
+  it('saves a compact thread: a long feature answer is cut, the conversation is kept', () => {
+    const at = 1
+    let thread: AiThread = { id: 't', repoId: 'r', anchor: { kind: 'free' }, title: '', turns: [], createdAt: at, updatedAt: at, head: '' }
+    thread = reduceThread(thread, 'a', { kind: 'turn', text: 'Review', feature: 'Review', at })
+    thread = reduceThread(thread, 'a', { kind: 'text', text: 'x'.repeat(20_000) })
+    thread = reduceThread(thread, 'b', { kind: 'turn', text: 'why?', at })
+    thread = reduceThread(thread, 'b', { kind: 'text', text: 'because' })
+    const saved = compact(thread)
+    expect(saved.repoId).toBe('')
+    const feature = saved.turns[1]!.blocks[0]
+    expect(feature?.type === 'text' && feature.text.length).toBeLessThan(8_100)
+    expect(saved.turns[3]!.blocks).toEqual([{ type: 'text', text: 'because' }])
+  })
+
+  it('a thread permission card: "Allow for this session" answers the same question again by itself', async () => {
+    const t = await setup()
+    t.ai.consent()
+    const thread = await t.ai.openThread('x', { kind: 'free' })
+    await ended(t.events, await t.ai.sendThread(thread.id, 'FAKE:permission'))
+    const seen = mirror(t.events, thread)
+    expect(replyOf(seen)).toBe('Turn 1. First: allowed, second: allowed.')
+    const cards = seen.turns.at(-1)!.blocks.filter((b) => b.type === 'permission')
+    expect(cards).toHaveLength(1)
+    expect(cards[0]).toMatchObject({ permission: { kind: 'execute', answer: 'session' } })
+    // Not the modal: that is for one-shot requests.
+    expect(t.events.some((e) => e.type === 'ai-permission')).toBe(false)
+  })
+
+  it('cancel stops the turn; the thread takes the next one', async () => {
+    const t = await setup()
+    t.ai.consent()
+    const thread = await t.ai.openThread('x', { kind: 'free' })
+    const r = await t.ai.sendThread(thread.id, 'FAKE:slow')
+    await expect(t.ai.sendThread(thread.id, 'too soon')).rejects.toMatchObject({ code: 'ai-busy' })
+    await new Promise((ok) => setTimeout(ok, 120))
+    t.ai.cancelThread(thread.id)
+    expect(await ended(t.events, r)).toEqual({ kind: 'done', stopReason: 'cancelled' })
+    await ended(t.events, await t.ai.sendThread(thread.id, 'next'))
+    // The stopped turn is not part of what the agent is told; its own session counted it.
+    expect(mirror(t.events, thread).turns.at(-3)!.status).toBe('cancelled')
+    expect(replyOf(mirror(t.events, thread))).toBe('Turn 2. You said: next.')
+  })
+
+  it('the agent crashing mid-thread: the turn fails; the next starts a new agent and replays the conversation', async () => {
+    const t = await setup()
+    t.ai.consent()
+    const thread = await t.ai.openThread('x', { kind: 'free' })
+    await ended(t.events, await t.ai.sendThread(thread.id, 'one'))
+    await ended(t.events, await t.ai.sendThread(thread.id, 'two'))
+    expect(await ended(t.events, await t.ai.sendThread(thread.id, 'FAKE:crash'))).toMatchObject({ kind: 'error', message: expect.stringContaining('agent stopped') })
+    await ended(t.events, await t.ai.sendThread(thread.id, 'three'))
+    // The crashed turn was left out of the replay (it would crash again).
+    expect(replyOf(mirror(t.events, thread))).toBe('Turn 3. You said: three. (replayed 2 earlier turns)')
+    expect(t.ai.agent.starts).toBe(2)
+  })
+
+  it('closing the view keeps the session for the idle grace, then ends it; reopening later replays from disk', async () => {
+    const t = await setup({}, undefined, { threadIdleMs: 60 })
+    t.ai.consent()
+    const thread = await t.ai.openThread('x', { kind: 'free' })
+    await ended(t.events, await t.ai.sendThread(thread.id, 'one'))
+    t.ai.closeThread(thread.id)
+    expect(t.ai.liveThreads()).toEqual([thread.id])
+    await new Promise((ok) => setTimeout(ok, 150))
+    expect(t.ai.liveThreads()).toEqual([])
+    const again = await t.ai.openThread('x', { kind: 'free' }, thread.id)
+    expect(again.turns).toHaveLength(2)
+    await ended(t.events, await t.ai.sendThread(again.id, 'two'))
+    expect(replyOf(mirror(t.events, again))).toBe('Turn 2. You said: two. (replayed 1 earlier turns)')
+  })
+
+  it('refuses before the turn starts: consent, and a secret in the message (sent redacted when asked)', async () => {
+    const TOKEN = 'ghp_' + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8'
+    const t = await setup()
+    const thread = await t.ai.openThread('x', { kind: 'free' })
+    await expect(t.ai.sendThread(thread.id, 'hi')).rejects.toMatchObject({ code: 'ai-consent' })
+    t.ai.consent()
+    await ended(t.events, await t.ai.sendThread(thread.id, 'hi'))
+    // The scan runs on every turn, not only the first.
+    await expect(t.ai.sendThread(thread.id, `my token is ${TOKEN}`)).rejects.toMatchObject({ code: 'ai-secrets' })
+    await ended(t.events, await t.ai.sendThread(thread.id, `my token is ${TOKEN}`, { redact: true }))
+    const seen = mirror(t.events, thread)
+    expect(JSON.stringify(seen)).not.toContain(TOKEN)
+    expect(replyOf(seen)).toBe('Turn 2. You said: my token is [REDACTED GitHub token].')
+  })
+
+  it('over the Anthropic API: every turn sends the whole conversation, with the longest-answer setting', async () => {
+    const api = await fakeAnthropic(['An answer.'])
+    cleanup.push(() => api.close())
+    const t = await setup({ aiProvider: 'anthropic' }, api)
+    t.ai.setApiKey('sk-ant-test')
+    t.ai.consent()
+    const thread = await t.ai.openThread('x', { kind: 'free' })
+    await ended(t.events, await t.ai.sendThread(thread.id, 'first'))
+    await ended(t.events, await t.ai.sendThread(thread.id, 'second'))
+    expect(api.requests).toHaveLength(2)
+    expect(api.requests[1]!.max_tokens).toBe(8192)
+    expect(api.requests[1]!.messages.map((m: { role: string }) => m.role)).toEqual(['user', 'assistant', 'user'])
+    expect(api.requests[1]!.messages[0]!.content).toContain('HEAD: main at')
+    expect(api.requests[1]!.messages[2]!.content).toBe('second')
+    expect(replyOf(mirror(t.events, thread))).toBe('An answer.')
   })
 })
 

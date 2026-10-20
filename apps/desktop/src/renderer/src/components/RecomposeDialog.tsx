@@ -1,6 +1,6 @@
 import type { RecomposeProposal, RecomposeUnitInfo } from '@gitgoose/shared'
 import clsx from 'clsx'
-import { ArrowDown, ArrowUp, CircleAlert, GripVertical, Plus, Redo2, RotateCcw, Sparkles, Trash2, Undo2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, CircleAlert, GripVertical, MessagesSquare, Plus, Redo2, RotateCcw, Sparkles, Trash2, Undo2 } from 'lucide-react'
 import { ContextMenu, DropdownMenu } from 'radix-ui'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { run } from '../lib/actions'
@@ -10,6 +10,8 @@ import { splitPath } from '../lib/format'
 import { history, push, redo, undo, type History } from '../lib/history'
 import { addCommit, draftProblems, editMessage, moveCommit, moveUnit, removeEmpty, squashCommits, type Draft } from '../lib/recomposeDraft'
 import { toast, updateRepo, useStore } from '../lib/store'
+import { useThread } from '../lib/thread'
+import { Thread } from './Thread'
 import { Button, CM, DM, Modal, Spinner } from './ui'
 
 /**
@@ -25,14 +27,14 @@ import { Button, CM, DM, Modal, Spinner } from './ui'
  */
 
 export function recomposeWithAi(repoId: string, hashes: string[]): void {
-  const r = startAi(repoId, { kind: 'recompose', hashes })
+  const r = startAi(repoId, { kind: 'recompose', hashes }, undefined, { keepThread: true })
   useAi.setState({ recompose: { repoId, hashes, requestId: r.requestId, proposal: null, error: null } })
   const mine = (s: ReturnType<typeof useAi.getState>) => s.recompose?.requestId === r.requestId
   r.done.then(
     (res) => useAi.setState((s) => {
       if (!mine(s)) return s
       if (!res?.recompose) return { recompose: null } // cancelled or not set up (already reported)
-      return { recompose: { ...s.recompose!, requestId: null, proposal: res.recompose } }
+      return { recompose: { ...s.recompose!, requestId: null, proposal: res.recompose, threadId: res.threadId } }
     }),
     (e) => useAi.setState((s) => (mine(s) ? { recompose: { ...s.recompose!, requestId: null, error: toUiError(e).message } } : s)),
   )
@@ -56,7 +58,7 @@ export function RecomposeDialog() {
       }}>
       <div data-testid="recompose-dialog" className="text-[13px]">
         {state.proposal ? (
-          <Review key={state.requestId ?? 'review'} repoId={state.repoId} proposal={state.proposal} close={close} />
+          <Review key={state.requestId ?? 'review'} repoId={state.repoId} proposal={state.proposal} close={close} threadId={state.threadId} incoming={state.incoming} />
         ) : state.error ? (
           <>
             <div className="flex items-start gap-2 text-del" data-testid="recompose-error"><CircleAlert size={15} className="mt-px shrink-0" /> {state.error}</div>
@@ -118,7 +120,14 @@ function settle(ghost: HTMLElement, from: { left: number; top: number }, to: DOM
   motion.finished.then(cleanup, cleanup)
 }
 
-function Review({ repoId, proposal, close }: { repoId: string; proposal: RecomposeProposal; close: () => void }) {
+function Review({ repoId, proposal, close, threadId, incoming }: {
+  repoId: string; proposal: RecomposeProposal; close: () => void
+  /** The conversation the proposal came from: the chat column talks on in it. */
+  threadId?: string
+  /** A plan applied from the chat. */
+  incoming?: { commits: RecomposeProposal['commits']; nonce: number }
+}) {
+  const [chat, setChat] = useState(false)
   /** The plan, with everything done to it so far (Ctrl+Z / Ctrl+Shift+Z step through). */
   const [hist, setHist] = useState<History<Draft>>(() => history(structuredClone(proposal.commits)))
   const draft = hist.present
@@ -137,6 +146,14 @@ function Review({ repoId, proposal, close }: { repoId: string; proposal: Recompo
   const settled = (token: number) => () => { if (drags.current === token) setDrag(null) }
   const busy = useStore((s) => !!s.repos[repoId]?.busy)
   useEffect(() => setHist(history(structuredClone(proposal.commits))), [proposal])
+  // A plan from the chat replaces the editor's plan as one step: Undo goes back to what you had.
+  useEffect(() => {
+    if (!incoming) return
+    setHist((h) => push(h, structuredClone(incoming.commits)))
+    setCursor(0)
+    setPicked([0])
+    setAnchor(0)
+  }, [incoming?.nonce])
   const units = useMemo(() => new Map(proposal.units.map((u) => [u.id, u])), [proposal])
   const order = useMemo(() => proposal.units.map((u) => u.id), [proposal])
   const problems = draftProblems(draft)
@@ -324,6 +341,8 @@ function Review({ repoId, proposal, close }: { repoId: string; proposal: Recompo
         <span className="flex-1" />
         <Button size="sm" variant="ghost" disabled={!hist.past.length} onClick={() => { update(() => structuredClone(proposal.commits)); focus(0) }} data-testid="recompose-reset"
           title="Back to what the AI proposed (undoable)"><RotateCcw size={12} /> Reset to proposal</Button>
+        <Button size="sm" variant={chat ? 'default' : 'ghost'} onClick={() => setChat(!chat)} data-testid="recompose-chat-toggle"
+          title='Ask the AI to change the plan ("put the tests in their own commit")'><MessagesSquare size={12} /> Chat</Button>
       </div>
       {proposal.onRemote.length > 0 && (
         <p className="mb-2 flex items-start gap-1.5 rounded bg-warn/10 px-2 py-1.5 text-xs text-warn" data-testid="recompose-remote">
@@ -439,6 +458,7 @@ function Review({ repoId, proposal, close }: { repoId: string; proposal: Recompo
             </div>
           </div>
         )}
+        {chat && <RecomposeChat repoId={repoId} hashes={proposal.hashes} threadId={threadId} />}
       </div>
 
       <div className="mt-3 flex items-center gap-3">
@@ -454,6 +474,21 @@ function Review({ repoId, proposal, close }: { repoId: string; proposal: Recompo
           Create {draft.length} {draft.length === 1 ? 'commit' : 'commits'}
         </Button>
       </div>
+    </div>
+  )
+}
+
+/**
+ * The chat beside the plan. A revised plan comes back as a card; Apply makes it the editor's
+ * plan as one undo step (checked first by the same repair as the AI's first proposal).
+ */
+function RecomposeChat({ repoId, hashes, threadId }: { repoId: string; hashes: string[]; threadId?: string }) {
+  const thread = useThread(repoId, { kind: 'recompose', hashes }, threadId)
+  return (
+    // Keys typed here are the chat's: Ctrl+Z in its box must not step the plan's history.
+    <div className="flex w-80 shrink-0 flex-col border-l border-line" data-testid="recompose-chat" onKeyDown={(e) => e.stopPropagation()}>
+      {thread ? <Thread thread={thread} repoId={repoId} className="min-h-0 flex-1" placeholder="Put the tests in their own commit…"
+        hint="Ask for a different split, order or messages. A revised plan comes back as a card you can apply (and undo)." /> : <div className="flex flex-1 items-center justify-center"><Spinner /></div>}
     </div>
   )
 }
