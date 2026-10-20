@@ -4,7 +4,7 @@ import { CONFLICT_BRANCH, CONFLICT_BRANCHES, makeDevRepo } from './devrepo'
 
 const git = (dir: string, ...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' })
 
-describe('development repository', () => {
+describe.skipIf(process.platform === 'win32')('development repository', () => {
   it('has the promised shape', () => {
     const t = Date.now()
     const { dir, authors } = makeDevRepo({ commits: 1500 })

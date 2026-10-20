@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { applicationsDir, installDevDesktopEntry } from './linuxDesktop'
 
-describe('dev desktop entry', () => {
+describe.skipIf(process.platform !== 'linux')('dev desktop entry', () => {
   it('writes an entry whose name matches the app_id and points at the icon, once', () => {
     const dir = join(tempDir('gitgoose-apps-'), 'applications')
     const opts = { icon: '/src/build/icon.png', repo: '/src', dir }

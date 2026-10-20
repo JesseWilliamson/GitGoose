@@ -38,7 +38,7 @@ afterEach(() => {
   process.env.PATH = savedPath
 })
 
-describe('running git on the host from a flatpak sandbox', () => {
+describe.skipIf(process.platform !== 'linux')('running git on the host from a flatpak sandbox', () => {
   it('detects the sandbox from FLATPAK_ID', () => {
     expect(inFlatpakSandbox({})).toBe(false)
     expect(inFlatpakSandbox({ FLATPAK_ID: 'dev.gitgoose.app' })).toBe(true)
