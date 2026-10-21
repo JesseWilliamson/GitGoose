@@ -372,6 +372,8 @@ export interface StashEntry {
 export interface BlameLine {
   hash: string
   author: string
+  /** The author's address, for their avatar. */
+  email: string
   date: number
   summary: string
   lineNo: number

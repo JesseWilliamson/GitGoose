@@ -125,7 +125,7 @@ test('discard asks first when the confirmation setting is on', async () => {
   await page.getByTestId('wip-row').click()
   const row = page.getByTestId('unstaged-file').first()
   await row.hover()
-  await row.getByTitle('Discard changes (undoable)').click()
+  await row.getByTitle('Discard changes').click()
   await expect(page.getByRole('dialog')).toContainText('Discard changes?')
   await page.getByRole('dialog').getByRole('button', { name: 'Discard' }).click()
   await expect(page.getByTestId('wip-row')).toHaveCount(0)
@@ -140,7 +140,7 @@ test('one-line graph rows and hiding tags change the graph', async () => {
   expect((await page.getByTestId('commit-row').first().boundingBox())!.height).toBe(52)
   await set(page, { graphStyle: 'compact', showTags: false })
   await expect(page.locator('[data-testid="ref-pill"][data-ref="refs/tags/v0.2"]')).toHaveCount(0)
-  await expect.poll(async () => (await page.getByTestId('commit-row').first().boundingBox())!.height).toBe(28)
+  await expect.poll(async () => (await page.getByTestId('commit-row').first().boundingBox())!.height).toBe(32)
   await app.close()
 })
 

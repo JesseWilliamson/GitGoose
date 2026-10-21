@@ -33,32 +33,36 @@
  * otherwise it is lane 1, next to the trunk. Commits above HEAD see it as taken and go further
  * right; when HEAD arrives it lands there (or in lane 0, if the trunk's line reaches it first).
  *
- * Those two reservations have one cost: a branch sitting on top of the trunk (or of HEAD) has its
- * tip arrive *before* the commit the reserved lane waits for, so it would open a lane to the right
- * and curve back in. The layout streams, so it cannot know when the tip arrives that its line will
- * reach the trunk. Git can: the snapshot lists the tips whose first-parent chain runs straight
- * down to the trunk tip (`straight.overTrunk`) or to HEAD (`straight.overHead`), and the layout
- * lets such a tip continue the reserved line instead (ADR-003, "A branch on top of a reserved
- * line continues it"):
+ * The dashed line to HEAD is always straight: HEAD's lane is HEAD's column from the top of the
+ * graph down to HEAD's node, and nothing ever moves it (ADR-003, "The dashed line to HEAD is
+ * straight").
+ *
+ * The trunk reservation has one cost: a branch sitting on top of the trunk has its tip arrive
+ * *before* the trunk tip, so it would open a lane to the right and curve back in. The layout
+ * streams, so it cannot know when the tip arrives that its line will reach the trunk. Git can:
+ * the snapshot lists the tips whose first-parent chain runs straight down to the trunk tip
+ * (`straight.overTrunk`) or to HEAD (`straight.overHead`), and the layout uses them (ADR-003,
+ * "A branch on top of a reserved line continues it"):
  *   A. A tip in overTrunk arriving while lane 0 is held takes lane 0, and the hold ends.
- *   B. A tip in overHead arriving while HEAD's lane is still pending takes that column, and the
- *      pending (dashed) line steps aside to the first free column on its right.
- * And when HEAD itself is in overTrunk, its lane is lane 0 from the start, as if it were a trunk tip.
+ *   HEAD on the trunk's line: when HEAD is in overTrunk (on top of the trunk) or a trunk tip is in
+ *   overHead (HEAD is an older trunk commit), HEAD's lane is lane 0 from the start, as if it were a
+ *   trunk tip, so its dashed line and the trunk are one straight line.
+ * A branch on top of HEAD gets a column of its own and joins HEAD at HEAD's node: the dashed
+ * line already owns HEAD's column above HEAD.
  */
 
 export interface LayoutCommit {
   hash: string
   parents: readonly string[]
+  /** A stash (it keeps only its base as parent): its line down to the base is marked `stash`. */
+  stash?: boolean
 }
 
 export type EdgePart = 'pass' | 'top' | 'bottom'
 
 export interface Edge {
   part: EdgePart
-  /**
-   * Column at the start of the line (top edge for pass/top, the node for bottom). A 'pass' ends in
-   * the same column, except the pending line where rule B moves it aside (then `to` > `from`).
-   */
+  /** Column at the start of the line (top edge for pass/top, the node for bottom). A 'pass' ends in the same column. */
   from: number
   /** Column at the end of the line (bottom edge for pass/bottom, the node for top). */
   to: number
@@ -72,6 +76,8 @@ export interface Edge {
    * "uncommitted changes" row at the top to HEAD, and hides it when there are no changes.
    */
   pending?: boolean
+  /** The line from a stash down to the commit it was made on. The UI draws it dashed: it is not history. */
+  stash?: boolean
 }
 
 export interface Row {
@@ -90,6 +96,8 @@ interface Lane {
   hash: string
   /** The seeded HEAD lane, before HEAD has been reached. */
   pending?: boolean
+  /** Runs from a stash to its base. */
+  stash?: boolean
 }
 
 export interface LayoutOptions {
@@ -133,8 +141,9 @@ export class GraphLayout {
     this.overTrunk = new Set(opts.straight?.overTrunk)
     this.overHead = new Set(opts.straight?.overHead)
     const trunk = opts.trunk ?? []
-    // HEAD on the trunk line (a trunk tip, or straight on top of one) shares lane 0 with it.
-    const headOnTrunk = !!opts.head && (trunk.includes(opts.head) || this.overTrunk.has(opts.head))
+    // HEAD on the trunk line (a trunk tip, straight on top of one, or below one on its first-parent
+    // line) shares lane 0 with it.
+    const headOnTrunk = !!opts.head && (trunk.includes(opts.head) || this.overTrunk.has(opts.head) || trunk.some((t) => this.overHead.has(t)))
     if (trunk.length && !headOnTrunk) {
       this.trunk = new Set(trunk)
       this.lanes[0] = null
@@ -170,9 +179,6 @@ export class GraphLayout {
     for (let i = 0; i < lanes.length; i++) if (lanes[i]?.hash === commit.hash) incoming.push(i)
 
     let lane: number
-    // Rule B moves the pending HEAD line from one column to another on this row.
-    let moved = -1
-    let movedTo = -1
     const tip = incoming.length === 0
     if (this.trunk?.has(commit.hash)) {
       lane = 0
@@ -182,41 +188,30 @@ export class GraphLayout {
       // Only take lane 0 if it is unoccupied; otherwise a second-parent reservation would be lost.
       lane = 0
       this.trunk = null
-    } else if (tip && this.overHead.has(commit.hash) && (moved = lanes.findIndex((l) => l?.pending)) >= 0) {
-      // Rule B: its first-parent chain leads to HEAD; it continues HEAD's column and the dashed
-      // line to HEAD steps aside.
-      lane = moved
-      movedTo = this.freeSlot(-1, moved + 1)
     } else {
       lane = incoming.length ? incoming[0]! : this.freeSlot()
     }
     const color = this.colorOf(lane)
 
-    // Lines from the top edge: either into this node, or past it (straight down, or for the
-    // pending line moved by rule B, across to its new column).
+    // Lines from the top edge: either into this node, or straight past it.
     for (let i = 0; i < lanes.length; i++) {
       const l = lanes[i]
       if (!l) continue
-      const pending = l.pending ? { pending: true } : {}
+      const pending = l.pending ? { pending: true } : l.stash ? { stash: true } : {}
       if (l.hash === commit.hash) {
         edges.push({ part: 'top', from: i, to: lane, color: this.colorOf(i), ...pending })
-      } else if (i === moved) {
-        edges.push({ part: 'pass', from: i, to: movedTo, color: this.colorOf(movedTo), ...pending })
       } else {
         edges.push({ part: 'pass', from: i, to: i, color: this.colorOf(i), ...pending })
       }
     }
     for (const i of incoming) lanes[i] = null
-    if (movedTo >= 0) {
-      lanes[movedTo] = lanes[moved]!
-      lanes[moved] = null
-    }
 
     // 2 and 3. Hand the parents down.
     const [first, ...rest] = commit.parents
     if (first !== undefined) {
-      lanes[lane] = { hash: first }
-      edges.push({ part: 'bottom', from: lane, to: lane, color })
+      const stash = commit.stash ? { stash: true } : {}
+      lanes[lane] = { hash: first, ...stash }
+      edges.push({ part: 'bottom', from: lane, to: lane, color, ...stash })
     }
     for (const p of rest) {
       let target = lanes.findIndex((l) => l?.hash === p)

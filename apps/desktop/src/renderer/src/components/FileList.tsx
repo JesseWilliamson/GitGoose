@@ -43,7 +43,8 @@ export function FileRow({ path, oldPath, kind, selected, onClick, actions, stats
   oldPath?: string
   kind: ChangeKind | 'untracked'
   selected?: boolean
-  onClick?: () => void
+  /** Gets the click, so a list can read Shift and Ctrl/Cmd for selecting several files. */
+  onClick?: (e: React.MouseEvent) => void
   actions?: ReactNode
   stats?: ReactNode
   testId?: string
@@ -55,7 +56,10 @@ export function FileRow({ path, oldPath, kind, selected, onClick, actions, stats
   const row = (
     <div
       onClick={onClick}
+      // Shift-click would otherwise also select the text between the two rows.
+      onMouseDown={(e) => e.shiftKey && e.preventDefault()}
       data-testid={testId}
+      data-selected={selected || undefined}
       data-path={path}
       draggable={!!drag}
       onDragStart={drag ? (e) => startDrag(e.dataTransfer, drag) : undefined}
@@ -81,6 +85,12 @@ export function FileRow({ path, oldPath, kind, selected, onClick, actions, stats
   )
 }
 
+export interface FileLayout {
+  depth: number
+  tree: boolean
+  order: string[]
+}
+
 /**
  * A list of changed files, flat or as a folder tree (Settings → Appearance, or the toggle in
  * FileListTools), narrowed by a filter. Folder rows can carry actions for all files under them
@@ -90,14 +100,18 @@ export function FileListView<T>({ items, pathOf, filter, renderFile, folderActio
   items: T[]
   pathOf: (item: T) => string
   filter: string
-  renderFile: (item: T, layout: { depth: number; tree: boolean }) => ReactNode
+  /** `order` is every file row as shown, top to bottom: what a Shift-click range runs along. */
+  renderFile: (item: T, layout: FileLayout) => ReactNode
   folderActions?: (paths: string[]) => ReactNode
   testId?: string
 }) {
   const tree = useSetting('fileTree')
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
   const shown = filter.trim() ? items.filter((i) => matchesFilter(pathOf(i), filter)) : items
-  if (!tree) return <>{shown.map((i) => renderFile(i, { depth: 0, tree: false }))}</>
+  if (!tree) {
+    const order = shown.map(pathOf)
+    return <>{shown.map((i) => renderFile(i, { depth: 0, tree: false, order }))}</>
+  }
   const byPath = new Map(shown.map((i) => [pathOf(i), i]))
   const toggle = (path: string) => setCollapsed((c) => {
     const next = new Set(c)
@@ -105,10 +119,12 @@ export function FileListView<T>({ items, pathOf, filter, renderFile, folderActio
     else next.add(path)
     return next
   })
+  const rows = treeRows([...byPath.keys()], collapsed)
+  const order = rows.filter((r) => r.kind === 'file').map((r) => r.path)
   return (
     <>
-      {treeRows([...byPath.keys()], collapsed).map((r) => r.kind === 'file' ? (
-        <div key={r.path}>{renderFile(byPath.get(r.path)!, { depth: r.depth, tree: true })}</div>
+      {rows.map((r) => r.kind === 'file' ? (
+        <div key={r.path}>{renderFile(byPath.get(r.path)!, { depth: r.depth, tree: true, order })}</div>
       ) : (
         <div key={`dir:${r.path}`} onClick={() => toggle(r.path)} data-testid={testId ? `${testId}-folder` : undefined} data-path={r.path}
           style={{ paddingLeft: 12 + r.depth * 14 }}

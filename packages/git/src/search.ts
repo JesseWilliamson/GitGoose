@@ -4,7 +4,7 @@ import type { GitRunner } from './runner'
 
 /**
  * GitKraken-style search: one query matched against every field at once (message, author name
- * and email, SHA prefix, branch and tag names), returning hits in graph order so "3 of 12" steps
+ * and email, any part of the SHA, branch and tag names), returning hits in graph order so "3 of 12" steps
  * through them top to bottom.
  *
  * Why one pass in JS instead of `git log --grep … --author …`: git can OR a message pattern with
@@ -32,7 +32,10 @@ export interface LogSearchOptions {
 export function matchesCommit(q: string, c: { hash: string; author: string; email: string; message: string; refs?: string[] }): boolean {
   const needle = q.trim().toLowerCase()
   if (!needle) return false
-  if (/^[0-9a-f]{4,40}$/.test(needle) && c.hash.startsWith(needle)) return true
+  // Any run of the hash, not only its start: a SHA copied from the middle of a log line, a CI
+  // page or a full 40 (or 64, SHA-256) character hash all find their commit. Two characters can
+  // still only be a prefix: as a substring "ab" is in about one hash in seven.
+  if (/^[0-9a-f]{2,64}$/.test(needle) && (needle.length >= 4 ? c.hash.includes(needle) : c.hash.startsWith(needle))) return true
   if (c.message.toLowerCase().includes(needle)) return true
   if (c.author.toLowerCase().includes(needle) || c.email.toLowerCase().includes(needle)) return true
   return !!c.refs?.some((r) => r.toLowerCase().includes(needle))

@@ -7,6 +7,10 @@ continues it" and "satisfies invariants with straight tips" (`pnpm test packages
 **Background:** ADR-003, sections "Lane 0 is the trunk, not HEAD" and "A branch on top of a
 reserved line continues it"; exercise 1 first if you have not done it
 
+> **Since written:** rule B is gone (ADR-003, "The dashed line to HEAD is straight"): the dashed
+> line to HEAD never moves, so only rule A is left in `next()`. The steps below that mention rule B
+> are now a question of history: check out the commit before it was removed to try them.
+
 ## The idea in one paragraph
 
 The layout reserves two columns before it has seen any commit: lane 0 for the trunk, and HEAD's

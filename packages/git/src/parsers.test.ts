@@ -201,6 +201,7 @@ describe('blame and stash', () => {
     const lines = parseBlame(r.git('blame', '--porcelain', '--', 'file.txt'))
     expect(lines).toHaveLength(5)
     expect(lines.every((l) => l.hash === r.head() && l.summary === 'Commit 5' && l.author === 'Ada Lovelace')).toBe(true)
+    expect(lines[0]!.email).toBe('ada@example.com')
     expect(lines.map((l) => l.lineNo)).toEqual([1, 2, 3, 4, 5])
   })
 

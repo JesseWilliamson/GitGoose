@@ -33,9 +33,8 @@ function logOf(dir: string, order: (typeof ORDERS)[number] = '--date-order'): La
  * Invariants every layout must satisfy, whatever the history:
  * - every parent link is drawn: a 'bottom' edge from the child's lane to some lane L, then that
  *   lane passes straight down until a 'top' edge brings it into the parent's node
- * - lines never jump: a 'pass' edge stays in its column, and two lines never share a column
- * - the one exception is the dashed line to HEAD, which rule B moves aside: it may cross the row
- *   diagonally, out of the node's column into a free one on its right
+ * - lines never jump: a 'pass' edge stays in its column (HEAD's dashed line too), and two lines
+ *   never share a column
  */
 function checkInvariants(commits: LayoutCommit[], rows: Row[]): void {
   const index = new Map(commits.map((c, i) => [c.hash, i]))
@@ -46,10 +45,8 @@ function checkInvariants(commits: LayoutCommit[], rows: Row[]): void {
       const cols = passes.map((e) => e[side])
       expect(new Set(cols).size, `row ${i}: two lines share a column`).toBe(cols.length)
     }
-    const diagonal = passes.filter((e) => e.from !== e.to)
-    expect(diagonal.every((e) => e.pending && e.from === row.lane && e.to > e.from), `row ${i}: a line jumps`).toBe(true)
+    expect(passes.every((e) => e.from === e.to), `row ${i}: a line jumps`).toBe(true)
     expect(passes.map((e) => e.to), `row ${i}: a line passes through the node`).not.toContain(row.lane)
-    expect(passes.filter((e) => e.from === e.to).map((e) => e.from), `row ${i}: a line passes through the node`).not.toContain(row.lane)
     for (const p of commits[i]!.parents) {
       const j = index.get(p)
       if (j === undefined) continue // parent outside the loaded range
@@ -175,10 +172,19 @@ describe('layout', () => {
   })
 
   it('lets HEAD join the trunk lane when HEAD is behind it', () => {
-    // Checked out an older trunk commit (B): the trunk line reaches it first, in lane 0.
+    // Checked out an older trunk commit (B). Without git's hints the trunk line reaches it first,
+    // in lane 0, and the dashed line has to turn into it at the end.
     const rows = layout([c('C', 'B'), c('B', 'A'), c('A')], { head: 'B', trunk: ['C'] })
     expect(rows.map((r) => r.lane)).toEqual([0, 0, 0])
     expect(rows[1]!.edges).toContainEqual({ part: 'top', from: 1, to: 0, color: 1, pending: true })
+    // With them (C is straight over HEAD), HEAD owns lane 0 from the top: the dashed line runs
+    // straight down to it, and the newer trunk commit joins from beside it.
+    const g = new GraphLayout({ head: 'B', trunk: ['C'], straight: { overTrunk: [], overHead: ['C'] } })
+    expect(g.headLane).toBe(0)
+    const hinted = g.push([c('C', 'B'), c('B', 'A'), c('A')])
+    expect(hinted.map((r) => r.lane)).toEqual([1, 0, 0])
+    expect(hinted[0]!.edges).toContainEqual({ part: 'pass', from: 0, to: 0, color: 0, pending: true })
+    expect(hinted[1]!.edges).toContainEqual({ part: 'top', from: 0, to: 0, color: 0, pending: true })
   })
 
   describe('a branch on top of a reserved line continues it', () => {
@@ -195,6 +201,8 @@ describe('layout', () => {
         expect(e, `${r.hash}: the dashed line to HEAD is cut`).toBeDefined()
         if (r.hash === head) {
           expect(e!.part).toBe('top')
+          // Straight into the node: the line never turned.
+          expect(e!.to).toBe(col)
           return cols
         }
         expect(e!.part).toBe('pass')
@@ -209,9 +217,10 @@ describe('layout', () => {
       const rows = layout(onTop, { trunk: ['B'], straight: { overTrunk: ['Z'], overHead: [] } })
       expect(ascii(rows)).toEqual(['* Z', '* Y', '* X', '* B', '* A'])
       checkInvariants(onTop, rows)
-      // Checked out elsewhere (HEAD = A, behind main): HEAD's line runs beside the branch.
+      // Checked out an older trunk commit (HEAD = A, behind main): HEAD's dashed line runs straight
+      // down lane 0, and the newer commits, main's tip included, join it from lane 1.
       const behind = layout(onTop, { head: 'A', trunk: ['B'], straight: { overTrunk: ['Z'], overHead: ['Z', 'B'] } })
-      expect(behind.map((r) => r.lane)).toEqual([0, 0, 0, 0, 0])
+      expect(behind.map((r) => r.lane)).toEqual([1, 1, 1, 1, 0])
       checkInvariants(onTop, behind)
     })
 
@@ -224,24 +233,22 @@ describe('layout', () => {
       checkInvariants(onTop, rows)
     })
 
-    it('branch on top of HEAD with WIP: the tip takes HEAD\'s column, the dashed line steps aside', () => {
-      // HEAD = B = main. Z is over both the trunk and HEAD: lane 0 for the branch, dashed line to lane 1.
+    it('branch on top of HEAD with WIP: the dashed line keeps HEAD\'s column, straight; the branch goes beside it', () => {
+      // HEAD = B = main. Z is over both the trunk and HEAD, but the dashed line owns lane 0 above B.
       const g = new GraphLayout({ head: 'B', trunk: ['B'], straight: { overTrunk: ['Z'], overHead: ['Z'] } })
       const rows = g.push(onTop)
-      expect(rows.map((r) => r.lane)).toEqual([0, 0, 0, 0, 0])
-      expect(rows[0]!.edges).toContainEqual({ part: 'pass', from: 0, to: 1, color: 1, pending: true })
-      expect(rows[1]!.edges).toContainEqual({ part: 'pass', from: 1, to: 1, color: 1, pending: true })
-      // ...and curves into B, where it ends.
-      expect(rows[3]!.edges).toContainEqual({ part: 'top', from: 1, to: 0, color: 1, pending: true })
-      expect(pendingPath(rows, 'B', g.headLane)).toEqual([0, 1, 1, 1])
+      expect(rows.map((r) => r.lane)).toEqual([1, 1, 1, 0, 0])
+      expect(pendingPath(rows, 'B', g.headLane)).toEqual([0, 0, 0, 0])
+      // The branch joins HEAD at its node, from beside it.
+      expect(rows[3]!.edges).toContainEqual({ part: 'top', from: 1, to: 0, color: 1 })
       checkInvariants(onTop, rows)
 
-      // HEAD off the trunk (H on a side branch from A, older than Z): rule B alone, in lane 1.
+      // HEAD off the trunk (H on a side branch from A, older than Z).
       const side = [c('Z', 'Y'), c('Y', 'H'), c('H', 'A'), c('B', 'A'), c('A')]
       const g2 = new GraphLayout({ head: 'H', trunk: ['B'], straight: { overTrunk: [], overHead: ['Z'] } })
       const rows2 = g2.push(side)
-      expect(rows2.map((r) => [r.hash, r.lane])).toEqual([['Z', 1], ['Y', 1], ['H', 1], ['B', 0], ['A', 0]])
-      expect(pendingPath(rows2, 'H', g2.headLane)).toEqual([1, 2, 2])
+      expect(rows2.map((r) => [r.hash, r.lane])).toEqual([['Z', 2], ['Y', 2], ['H', 1], ['B', 0], ['A', 0]])
+      expect(pendingPath(rows2, 'H', g2.headLane)).toEqual([1, 1, 1])
       checkInvariants(side, rows2)
     })
 
@@ -271,7 +278,7 @@ describe('layout', () => {
       checkInvariants(stacked, rows)
     })
 
-    it('colours stay per column, including the dashed line that steps aside', () => {
+    it('colours stay per column, including the dashed line', () => {
       const two = [c('Z', 'Y'), c('Q', 'P'), c('Y', 'X'), c('P', 'B'), c('X', 'B'), c('B', 'A'), c('A')]
       const rows = layout(two, { head: 'B', trunk: ['B'], straight: { overTrunk: ['Z', 'Q'], overHead: ['Z', 'Q'] } })
       for (const r of rows) {
@@ -293,6 +300,20 @@ describe('layout', () => {
     })
   })
 
+  it('marks a stash\'s line down to its base, and only that line', () => {
+    // A stash (S) made on B, beside the branch tip C.
+    const commits: LayoutCommit[] = [{ hash: 'S', parents: ['B'], stash: true }, c('C', 'B'), c('B', 'A'), c('A')]
+    const rows = layout(commits)
+    expect(rows.map((r) => r.lane)).toEqual([0, 1, 0, 0])
+    expect(rows[0]!.edges).toEqual([{ part: 'bottom', from: 0, to: 0, color: 0, stash: true }])
+    expect(rows[1]!.edges).toContainEqual({ part: 'pass', from: 0, to: 0, color: 0, stash: true })
+    expect(rows[2]!.edges).toContainEqual({ part: 'top', from: 0, to: 0, color: 0, stash: true })
+    // C's line into B, and everything below B, is ordinary history.
+    expect(rows[2]!.edges).toContainEqual({ part: 'top', from: 1, to: 0, color: 1 })
+    expect(rows.slice(2).flatMap((r) => r.edges).filter((e) => e.part !== 'top' && e.stash)).toEqual([])
+    checkInvariants(commits, rows)
+  })
+
   /** What Repo.straightTips computes, the slow and obvious way: is the base on the tip's first-parent chain? */
   function straightOf(dir: string, base: string): string[] {
     const git = (...a: string[]) => execFileSync('git', a, { cwd: dir, encoding: 'utf8' })
@@ -309,7 +330,10 @@ describe('layout', () => {
       const opts = { head, trunk: [main], straight: { overTrunk: straightOf(r.dir, main), overHead: straightOf(r.dir, head) } }
       const rows = layout(commits, opts)
       checkInvariants(commits, rows)
-      expect(rows.find((x) => x.hash === main)!.lane).toBe(0)
+      // Lane 0 is the trunk's, unless HEAD sits below the trunk tip on its line: then HEAD's
+      // straight dashed line holds lane 0 and the newer trunk commits join it from beside.
+      const lane0 = opts.straight.overHead.includes(main) ? head : main
+      expect(rows.find((x) => x.hash === lane0)!.lane).toBe(0)
       // Paging gives the same rows.
       const g = new GraphLayout(opts)
       expect([...g.push(commits.slice(0, 2)), ...g.push(commits.slice(2, 5)), ...g.push(commits.slice(5))]).toEqual(rows)
