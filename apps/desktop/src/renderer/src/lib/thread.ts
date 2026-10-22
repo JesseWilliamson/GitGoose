@@ -1,7 +1,8 @@
 import { AI_AUTH_REQUIRED, reduceThread, type AiThread, type AiUpdate, type ThreadAnchor } from '@gitgoose/shared'
 import { useEffect, useState } from 'react'
 import { create } from 'zustand'
-import { askLogin, askToRedact, ensureAi, whatFor } from './ai'
+import { askLogin, askToRedact, ensureAi, onAiThread, useAi, whatFor } from './ai'
+import { forgetExplanationThread } from './explain'
 import { api, toUiError } from './api'
 import { reportError, updateRepo } from './store'
 
@@ -17,6 +18,8 @@ export const useThreads = create<{ threads: Record<string, AiThread> }>(() => ({
 const holders = new Map<string, number>()
 
 export function onThreadUpdate(e: { threadId: string; requestId: string; update: AiUpdate }): void {
+  // A feature request learns its thread here, so a view can open it while the answer streams.
+  if (e.update.kind === 'turn') onAiThread(e.requestId, e.threadId)
   const t = useThreads.getState().threads[e.threadId]
   if (!t) return
   const next = reduceThread(t, e.requestId, e.update)
@@ -109,6 +112,27 @@ export async function sendMessage(threadId: string, text: string): Promise<boole
       return false
     }
   }
+}
+
+/**
+ * Delete a kept conversation (the AI panel's history). Main ends its session, so every view
+ * that holds it must let go: each feature's reference is cleared, and a view still on screen
+ * then opens a fresh conversation about the same thing instead of sending into a closed one.
+ */
+export async function deleteThread(repoId: string, threadId: string): Promise<void> {
+  await api.aiThreadDelete(repoId, threadId)
+  const mine = <T extends { threadId?: string | null }>(x: T | null): T | null => (x?.threadId === threadId ? { ...x, threadId: null } : x)
+  updateRepo(repoId, (v) => ({
+    review: mine(v.review),
+    walkthrough: mine(v.walkthrough),
+    impact: mine(v.impact),
+    ask: v.ask?.threadId === threadId ? null : v.ask,
+    chat: v.chat.threadId === threadId ? { open: v.chat.open, threadId: null, nonce: Date.now() } : v.chat,
+  }))
+  useAi.setState((s) => (s.recompose?.threadId === threadId ? { recompose: { ...s.recompose, threadId: undefined } } : s))
+  forgetExplanationThread(repoId, threadId)
+  // A commit's question list shows saved Ask threads.
+  updateRepo(repoId, { askThreads: await api.askThreads(repoId) })
 }
 
 export function stopThread(threadId: string): void {

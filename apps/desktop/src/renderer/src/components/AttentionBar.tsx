@@ -1,6 +1,6 @@
 import { AlertTriangle, ChevronDown, ChevronRight, Sparkles, X } from 'lucide-react'
 import { useState } from 'react'
-import { explainInModal, useAiEnabled } from '../lib/ai'
+import { explainFailure, useAiEnabled } from '../lib/ai'
 import { dismissAttention, useStore, type Attention } from '../lib/store'
 import { Button } from './ui'
 
@@ -33,7 +33,7 @@ function Row({ a }: { a: Attention }) {
           </button>
         )}
         {aiOn && a.detail && (
-          <button onClick={() => explainInModal(`Why: ${a.title}`, repoId, { kind: 'explain-error', title: a.title, detail: a.detail! })}
+          <button onClick={() => explainFailure(repoId, a.title, a.detail!)}
             className="flex items-center gap-0.5 text-xs text-muted hover:text-fg" data-testid="attention-explain" title="Explain this with AI">
             <Sparkles size={12} /> Explain
           </button>

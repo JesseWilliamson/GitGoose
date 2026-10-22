@@ -3,7 +3,8 @@ import clsx from 'clsx'
 import { ArrowLeft, CheckCircle2, CircleAlert, ExternalLink, GitMerge, Sparkles, Wrench } from 'lucide-react'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { openInEditor, openMergeTool, run } from '../lib/actions'
-import { cancelAi, startAi, useAi } from '../lib/ai'
+import { cancelAi, conflictJobKey, resolveWithAgent } from '../lib/ai'
+import { useRunningJob } from '../lib/aiJobs'
 import { api } from '../lib/api'
 import { opName, sentence, splitPath } from '../lib/format'
 import { reportError, updateRepo, useSetting, type RepoView } from '../lib/store'
@@ -117,8 +118,8 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
   const allChosen = blocks.length > 0 && blocks.every((_, i) => choices[i])
   const preferred = useSetting('mergeView')
   const agentOn = useSetting('aiProvider') === 'agent'
-  /** The AI request working on this file, while it runs. */
-  const [asking, setAsking] = useState<string | null>(null)
+  /** The AI request working on this file, while it runs (a job, so leaving and coming back still shows it). */
+  const asking = useRunningJob(conflictJobKey(view.id, file.path))?.id ?? null
   /** Per-file override of the setting, from the header toggle. */
   const [picked, setPicked] = useState<'three-pane' | 'blocks' | null>(null)
   const labels = useMemo(() => {
@@ -134,16 +135,7 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
   const mode = !canThree ? 'blocks' : (picked ?? (preferred === 'auto' ? (blocks.length < 3 ? 'blocks' : 'three-pane') : preferred))
 
   // The agent proposes; nothing is written until the user accepts (see AiDialogs ProposalDialog).
-  const askAi = () => {
-    if (asking) return cancelAi(asking)
-    const r = startAi(view.id, { kind: 'resolve-conflict', path: file.path })
-    setAsking(r.requestId)
-    r.done.then((res) => {
-      if (!res) return
-      if (res.proposal) useAi.setState({ proposal: { repoId: view.id, path: file.path, content: res.proposal.content, note: res.text } })
-      else useAi.setState({ output: { title: `The agent on ${file.path}`, text: res.text || 'The agent did not propose a change.', requestId: null, error: null } })
-    }, (e) => reportError(`The agent could not resolve ${file.path}`, e)).finally(() => setAsking(null))
-  }
+  const askAi = () => (asking ? cancelAi(asking) : resolveWithAgent(view.id, file.path))
 
   const resolveWith = (resolution: 'ours' | 'theirs') =>
     void run(view.id, `Take ${resolution} for ${file.path}`, () => api.resolveConflict(view.id, file.path, resolution), { quiet: true })
