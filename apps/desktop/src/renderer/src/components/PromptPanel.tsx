@@ -78,7 +78,13 @@ function AreaPrompt({ kind, repoId, task }: { kind: PromptKind; repoId: string |
     save(null, true)
   }
 
-  const preview = usePreview(repoId, task, draft)
+  // A blank part is no edit: the next request uses Settings' (or the built-in) words for it
+  // (effectivePrompt), so the preview must too; main alone would fall back to the built-in words.
+  const sent: PromptText = {
+    system: draft.system.trim() ? draft.system : fallback.system,
+    instructions: draft.instructions.trim() ? draft.instructions : fallback.instructions,
+  }
+  const preview = usePreview(repoId, task, sent)
   return (
     <div className="min-h-0 overflow-y-auto p-3">
       <PromptEditor kind={kind} value={draft} onChange={change} rendered={preview.parts?.instructions}

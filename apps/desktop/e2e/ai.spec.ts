@@ -176,6 +176,35 @@ test("the commit box shows its prompt; an edit there is what is sent, and Settin
   await app.close()
 })
 
+test("a blank part in the area's prompt previews Settings' words, as the request sends them", async () => {
+  const r = makeFixture('linear')
+  r.write('widgets.ts', 'export const widgets = new Map()\n')
+  r.git('add', 'widgets.ts')
+  const log = join(tempDir(), 'prompts.log')
+  const { app, page } = await launch(r.dir, { FAKE_AGENT_LOG: log })
+  // The fake writes "commit message for" requests, so Settings' words keep those words.
+  const words = 'Write a commit message for this. SETTINGS-WORDS'
+  await set(page, {
+    ...AGENT, aiConsent: [`agent:${AGENT.aiAgentCommand}`],
+    aiPrompts: { 'commit-message': { system: 'You write git commit messages.', instructions: words } },
+  })
+
+  await page.getByTestId('prompt-button-commit').click()
+  const panel = page.getByTestId('prompt-panel-commit')
+  await expect(panel.getByTestId('prompt-source')).toHaveText('From Settings → AI')
+  // Blank instructions fall back to Settings' words, not the built-in ones.
+  await panel.getByTestId('prompt-instructions').fill('')
+  await expect(panel.getByTestId('prompt-rendered')).toHaveText(words)
+  await page.keyboard.press('Escape')
+
+  await page.getByTestId('ai-commit-message').click()
+  await expect(page.getByTestId('commit-summary')).toHaveValue('feat: add the widget registry')
+  const sent = readFileSync(log, 'utf8')
+  expect(sent).toContain(`${words}\nReply with the commit message only`)
+  expect(sent).not.toContain('imperative mood')
+  await app.close()
+})
+
 test('in a chat, each message can show exactly what was sent', async () => {
   const r = makeFixture('linear')
   const { app, page } = await launch(r.dir)
