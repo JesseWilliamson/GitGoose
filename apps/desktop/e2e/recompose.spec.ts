@@ -189,11 +189,25 @@ test('move a change to another commit or a new one; empty commits block until re
 
 /** Press on `from`, move the pointer to `to` (or a point) in steps, release: a pointer drag, not an HTML5 one. */
 async function drag(page: Page, from: ReturnType<Page['locator']>, to: ReturnType<Page['locator']> | { x: number; y: number } | (() => Promise<{ x: number; y: number }>)) {
-  // Near the top-left: a hunk card is dragged by its header, not its diff text.
-  const a = (await from.boundingBox())!
-  await page.mouse.move(a.x + 20, a.y + 12)
-  await page.mouse.down()
-  await page.mouse.move(a.x + 30, a.y + 20, { steps: 3 })
+  // The hunk may sit below the fold of its column (the third of three on a small window).
+  await from.scrollIntoViewIfNeeded()
+  // Near the top-left: a hunk card is dragged by its header, not its diff text. The lift is
+  // proven by the floating copy; when it does not appear (a press that landed before the page
+  // settled on a loaded machine), let go and try again.
+  for (let attempt = 0; ; attempt++) {
+    const a = (await from.boundingBox())!
+    await page.mouse.move(a.x + 20, a.y + 12)
+    await page.mouse.down()
+    await page.mouse.move(a.x + 30, a.y + 20, { steps: 3 })
+    if (attempt === 2) break
+    try {
+      await expect(page.locator('.drag-float')).toHaveCount(1, { timeout: 1500 })
+      break
+    } catch {
+      await page.mouse.up()
+      await expect(page.locator('.drag-float')).toHaveCount(0)
+    }
+  }
   // A function is asked once the lift has started: the dialog can re-centre as it changes height.
   const where = async () => (typeof to === 'function' ? to() : 'x' in to ? to : to.boundingBox().then((b) => ({ x: b!.x + b!.width / 2, y: b!.y + b!.height / 2 })))
   let target = await where()
