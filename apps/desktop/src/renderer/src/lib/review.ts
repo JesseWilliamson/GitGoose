@@ -1,6 +1,7 @@
 import type { DiffTarget, ReviewFinding, ReviewProfile, ReviewResult, ReviewScope } from '@gitgoose/shared'
 import { api, toUiError } from './api'
-import { cancelAi, startAi, useAi } from './ai'
+import { cancelAi, centerJob, scopeLabel, showRepo, startAi, useAi } from './ai'
+import { dropJob, finishJob, registerJob } from './aiJobs'
 import { choose, setting, toast, updateRepo, useStore, type RepoView } from './store'
 import { ask, run } from './actions'
 
@@ -32,6 +33,7 @@ export function startReview(id: string, scope: ReviewScope, opts: { incremental?
   const previous = opts.incremental && same ? { findings: old!.result!.findings.filter((f) => !old!.dismissed.includes(f.id)), hunkKeys: old!.result!.hunkKeys, contextKey: old!.result!.contextKey } : undefined
   const run = startAi(id, { kind: 'review', scope, profile, previous }, undefined, { before: () => askAboutLinters(id), keepThread: true })
   updateRepo(id, { review: { scope, profile, requestId: run.requestId, result: null, error: null, dismissed: [], focus: null }, center: { kind: 'review' } })
+  centerJob(run, id, 'review', `Review of ${scopeLabel(scope)}`)
   const mine = (v: RepoView) => v.review?.requestId === run.requestId
   run.done.then(
     (res) => updateRepo(id, (v) => (mine(v) ? { review: res?.review ? { ...v.review!, requestId: null, result: res.review, threadId: res.threadId ?? null } : null, ...(res ? {} : { center: { kind: 'graph' } as const }) } : {})),
@@ -103,19 +105,51 @@ export function applySuggestion(id: string, f: ReviewFinding): Promise<boolean> 
     })
 }
 
-/** Ask the AI to fix a finding; its new version of the file is shown for review, not written. */
+/**
+ * Ask the AI to fix a finding; its new version of the file is shown for review, not written.
+ * The dialog does not hold the user while it waits: closing it hides it (the request goes on,
+ * as a job in the status bar), and the fix is there to open when it is ready.
+ */
 export function fixWithAi(id: string, f: ReviewFinding): void {
+  const old = useAi.getState().fix
+  if (old?.requestId) cancelAi(old.requestId)
   const run = startAi(id, { kind: 'fix-finding', finding: f })
-  useAi.setState({ fix: { repoId: id, path: f.path, title: f.title, requestId: run.requestId, before: null, after: null, note: '', error: null } })
+  useAi.setState({ fix: { repoId: id, path: f.path, title: f.title, requestId: run.requestId, before: null, after: null, note: '', error: null, hidden: false } })
   const mine = () => useAi.getState().fix?.requestId === run.requestId
-  run.done.then(async (res) => {
-    if (!mine()) return
-    if (!res?.proposal) return useAi.setState({ fix: null })
-    const before = await api.workingText(id, f.path)
-    useAi.setState({ fix: { repoId: id, path: f.path, title: f.title, requestId: null, before, after: res.proposal.content, note: res.text, error: null } })
-  }, (e) => {
-    if (mine()) useAi.setState((s) => ({ fix: s.fix && { ...s.fix, requestId: null, error: toUiError(e).message } }))
+  registerJob({
+    id: run.requestId,
+    repoId: id,
+    key: 'fix',
+    title: `Fix: ${f.title}`,
+    open: showFix,
+    stop: () => cancelAi(run.requestId),
+    showing: () => useAi.getState().fix?.hidden === false,
   })
+  const settle = (patch: Partial<NonNullable<ReturnType<typeof useAi.getState>['fix']>>, error?: string) => {
+    useAi.setState((s) => ({ fix: s.fix && { ...s.fix, requestId: null, ...patch } }))
+    finishJob(run.requestId, error)
+  }
+  run.done.then(async (res) => {
+    if (!mine()) return dropJob(run.requestId)
+    if (!res) {
+      dropJob(run.requestId)
+      return useAi.setState({ fix: null })
+    }
+    // No new file: the agent's note says why (it was not allowed to edit, or saw nothing to fix).
+    if (!res.proposal) return settle({ note: res.text || 'The agent did not propose a change.' })
+    const before = await api.workingText(id, f.path)
+    if (mine()) settle({ before, after: res.proposal.content, note: res.text })
+  }).catch((e) => {
+    if (mine()) settle({ error: toUiError(e).message }, toUiError(e).message)
+  })
+}
+
+/** Show the Fix dialog again (from the AI jobs chip or the "ready" toast). */
+export function showFix(): void {
+  const fix = useAi.getState().fix
+  if (!fix) return
+  showRepo(fix.repoId)
+  useAi.setState({ fix: { ...fix, hidden: false } })
 }
 
 /** Write the proposed fix (checked against the file as it was when proposed; undoable). */

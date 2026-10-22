@@ -419,7 +419,14 @@ export type ThreadAnchor =
   | { kind: 'changestack'; scope: ReviewScope }
   /** The AI panel: only the repository's name and HEAD go along. */
   | { kind: 'free' }
-  /** A one-shot request (aiRun) with no view of its own: commit message, push checks, conflict help. Never kept. */
+  /**
+   * "Why did this fail?": the failed action and git's output (cut to 8k), so a follow-up after a
+   * restart still knows what the conversation is about. Kept, and shown in the AI panel.
+   */
+  | { kind: 'error'; title: string; detail: string }
+  /** The conflict agent's work on one file: kept, so its note is shown in the AI panel and can be followed up. */
+  | { kind: 'conflict'; path: string }
+  /** A one-shot request (aiRun) with no view of its own: commit message, push checks, a fix for a finding. Never kept. */
   | { kind: 'task'; task: AiTask['kind'] }
 
 /**

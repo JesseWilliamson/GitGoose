@@ -261,6 +261,27 @@ describe('threads', () => {
     expect(replyOf(mirror(t.events, again))).toBe('Turn 2. You said: two. (replayed 1 earlier turns)')
   })
 
+  it('an explained failure is kept as a thread about the error; reopened later, a follow-up is told the error again', async () => {
+    const log = join(tempDir(), 'prompts.log')
+    process.env.FAKE_AGENT_LOG = log
+    cleanup.push(() => void delete process.env.FAKE_AGENT_LOG)
+    const t = await setup({}, undefined, { threadIdleMs: 60 })
+    t.ai.consent()
+    const res = await t.ai.run('e1', 'x', { kind: 'explain-error', title: 'Push failed', detail: 'policy: pushes to main need review' }, { keepThread: true })
+    expect(res.text).toContain('This change explains itself.')
+    const [kept] = t.ai.listThreads('x')
+    expect(kept).toMatchObject({ id: res.threadId, title: 'Why did this fail: Push failed', anchor: { kind: 'error', title: 'Push failed', detail: 'policy: pushes to main need review' } })
+    // Nobody opened it: the session ends after the idle grace, the thread stays saved.
+    await new Promise((ok) => setTimeout(ok, 150))
+    expect(t.ai.liveThreads()).toEqual([])
+    const again = await t.ai.openThread('x', { kind: 'free' }, res.threadId)
+    expect(again.anchor.kind).toBe('error')
+    await ended(t.events, await t.ai.sendThread(again.id, 'what now?'))
+    const replay = readFileSync(log, 'utf8').split('\n---\n').at(-2)!
+    expect(replay).toContain('policy: pushes to main need review')
+    expect(replay.trim().endsWith('what now?')).toBe(true)
+  })
+
   it('refuses before the turn starts: consent, and a secret in the message (sent redacted when asked)', async () => {
     const TOKEN = 'ghp_' + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8'
     const t = await setup()

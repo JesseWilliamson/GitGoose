@@ -436,6 +436,8 @@ export const ANCHOR_ARTIFACTS: Record<ThreadAnchor['kind'], ArtifactKind[]> = {
   impact: ['diagram'],
   ask: ['diagram'],
   free: ['commit-message', 'diagram'],
+  error: [],
+  conflict: [],
   task: [],
 }
 
@@ -518,6 +520,17 @@ export async function anchorContext(repo: Repo, anchor: ThreadAnchor): Promise<s
       const built = await buildPrompt(repo, { kind: 'ask', rev: anchor.rev === 'worktree' ? null : anchor.rev, path: anchor.path, startLine: anchor.lines[0], endLine: anchor.lines[1], question: '(see the conversation)', earlier: [] })
       return built.prompt.slice(0, built.prompt.lastIndexOf('\nQuestion:'))
     }
+    case 'error':
+      return [
+        'This conversation is about a git operation that failed in GitGoose (a desktop git client).',
+        `What failed: ${anchor.title}`,
+        '',
+        "Git's output:",
+        anchor.detail,
+      ].join('\n')
+    case 'conflict':
+      if (anchor.path.includes('\0') || anchor.path.startsWith('/') || anchor.path.split(/[\\/]/).includes('..')) throw new Error('Bad path')
+      return `This conversation is about the merge conflict in ${join(repo.path, anchor.path)}. You may read files in the repository; do not change files or run commands.`
     case 'task':
       return ''
   }
@@ -566,6 +579,9 @@ export function anchorOf(task: AiTask): ThreadAnchor {
     case 'assess-impact': return { kind: 'impact', scope: task.scope }
     case 'recompose': return { kind: 'recompose', hashes: task.hashes }
     case 'explain-commit': return { kind: 'explain', hash: task.hash }
+    // The anchor carries what a later session needs to know: the feature's prompt is not saved.
+    case 'explain-error': return { kind: 'error', title: task.title, detail: truncate(task.detail, 8_000) }
+    case 'resolve-conflict': return { kind: 'conflict', path: task.path }
     case 'ask': return { kind: 'ask', rev: task.rev ?? 'worktree', path: task.path, lines: [task.startLine, task.endLine], code: '' }
     default: return { kind: 'task', task: task.kind }
   }
@@ -579,6 +595,8 @@ export function featureLabel(task: AiTask, built: BuiltPrompt): string {
     case 'assess-impact': return 'Assess which uses of the changed code are at risk'
     case 'recompose': return `Propose a better series for ${task.hashes.length === 1 ? 'this commit' : `these ${task.hashes.length} commits`}`
     case 'explain-commit': return `Explain commit ${task.hash.slice(0, 7)}`
+    case 'explain-error': return `Why did this fail: ${task.title}`
+    case 'resolve-conflict': return `Resolve the conflict in ${task.path}`
     default: return task.kind
   }
 }

@@ -1,6 +1,6 @@
 import type { ReviewScope, WalkthroughResult } from '@gitgoose/shared'
 import { toUiError } from './api'
-import { cancelAi, startAi } from './ai'
+import { cancelAi, centerJob, scopeLabel, startAi } from './ai'
 import { updateRepo, useStore, type RepoView } from './store'
 
 export interface WalkthroughState {
@@ -20,6 +20,7 @@ export function startWalkthrough(id: string, scope: ReviewScope): void {
   if (old?.requestId) cancelAi(old.requestId)
   const run = startAi(id, { kind: 'walkthrough', scope }, undefined, { keepThread: true })
   updateRepo(id, { walkthrough: { scope, requestId: run.requestId, result: null, error: null }, center: { kind: 'walkthrough' } })
+  centerJob(run, id, 'walkthrough', `Walkthrough of ${scopeLabel(scope)}`)
   const mine = (v: RepoView) => v.walkthrough?.requestId === run.requestId
   run.done.then(
     (res) => updateRepo(id, (v) => (mine(v) ? { walkthrough: res?.walkthrough ? { ...v.walkthrough!, requestId: null, result: res.walkthrough, threadId: res.threadId ?? null } : null, ...(res ? {} : { center: { kind: 'graph' } as const }) } : {})),

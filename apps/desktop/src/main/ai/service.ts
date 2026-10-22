@@ -510,6 +510,8 @@ export class AiService {
     rec.idle = null
     const emit = (update: AiUpdate) => this.update(rec, requestId, update)
     emit({ kind: 'turn', text: user.text, at: Date.now(), ...(user.feature ? { feature: user.feature } : {}) })
+    // Saved from the start, so a conversation is in the AI panel's history while its answer streams.
+    this.persist(rec)
     try {
       let text: string
       let stopReason: string

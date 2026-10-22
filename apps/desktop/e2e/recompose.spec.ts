@@ -1,5 +1,6 @@
-import { initRepo } from '@gitgoose/fixtures'
+import { initRepo, tempDir } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
+import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { launch } from './app'
 
@@ -78,6 +79,40 @@ test('recompose: the AI proposes, you reorder and edit, Create commits rewrites,
 
   await page.getByTestId('toolbar').getByRole('button', { name: 'Undo' }).click()
   await expect.poll(() => r.head()).toBe(C3)
+  await app.close()
+})
+
+test('closing the dialog only hides it: the plan arrives later, and its edits survive closing it again', async () => {
+  const { r, C1, C2, C3 } = setup()
+  const gate = join(tempDir(), 'gate') // the fake agent holds its answer until this exists
+  const { app, page } = await launch(r.dir, { FAKE_AGENT_GATE: gate })
+  await page.evaluate((p) => window.gitgoose.setSettings(p as never), AGENT)
+  await row(page, C2).click()
+  await row(page, C1).click({ modifiers: ['Shift'] })
+  await row(page, C1).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Recompose with AI…' }).click()
+  const dialog = page.getByTestId('recompose-dialog')
+  await expect(dialog).toContainText('Asking the AI')
+  await page.getByTestId('recompose-hide').click()
+  await expect(dialog).toHaveCount(0)
+  await expect(page.getByTestId('ai-jobs')).toContainText('AI: Recompose 2 commits')
+
+  writeFileSync(gate, '')
+  await page.getByTestId('toast-action').filter({ hasText: 'Open' }).click()
+  await expect(page.getByTestId('recompose-commit')).toHaveCount(2)
+  await planned(page, 0).getByTestId('recompose-up').click()
+  await expect(plannedTitle(page, 0)).toHaveText('feat: everything else')
+  // Esc hides the editor; the jobs chip brings it back as it was.
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await page.getByTestId('ai-jobs').click()
+  await page.getByTestId('ai-job-open').click()
+  await expect(plannedTitle(page, 0)).toHaveText('feat: everything else')
+  // Discard is the explicit way out: nothing changed, nothing left waiting.
+  await page.getByTestId('recompose-discard').click()
+  await expect(dialog).toHaveCount(0)
+  await expect(page.getByTestId('ai-jobs')).toHaveCount(0)
+  expect(r.head()).toBe(C3)
   await app.close()
 })
 

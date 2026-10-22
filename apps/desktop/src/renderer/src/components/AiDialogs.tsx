@@ -3,10 +3,11 @@ import clsx from 'clsx'
 import { Copy, ShieldQuestion, Sparkles, SquareTerminal } from 'lucide-react'
 import { useState } from 'react'
 import { run } from '../lib/actions'
-import { answerPermission, cancelAi, useAi } from '../lib/ai'
+import { answerPermission, cancelAi, conflictJobKey, showRepo, useAi } from '../lib/ai'
+import { parkJob } from '../lib/aiJobs'
 import { api, toUiError } from '../lib/api'
 import { fileDiffRows } from '../lib/diffLayout'
-import { acceptFix } from '../lib/review'
+import { acceptFix, showFix } from '../lib/review'
 import { toast, useStore } from '../lib/store'
 import { RecomposeDialog } from './RecomposeDialog'
 import { Button, Modal, Spinner } from './ui'
@@ -161,19 +162,35 @@ function OutputDialog() {
   )
 }
 
-/** Fix with AI: the proposed file as a diff against the current one. Nothing is written until Use. */
+/**
+ * Fix with AI: the proposed file as a diff against the current one. Nothing is written until Use.
+ * Closing only hides it (the request, or the proposal, waits in the AI jobs chip); Stop and
+ * Discard are the explicit ways to throw it away.
+ */
 function FixDialog() {
   const fix = useAi((s) => s.fix)
-  if (!fix) return null
-  const close = () => {
+  if (!fix || fix.hidden) return null
+  const discard = () => {
     if (fix.requestId) cancelAi(fix.requestId)
     useAi.setState({ fix: null })
   }
+  // A wait (its job is running) or a proposal (back on the jobs list) is kept; an error or a
+  // note has been read, so closing ends it.
+  const hide = () => {
+    if (!fix.requestId && fix.after === null) return discard()
+    useAi.setState({ fix: { ...fix, hidden: true } })
+    if (!fix.requestId) parkJob({ id: crypto.randomUUID(), repoId: fix.repoId, key: 'fix', title: `Fix: ${fix.title}`, open: showFix })
+  }
   const rows = fix.before !== null && fix.after !== null ? fileDiffRows(fix.before, fix.after) : []
   return (
-    <Modal open onClose={close} title={`Fix: ${fix.title}`} width={760}>
+    <Modal open onClose={hide} title={`Fix: ${fix.title}`} width={760}>
       <div className="text-[13px]" data-testid="ai-fix">
-        {fix.requestId && <p className="flex items-center gap-2 text-muted"><Spinner /> Asking for a fix to {fix.path}…</p>}
+        {fix.requestId && (
+          <>
+            <p className="flex items-center gap-2 text-muted"><Spinner /> Asking for a fix to {fix.path}…</p>
+            <p className="mt-2 text-xs text-faint">You can close this and carry on: the fix waits in the status bar until you open it.</p>
+          </>
+        )}
         {fix.error && <p className="text-del">{fix.error}</p>}
         {fix.note && <p className="mb-2 text-muted">{fix.note}</p>}
         {fix.after !== null && (
@@ -189,8 +206,17 @@ function FixDialog() {
           </>
         )}
         <div className="mt-4 flex justify-end gap-2">
-          <Button onClick={close} data-testid="ai-fix-discard">{fix.after !== null ? 'Discard' : 'Cancel'}</Button>
-          {fix.after !== null && <Button variant="primary" disabled={!rows.length} onClick={() => void acceptFix()} data-testid="ai-fix-accept">Use this fix</Button>}
+          {fix.requestId ? (
+            <>
+              <Button onClick={discard} data-testid="ai-fix-stop">Stop</Button>
+              <Button variant="primary" onClick={hide} data-testid="ai-fix-hide">Close</Button>
+            </>
+          ) : fix.after !== null ? (
+            <>
+              <Button onClick={discard} data-testid="ai-fix-discard">Discard</Button>
+              <Button variant="primary" disabled={!rows.length} onClick={() => void acceptFix()} data-testid="ai-fix-accept">Use this fix</Button>
+            </>
+          ) : <Button onClick={discard} data-testid="ai-fix-discard">Close</Button>}
         </div>
       </div>
     </Modal>
@@ -200,16 +226,27 @@ function FixDialog() {
 function ProposalDialog() {
   const p = useAi((s) => s.proposal)
   const repoOpen = useStore((s) => (p ? !!s.repos[p.repoId] : false))
-  if (!p) return null
+  if (!p || p.hidden) return null
   const markers = countConflicts(p.content)
   const close = () => useAi.setState({ proposal: null })
+  // Esc or a click outside keeps the proposal (open it again from the AI jobs chip); Discard drops it.
+  const hide = () => {
+    useAi.setState({ proposal: { ...p, hidden: true } })
+    parkJob({
+      id: crypto.randomUUID(), repoId: p.repoId, key: conflictJobKey(p.repoId, p.path), title: `Resolve ${p.path}`,
+      open: () => {
+        showRepo(p.repoId)
+        useAi.setState((s) => (s.proposal ? { proposal: { ...s.proposal, hidden: false } } : s))
+      },
+    })
+  }
   const accept = async () => {
     close()
     const ok = await run(p.repoId, `Resolve ${p.path}`, () => api.resolveConflict(p.repoId, p.path, { content: p.content }), { quiet: true })
     if (ok) toast({ kind: 'success', title: `Resolved ${p.path} with the agent's version` })
   }
   return (
-    <Modal open onClose={close} title={`Proposed resolution for ${p.path}`} width={720}>
+    <Modal open onClose={hide} title={`Proposed resolution for ${p.path}`} width={720}>
       <div className="text-[13px]" data-testid="ai-proposal">
         {p.note && <p className="mb-2 text-muted">{p.note}</p>}
         <pre className="selectable max-h-[50vh] overflow-auto rounded border border-line bg-bg p-2 font-mono text-[12px]" data-testid="ai-proposal-content">{p.content}</pre>

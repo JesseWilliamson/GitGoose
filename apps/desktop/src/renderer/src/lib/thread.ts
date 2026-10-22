@@ -1,7 +1,7 @@
 import { AI_AUTH_REQUIRED, reduceThread, type AiThread, type AiUpdate, type ThreadAnchor } from '@gitgoose/shared'
 import { useEffect, useState } from 'react'
 import { create } from 'zustand'
-import { askLogin, askToRedact, ensureAi, whatFor } from './ai'
+import { askLogin, askToRedact, ensureAi, onAiThread, whatFor } from './ai'
 import { api, toUiError } from './api'
 import { reportError, updateRepo } from './store'
 
@@ -17,6 +17,8 @@ export const useThreads = create<{ threads: Record<string, AiThread> }>(() => ({
 const holders = new Map<string, number>()
 
 export function onThreadUpdate(e: { threadId: string; requestId: string; update: AiUpdate }): void {
+  // A feature request learns its thread here, so a view can open it while the answer streams.
+  if (e.update.kind === 'turn') onAiThread(e.requestId, e.threadId)
   const t = useThreads.getState().threads[e.threadId]
   if (!t) return
   const next = reduceThread(t, e.requestId, e.update)

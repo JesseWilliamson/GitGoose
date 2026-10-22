@@ -3,6 +3,7 @@ import { SETTINGS, type SidebarPrefs, type PullRequestList, type CodeGraphStatus
 import { create } from 'zustand'
 import { api, toUiError, type UiError } from './api'
 import { onAiEvent } from './ai'
+import { dropRepoJobs, sweepJobs } from './aiJobs'
 import { onThreadUpdate } from './thread'
 import { opName } from './format'
 import { followRewrite } from './rewrite'
@@ -214,6 +215,9 @@ export const useStore = create<State>(() => ({
 
 const set = useStore.setState
 const get = useStore.getState
+
+// AI answers the user reaches by themselves (selecting the commit, opening the panel) count as seen.
+useStore.subscribe(sweepJobs)
 
 export function updateRepo(id: string, patch: Partial<RepoView> | ((v: RepoView) => Partial<RepoView>)): void {
   set((s) => {
@@ -552,6 +556,8 @@ export async function closeTab(id: string): Promise<void> {
   const i = s.tabs.indexOf(id)
   const active = s.active === id ? (tabs[Math.min(i, tabs.length - 1)] ?? null) : s.active
   set({ tabs, repos, active })
+  // Main ends the repository's AI sessions; their jobs have nowhere to open any more.
+  dropRepoJobs(id)
   logs.delete(id)
   pending.delete(id)
   await api.closeRepo(id)
