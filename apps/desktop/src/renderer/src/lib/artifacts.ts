@@ -18,7 +18,8 @@ export function applyArtifact(repoId: string, a: AiArtifactResult): boolean {
         toast({ kind: 'info', title: 'Open the recompose dialog for these commits to apply a plan.' })
         return false
       }
-      useAi.setState({ recompose: { ...rc, incoming: { commits: a.recompose.commits, nonce: Date.now() } } })
+      // Shown, in case it was hidden: the plan just changed in the editor.
+      useAi.setState({ recompose: { ...rc, hidden: false, incoming: { commits: a.recompose.commits, nonce: Date.now() } } })
       return true
     }
     case 'walkthrough': {

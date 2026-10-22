@@ -1,6 +1,6 @@
 import type { ImpactResult, ReviewScope } from '@gitgoose/shared'
 import { api, toUiError } from './api'
-import { cancelAi, startAi } from './ai'
+import { cancelAi, centerJob, scopeLabel, startAi } from './ai'
 import { updateRepo, useStore, type RepoView } from './store'
 
 export interface ImpactState {
@@ -31,6 +31,7 @@ export function assessImpact(id: string): void {
   if (st.requestId) cancelAi(st.requestId)
   const run = startAi(id, { kind: 'assess-impact', scope: st.scope }, undefined, { keepThread: true })
   updateRepo(id, (v) => ({ impact: { ...v.impact!, requestId: run.requestId, error: null } }))
+  centerJob(run, id, 'impact', `Impact of ${scopeLabel(st.scope)}`)
   const mine = (v: RepoView) => v.impact?.requestId === run.requestId
   run.done.then(
     (res) => updateRepo(id, (v) => (mine(v) ? { impact: { ...v.impact!, requestId: null, result: res?.impact ?? v.impact!.result, threadId: res?.threadId ?? v.impact!.threadId } } : {})),
