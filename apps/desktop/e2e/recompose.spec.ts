@@ -195,8 +195,19 @@ async function drag(page: Page, from: ReturnType<Page['locator']>, to: ReturnTyp
   await page.mouse.down()
   await page.mouse.move(a.x + 30, a.y + 20, { steps: 3 })
   // A function is asked once the lift has started: the dialog can re-centre as it changes height.
-  const target = typeof to === 'function' ? await to() : 'x' in to ? to : await to.boundingBox().then((b) => ({ x: b!.x + b!.width / 2, y: b!.y + b!.height / 2 }))
+  const where = async () => (typeof to === 'function' ? to() : 'x' in to ? to : to.boundingBox().then((b) => ({ x: b!.x + b!.width / 2, y: b!.y + b!.height / 2 })))
+  let target = await where()
   await page.mouse.move(target.x, target.y, { steps: 10 })
+  // The lift itself changes the layout (a placeholder, a hint under the column), which can move
+  // the target after the pointer got there; on a slow machine that lands after the last move.
+  // Follow the target until it stays put.
+  for (let i = 0; i < 5; i++) {
+    await page.waitForTimeout(100)
+    const now = await where()
+    if (Math.abs(now.x - target.x) < 1 && Math.abs(now.y - target.y) < 1) break
+    target = now
+    await page.mouse.move(target.x, target.y, { steps: 3 })
+  }
   return { drop: () => page.mouse.up() }
 }
 
