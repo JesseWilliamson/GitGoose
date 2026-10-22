@@ -42,7 +42,7 @@ export function ReflogView({ view }: { view: RepoView }) {
         <div className="min-w-0 flex-1">
           <div className="text-[14px] font-semibold">Reflog</div>
           <div className="truncate text-xs text-muted">
-            Every place HEAD has been. {lostCount ? `${lostCount} commit${lostCount === 1 ? ' is' : 's are'} reachable only from here: restore ${lostCount === 1 ? 'it' : 'them'} as a branch to keep ${lostCount === 1 ? 'it' : 'them'}.` : 'Nothing is lost.'}
+            {lostCount ? `${lostCount} commit${lostCount === 1 ? ' is' : 's are'} reachable only from here: restore ${lostCount === 1 ? 'it' : 'them'} as a branch to keep ${lostCount === 1 ? 'it' : 'them'}.` : 'Nothing is lost.'}
           </div>
         </div>
         <label className="flex items-center gap-1.5 text-xs text-muted">

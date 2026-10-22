@@ -147,7 +147,7 @@ export function ReviewView({ view }: { view: RepoView }) {
       {chat && result && !r.requestId && (
         <ThreadRail repoId={view.id} kind="review" anchor={{ kind: 'review', scope: r.scope }} threadId={r.threadId}
           onThread={(id) => updateRepo(view.id, (v) => (v.review ? { review: { ...v.review, threadId: id } } : {}))}
-          hint="Ask about a finding, push back on one, or ask for more. Revised findings come back as a card you can apply." />
+          hint="Revised findings come back as a card you can apply." />
       )}
       </div>
     </div>

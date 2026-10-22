@@ -51,7 +51,7 @@ export function CommandLogView({ view }: { view: RepoView }) {
         <Terminal size={18} className="text-muted" />
         <div className="min-w-0 flex-1">
           <div className="text-[14px] font-semibold">Git command log</div>
-          <div className="truncate text-xs text-muted">Every git command GitGoose ran here, newest first. Click one to see what git printed.</div>
+          <div className="truncate text-xs text-muted">Newest first. Click one to see what git printed.</div>
         </div>
         <label className="flex items-center gap-1.5 text-xs text-muted">
           <input type="checkbox" checked={reads} onChange={(e) => setReads(e.target.checked)} /> Show reads

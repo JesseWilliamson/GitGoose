@@ -16,6 +16,11 @@ test('opens the settings page, searches it, and closes with Esc', async () => {
   await page.getByTestId('settings-search').fill('whitespace')
   await expect(page.getByTestId('setting-ignoreWhitespace')).toBeVisible()
   await expect(page.getByTestId('setting-uiScale')).toHaveCount(0)
+  // Settings without a description are still found by their keywords.
+  await page.getByTestId('settings-search').fill('unified')
+  await expect(page.getByTestId('setting-diffLayout')).toBeVisible()
+  await page.getByTestId('settings-search').fill('comfortable')
+  await expect(page.getByTestId('setting-graphStyle')).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('settings-page')).toHaveCount(0)
   await expect(page.getByTestId('commit-row').first()).toBeVisible()

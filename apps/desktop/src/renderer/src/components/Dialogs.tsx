@@ -230,9 +230,7 @@ function CreatePullDialog({ repoId, branch, close }: { repoId: string; branch: s
             </select>
           </label>
         </div>
-        <p className="text-xs text-muted">
-          {needsPush ? `${branch} will be pushed to ${remote} first. ` : ''}GitHub opens in your browser to finish it.
-        </p>
+        {needsPush && <p className="text-xs text-muted">{branch} will be pushed to {remote} first.</p>}
         <div className="flex justify-end gap-2">
           <Button type="button" onClick={close}>Cancel</Button>
           <Button type="submit" variant="primary" disabled={!title.trim() || !remote} data-testid="dialog-submit">Continue on GitHub</Button>
@@ -284,7 +282,7 @@ function PushChecksDialog({ d, close }: { d: Extract<NonNullable<ReturnType<type
     <Modal open onClose={close} title={d.outcome === 'block' ? 'A pre-push check failed' : 'Pre-push checks'} width={560}>
       <p className="mb-3 text-[13px] text-muted">
         {d.label}. {failed ? `${failed} of ${d.results.length} check${d.results.length === 1 ? '' : 's'} failed.` : 'A blocking check could not be judged.'}
-        {d.outcome === 'block' ? ' A blocking check failed, so nothing was pushed.' : ''}
+        {d.outcome === 'block' ? ' Nothing was pushed.' : ''}
       </p>
       <div className="mb-4 max-h-80 overflow-y-auto" data-testid="push-checks">
         {d.results.map((r, i) => (
@@ -330,7 +328,7 @@ function PushRulesDialog({ repoId, close }: { repoId: string; close: () => void 
   return (
     <Modal open onClose={close} title="Pre-push checks" width={600}>
       <p className="mb-3 text-[13px] text-muted">
-        Rules in plain words, checked by the AI against the commits you push. A check that blocks stops the push when it fails (you can still push anyway); one that warns only tells you. The secret scan is separate (Settings → Git).
+        Rules in plain words, checked by the AI against the commits you push. A failing Block check stops the push (you can still push anyway); Warn only tells you.
       </p>
       {repo.length > 0 && (
         <div className="mb-3">
