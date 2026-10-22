@@ -423,12 +423,6 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
         </div>
       )
     }
-    case 'pulls-signin':
-      return (
-        <div style={{ ...style, paddingLeft: pad(2) }} className="flex items-center text-xs text-muted" onContextMenu={noMenu}>
-          <button className="text-accent hover:underline" onClick={() => useStore.setState({ page: 'settings' })}>Sign in with GitHub</button>&nbsp;to see pull requests.
-        </div>
-      )
     case 'worktree': {
       const w = row.worktree
       const folder = w.path.split(/[\\/]/).filter(Boolean).pop()

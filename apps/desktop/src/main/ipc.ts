@@ -9,7 +9,6 @@ import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { logError } from './diagnostics'
 import { openInEditor, openTerminal } from './launch'
-import { GITHUB_SCOPES } from '@gitgoose/shared'
 import type { AiService } from './ai/service'
 import type { GitHubService } from './github/service'
 import type { CodeGraphService } from './codegraph'
@@ -78,17 +77,14 @@ export function createHandlers(
     })),
     respondPrompt: async (id, answer) => prompts.respond(id, answer),
 
-    githubStatus: async () => github.status(),
-    githubSignIn: (access) => github.startSignIn(GITHUB_SCOPES[access]),
-    githubWaitForSignIn: () => github.waitForSignIn(),
-    githubCancelSignIn: async () => github.cancelSignIn(),
-    githubOpenPage: async (page) => {
-      const url = github.pageUrl(page)
-      if (url) await shell.openExternal(url)
-    },
-    githubSignOut: async () => github.signOut(),
     pullRequests: (id) => github.pullRequests(r(id)),
-    createPullRequest: (id, pr) => github.createPullRequest(r(id), pr),
+    createPullRequest: async (id, pr) => {
+      // Main builds the URL from the repository's own remote, and opens only GitHub pages.
+      const url = await github.compareUrl(r(id), pr)
+      if (!github.isGitHubUrl(url)) throw new Error('Not a GitHub page')
+      await shell.openExternal(url)
+      return url
+    },
     checkoutPullRequest: async (id, num, branch) => {
       const remote = await github.remoteName(r(id))
       if (!remote) throw new Error('This repository has no GitHub remote.')
@@ -361,7 +357,7 @@ export function createHandlers(
 
 export function serializeError(e: unknown): SerializedError {
   if (e instanceof GitError) return { message: e.message, stderr: e.stderr, command: e.command, code: 'git' }
-  // Errors that carry a string code (AI, GitHub sign-in) keep it, so the renderer can react.
+  // Errors that carry a string code (AI, GitHub's rate limit) keep it, so the renderer can react.
   if (e instanceof Error) {
     const code = (e as { code?: unknown }).code
     return typeof code === 'string' ? { message: e.message, code } : { message: e.message }

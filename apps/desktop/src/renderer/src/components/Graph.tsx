@@ -6,7 +6,7 @@ import { Archive, Cloud, Crosshair, Laptop, Tag } from 'lucide-react'
 import { ContextMenu } from 'radix-ui'
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { bisectMark, bisectReset, checkout, checkoutRow, showAllInGraph } from '../lib/actions'
-import { avatarSrc, useAvatarVariant } from '../lib/avatar'
+import { avatarSrc } from '../lib/avatar'
 import { startDrag, type DropTarget } from '../lib/dnd'
 import { authorLine, formatDate, laneColor, shortHash, stashLabel } from '../lib/format'
 import { lineEnded, lineIndexOf, lineThrough } from '../lib/lineView'
@@ -88,7 +88,6 @@ export interface RowLook {
   rowH: number
   dateFormat: string
   avatars: AvatarSource
-  avatarVariant: string
   showRemotes: boolean
   showTags: boolean
   /** Compact only: the graph column's width (the same on every row) and the date column's. */
@@ -105,14 +104,13 @@ function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
   const showRemotes = useSetting('showRemoteBranches')
   const showTags = useSetting('showTags')
   const avatars = useSetting('avatars')
-  const avatarVariant = useAvatarVariant()
   const log = getLog(view.id)
   // As wide as the widest stretch of history loaded so far, up to COMPACT_LANES: it only ever
   // grows (as pages arrive), so the columns do not shift while scrolling back up.
   const graphW = compact ? compactWidth(log.maxWidth) : 0
   const dateW = DATE_W[dateFormat] ?? 100
-  const look = useMemo<RowLook>(() => ({ compact, rowH, dateFormat, showRemotes, showTags, avatars, avatarVariant, graphW, dateW }),
-    [compact, rowH, dateFormat, showRemotes, showTags, avatars, avatarVariant, graphW, dateW])
+  const look = useMemo<RowLook>(() => ({ compact, rowH, dateFormat, showRemotes, showTags, avatars, graphW, dateW }),
+    [compact, rowH, dateFormat, showRemotes, showTags, avatars, graphW, dateW])
   const snap = view.snapshot
 
   // The line view (lib/lineView.ts): only the rows on the line through `anchor`, or all rows.
@@ -499,8 +497,8 @@ const CommitRow = memo(function CommitRow(props: {
   /** The author, then any co-authors from the commit's trailers: one avatar each, stacked. */
   const people = useMemo<StackedAuthor[]>(
     () => [{ name: commit.authorName, email: commit.authorEmail }, ...(commit.coAuthors ?? [])]
-      .map((p) => ({ ...p, src: avatarSrc(p.email, look.avatars, look.avatarVariant) })),
-    [commit.authorName, commit.authorEmail, commit.coAuthors, look.avatars, look.avatarVariant],
+      .map((p) => ({ ...p, src: avatarSrc(p.email, look.avatars) })),
+    [commit.authorName, commit.authorEmail, commit.coAuthors, look.avatars],
   )
   const pills = useMemo(() => (props.refs ? pillsFor(props.refs, props.headBranch, { remotes: look.showRemotes, tags: look.showTags }) : []),
     [props.refs, props.headBranch, look.showRemotes, look.showTags])
