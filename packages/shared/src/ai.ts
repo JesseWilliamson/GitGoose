@@ -1,4 +1,5 @@
 import { commandArgv } from './command'
+import type { PromptParts, PromptText } from './prompts'
 
 /**
  * AI features: the shapes that cross IPC. The work happens in the main process
@@ -389,7 +390,15 @@ export interface AiRunOptions {
    * API) moves the conversation there: a new session told the conversation so far.
    */
   target?: AiTarget
+  /**
+   * The words to use (the area's Prompt panel). Omitted: Settings → AI's, else the built-in
+   * ones. Only system and instructions: the answer format is never the caller's.
+   */
+  prompt?: PromptText
 }
+
+/** A request's prompt before anything is sent (aiPromptPreview): its parts, for the Prompt panel. */
+export type PromptPreview = PromptParts
 
 export type AiTask =
   | { kind: 'commit-message' }
@@ -587,6 +596,12 @@ export interface AiTurn {
   at: number
   /** Agent turns: who answered ("Codex · gpt-5"), so a thread that switched shows who said what. */
   by?: string
+  /**
+   * User turns: exactly what went out, when it is more than what the user typed (the first
+   * message carries the context; a replay carries the conversation). The API's system prompt is
+   * shown first.
+   */
+  sent?: string
 }
 
 export interface AiThread {
@@ -613,7 +628,7 @@ export interface AiThread {
  */
 export type AiUpdate =
   /** A user turn was sent (and the agent's turn begins). */
-  | { kind: 'turn'; text: string; feature?: string; at: number; by?: string }
+  | { kind: 'turn'; text: string; feature?: string; at: number; by?: string; sent?: string }
   /** Streamed text, appended. */
   | { kind: 'text'; text: string }
   | { kind: 'thought'; text: string }

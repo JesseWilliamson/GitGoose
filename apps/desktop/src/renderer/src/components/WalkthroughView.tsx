@@ -10,6 +10,7 @@ import { SequenceSvg } from './SequenceSvg'
 import { RailToggle, ThreadRail, useRailOpen } from './ThreadRail'
 import { Button, Spinner } from './ui'
 import { ModelPicker } from './ModelPicker'
+import { PromptButton } from './PromptPanel'
 
 const LAYER: Record<ReadingLayer, string> = {
   contract: 'Contracts: types and interfaces',
@@ -43,6 +44,7 @@ export function WalkthroughView({ view }: { view: RepoView }) {
         </div>
         {r && <EffortBadge effort={r.effort} why={r.effortWhy} />}
         <ModelPicker area="walkthrough" />
+        <PromptButton area="walkthrough" repoId={view.id} task={{ kind: 'walkthrough', scope: w.scope }} />
         {w.requestId ? <Button onClick={() => stopWalkthrough(view.id)}><Spinner /> Stop</Button> : <Button onClick={() => startWalkthrough(view.id, w.scope)}>Again</Button>}
         {r && <RailToggle kind="walkthrough" />}
         <Button variant="ghost" onClick={() => updateRepo(view.id, { center: { kind: 'graph' } })}>Back to graph</Button>

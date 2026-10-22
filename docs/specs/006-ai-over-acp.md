@@ -71,6 +71,38 @@ lists are kept under, and which process a session lives in.
 | Diff selection → **Ask** | the lines, their function, definitions, history; then what you write | a thread under the diff (spec 007) |
 | **AI panel** (Mod+Shift+A, View → AI Chat) | the repository's name and HEAD, then what you write | a free-standing thread |
 
+## The prompts, shown and editable
+
+The words of every prompt are data (`packages/shared/src/prompts.ts`, `DEFAULT_PROMPTS`), one
+per AI task plus `chat` (the AI panel's opening). A prompt is four parts, sent in this order:
+
+| part | editable | what |
+|---|---|---|
+| system | yes | who the model is (the API takes it separately; an agent gets it on top) |
+| instructions | yes | what to do and how to say it; a template: `{label}`, `{commits}`, `{profile}` are filled per request, unknown names stay as typed |
+| answer format | **no** | the JSON shape or "the message only": the checker that reads the answer (verifyFindings, repairPlan, …) depends on these exact words, so they are shown with a lock and never come from the user (`PromptText` has no field for them) |
+| context | no | the diff, commits, code around the change: built fresh for each request |
+
+- **Where the words come from**, part by part (a blank part falls through): the area's edit
+  (settings `aiPromptEdits`, made in its Prompt panel), else Settings → AI → Prompts
+  (`aiPrompts`), else the built-in words. `effectivePrompt` decides, in shared, so the panel
+  and main agree.
+- **The Prompt panel** (`components/PromptPanel.tsx`) is a button beside every model picker. It
+  shows the system prompt and instructions (editable, remembered for that area, *Reset*), the
+  locked answer format, and the context from `aiPromptPreview`: main runs the same builder as
+  a real request with the words being edited, read-only git only, sending nothing. The one
+  difference: a review's linters run programs, so they run only when the review is sent (the
+  panel says so). Areas with no request to preview (chats, push checks, error explanations)
+  show the words; the context is built when sent.
+- **What you see is what goes.** `startAi` sends the area's words with the request
+  (`AiRunOptions.prompt`).
+- **Chats show what was sent.** Each user turn keeps exactly what went out when that is more
+  than what was typed (`AiTurn.sent`: the opening with its context, a replay, a feature's
+  request; for the API the first turn shows its separate system prompt first). The thread
+  shows it under *Sent*. Saved threads keep 20k characters of it.
+- The built-in instructions keep their first lines word for word: the fake agent tells
+  requests apart by them.
+
 ## Rules main enforces
 
 - **Consent before anything.** A request fails with `ai-consent` until the user agreed to this

@@ -24,6 +24,10 @@ import { FileListTools, FileListView, FileRow, statusKind } from './FileList'
 import { modName } from '../lib/keys'
 import { Button, CM, DM, SectionHeader, Spinner } from './ui'
 import { ModelPicker } from './ModelPicker'
+import { PromptButton } from './PromptPanel'
+
+/** The commit box's request (one object, so its Prompt panel does not rebuild every render). */
+const COMMIT_TASK = { kind: 'commit-message' } as const
 
 export function DetailPanel({ view }: { view: RepoView }) {
   return (
@@ -409,7 +413,7 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
               <DM.Item onSelect={() => useStore.setState({ dialog: { kind: 'identity', repoId: id, onSaved: () => setIdentityTick((t) => t + 1) } })}>Change who you commit as…</DM.Item>
             </DM.Content>
           </DropdownMenu.Root>
-          {aiOn && <ModelPicker area="commit" />}
+          {aiOn && <><ModelPicker area="commit" /><PromptButton area="commit" repoId={id} task={COMMIT_TASK} /></>}
           {aiOn && (
             <Button size="sm" variant="ghost" onClick={() => void writeMessage()} disabled={!writing && stagedCount === 0} data-testid="ai-commit-message"
               title={writing ? 'Stop' : 'Write the message with AI, from the staged changes'}>
@@ -722,6 +726,7 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
               <span className="flex items-center gap-2">
                 <Button size="sm" variant="ghost" onClick={explain} data-testid="ai-explain-commit"><Sparkles size={12} /> Explain</Button>
                 <ModelPicker area="explain" />
+                <PromptButton area="explain" repoId={view.id} task={{ kind: 'explain-commit', hash: d.hash }} />
               </span>
             ) : (
               <div className="rounded-md border border-line bg-bg/60 p-2 text-[13px]" data-testid="ai-explanation">

@@ -135,3 +135,57 @@ test('Settings → AI tests the agent; the API key mode streams from Anthropic',
   await app.close()
   await api.close()
 })
+
+test("the commit box shows its prompt; an edit there is what is sent, and Settings' words come back on Reset", async () => {
+  const r = makeFixture('linear')
+  r.write('widgets.ts', 'export const widgets = new Map()\n')
+  r.git('add', 'widgets.ts')
+  const log = join(tempDir(), 'prompts.log')
+  const { app, page } = await launch(r.dir, { FAKE_AGENT_LOG: log })
+  await set(page, { ...AGENT, aiConsent: [`agent:${AGENT.aiAgentCommand}`] })
+
+  await page.getByTestId('prompt-button-commit').click()
+  const panel = page.getByTestId('prompt-panel-commit')
+  await expect(panel.getByTestId('prompt-source')).toHaveText('Built-in')
+  // The fixed format is shown, not editable; the context is built from the staged change, sending nothing.
+  await expect(panel.getByTestId('prompt-format')).toHaveText('Reply with the commit message only: no code fences, no commentary.')
+  await panel.getByTestId('prompt-context').getByRole('button').click()
+  await expect(panel.getByTestId('prompt-context-text')).toContainText('+export const widgets = new Map()')
+  expect(existsSync(log)).toBe(false)
+
+  // The fake writes "commit message for" requests, so the edit keeps those words.
+  await panel.getByTestId('prompt-instructions').fill('Write a commit message for this. PANEL-EDIT')
+  await expect(panel.getByTestId('prompt-source')).toHaveText('Edited here: used by this area only')
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('prompt-button-commit')).toHaveText('Prompt (edited)')
+
+  await page.getByTestId('ai-commit-message').click()
+  await expect(page.getByTestId('commit-summary')).toHaveValue('feat: add the widget registry')
+  const sent = readFileSync(log, 'utf8')
+  expect(sent).toContain('Write a commit message for this. PANEL-EDIT\nReply with the commit message only')
+  expect(sent).not.toContain('imperative mood')
+
+  // Settings → AI lists every prompt and says the area has its own edit.
+  const s = await page.evaluate(() => window.gitgoose.getSettings())
+  expect(s.aiPromptEdits['commit-message']?.instructions).toBe('Write a commit message for this. PANEL-EDIT')
+  await page.getByTestId('prompt-button-commit').click()
+  await page.getByTestId('prompt-panel-commit').getByTestId('prompt-reset').click()
+  await expect(page.getByTestId('prompt-panel-commit').getByTestId('prompt-source')).toHaveText('Built-in')
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('prompt-button-commit')).toHaveText('Prompt')
+  await app.close()
+})
+
+test('in a chat, each message can show exactly what was sent', async () => {
+  const r = makeFixture('linear')
+  const { app, page } = await launch(r.dir)
+  await set(page, { ...AGENT, aiConsent: [`agent:${AGENT.aiAgentCommand}`] })
+  await page.keyboard.press('ControlOrMeta+Shift+A')
+  await page.getByTestId('thread-input').fill('hello')
+  await page.getByTestId('thread-input').press('Enter')
+  await expect(page.getByTestId('thread-agent').first()).toHaveAttribute('data-status', 'done')
+  await page.getByTestId('thread-sent-toggle').click()
+  await expect(page.getByTestId('thread-sent')).toContainText('You are helping someone with their git repository')
+  await expect(page.getByTestId('thread-sent')).toContainText('HEAD: main at')
+  await app.close()
+})

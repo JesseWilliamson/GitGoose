@@ -9,6 +9,7 @@ import { applyArtifact } from '../lib/artifacts'
 import { sendMessage, stopThread } from '../lib/thread'
 import { Markdown } from './Markdown'
 import { ModelPicker } from './ModelPicker'
+import { PromptButton } from './PromptPanel'
 import { SequenceSvg } from './SequenceSvg'
 import { Button, Spinner } from './ui'
 
@@ -87,6 +88,7 @@ export function Thread({ thread, repoId, testids = {}, placeholder, hint, hideFe
       <div className="flex shrink-0 items-center justify-end border-t border-line px-2 pt-1.5">
         {/* The area's pick: a change applies from the next message (main moves the conversation if needed). */}
         <ModelPicker area={areaOfAnchor(thread.anchor)} />
+        <PromptButton area={areaOfAnchor(thread.anchor)} repoId={repoId} task={null} className="ml-1" />
       </div>
       <div className="flex shrink-0 gap-2 p-2 pt-1.5">
         <textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} data-testid={testids.input ?? 'thread-input'}
@@ -117,10 +119,34 @@ function textOf(turn: AiTurn): string {
 }
 
 function UserTurn({ turn, testid }: { turn: AiTurn; testid: string }) {
+  // "Sent": exactly what went out, when that is more than what was typed (the first message
+  // carries the context and instructions; a replay, the conversation so far). Local state is
+  // enough: turns are keyed by id, so it survives every streamed update.
+  const [showSent, setShowSent] = useState(false)
+  const toggle = turn.sent ? (
+    <button className="shrink-0 rounded px-1 text-[11px] font-normal text-faint hover:bg-hover hover:text-fg" data-testid="thread-sent-toggle"
+      title="Show exactly what was sent" onClick={() => setShowSent(!showSent)}>{showSent ? 'Hide sent' : 'Sent'}</button>
+  ) : null
+  const sent = showSent && turn.sent ? (
+    <pre className="selectable mt-1 max-h-72 overflow-auto rounded-md border border-line/60 bg-bg/60 p-2 font-mono text-[11px] font-normal whitespace-pre-wrap text-muted" data-testid="thread-sent">{turn.sent}</pre>
+  ) : null
   if (turn.feature) {
-    return <div className="mt-2 flex items-center gap-1.5 text-xs text-faint" data-testid="thread-feature"><Sparkles size={11} /> {turn.feature}</div>
+    return (
+      <div className="mt-2">
+        <div className="flex items-center gap-1.5 text-xs text-faint" data-testid="thread-feature"><Sparkles size={11} /> {turn.feature}{toggle}</div>
+        {sent}
+      </div>
+    )
   }
-  return <div className="selectable mt-3 font-semibold whitespace-pre-wrap" data-testid={testid}>{textOf(turn)}</div>
+  return (
+    <div className="mt-3">
+      <div className="flex items-start gap-1.5">
+        <div className="selectable min-w-0 flex-1 font-semibold whitespace-pre-wrap" data-testid={testid}>{textOf(turn)}</div>
+        {toggle}
+      </div>
+      {sent}
+    </div>
+  )
 }
 
 function AgentTurn({ turn, thread, repoId, testid, retry, by }: { turn: AiTurn; thread: AiThread; repoId: string; testid: string; retry?: () => void; by?: string }) {

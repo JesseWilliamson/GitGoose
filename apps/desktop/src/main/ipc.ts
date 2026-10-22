@@ -103,6 +103,7 @@ export function createHandlers(
     aiConsent: async (target) => ai.consent(target),
     aiModels: (target) => ai.models(target),
     aiLoadModels: (target) => ai.loadModels(target),
+    aiPromptPreview: (repoId, task, prompt) => ai.preview(repoId, task, prompt),
     aiRun: async (requestId, repoId, task, opts) => {
       // Review, walkthrough and ask read the code graph for context. The tree they need is
       // usually indexed already (HEAD, the index, the working tree); a commit costs only its

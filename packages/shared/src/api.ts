@@ -3,10 +3,11 @@ import type {
   ReflogEntry, Remote, SearchField, Submodule, Worktree, StashEntry, UndoEntry,
 } from './index'
 import type {
-  AgentInfo, AiArtifactResult, AiModelList, AiPermissionRequest, AiResult, AiRunOptions, AiStatus, AiTarget, AiTask, AiThread, AiUpdate, ArtifactKind, AskThread, ImpactResult, LinterInfo, PermissionAnswer, PushCheck, PushCheckPlan,
+  AgentInfo, AiArtifactResult, AiModelList, PromptPreview, AiPermissionRequest, AiResult, AiRunOptions, AiStatus, AiTarget, AiTask, AiThread, AiUpdate, ArtifactKind, AskThread, ImpactResult, LinterInfo, PermissionAnswer, PushCheck, PushCheckPlan,
   ReviewLearning, ReviewScope, ThreadAnchor,
 } from './ai'
 import type { DeviceCodeInfo, GitHubAccount, GitHubStatus, PullRequest, PullRequestList } from './github'
+import type { PromptText } from './prompts'
 import type { Settings } from './settings'
 
 export interface LogPage {
@@ -107,6 +108,12 @@ export interface GitGooseApi {
   aiModels(target: AiTarget): Promise<AiModelList>
   /** The user asked for an agent's models: start it, open a session to read them, close it. */
   aiLoadModels(target: AiTarget): Promise<AiModelList>
+  /**
+   * What `task` would send, without sending it: the prompt's parts with the context built from
+   * the repository now (read-only git; linters are not run, they run when the review is sent).
+   * `prompt` previews unsaved words.
+   */
+  aiPromptPreview(repoId: string, task: AiTask, prompt?: PromptText): Promise<PromptPreview>
   /**
    * Run a task: a thread whose first message is the task's prompt, closed when the answer is in
    * (or, with opts.keepThread, kept for the view to chat on: AiResult.threadId). Text streams as
@@ -372,7 +379,7 @@ export const API_METHODS = [
   'getSettings', 'setSettings', 'pickDirectory', 'openRepo', 'closeRepo', 'initRepo', 'cloneRepo',
   'respondPrompt', 'openPath', 'openInEditor', 'openTerminal', 'revealPath', 'logError',
   'githubStatus', 'githubSignIn', 'githubWaitForSignIn', 'githubCancelSignIn', 'githubOpenPage', 'githubSignOut', 'pullRequests', 'createPullRequest', 'checkoutPullRequest', 'openPullRequest',
-  'aiStatus', 'aiConsent', 'aiModels', 'aiLoadModels', 'aiRun', 'aiCancel', 'aiRespondPermission', 'aiAgentInfo', 'aiAuthenticate', 'aiSetApiKey',
+  'aiStatus', 'aiConsent', 'aiModels', 'aiLoadModels', 'aiPromptPreview', 'aiRun', 'aiCancel', 'aiRespondPermission', 'aiAgentInfo', 'aiAuthenticate', 'aiSetApiKey',
   'aiThreadOpen', 'aiThreadSend', 'aiThreadCancel', 'aiThreadClose', 'aiThreads', 'aiThreadDelete', 'aiThreadPermission', 'aiThreadArtifact', 'openExternal',
   'snapshot', 'logPage', 'commitDetails', 'diff', 'fileHistory', 'blame', 'search', 'searchCommits', 'listFiles', 'stashList', 'reflog', 'setGraphFilter', 'submodules', 'updateSubmodules', 'syncSubmodules', 'addSubmodule', 'removeSubmodule', 'worktrees', 'addWorktree', 'removeWorktree', 'lockWorktree', 'pruneWorktrees',
   'lastCommitMessage',

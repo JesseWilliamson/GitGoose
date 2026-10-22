@@ -1,6 +1,7 @@
 import type { Repo } from '@gitgoose/git'
 import {
-  commandArgv, defaultTarget, reduceThread, targetCommandLine, targetKey, targetLabel, transcript,
+  commandArgv, defaultTarget, effectivePrompt, reduceThread, targetCommandLine, targetKey, targetLabel, transcript,
+  type PromptKind, type PromptPreview, type PromptText,
   type AgentInfo, type AiArtifactResult, type AiModelList, type AiPermissionAsk, type AiPermissionRequest, type AiResult, type AiRunOptions, type AiStatus, type AiTarget, type AiTask,
   type AiThread, type AiUpdate, type ArtifactKind, type GitGooseEvent, type PermissionAnswer, type ReviewProfile, type Settings, type ThreadAnchor,
 } from '@gitgoose/shared'
@@ -12,7 +13,7 @@ import type { SecretFile } from './keyStore'
 import { extractJson, locateSecret, redactSecrets, repairPlan, scanSecrets, verifyFindings, verifyPushChecks, verifySequence, verifyWalkthrough } from '@gitgoose/git'
 import { lintForReview } from './linters'
 import {
-  ANCHOR_ARTIFACTS, anchorContext, anchorOf, anchorTask, artifactProtocol, buildPrompt, cleanCommitMessage, featureLabel, openingMessage, replayMessage, type BuiltPrompt,
+  ANCHOR_ARTIFACTS, anchorContext, type PromptContext, anchorOf, anchorTask, artifactProtocol, buildPrompt, cleanCommitMessage, featureLabel, openingMessage, replayMessage, type BuiltPrompt,
 } from './prompts'
 
 /**
@@ -320,6 +321,29 @@ export class AiService {
   }
 
   /**
+   * The words for prompts: `override` (what the area's Prompt panel shows) for the request's own
+   * kind, else the area's saved edit, Settings → AI's, or the built-in ones. The answer format is
+   * not in PromptText at all, so no edit can reach it.
+   */
+  private words(kind?: PromptKind, override?: PromptText): PromptContext['words'] {
+    return (k) => (k === kind && override ? override : effectivePrompt(k, this.deps.settings()))
+  }
+
+  /**
+   * What a task would send, without sending anything (the Prompt panel). The same builder as a
+   * real request, so the panel cannot drift from what goes out; only the review's linters are
+   * left out (they run programs, which waits for the real request).
+   */
+  async preview(repoId: string, task: AiTask, prompt?: PromptText): Promise<PromptPreview> {
+    const repo = task.kind === 'explain-error' && !repoId ? null : this.deps.repo(repoId)
+    const built = await buildPrompt(repo, task, {
+      words: this.words(task.kind, prompt),
+      learnings: repo ? this.deps.settings().reviewLearnings[repo.path] : undefined,
+    })
+    return built.parts
+  }
+
+  /**
    * A one-shot feature request (commit message, review, walkthrough, …): a thread with the
    * feature's anchor whose first message is the feature's prompt. Without `keepThread` it is
    * closed as soon as the answer is in (open, send, close); with it, the view that shows the
@@ -331,6 +355,7 @@ export class AiService {
     const repo = task.kind === 'explain-error' && !repoId ? null : this.deps.repo(repoId)
     const settings = this.deps.settings()
     const built = await buildPrompt(repo, task, {
+      words: this.words(task.kind, opts.prompt),
       learnings: repo ? settings.reviewLearnings[repo.path] : undefined,
       lint: repo ? (paths, texts, lines) => lintForReview(repo.path, this.deps.settings(), paths, texts, lines) : undefined,
     })
@@ -540,7 +565,7 @@ export class AiService {
       // The API takes the system prompt on its own: a feature's opening is its message as given.
       const logical = history.length || opening !== undefined ? message : await first()
       const text = guardTurn(logical, redact)
-      if (!rec.system) rec.system = 'You help people understand and change the code in their git repository.'
+      if (!rec.system) rec.system = effectivePrompt('chat', this.deps.settings()).system
       const messages = [...history.flatMap((h) => [{ role: 'user' as const, content: h.user }, { role: 'assistant' as const, content: h.agent }]), { role: 'user' as const, content: text }]
       return { text, logical: text, messages }
     }
@@ -635,12 +660,12 @@ export class AiService {
     const anchor = rec.thread.anchor
     if (anchor.kind === 'ask') {
       // Ask's own prompt, with the question in it: the lines, their function, definitions, history.
-      const built = await buildPrompt(repo, { kind: 'ask', rev: anchor.rev === 'worktree' ? null : anchor.rev, path: anchor.path, startLine: anchor.lines[0], endLine: anchor.lines[1], question: message, earlier: [] })
+      const built = await buildPrompt(repo, { kind: 'ask', rev: anchor.rev === 'worktree' ? null : anchor.rev, path: anchor.path, startLine: anchor.lines[0], endLine: anchor.lines[1], question: message, earlier: [] }, { words: this.words() })
       rec.system = built.system
       const api = rec.target?.provider === 'anthropic'
       return `${api ? '' : `${built.system}\n\n`}${built.prompt}\n\n${artifactProtocol(anchor, false)}`
     }
-    return openingMessage(await anchorContext(repo, anchor), anchor, message)
+    return openingMessage(await anchorContext(repo, anchor, { words: this.words() }), anchor, message)
   }
 
   /** The conversation as exchanged. A thread from disk rebuilds it: its transcript, with the anchor's context in front. */
@@ -649,7 +674,7 @@ export class AiService {
     const past = transcript(rec.thread)
     if (past.length) {
       const anchor = rec.thread.anchor
-      const context = anchor.kind === 'task' ? '' : await anchorContext(this.deps.repo(rec.repoId), anchor).catch(() => '')
+      const context = anchor.kind === 'task' ? '' : await anchorContext(this.deps.repo(rec.repoId), anchor, { words: this.words() }).catch(() => '')
       past[0] = { ...past[0]!, user: [context, artifactProtocol(anchor, false), past[0]!.user].filter(Boolean).join('\n\n') }
     }
     rec.history = past
@@ -670,7 +695,8 @@ export class AiService {
     rec.idle = null
     const emit = (update: AiUpdate) => this.update(rec, requestId, update)
     const by = this.byLabel(rec)
-    emit({ kind: 'turn', text: user.text, at: Date.now(), ...(user.feature ? { feature: user.feature } : {}), ...(by ? { by } : {}) })
+    const sent = sentText(rec, out, user.text)
+    emit({ kind: 'turn', text: user.text, at: Date.now(), ...(user.feature ? { feature: user.feature } : {}), ...(by ? { by } : {}), ...(sent ? { sent } : {}) })
     try {
       let text: string
       let stopReason: string
@@ -843,6 +869,17 @@ export class AiService {
 }
 
 /**
+ * What a turn really sent, for its "Sent" view; undefined when it is just what the user typed.
+ * The API's system prompt is separate from the messages, so it is shown first, on the first turn.
+ */
+function sentText(rec: ThreadRec, out: Outgoing, shown: string): string | undefined {
+  const api = !!out.messages
+  const first = api && out.messages!.length === 1
+  const text = first && rec.system ? `[System prompt]\n${rec.system}\n\n[Message]\n${out.text}` : out.text
+  return text.trim() === shown.trim() ? undefined : text
+}
+
+/**
  * A thread as it is saved: what the conversation needs to be read and continued, not every
  * byte that streamed. A feature's own answer (raw JSON the view already turned into its
  * result) keeps 8k characters, other text 40k, tool output what acp.ts kept (20k a piece).
@@ -855,6 +892,8 @@ export function compact(thread: AiThread): AiThread {
     turns: thread.turns.slice(-200).map((t) => ({
       ...t,
       blocks: t.blocks.map((b) => (b.type === 'text' || b.type === 'thought' ? { ...b, text: cut(b.text, t.feature ? 8_000 : 40_000) } : b)),
+      // What was sent can be a whole diff: enough to read what was asked, not a second copy of the repository.
+      ...(t.sent ? { sent: cut(t.sent, 20_000) } : {}),
     })),
   }
 }

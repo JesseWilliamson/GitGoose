@@ -12,6 +12,7 @@ import { addCommit, draftProblems, editMessage, moveCommit, moveUnit, removeEmpt
 import { toast, updateRepo, useStore } from '../lib/store'
 import { useThread } from '../lib/thread'
 import { ModelPicker } from './ModelPicker'
+import { PromptButton } from './PromptPanel'
 import { Thread } from './Thread'
 import { Button, CM, DM, Modal, Spinner } from './ui'
 
@@ -69,7 +70,8 @@ export function RecomposeDialog() {
           <>
             <div className="flex items-start gap-2 text-del" data-testid="recompose-error"><CircleAlert size={15} className="mt-px shrink-0" /> {state.error}</div>
             <div className="mt-4 flex items-center justify-end gap-2">
-              <ModelPicker area="recompose" className="mr-auto" />
+              <ModelPicker area="recompose" />
+              <PromptButton area="recompose" repoId={state.repoId} task={{ kind: 'recompose', hashes: state.hashes }} className="mr-auto" />
               <Button onClick={close}>Close</Button>
               <Button variant="primary" onClick={() => recomposeWithAi(state.repoId, state.hashes)}>Try again</Button>
             </div>
@@ -78,7 +80,8 @@ export function RecomposeDialog() {
           <>
             <div className="flex items-center gap-2 text-muted"><Spinner /> Asking the AI how to split these changes into commits…</div>
             <div className="mt-4 flex items-center justify-end gap-2">
-              <ModelPicker area="recompose" className="mr-auto" onPicked={restart} />
+              <ModelPicker area="recompose" onPicked={restart} />
+              <PromptButton area="recompose" repoId={state.repoId} task={{ kind: 'recompose', hashes: state.hashes }} className="mr-auto" />
               <Button onClick={close}>Stop</Button>
             </div>
           </>

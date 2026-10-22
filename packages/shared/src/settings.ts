@@ -1,5 +1,6 @@
 import type { GraphFilter } from './index'
 import type { AiArea, AiModelList, AiTarget, AiThread, PushCheck, ReviewLearning } from './ai'
+import type { PromptKind, PromptText } from './prompts'
 import { askToThread } from './thread'
 import { DEFAULT_LAYOUT, normalizeLayout, type PaneLayout } from './layout'
 
@@ -194,6 +195,10 @@ export const SETTINGS = {
    * session's config options, so this is how a picker can show them before anything is started.
    */
   aiAgentModels: internal<Record<string, AiModelList & { at: number }>>({}),
+  /** Settings → AI → Prompts: the default words per prompt (blank parts use the built-in ones). */
+  aiPrompts: internal<Partial<Record<PromptKind, PromptText>>>({}),
+  /** Words edited in an area's Prompt panel, remembered for that area ("Reset" drops them). */
+  aiPromptEdits: internal<Partial<Record<PromptKind, PromptText>>>({}),
   anthropicMaxTokens: num(8192, 1024, 64000, 1024, {
     label: 'Longest answer (API key only)', section: 'AI', unit: 'tokens', keywords: 'max_tokens length limit',
     description: 'The most one answer may use. Long reviews and walkthroughs need room; a lower limit costs less.',

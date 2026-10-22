@@ -1,6 +1,6 @@
 import {
   AGENT_PRESETS, agentLabel, defaultTarget, targetKey, targetLabel,
-  type AgentPreset, type AiArea, type AiModelList, type AiTarget,
+  type AgentPreset, type AiArea, type AiModel, type AiModelList, type AiTarget,
 } from '@gitgoose/shared'
 import clsx from 'clsx'
 import { useEffect, useState } from 'react'
@@ -55,7 +55,7 @@ export function ModelPicker({ area, defaults, className, onPicked }: {
 
   const offered = list.list?.models ?? []
   // A model that is set but not (or no longer) listed still shows, so the select never lies.
-  const models = target.model && !offered.some((m) => m.id === target.model) ? [{ id: target.model, name: target.model }, ...offered] : offered
+  const models: AiModel[] = target.model && !offered.some((m) => m.id === target.model) ? [{ id: target.model, name: target.model }, ...offered] : offered
   // What blank means here: in an area, Settings → AI's default model for this agent (or the
   // API's model setting); otherwise, or with none set, the agent's own default.
   const settingsDefault = area ? (target.provider === 'anthropic' ? settings.anthropicModel : settings.aiAgentModel[targetKey(target)]) : undefined

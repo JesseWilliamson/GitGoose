@@ -1,4 +1,4 @@
-import { AI_AUTH_REQUIRED, defaultTarget, type AgentAuthMethod, type AiArea, type AiPermissionRequest, type AiResult, type AiTarget, type AiTask, type RecomposeProposal, type ThreadAnchor } from '@gitgoose/shared'
+import { AI_AUTH_REQUIRED, defaultTarget, effectivePrompt, type AgentAuthMethod, type AiArea, type AiPermissionRequest, type AiResult, type AiTarget, type AiTask, type RecomposeProposal, type ThreadAnchor } from '@gitgoose/shared'
 import { create } from 'zustand'
 import { api, toUiError } from './api'
 import { attention, choose, saveSettings, useStore } from './store'
@@ -118,7 +118,11 @@ export interface AiRun {
 export function startAi(repoId: string | null, task: AiTask, onText?: (text: string) => void, opts: { before?: () => Promise<void>; keepThread?: boolean; target?: AiTarget } = {}): AiRun {
   const requestId = crypto.randomUUID()
   // Decided once, up front: changing the picker mid-request applies to the next one.
-  const target = opts.target ?? areaTarget(areaOf(task)) ?? undefined
+  const target = opts.target ?? areaTarget(areaOf(task.kind)) ?? undefined
+  // The words the area's Prompt panel shows (its edit, else Settings', else built-in): sent as
+  // they are, so what the panel showed is what goes.
+  const settings = useStore.getState().settings
+  const prompt = settings ? (({ system, instructions }) => ({ system, instructions }))(effectivePrompt(task.kind, settings)) : undefined
   const done = (async (): Promise<AiResult | null> => {
     if (!(await ensureAi(WHAT[task.kind], target))) return null
     await opts.before?.()
@@ -127,7 +131,7 @@ export function startAi(repoId: string | null, task: AiTask, onText?: (text: str
       let redact = false
       for (let attempt = 0; ; attempt++) {
         try {
-          const o = { ...(redact ? { redact } : {}), ...(opts.keepThread ? { keepThread: true } : {}), ...(target ? { target } : {}) }
+          const o = { ...(redact ? { redact } : {}), ...(opts.keepThread ? { keepThread: true } : {}), ...(target ? { target } : {}), ...(prompt ? { prompt } : {}) }
           return await api.aiRun(requestId, repoId ?? '', task, Object.keys(o).length ? o : undefined)
         } catch (e) {
           const err = e as { code?: string; message?: string }

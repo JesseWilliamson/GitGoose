@@ -619,3 +619,69 @@ describe('choosing who answers', () => {
     expect(api.requests.at(-1)).toMatchObject({ model: 'claude-haiku-5-5' })
   })
 })
+
+describe('prompts the user can read and edit', () => {
+  it("a run sends the area's words; the answer format is added whatever the edit says", async () => {
+    const log = join(tempDir(), 'prompts.log')
+    process.env.FAKE_AGENT_LOG = log
+    cleanup.push(() => void delete process.env.FAKE_AGENT_LOG)
+    const t = await setup()
+    t.ai.consent()
+    // The fake answers "commit message for" requests, so the edit keeps those words.
+    await t.ai.run('p1', 'x', { kind: 'commit-message' }, { prompt: { system: 'You are terse.', instructions: 'Write a commit message for this, in French.' } })
+    const sent = readFileSync(log, 'utf8').split('\n---\n')[0]!
+    expect(sent.startsWith('You are terse.\n\nWrite a commit message for this, in French.\nReply with the commit message only')).toBe(true)
+    expect(sent).toContain('Staged diff:')
+    expect(sent).not.toContain('imperative mood')
+  })
+
+  it('without an edit from the caller, Settings → AI and then the built-in words are used', async () => {
+    const log = join(tempDir(), 'prompts.log')
+    process.env.FAKE_AGENT_LOG = log
+    cleanup.push(() => void delete process.env.FAKE_AGENT_LOG)
+    const t = await setup({ aiPrompts: { 'commit-message': { system: '', instructions: 'Write a commit message for these changes. Settings words.' } } })
+    t.ai.consent()
+    await t.ai.run('p2', 'x', { kind: 'commit-message' })
+    const sent = readFileSync(log, 'utf8').split('\n---\n')[0]!
+    // A blank system keeps the built-in one.
+    expect(sent.startsWith('You write git commit messages.\n\nWrite a commit message for these changes. Settings words.')).toBe(true)
+  })
+
+  it('the preview is what a request would send, built without sending or starting anything', async () => {
+    const t = await setup()
+    const parts = await t.ai.preview('x', { kind: 'review', scope: { kind: 'staged' }, profile: 'quiet' }, { system: '', instructions: 'Review this change ({label}) carefully. {profile}' })
+    expect(parts.kind).toBe('review')
+    expect(parts.template).toBe('Review this change ({label}) carefully. {profile}')
+    expect(parts.instructions).toBe('Review this change (Staged changes) carefully. Report only real problems: bugs, security holes, data loss, serious performance issues (severity critical or major). If there are none, return no findings. Silence is a fine answer.')
+    expect(parts.format).toContain('"findings": [')
+    expect(parts.context).toContain('    1+| export const widgets = new Map()')
+    // Linters run programs: only for the real request, and the panel says so.
+    expect(parts.note).toContain('Linter findings are added')
+    expect(t.ai.agent.starts).toBe(0)
+  })
+
+  it('a thread keeps exactly what each turn sent, beyond what was typed', async () => {
+    const t = await setup()
+    t.ai.consent()
+    const thread = await t.ai.openThread('x', { kind: 'free' })
+    await ended(t.events, await t.ai.sendThread(thread.id, 'first'))
+    await ended(t.events, await t.ai.sendThread(thread.id, 'second'))
+    const users = mirror(t.events, thread).turns.filter((x) => x.role === 'user')
+    // The first message carried the AI panel's words and where we are; the second was just typed.
+    expect(users[0]!.sent).toContain('You are helping someone with their git repository')
+    expect(users[0]!.sent).toContain('HEAD: main at')
+    expect(users[0]!.sent!.trim().endsWith('first')).toBe(true)
+    expect(users[1]!.sent).toBeUndefined()
+  })
+
+  it("the API's sent text shows its separate system prompt on the first turn", async () => {
+    const api = await fakeAnthropic(['ok'])
+    cleanup.push(() => api.close())
+    const t = await setup({ aiProvider: 'anthropic' }, api)
+    t.ai.setApiKey('sk-ant-test')
+    t.ai.consent()
+    const res = await t.ai.run('p3', 'x', { kind: 'explain-commit', hash: t.r.git('rev-parse', 'HEAD').trim() }, { keepThread: true })
+    const thread = await t.ai.openThread('x', { kind: 'explain', hash: '' }, res.threadId)
+    expect(thread.turns[0]!.sent!.startsWith('[System prompt]\nYou explain code changes to a teammate.\n\n[Message]\nExplain what this commit does')).toBe(true)
+  })
+})

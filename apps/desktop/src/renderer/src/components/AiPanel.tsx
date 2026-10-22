@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { api, toUiError } from '../lib/api'
 import { useSetting } from '../lib/store'
 import { ModelPicker } from './ModelPicker'
+import { PromptSettings } from './PromptPanel'
 import { Button, Spinner } from './ui'
 
 /**
@@ -60,6 +61,7 @@ export function AiPanel() {
             <pre className="selectable mt-2 max-h-32 overflow-auto rounded bg-bg p-2 text-[11px] whitespace-pre-wrap text-del" data-testid="ai-test-error">{test.error}</pre>
           )}
           <DefaultModel />
+          <PromptSettings />
         </>
       ) : (
         <>
@@ -90,6 +92,7 @@ export function AiPanel() {
           )}
           <p className="mt-2 text-xs text-faint">Text features only: resolving conflicts needs an agent, because it edits a file.</p>
           {status.hasApiKey && <DefaultModel />}
+          <PromptSettings />
         </>
       )}
     </div>

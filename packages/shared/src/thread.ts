@@ -13,7 +13,10 @@ import { ARTIFACT_KINDS, type AiBlock, type AiThread, type AiTurn, type AiUpdate
 export function reduceThread(thread: AiThread, requestId: string, update: AiUpdate): AiThread {
   if (update.kind === 'turn') {
     if (thread.turns.some((t) => t.requestId === requestId)) return thread
-    const user: AiTurn = { id: `${requestId}:u`, role: 'user', requestId, blocks: [{ type: 'text', text: update.text }], at: update.at, ...(update.feature ? { feature: update.feature } : {}) }
+    const user: AiTurn = {
+      id: `${requestId}:u`, role: 'user', requestId, blocks: [{ type: 'text', text: update.text }], at: update.at,
+      ...(update.feature ? { feature: update.feature } : {}), ...(update.sent ? { sent: update.sent } : {}),
+    }
     const agent: AiTurn = {
       id: `${requestId}:a`, role: 'agent', requestId, blocks: [], status: 'running', at: update.at,
       ...(update.feature ? { feature: update.feature } : {}), ...(update.by ? { by: update.by } : {}),
