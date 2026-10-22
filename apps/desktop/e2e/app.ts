@@ -23,8 +23,21 @@ export const WINDOW = { width: 1024, height: 640 }
  * and the submenu closes before the click lands.
  */
 export async function pickFromSubmenu(page: Page, submenu: string | RegExp, name: string | RegExp): Promise<void> {
-  await page.getByRole('menuitem', { name: submenu }).press('ArrowRight')
-  await page.getByRole('menuitem', { name }).press('Enter')
+  const item = page.getByRole('menuitem', { name })
+  // On a loaded machine the arrow can land before the menu is ready to open its submenu and
+  // nothing appears; ask again (hovering the trigger opens it too) rather than wait 30 s for nothing.
+  for (let attempt = 0; ; attempt++) {
+    const trigger = page.getByRole('menuitem', { name: submenu })
+    if (attempt) await trigger.hover()
+    await trigger.press('ArrowRight')
+    try {
+      await expect(item).toBeVisible({ timeout: 1500 })
+      break
+    } catch (e) {
+      if (attempt === 3) throw e
+    }
+  }
+  await item.press('Enter')
 }
 
 /** Launch the built app (out/) with a throwaway profile, optionally opening a repository. */
