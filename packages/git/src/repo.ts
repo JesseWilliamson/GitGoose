@@ -13,7 +13,7 @@ import { enclosingDefinition, findDefinitions, NOT_NAMES, parseGrep, type Defini
 import type { GraphStore } from '@gitgoose/codegraph/node'
 import type { CodeContext } from '@gitgoose/shared'
 import { parseBlame } from './blame'
-import { coChanges, oldRanges, parseFilesPerCommit } from './insights'
+import { oldRanges } from './insights'
 import { changedSymbols, isTestPath, testsByName } from './impact'
 import { globToRegExp, parseCustomChecks, parsePathInstructions, relevantGuidelines } from './reviewrules'
 import { CatFile } from './catfile'
@@ -1462,12 +1462,7 @@ export class Repo {
       ...changedPaths.flatMap((p) => testsByName(p, allPaths)),
       ...callers.filter((c) => c.test).map((c) => c.path),
     ])].filter((p) => !changedPaths.includes(p) || isTestPath(p))
-    const coChange: ImpactResult['coChange'] = []
-    for (const file of changedPaths.slice(0, 10)) {
-      const log = await this.read(['log', '-n', '300', '--format=%x01%H', '-z', '--name-only', '--full-diff', ...(input.base && input.head !== 'worktree' && input.head !== 'index' ? [input.head] : []), '--', file]).catch(() => '')
-      for (const c of coChanges(file, parseFilesPerCommit(log))) if (!changedPaths.includes(c.path) && !coChange.some((x) => x.path === c.path)) coChange.push(c)
-    }
-    return { scope, label: input.label, head: input.head, base: input.base, symbols, callers, tests, coChange: coChange.slice(0, 6) }
+    return { scope, label: input.label, head: input.head, base: input.base, symbols, callers, tests }
   }
 
   // ---------------------------------------------------------------- code context (what the AI is told besides the diff)
@@ -1661,35 +1656,23 @@ export class Repo {
   }
 
   /**
-   * What history says about the uncommitted change (staged and unstaged, tracked files): files
-   * that usually change along with these but are missing, and who wrote the lines being
-   * changed. Bounded: 15 files, 300 commits of history each.
+   * What history says about the uncommitted change (staged and unstaged, tracked files): who
+   * wrote the lines being changed. Bounded: 15 files.
    */
   async changeInsights(): Promise<ChangeInsights> {
     const snap = this.last ?? (await this.snapshot())
-    if (!snap.head.hash) return { coChange: [], owners: [] }
+    if (!snap.head.hash) return { owners: [] }
     const changed = snap.status.filter((e) => e.kind !== 'untracked' && e.kind !== 'unmerged').map((e) => e.path)
-    const inChange = new Set(snap.status.map((e) => e.path))
     const files = changed.slice(0, 15)
-    const coChange: ChangeInsights['coChange'] = []
     const owners = new Map<string, number>()
     await Promise.all(files.map(async (file) => {
-      const log = await this.read(['log', '-n', '300', '--format=%x01%H', '-z', '--name-only', '--full-diff', '--', file])
-      for (const c of coChanges(file, parseFilesPerCommit(log))) if (!inChange.has(c.path)) coChange.push(c)
       // Owners: blame the old side of each hunk against HEAD.
       const ranges = oldRanges(await this.read(['diff', 'HEAD', '-U0', '--no-color', '--no-ext-diff', '--', file]))
       if (!ranges.length) return
       const blame = await this.runner.run(['blame', '--porcelain', ...ranges.flatMap((r) => ['-L', `${r.start},+${r.count}`]), 'HEAD', '--', file], { readOnly: true, okCodes: [128] })
       for (const b of parseBlame(blame.stdout)) owners.set(b.author, (owners.get(b.author) ?? 0) + 1)
     }))
-    // One suggestion per missing file: the strongest reason.
-    const best = new Map<string, ChangeInsights['coChange'][number]>()
-    for (const c of coChange) {
-      const prev = best.get(c.path)
-      if (!prev || c.together / c.total > prev.together / prev.total) best.set(c.path, c)
-    }
     return {
-      coChange: [...best.values()].sort((a, b) => b.together / b.total - a.together / a.total).slice(0, 5),
       owners: [...owners].map(([name, lines]) => ({ name, lines })).sort((a, b) => b.lines - a.lines),
     }
   }

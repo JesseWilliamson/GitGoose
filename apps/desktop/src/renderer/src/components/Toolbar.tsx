@@ -1,7 +1,7 @@
 import clsx from 'clsx'
-import { Archive, ArchiveRestore, ArrowDown, ArrowUp, ChevronDown, ChevronRight, GitBranch, RefreshCw, Redo2, Search, Settings, Undo2 } from 'lucide-react'
+import { Archive, ArrowDown, ArrowUp, ChevronDown, ChevronRight, GitBranch, RefreshCw, Redo2, Search, Settings, Undo2 } from 'lucide-react'
 import { DropdownMenu } from 'radix-ui'
-import { fetchAll, newBranch, pop, pull, push, redo, stash, undo } from '../lib/actions'
+import { fetchAll, newBranch, pull, push, redo, stash, undo } from '../lib/actions'
 import { runCommand, useSetting, useStore, type RepoView } from '../lib/store'
 import { modName, shortcutOf } from '../lib/keys'
 import { DM, Spinner, ToolbarButton } from './ui'
@@ -51,7 +51,6 @@ export function Toolbar({ view }: { view: RepoView }) {
         <Divider />
         <ToolbarButton icon={<GitBranch size={16} />} label="Branch" title="New branch…" onClick={() => newBranch(id)} disabled={!snap.head.hash} />
         <ToolbarButton icon={<Archive size={16} />} label="Stash" title="Stash changes" onClick={() => stash(id)} disabled={!!view.busy} />
-        <ToolbarButton icon={<ArchiveRestore size={16} />} label="Pop" title="Pop the latest stash" onClick={() => pop(id)} disabled={!view.stashes.length || !!view.busy} />
       </div>
 
       {/* Like VS Code's command centre: a box that looks like a search field, with its shortcut.
