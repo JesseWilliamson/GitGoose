@@ -98,11 +98,11 @@ In the order they would pay off:
    GitGoose checks locations deterministically; the graph can check claims too: a finding
    that says a definition is unused when `references` finds uses, or that a signature change
    breaks callers when none exist, can be downgraded or dropped before it is shown.
-2. **Co-change files** in the review context ("api.ts changed; ipc.ts usually changes with
-   it and did not"). The commit-box hints compute this already (`changeInsights`); it is a
-   matter of cost on big histories.
-3. **Pull request intent.** For a branch with an open PR, its title and description are the
+2. **Pull request intent.** For a branch with an open PR, its title and description are the
    intent. A network call, so only when the user turns it on (public repositories only since sign-in was removed, see spec 005).
-4. **Depth by effort.** The walkthrough rates effort 1-5; a review could pick its profile and
+3. **Depth by effort.** The walkthrough rates effort 1-5; a review could pick its profile and
    the amount of context from that (CodeRabbit's "level-appropriate prompts").
-5. **Learnings scoped by symbol**, not only by path glob, now that symbols are known.
+4. **Learnings scoped by symbol**, not only by path glob, now that symbols are known.
+
+Co-change hints ("files that usually change together") were removed; the commit-box hint now only
+says whose lines the change touches.

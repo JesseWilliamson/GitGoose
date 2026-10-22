@@ -67,7 +67,7 @@ restack (Tower Pro; revisit), gitflow (rarely used now).
 
 ## Part B: CodeRabbit-inspired AI
 
-CodeRabbit's quality comes from context (definitions, references, co-change history, guidelines,
+CodeRabbit's quality comes from context (definitions, references, guidelines,
 learnings, linters) and from checking findings before showing them. We build the context
 locally and deterministically in main, then let the model judge; we verify its output against
 the input (no new paths, no lines outside the diff) before showing it.
@@ -76,9 +76,9 @@ the input (no new paths, no lines outside the diff) before showing it.
 30. Symbol index: definitions by language-aware regexes, cached by blob id, references by
     `git grep -w`; Code Peek in the diff (definition and references of an identifier).
     `packages/codegraph`, pure, a good piece for Jesse to own.
-31. Co-change map from history: "usually committed with X, which is not staged"; owners of the
-    changed lines (`blame`, `shortlog`).
-32. Impact view of a change: changed symbols, callers outside the diff, tests, co-changed files;
+31. Owners of the changed lines from history (`blame`). (A co-change map, "usually committed
+    with X", was built and then removed.)
+32. Impact view of a change: changed symbols, callers outside the diff, tests;
     "Assess impact" asks the model which callers are at risk (it may only cite call sites we sent).
 
 **Review**
@@ -170,9 +170,8 @@ Part B:
 - [x] 30 symbol index (packages/codegraph: definitions by language patterns with scope ends,
       cached by blob id; uses by git grep -w) and Code Peek: Ctrl/Cmd+click a name in a diff.
       Exercise 6 in docs/learn
-- [x] 31 hints from history above the commit box: a file that usually changes with yours but is
-      missing (co-change over the last 300 commits per file, mass commits ignored), and whose
-      lines you are changing (blame of each hunk's old side); Settings → Git can turn it off
+- [x] 31 hint from history above the commit box: whose lines you are changing (blame of each
+      hunk's old side); Settings → Git can turn it off. (The co-change hint was removed.)
 - [x] 33 AI review of staged or uncommitted changes, a branch since it forked, or selected commits:
       a numbered diff with enclosing definitions goes out; JSON findings come back and are
       verified (file in the change, lines inside its hunks, known type and severity, no
