@@ -190,7 +190,8 @@ async function answer(id, session, text, cx) {
     // Writes the file with the finding's lines replaced (by the suggestion, if there is one).
     const path = /^File: (.+)$/m.exec(text)?.[1]
     const [, start, end] = /at lines (\d+)-(\d+)/.exec(text) ?? []
-    const suggestion = /A suggested replacement for those lines:\n([\s\S]*?)\n\nChange only/.exec(text)?.[1]
+    // The suggestion runs to the next blank line (the file follows it in the prompt's context).
+    const suggestion = /A suggested replacement for those lines:\n([\s\S]*?)\n\n/.exec(text)?.[1]
     if (!(await ask(cx, id, 'edit-fix', 'edit', `Edit ${path}`, path))) {
       await say(cx, id, 'Left the file as it was.')
       return { stopReason: 'end_turn' }

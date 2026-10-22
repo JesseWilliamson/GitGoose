@@ -133,7 +133,11 @@ function UserTurn({ turn, testid }: { turn: AiTurn; testid: string }) {
   if (turn.feature) {
     return (
       <div className="mt-2">
-        <div className="flex items-center gap-1.5 text-xs text-faint" data-testid="thread-feature"><Sparkles size={11} /> {turn.feature}{toggle}</div>
+        {/* The toggle sits beside the label, not in it: the label reads as the feature's name alone. */}
+        <div className="flex items-center gap-1.5 text-xs text-faint">
+          <span className="flex items-center gap-1.5" data-testid="thread-feature"><Sparkles size={11} /> {turn.feature}</span>
+          {toggle}
+        </div>
         {sent}
       </div>
     )
