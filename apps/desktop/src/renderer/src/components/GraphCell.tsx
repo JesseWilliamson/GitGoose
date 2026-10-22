@@ -72,9 +72,10 @@ export interface NodeAuthor {
  *
  * Avatar nodes are GitKraken's: the author's picture ringed in the lane colour, with initials
  * underneath so something shows while the image loads or when there is none; a merge is a plain
- * dot. With `band`, a faint band in the lane colour runs from the node to the column's right
- * edge and ends in a solid strip, tying the message to its lane; the band stops short of the
- * row's top and bottom so consecutive commits in one lane read as separate blocks.
+ * dot. HEAD gets a ring outside either. With `band`, a faint band in the lane colour runs from
+ * the node to the column's right edge and ends in a solid strip, tying the message to its lane;
+ * the band stops short of the row's top and bottom so consecutive commits in one lane read as
+ * separate blocks.
  *
  * A stash is a tinted card with an archive box, and its line down to the commit it was made on
  * is dashed (the layout marks it): a stash sits beside history, it is not part of it.
@@ -140,26 +141,29 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
         stash ? (
           <StashNode cx={cx} cy={mid} r={r + (author ? 0 : 2)} color={color} />
         ) : author ? (
-          row.merge ? (
-            <circle cx={cx} cy={mid} r={5.5} fill={color} stroke="var(--gs-bg)" strokeWidth={1.5} data-testid="merge-node" />
-          ) : (
-            <g data-testid="avatar-node">
-              {isHead && <circle cx={cx} cy={mid} r={r + 3} fill="none" stroke={color} strokeWidth={2} />}
-              <circle cx={cx} cy={mid} r={r} fill={color} />
-              <circle cx={cx} cy={mid} r={r - 2} fill={laneColor(hashColor(author.email))} />
-              <text x={cx} y={mid} dy="0.35em" textAnchor="middle" fontSize={9} fontWeight={700} fill="#fff"
-                style={{ pointerEvents: 'none', fontFamily: 'var(--font-sans)' }}>{initials(author.name)}</text>
-              {author.src && (
-                <>
-                  <defs>
-                    <clipPath id={clip}><circle cx={cx} cy={mid} r={r - 2} /></clipPath>
-                  </defs>
-                  <image href={author.src} x={cx - (r - 2)} y={mid - (r - 2)} width={(r - 2) * 2} height={(r - 2) * 2}
-                    clipPath={`url(#${clip})`} preserveAspectRatio="xMidYMid slice" />
-                </>
-              )}
-            </g>
-          )
+          <>
+            {/* HEAD's ring sits outside the merge/avatar choice so a merge at HEAD keeps it too. */}
+            {isHead && <circle cx={cx} cy={mid} r={r + 3} fill="none" stroke={color} strokeWidth={2} data-testid="head-ring" />}
+            {row.merge ? (
+              <circle cx={cx} cy={mid} r={5.5} fill={color} stroke="var(--gs-bg)" strokeWidth={1.5} data-testid="merge-node" />
+            ) : (
+              <g data-testid="avatar-node">
+                <circle cx={cx} cy={mid} r={r} fill={color} />
+                <circle cx={cx} cy={mid} r={r - 2} fill={laneColor(hashColor(author.email))} />
+                <text x={cx} y={mid} dy="0.35em" textAnchor="middle" fontSize={9} fontWeight={700} fill="#fff"
+                  style={{ pointerEvents: 'none', fontFamily: 'var(--font-sans)' }}>{initials(author.name)}</text>
+                {author.src && (
+                  <>
+                    <defs>
+                      <clipPath id={clip}><circle cx={cx} cy={mid} r={r - 2} /></clipPath>
+                    </defs>
+                    <image href={author.src} x={cx - (r - 2)} y={mid - (r - 2)} width={(r - 2) * 2} height={(r - 2) * 2}
+                      clipPath={`url(#${clip})`} preserveAspectRatio="xMidYMid slice" />
+                  </>
+                )}
+              </g>
+            )}
+          </>
         ) : (
           <g data-testid="commit-node">
             {isHead && <circle cx={cx} cy={mid} r={r + 4} fill="none" stroke={color} strokeWidth={1.5} opacity={0.6} />}

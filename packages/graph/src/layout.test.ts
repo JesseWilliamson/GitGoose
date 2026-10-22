@@ -314,6 +314,20 @@ describe('layout', () => {
     checkInvariants(commits, rows)
   })
 
+  it('draws a merge into a stash\'s base solid: the line below the merge is not the stash\'s', () => {
+    // A stash (S) made on B; dev merged B in (M), so M's second parent joins the stash's lane.
+    const commits: LayoutCommit[] = [{ hash: 'S', parents: ['B'], stash: true }, c('M', 'D1', 'B'), c('D1', 'A'), c('B', 'A'), c('A')]
+    const rows = layout(commits)
+    expect(rows.map((r) => r.lane)).toEqual([0, 1, 1, 0, 0])
+    // Above the merge: still the stash's dashed line. Below it: the merge's line, into B.
+    expect(rows[1]!.edges).toContainEqual({ part: 'pass', from: 0, to: 0, color: 0, stash: true })
+    expect(rows[1]!.edges).toContainEqual({ part: 'bottom', from: 1, to: 0, color: 0 })
+    expect(rows[2]!.edges).toContainEqual({ part: 'pass', from: 0, to: 0, color: 0 })
+    expect(rows[3]!.edges).toContainEqual({ part: 'top', from: 0, to: 0, color: 0 })
+    expect(rows.slice(2).flatMap((r) => r.edges).filter((e) => e.stash)).toEqual([])
+    checkInvariants(commits, rows)
+  })
+
   /** What Repo.straightTips computes, the slow and obvious way: is the base on the tip's first-parent chain? */
   function straightOf(dir: string, base: string): string[] {
     const git = (...a: string[]) => execFileSync('git', a, { cwd: dir, encoding: 'utf8' })

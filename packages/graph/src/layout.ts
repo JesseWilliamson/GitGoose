@@ -221,9 +221,11 @@ export class GraphLayout {
         // lane in between to reach it.
         target = this.trunk?.has(p) && lanes[0] === null ? 0 : this.freeSlot(lane)
         lanes[target] = { hash: p }
-      } else if (lanes[target]!.pending) {
+      } else if (lanes[target]!.pending || lanes[target]!.stash) {
         // Merging HEAD: from here down the lane is a real parent line, not only the dashed one to
         // the "uncommitted changes" row, so it must not be hidden with it when there are none.
+        // Likewise a lane running down from a stash to its base: once a merge parent joins it, the
+        // line below is real ancestry and must be drawn solid, not dashed as stash-only.
         lanes[target] = { hash: p }
       }
       edges.push({ part: 'bottom', from: lane, to: target, color: this.colorOf(target) })
