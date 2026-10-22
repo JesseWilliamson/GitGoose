@@ -98,15 +98,23 @@ export interface PromptContext {
   lint?: (paths: string[], texts: Map<string, string>, lines: AddedLines) => Promise<{ findings: ReviewFinding[]; runs: LinterRun[]; report: string[] }>
 }
 
+/** The words a prompt of `kind` uses: the edited parts, blank ones falling back to the built-in words. */
+function wordsOf(kind: PromptKind, ctx: PromptContext): { system: string; template: string } {
+  const def = DEFAULT_PROMPTS[kind]
+  const words = ctx.words?.(kind)
+  return {
+    system: words?.system.trim() ? words.system : def.system,
+    template: words?.instructions.trim() ? words.instructions : def.instructions,
+  }
+}
+
 /**
  * One prompt from its parts: the words in use (filled in with `vars`), the fixed answer format,
  * and the context. Blank edited parts fall back to the built-in words.
  */
 export function compose(kind: PromptKind, ctx: PromptContext, vars: Record<string, string>, context: string, note?: string): Pick<BuiltPrompt, 'system' | 'prompt' | 'parts'> {
   const def = DEFAULT_PROMPTS[kind]
-  const words = ctx.words?.(kind)
-  const system = words?.system.trim() ? words.system : def.system
-  const template = words?.instructions.trim() ? words.instructions : def.instructions
+  const { system, template } = wordsOf(kind, ctx)
   const parts: PromptParts = { kind, system, template, instructions: renderTemplate(template, vars), format: def.format, context, ...(note ? { note } : {}) }
   return { system, prompt: joinPrompt(parts), parts }
 }
@@ -170,9 +178,13 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: Pro
         ...(learnings.length ? ['Learnings: this team told earlier reviews these things are fine or preferred. Do not flag what they allow:',
           ...learnings.map((l) => `- ${l.text}${l.path ? ` (for ${l.path})` : ''}`), ''] : []),
       ]
-      const contextKey = textKey(guidance.join('\n'))
+      const words = wordsOf('review', ctx)
+      // The words in use are part of the key too: a review prompt edited since the last review
+      // asks for something else, so the old findings say nothing about the new question.
+      const contextKey = textKey(JSON.stringify([words.system, words.template, guidance.join('\n')]))
       // A re-review sends only the hunks that changed, and carries the rest of the last review
-      // over; unless the guidance changed (a new learning, an edited CLAUDE.md): then all of it.
+      // over; unless the guidance or the prompt changed (a new learning, an edited CLAUDE.md,
+      // edited review words): then all of it.
       const previous = task.previous?.contextKey === contextKey ? task.previous : undefined
       const again = previous ? onlyChanged(input.files, new Set(previous.hunkKeys)) : null
       const carried = previous ? carryOver(previous.findings, (p) => input.texts.get(p) ?? null) : null

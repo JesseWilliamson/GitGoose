@@ -518,6 +518,36 @@ describe('prompts', () => {
     expect(again.findings).toMatchObject([{ title: 'Type the map', status: 'open' }])
     expect(again.summary).toBe('Nothing changed in the reviewed code since the last review.')
   })
+
+  it('re-reviews in full after the review words were edited, even with the code unchanged', async () => {
+    const answer = JSON.stringify({ summary: 'One nit.', findings: [{ path: 'widgets.ts', startLine: 1, endLine: 1, type: 'maintainability', severity: 'minor', title: 'Type the map', message: 'Add types.' }] })
+    const fake = await fakeAnthropic([answer])
+    cleanup.push(() => fake.close())
+    const t = await setup({ aiProvider: 'anthropic' }, fake)
+    t.ai.setApiKey('sk-test')
+    t.ai.consent()
+    const task = { kind: 'review', scope: { kind: 'staged' }, profile: 'chill' } as const
+    const first = (await t.ai.run('r1', 'x', task)).review!
+    const previous = { findings: first.findings, hunkKeys: first.hunkKeys, contextKey: first.contextKey }
+    // Blank edits fall back to the built-in words: the same prompt, so nothing new to ask.
+    const blank = (await t.ai.run('r2', 'x', { ...task, previous }, { prompt: { system: '  ', instructions: '' } })).review!
+    expect(fake.requests).toHaveLength(1)
+    expect(blank.contextKey).toBe(first.contextKey)
+    // Edited instructions: the whole change goes out again, nothing is carried over.
+    const instructions = (await t.ai.run('r3', 'x', { ...task, previous }, { prompt: { system: '', instructions: 'Review this change ({label}) for security only.' } })).review!
+    expect(fake.requests).toHaveLength(2)
+    expect(fake.requests[1]!.messages[0]!.content).toContain('Review this change (Staged changes) for security only.')
+    expect(fake.requests[1]!.messages[0]!.content).toContain('    1+| export const widgets = new Map()')
+    expect(instructions.incremental).toBeUndefined()
+    expect(instructions.contextKey).not.toBe(first.contextKey)
+    // An edited system prompt, saved in Settings → AI: the same.
+    t.ai['deps'].setSettings({ aiPrompts: { review: { system: 'You review for a bank.', instructions: '' } } })
+    const system = (await t.ai.run('r4', 'x', { ...task, previous })).review!
+    expect(fake.requests).toHaveLength(3)
+    expect(fake.requests[2]!.system).toBe('You review for a bank.')
+    expect(system.incremental).toBeUndefined()
+    expect(system.contextKey).not.toBe(first.contextKey)
+  })
 })
 
 describe('recompose previews', () => {
