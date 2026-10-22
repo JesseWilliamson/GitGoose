@@ -1,11 +1,13 @@
 import { Repo } from '@gitgoose/git'
-import type { CommitOrder, GraphFilter, RepoSnapshot } from '@gitgoose/shared'
-import watcher from '@parcel/watcher'
+import { FIRST_LOG_PAGE, type CommitOrder, type GraphFilter, type RepoSnapshot } from '@gitgoose/shared'
+import type { AsyncSubscription } from '@parcel/watcher'
 import { relative, sep } from 'node:path'
 
 interface Open {
   repo: Repo
-  subscriptions: watcher.AsyncSubscription[]
+  subscriptions: AsyncSubscription[]
+  /** Setting up the watchers, which starts after the first snapshot has gone back (see `add`). */
+  watching: Promise<void>
   timer: NodeJS.Timeout | null
   lastJson: string
   /** Writes of ours in flight (see `during`); watcher refreshes wait while this is above zero. */
@@ -16,6 +18,13 @@ interface Open {
 
 /** Paths whose changes never affect what we show. Objects change on every commit but refs and the index cover it. */
 const IGNORE = ['.git/objects', '.git/lfs', 'node_modules', '.git/fsmonitor--daemon']
+
+/**
+ * The native watcher module, loaded when the first repository opens rather than with the app:
+ * loading it is ~25 ms the window would otherwise wait for.
+ */
+let watcherModule: Promise<typeof import('@parcel/watcher')> | null = null
+const loadWatcher = () => (watcherModule ??= import('@parcel/watcher').then((m) => m.default))
 
 /**
  * Open repositories and their file watchers.
@@ -31,6 +40,10 @@ const IGNORE = ['.git/objects', '.git/lfs', 'node_modules', '.git/fsmonitor--dae
  */
 export class RepoManager {
   private open = new Map<string, Open>()
+  /** Opens in progress, by the path asked for: a second request for the same path joins the first. */
+  private opening = new Map<string, Promise<RepoSnapshot>>()
+  /** Repositories opened by `preopen` whose first snapshot no window has asked for yet. */
+  private unclaimed = new Set<string>()
 
   constructor(
     private options: () => { gitPath: string; env: Record<string, string>; showStashes?: boolean; commitOrder?: CommitOrder; graphFilters?: Record<string, GraphFilter> },
@@ -61,15 +74,28 @@ export class RepoManager {
     repo.setCommitOrder(this.options().commitOrder ?? 'date')
     const filter = this.options().graphFilters?.[repo.path]
     if (filter) repo.setGraphFilter(filter)
-    const entry: Open = { repo, subscriptions: [], timer: null, lastJson: '', held: 0, fired: false }
+    const entry: Open = { repo, subscriptions: [], watching: Promise.resolve(), timer: null, lastJson: '', held: 0, fired: false }
     this.open.set(repo.id, entry)
     const snapshot = await repo.snapshot()
     entry.lastJson = JSON.stringify(snapshot)
+    // Subscribing walks the whole working tree (inotify needs one watch per directory), so it
+    // runs after the snapshot has gone back and the graph does not wait for it. What changes in
+    // between is caught by the window-focus refresh, as it would be without a watcher.
+    entry.watching = this.watch(entry)
+    // After the first screen is up, make sure later log walks are fast (ADR-004).
+    setTimeout(() => void repo.maintainCommitGraph(), 1500)
+    this.hooks.opened?.(repo)
+    return snapshot
+  }
+
+  private async watch(entry: Open): Promise<void> {
+    const { repo } = entry
     const onEvents = (err: Error | null) => {
       if (!err) this.schedule(repo.id)
     }
     const ignore = IGNORE.map((p) => p.split('/').join(sep))
     try {
+      const watcher = await loadWatcher()
       entry.subscriptions.push(await watcher.subscribe(repo.path, onEvents, { ignore }))
       // Linked worktrees keep their git dir outside the working tree; watch it too.
       const rel = relative(repo.path, repo.gitDir)
@@ -79,15 +105,49 @@ export class RepoManager {
     } catch {
       // No watcher (e.g. a network drive): the window-focus refresh still keeps us current.
     }
-    // After the first screen is up, make sure later log walks are fast (ADR-004).
-    setTimeout(() => void repo.maintainCommitGraph(), 1500)
-    this.hooks.opened?.(repo)
-    return snapshot
   }
 
   async openPath(path: string): Promise<RepoSnapshot> {
     const existing = this.findByPath(path)
-    if (existing) return existing.snapshot()
+    if (existing) {
+      // Opened ahead of the window (see preopen): the snapshot read then is still current, since
+      // every refresh since replaced it, so the window need not wait for git to read it again.
+      if (this.unclaimed.delete(existing.id) && existing.lastSnapshot) return existing.lastSnapshot
+      return existing.snapshot()
+    }
+    const running = this.opening.get(path)
+    if (running) {
+      const snapshot = await running
+      this.unclaimed.delete(snapshot.id)
+      return snapshot
+    }
+    return this.track(path, this.openNew(path))
+  }
+
+  /**
+   * Start opening a repository the window is about to ask for (the tabs restored at startup),
+   * and read the first page of its log, while the window is still loading. That is a few hundred
+   * milliseconds of git work the window would otherwise wait for after it has loaded. Failures
+   * are left for the window's own request to report.
+   */
+  preopen(path: string): void {
+    if (this.findByPath(path) || this.opening.has(path)) return
+    const opening = this.track(path, this.openNew(path).then((snapshot) => {
+      // Marked before `opening` resolves, so a window that joined this open unmarks it after.
+      this.unclaimed.add(snapshot.id)
+      void this.open.get(snapshot.id)?.repo.logPage(0, FIRST_LOG_PAGE).catch(() => {})
+      return snapshot
+    }))
+    opening.catch(() => {})
+  }
+
+  private track(path: string, opening: Promise<RepoSnapshot>): Promise<RepoSnapshot> {
+    const tracked = opening.finally(() => this.opening.delete(path))
+    this.opening.set(path, tracked)
+    return tracked
+  }
+
+  private async openNew(path: string): Promise<RepoSnapshot> {
     const { gitPath, env } = this.options()
     const repo = await Repo.open(path, { gitPath, env, onProgress: (t) => this.onProgress(repo.id, t) })
     if (this.findByPath(repo.path)) {
@@ -164,8 +224,11 @@ export class RepoManager {
     const o = this.open.get(id)
     if (!o) return null
     this.open.delete(id)
+    this.unclaimed.delete(id)
     this.hooks.closed?.(id)
     if (o.timer) clearTimeout(o.timer)
+    // A subscription still being set up lands in `subscriptions` first, then goes with the rest.
+    await o.watching
     await Promise.all(o.subscriptions.map((s) => s.unsubscribe()))
     o.repo.dispose()
     return o.repo.path

@@ -1,5 +1,5 @@
 import { GraphLayout, type Row } from '@gitgoose/graph'
-import { SETTINGS, type SidebarPrefs, type PullRequestList, type CodeGraphStatus, type Commit, type DiffTarget, type GitGooseEvent, type AskThread, type ThreadAnchor, type LfsInfo, type PushCheckResult, type Ref, type Remote, type RepoSnapshot, type Submodule, type Worktree, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitgoose/shared'
+import { FIRST_LOG_PAGE, SETTINGS, type LogPage, type SidebarPrefs, type PullRequestList, type CodeGraphStatus, type Commit, type DiffTarget, type GitGooseEvent, type AskThread, type ThreadAnchor, type LfsInfo, type PushCheckResult, type Ref, type Remote, type RepoSnapshot, type Submodule, type Worktree, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitgoose/shared'
 import { create } from 'zustand'
 import { api, toUiError, type UiError } from './api'
 import { onAiEvent } from './ai'
@@ -309,14 +309,17 @@ function logGeneration(id: string): number {
  * every commit, checkout or reorder. The first page is as big as what was loaded before (up to
  * one regular page), so the swap does not shorten the list under the scrollbar.
  */
-function resetLog(id: string, snap: RepoSnapshot): void {
+function resetLog(id: string, snap: RepoSnapshot, first?: LogPage): void {
   const next = emptyLog(snap, snap.refsVersion)
   const live = logs.get(id)
   if (!live || live.commits.length === 0) {
     pending.delete(id)
     logs.set(id, next)
+    // A first page fetched with the snapshot goes straight in (see boot), so the graph's first
+    // render already has its rows.
+    if (!first || first.generation !== next.generation) void loadInto(id, next)
+    else appendPage(id, next, first)
     updateRepo(id, (v) => ({ logVersion: v.logVersion + 1 }))
-    void loadInto(id, next)
     return
   }
   pending.set(id, next)
@@ -387,7 +390,7 @@ export function onLogSwap(l: (id: string, follow: (loc: NavLocation) => NavLocat
 }
 
 /** First page small so the first screen paints fast; later pages large to cut round trips. */
-const FIRST_PAGE = 300
+const FIRST_PAGE = FIRST_LOG_PAGE
 const PAGE = 3000
 
 export function loadMore(id: string): Promise<void> {
@@ -396,6 +399,28 @@ export function loadMore(id: string): Promise<void> {
   const next = pending.get(id)
   if (next) return next.loading ?? Promise.resolve()
   return loadInto(id, getLog(id))
+}
+
+/** Lay out a page of the log and add it (its walk must be the log's: see `generation`). */
+function appendPage(id: string, log: LogData, page: LogPage): void {
+  const offset = log.commits.length
+  const rows = log.layout.push(page.commits)
+  for (let i = 0; i < page.commits.length; i++) {
+    const c = page.commits[i]!
+    log.index.set(c.hash, log.commits.length)
+    log.commits.push(c)
+    log.rows.push(rows[i]!)
+    const parent = c.parents[0]
+    if (parent !== undefined) {
+      const children = log.firstChildren.get(parent)
+      if (children) children.push(c.hash)
+      else log.firstChildren.set(parent, [c.hash])
+    }
+    if (rows[i]!.width > log.maxWidth) log.maxWidth = rows[i]!.width
+  }
+  log.done = page.done
+  if (pending.get(id) === log) swapIn(id, log)
+  else if (offset === 0) performance.mark('gitgoose:first-page')
 }
 
 function loadInto(id: string, log: LogData, firstPage = FIRST_PAGE): Promise<void> {
@@ -413,23 +438,7 @@ function loadInto(id: string, log: LogData, firstPage = FIRST_PAGE): Promise<voi
           onSnapshot(await api.snapshot(id))
           return
         }
-        const rows = log.layout.push(page.commits)
-        for (let i = 0; i < page.commits.length; i++) {
-          const c = page.commits[i]!
-          log.index.set(c.hash, log.commits.length)
-          log.commits.push(c)
-          log.rows.push(rows[i]!)
-          const parent = c.parents[0]
-          if (parent !== undefined) {
-            const children = log.firstChildren.get(parent)
-            if (children) children.push(c.hash)
-            else log.firstChildren.set(parent, [c.hash])
-          }
-          if (rows[i]!.width > log.maxWidth) log.maxWidth = rows[i]!.width
-        }
-        log.done = page.done
-        if (pending.get(id) === log) swapIn(id, log)
-        else if (offset === 0) performance.mark('gitgoose:first-page')
+        appendPage(id, log, page)
         updateRepo(id, (v) => ({ logVersion: v.logVersion + 1 }))
       },
       (e) => {
@@ -543,14 +552,17 @@ function newView(snap: RepoSnapshot): RepoView {
   }
 }
 
-export function addRepo(snap: RepoSnapshot): void {
+/** Show a repository in a new tab (or switch to its tab). `first`: its log's first page, when already fetched. */
+export function addRepo(snap: RepoSnapshot, first?: LogPage): void {
+  early.delete(snap.id)
   const s = get()
   if (s.repos[snap.id]) {
     set({ active: snap.id })
     return
   }
+  performance.mark('gitgoose:snapshot')
   set({ repos: { ...s.repos, [snap.id]: newView(snap) }, tabs: [...s.tabs, snap.id], active: snap.id })
-  resetLog(snap.id, snap)
+  resetLog(snap.id, snap, first)
   void refreshAux(snap.id)
   void api.askThreads(snap.id).then((askThreads) => updateRepo(snap.id, { askThreads }), () => {})
   void api.codeGraphStatus(snap.id).then((codegraph) => updateRepo(snap.id, { codegraph }), () => {})
@@ -599,9 +611,21 @@ export async function closeTab(id: string): Promise<void> {
   set({ settings: await api.getSettings() })
 }
 
+/**
+ * The last snapshot pushed for a repository that has no tab yet. boot() adds a restored tab only
+ * once its first page is in (and the tabs before it are): a change the watcher reports after
+ * openRepo answered would otherwise be lost, and the tab would show the answer's older status.
+ * boot() clears the entry when openRepo answers (anything pushed before that is no newer than
+ * the answer) and shows what arrived after it; addRepo clears it for every other caller.
+ */
+const early = new Map<string, RepoSnapshot>()
+
 export function onSnapshot(snap: RepoSnapshot): void {
   const view = get().repos[snap.id]
-  if (!view) return
+  if (!view) {
+    early.set(snap.id, snap)
+    return
+  }
   const hadConflicts = view.snapshot.status.some((e) => e.kind === 'unmerged')
   const hasConflicts = snap.status.some((e) => e.kind === 'unmerged')
   updateRepo(snap.id, (v) => ({
@@ -722,20 +746,41 @@ export async function boot(): Promise<void> {
   booted = true
   api.onEvent(onEvent)
   const settings = await api.getSettings()
+  performance.mark('gitgoose:settings')
   set({ settings })
   applyTheme(settings)
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     const s = get().settings
     if (s) applyTheme(s)
   })
-  for (const path of settings.openRepos) {
-    try {
-      addRepo(await api.openRepo(path))
-    } catch {
+  // All at once. The main process has usually opened them and read their first pages while
+  // this window loaded (RepoManager.preopen), so they come back together, each with its first
+  // page: every tab that has arrived is added in one go, in the saved order, and the window
+  // renders once with the last one showing (the tab a restore ends on), with its rows, instead
+  // of once per tab and again per first page.
+  const paths = settings.openRepos
+  const results = paths.map(async (path) => {
+    const snap = await api.openRepo(path)
+    early.delete(snap.id)
+    return { snap, first: await api.logPage(snap.id, 0, FIRST_PAGE).catch(() => undefined) }
+  })
+  const settled: ({ ok: true; snap: RepoSnapshot; first?: LogPage } | { ok: false })[] = []
+  results.forEach((r, i) => void r.then((v) => (settled[i] = { ok: true, ...v }), () => (settled[i] = { ok: false })))
+  const gone: string[] = []
+  for (let i = 0; i < paths.length;) {
+    await results[i]!.catch(() => {})
+    for (; i < paths.length && settled[i]; i++) {
+      const r = settled[i]!
+      // A change pushed while it waited (see `early`). If that moved the refs, the first page is
+      // from the old walk: resetLog sees that and reads the log afresh.
+      if (r.ok) addRepo(early.get(r.snap.id) ?? r.snap, r.first)
       // The folder was moved or deleted; drop it from the session.
-      const s = await api.getSettings()
-      await api.setSettings({ openRepos: s.openRepos.filter((p) => p !== path) })
+      else gone.push(paths[i]!)
     }
+  }
+  if (gone.length) {
+    const s = await api.getSettings()
+    await api.setSettings({ openRepos: s.openRepos.filter((p) => !gone.includes(p)) })
   }
 }
 

@@ -95,6 +95,9 @@ export interface RowLook {
   dateW: number
 }
 
+/** Repositories whose first rows have been marked (see GraphList). */
+const rowsMarked = new Set<string>()
+
 function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
   const rowH = compact ? ROW_H_COMPACT : ROW_H
   const dateFormat = useSetting('dateFormat')
@@ -160,6 +163,14 @@ function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
 
   const items = virt.getVirtualItems()
   const lastVisible = items.length ? items[items.length - 1]!.index : 0
+  // Startup timeline (read by tools/bench): the frame that first draws each repository's commit
+  // rows, marked from the animation frame after the commit (the frame they are painted in).
+  const hasRows = rowCount > 0
+  useLayoutEffect(() => {
+    if (!hasRows || rowsMarked.has(view.id)) return
+    rowsMarked.add(view.id)
+    requestAnimationFrame(() => performance.mark('gitgoose:rows', { detail: view.id }))
+  }, [hasRows, view.id])
   // Fetch the next page when the user gets within a few hundred rows of the end. A line ends
   // where its next first parent is not loaded yet, so near the end of the line it loads on (page
   // after page if it must) until the parent arrives or the history ends.
