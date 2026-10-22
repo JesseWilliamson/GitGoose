@@ -62,6 +62,10 @@ export function installMenu(): void {
     {
       label: 'View',
       submenu: [
+        // Like a browser: back to the previous commit, diff or view (and tab), and forward again.
+        { label: 'Back', accelerator: isMac ? 'Cmd+[' : 'Alt+Left', click: cmd('back'), registerAccelerator: false },
+        { label: 'Forward', accelerator: isMac ? 'Cmd+]' : 'Alt+Right', click: cmd('forward'), registerAccelerator: false },
+        { type: 'separator' },
         { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+B', click: cmd('toggle-sidebar'), registerAccelerator: false },
         { label: 'Toggle Details', accelerator: 'CmdOrCtrl+Alt+B', click: cmd('toggle-details'), registerAccelerator: false },
         { label: 'Hide Side Panels', click: cmd('layout-wide-graph') },
