@@ -37,9 +37,9 @@ interface Meta {
   keywords?: string
 }
 
-export type Section = 'Appearance' | 'Graph' | 'Git' | 'Diff' | 'Confirmations' | 'Integrations' | 'AI' | 'Accounts' | 'Startup' | 'Keyboard'
+export type Section = 'Appearance' | 'Graph' | 'Git' | 'Diff' | 'Confirmations' | 'Integrations' | 'AI' | 'Startup' | 'Keyboard'
 
-export const SECTIONS: Section[] = ['Appearance', 'Graph', 'Git', 'Diff', 'Confirmations', 'Integrations', 'AI', 'Accounts', 'Startup', 'Keyboard']
+export const SECTIONS: Section[] = ['Appearance', 'Graph', 'Git', 'Diff', 'Confirmations', 'Integrations', 'AI', 'Startup', 'Keyboard']
 
 export type SettingSpec =
   | (Meta & { kind: 'boolean'; default: boolean })
@@ -92,13 +92,12 @@ export const SETTINGS = {
   ], { label: 'Tags in the sidebar', section: 'Appearance', keywords: 'sidebar tags limit', description: 'Newest first. Also View ▸ Tags. The filter box always searches all of them.' }),
 
   // ---------------------------------------------------------------- Graph
-  avatars: choice('initials', [
-    { value: 'initials', label: 'Initials (no network)' },
+  avatars: choice('github', [
     { value: 'github', label: 'GitHub' },
-    { value: 'gravatar', label: 'Gravatar' },
+    { value: 'initials', label: 'Initials (no network)' },
   ], {
-    label: 'Author avatars', section: 'Graph', keywords: 'picture photo image node',
-    description: 'GitHub: authors with a GitHub noreply address; once you sign in with GitHub (Accounts), any author whose commits GitHub has. Gravatar: sends a hash of each author email. Images are cached for 30 days.',
+    label: 'Author avatars', section: 'Graph', keywords: 'picture photo image node github',
+    description: 'GitHub pictures for authors of repositories with a GitHub remote, asked for without signing in.',
   }),
   showRemoteBranches: bool(true, { label: 'Show remote branches on the graph', section: 'Graph' }),
   showTags: bool(true, { label: 'Show tags on the graph', section: 'Graph' }),
@@ -201,12 +200,6 @@ export const SETTINGS = {
   /** Linter commands the user allowed (true) or refused (false), keyed "<repo path>\n<command>". */
   linterDecisions: internal<Record<string, boolean>>({}),
 
-  // ---------------------------------------------------------------- Accounts
-  githubHttps: bool(false, {
-    label: 'Use your GitHub sign-in for HTTPS push and fetch', section: 'Accounts', keywords: 'token password credential',
-    description: 'Answers GitHub\'s password prompt with your sign-in (needs repository access, asked for once). Your credential helpers are skipped for github.com while this is on.',
-  }),
-
   // ---------------------------------------------------------------- Startup
   reopenTabs: bool(true, { label: 'Reopen last session’s tabs', section: 'Startup' }),
   checkForUpdates: bool(true, { label: 'Check for updates', section: 'Startup', description: 'Installed releases only; local builds update with pnpm install:local.' }),
@@ -216,7 +209,7 @@ export const SETTINGS = {
   keybindings: { kind: 'keybindings' as const, default: {} as Record<string, string>, label: 'Shortcuts', section: 'Keyboard' as const, description: 'Click a shortcut, then press the new keys. Esc cancels; Backspace restores the default.' },
 
   // ---------------------------------------------------------------- app state
-  settingsVersion: internal(4),
+  settingsVersion: internal(5),
   recentRepos: internal<string[]>([]),
   openRepos: internal<string[]>([]),
   /**
@@ -315,7 +308,14 @@ export function migrateSettings(stored: Record<string, unknown>): Settings {
     }
     delete s.askThreads
   }
-  s.settingsVersion = 4
+  if (version < 5) {
+    // v4 had GitHub sign-in (the githubHttps switch) and Gravatar avatars; both are gone. Every
+    // v4 file starts over at the new default (GitHub): 'initials' was v4's default and the file
+    // cannot tell a choice from it, and a Gravatar choice has no equivalent any more.
+    delete s.githubHttps
+    delete s.avatars
+  }
+  s.settingsVersion = 5
   const out = defaultSettings() as Record<string, unknown>
   for (const k of Object.keys(SETTINGS)) if (k in s) out[k] = validateSetting(k as SettingKey, s[k])
   return out as Settings

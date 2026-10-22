@@ -23,7 +23,6 @@ export type SidebarRow =
   | { kind: 'remote'; key: string; depth: 1; remote: string; count: number; open: boolean }
   | { kind: 'stash'; key: string; depth: 2; stash: StashEntry }
   | { kind: 'pull'; key: string; depth: 2; pull: PullRequest }
-  | { kind: 'pulls-signin'; key: string; depth: 2 }
   | { kind: 'worktree'; key: string; depth: 1; worktree: Worktree }
   | { kind: 'submodule'; key: string; depth: 1; submodule: Submodule }
   | { kind: 'lfs-setup'; key: string; depth: 1 }
@@ -124,7 +123,6 @@ export function sidebarRows(input: SidebarInput): SidebarRow[] {
       out.push({ kind: 'workspace', key: 'ws:pulls', depth: 1, item: 'pulls', count: list.length, open: pullsOpen })
       if (pullsOpen) {
         if (input.pullsLoading && !input.pulls) out.push({ kind: 'empty', key: 'empty:pulls', depth: 2, text: 'Asking GitHub…', for: 'pulls' })
-        else if (input.pulls?.state === 'signed-out') out.push({ kind: 'pulls-signin', key: 'pulls-signin', depth: 2 })
         else if (input.pulls?.state === 'ok' && !list.length) out.push({ kind: 'empty', key: 'empty:pulls', depth: 2, text: 'No open pull requests', for: 'pulls' })
         for (const p of list) out.push({ kind: 'pull', key: `pull:${p.number}`, depth: 2, pull: p })
       }
@@ -198,7 +196,7 @@ export function sidebarRows(input: SidebarInput): SidebarRow[] {
 
 /** The rows the keyboard can stop on (notes and empty-list text are skipped). */
 export function focusable(r: SidebarRow): boolean {
-  return r.kind !== 'empty' && r.kind !== 'lfs-missing' && r.kind !== 'pulls-signin'
+  return r.kind !== 'empty' && r.kind !== 'lfs-missing'
 }
 
 /** Rows that open and close (headers, folders, remotes, and the Stashes and Pull Requests items). */

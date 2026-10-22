@@ -13,7 +13,9 @@ A fast git client with a clear commit graph and power features.
 - **Conflict wizard.** Resolve each conflict block by picking ours, theirs or both, then continue.
 - **Keyboard first.** Command palette (Ctrl/Cmd+K or Ctrl/Cmd+Shift+P), j/k navigation, search
   by message, author, path, code or SHA.
-- **No network at startup**, no accounts, no telemetry. Errors are logged locally only.
+- **No network at startup**, no accounts, no telemetry. The one exception: author pictures are
+  fetched from GitHub (no sign-in) for repositories with a GitHub remote and for GitHub noreply
+  addresses, unless avatars are set to Initials. Errors are logged locally only.
 
 ## Develop
 

@@ -1,5 +1,6 @@
 import type { Row } from '@gitgoose/graph'
 import { memo, useMemo } from 'react'
+import { useAvatarImage } from '../lib/avatar'
 import { edgePath } from '../lib/edges'
 import { hashColor, initials, laneColor } from '../lib/format'
 import { lineEdges } from '../lib/lineView'
@@ -71,7 +72,7 @@ export interface NodeAuthor {
  * second ring outside.
  *
  * Avatar nodes: the author's picture ringed in the lane colour, with initials
- * underneath so something shows while the image loads or when there is none; a merge is a plain
+ * in its place while the image loads or when there is none (see AvatarNode); a merge is a plain
  * dot. HEAD gets a ring outside either. With `band`, a faint band in the lane colour runs from
  * the node to the column's right edge and ends in a solid strip, tying the message to its lane;
  * the band stops short of the row's top and bottom so consecutive commits in one lane read as
@@ -147,21 +148,7 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
             {row.merge ? (
               <circle cx={cx} cy={mid} r={5.5} fill={color} stroke="var(--gs-bg)" strokeWidth={1.5} data-testid="merge-node" />
             ) : (
-              <g data-testid="avatar-node">
-                <circle cx={cx} cy={mid} r={r} fill={color} />
-                <circle cx={cx} cy={mid} r={r - 2} fill={laneColor(hashColor(author.email))} />
-                <text x={cx} y={mid} dy="0.35em" textAnchor="middle" fontSize={9} fontWeight={700} fill="#fff"
-                  style={{ pointerEvents: 'none', fontFamily: 'var(--font-sans)' }}>{initials(author.name)}</text>
-                {author.src && (
-                  <>
-                    <defs>
-                      <clipPath id={clip}><circle cx={cx} cy={mid} r={r - 2} /></clipPath>
-                    </defs>
-                    <image href={author.src} x={cx - (r - 2)} y={mid - (r - 2)} width={(r - 2) * 2} height={(r - 2) * 2}
-                      clipPath={`url(#${clip})`} preserveAspectRatio="xMidYMid slice" />
-                  </>
-                )}
-              </g>
+              <AvatarNode cx={cx} cy={mid} r={r} color={color} author={author} clip={clip} />
             )}
           </>
         ) : (
@@ -174,6 +161,38 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
     </svg>
   )
 })
+
+/**
+ * The author as a graph node: a ring in the lane colour (a stroke, so nothing is painted inside
+ * it), and inside it the initials on a coloured disc until the picture has loaded. Once it has,
+ * the picture is drawn alone: its transparent parts show the page, not a colour behind it.
+ */
+function AvatarNode({ cx, cy, r, color, author, clip }: { cx: number; cy: number; r: number; color: string; author: NodeAuthor; clip: string }) {
+  const { status, onLoad, onError } = useAvatarImage(author.src)
+  const loaded = status === 'loaded'
+  const inner = r - 2
+  return (
+    <g data-testid="avatar-node" data-avatar={status}>
+      <circle cx={cx} cy={cy} r={r - 1} fill="none" stroke={color} strokeWidth={2} />
+      {!loaded && (
+        <>
+          <circle cx={cx} cy={cy} r={inner} fill={laneColor(hashColor(author.email))} />
+          <text x={cx} y={cy} dy="0.35em" textAnchor="middle" fontSize={9} fontWeight={700} fill="#fff"
+            style={{ pointerEvents: 'none', fontFamily: 'var(--font-sans)' }}>{initials(author.name)}</text>
+        </>
+      )}
+      {author.src && status !== 'failed' && (
+        <>
+          <defs>
+            <clipPath id={clip}><circle cx={cx} cy={cy} r={inner} /></clipPath>
+          </defs>
+          <image href={author.src} x={cx - inner} y={cy - inner} width={inner * 2} height={inner * 2}
+            clipPath={`url(#${clip})`} preserveAspectRatio="xMidYMid slice" onLoad={onLoad} onError={onError} />
+        </>
+      )}
+    </g>
+  )
+}
 
 /**
  * A stash: a rounded card tinted in its lane colour with a dashed edge, and an archive box (lid,

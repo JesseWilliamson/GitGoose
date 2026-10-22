@@ -51,6 +51,11 @@ export async function launch(repo?: string, env: Record<string, string> = {}, op
       ...process.env,
       GITGOOSE_USER_DATA: tempDir('gitgoose-profile-'),
       GITGOOSE_NO_UPDATE: '1',
+      // Tests never reach GitHub: the API and the avatar host point at a closed local port unless
+      // a test brings its own fake (fakeGitHub, whose GITGOOSE_GITHUB_URL also serves the API,
+      // or a local avatar server).
+      ...(env.GITGOOSE_GITHUB_URL || env.GITGOOSE_GITHUB_API ? {} : { GITGOOSE_GITHUB_API: 'http://127.0.0.1:9' }),
+      GITGOOSE_AVATAR_GITHUB_BASE: 'http://127.0.0.1:9',
       ...(repo ? { GITGOOSE_OPEN: repo } : {}),
       ...env,
     } as Record<string, string>,

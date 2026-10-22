@@ -15,7 +15,7 @@ explanations. `docs/learn/` holds exercises for the four pieces he plans to own.
 ```
 apps/desktop/          Electron app (electron-vite)
   src/main/            main process: window, IPC router (ipc.ts), RepoManager + file watcher, settings, menu,
-                       avatars, github/ (device-flow sign-in; the only code that holds a token),
+                       avatars, github/ (GitHub's public API, no sign-in: pull request list, avatar lookup),
                        ai/ (ACP client for the user's agent, Anthropic API fallback),
                        codegraph.ts + indexer.ts (the code graph service and its utility process, ADR-008)
   src/preload/         the only bridge: builds window.gitgoose from API_METHODS

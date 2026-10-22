@@ -1,5 +1,5 @@
 import { GraphLayout, type Row } from '@gitgoose/graph'
-import { SETTINGS, type SidebarPrefs, type PullRequestList, type CodeGraphStatus, type Commit, type DiffTarget, type GitHubStatus, type GitGooseEvent, type AskThread, type ThreadAnchor, type LfsInfo, type PushCheckResult, type Ref, type Remote, type RepoSnapshot, type Submodule, type Worktree, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitgoose/shared'
+import { SETTINGS, type SidebarPrefs, type PullRequestList, type CodeGraphStatus, type Commit, type DiffTarget, type GitGooseEvent, type AskThread, type ThreadAnchor, type LfsInfo, type PushCheckResult, type Ref, type Remote, type RepoSnapshot, type Submodule, type Worktree, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitgoose/shared'
 import { create } from 'zustand'
 import { api, toUiError, type UiError } from './api'
 import { onAiEvent } from './ai'
@@ -190,8 +190,6 @@ interface State {
   cloneProgress: string | null
   /** A full-window page shown instead of the repository (or welcome) view. */
   page: 'settings' | null
-  /** GitHub sign-in state; loaded when first needed (the Accounts panel), then kept by events. */
-  github: GitHubStatus | null
 }
 
 export const useStore = create<State>(() => ({
@@ -209,7 +207,6 @@ export const useStore = create<State>(() => ({
   menu: null,
   cloneProgress: null,
   page: null,
-  github: null,
 }))
 
 const set = useStore.setState
@@ -612,9 +609,6 @@ function onEvent(e: GitGooseEvent): void {
       set({ settings: e.settings })
       applyTheme(e.settings)
       break
-    case 'github':
-      set({ github: e.status })
-      break
     case 'ai-text':
     case 'ai-permission':
     case 'ai-permission-closed':
@@ -623,14 +617,6 @@ function onEvent(e: GitGooseEvent): void {
     case 'ai-update':
       onThreadUpdate(e)
       break
-  }
-}
-
-export async function loadGitHub(): Promise<void> {
-  try {
-    set({ github: await api.githubStatus() })
-  } catch (e) {
-    reportError('Could not read the GitHub sign-in', e)
   }
 }
 
@@ -694,8 +680,6 @@ export async function boot(): Promise<void> {
   const settings = await api.getSettings()
   set({ settings })
   applyTheme(settings)
-  // Local only (no network): whether a GitHub sign-in is stored, for avatar URLs.
-  void loadGitHub()
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     const s = get().settings
     if (s) applyTheme(s)
