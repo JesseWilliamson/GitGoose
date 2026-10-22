@@ -1,7 +1,7 @@
-import { AI_AUTH_REQUIRED, reduceThread, type AiThread, type AiUpdate, type ThreadAnchor } from '@gitgoose/shared'
+import { AI_AUTH_REQUIRED, openingPromptKind, reduceThread, type AiThread, type AiUpdate, type ThreadAnchor } from '@gitgoose/shared'
 import { useEffect, useState } from 'react'
 import { create } from 'zustand'
-import { areaOfAnchor, areaTarget, askLogin, askToRedact, ensureAi, whatFor } from './ai'
+import { areaOfAnchor, areaTarget, askLogin, askToRedact, ensureAi, whatFor, wordsFor } from './ai'
 import { api, toUiError } from './api'
 import { reportError, updateRepo } from './store'
 
@@ -94,7 +94,10 @@ export async function sendMessage(threadId: string, text: string): Promise<boole
   let redact = false
   for (let attempt = 0; ; attempt++) {
     try {
-      const opts = { ...(redact ? { redact } : {}), ...(target ? { target } : {}) }
+      // A conversation that opens with words of its own (the AI panel's, Ask's) sends the ones on screen.
+      const kind = openingPromptKind(thread.anchor)
+      const prompt = kind ? wordsFor(kind) : undefined
+      const opts = { ...(redact ? { redact } : {}), ...(target ? { target } : {}), ...(prompt ? { prompt } : {}) }
       await api.aiThreadSend(threadId, text, Object.keys(opts).length ? opts : undefined)
       return true
     } catch (e) {

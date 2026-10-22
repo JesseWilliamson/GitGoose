@@ -6,6 +6,7 @@ import clsx from 'clsx'
 import { ChevronRight, FileText, Lock, RotateCcw } from 'lucide-react'
 import { Popover } from 'radix-ui'
 import { useEffect, useRef, useState } from 'react'
+import { draftSaved, publishDraft } from '../lib/ai'
 import { api, toUiError } from '../lib/api'
 import { reportError, setSettingEntry, useStore } from '../lib/store'
 import { Button, Spinner } from './ui'
@@ -66,15 +67,19 @@ function AreaPrompt({ kind, repoId, task }: { kind: PromptKind; repoId: string |
   const used = effectivePrompt(kind, settings)
   const fallback = effectivePrompt(kind, settings, { area: false })
   const [draft, setDraft] = useState<PromptText>({ system: used.system, instructions: used.instructions })
-  const save = useDebouncedSave((text: PromptText | null) => setPromptEdit(kind, text))
+  // Requests see a draft the moment it is typed (publishDraft); the settings catch up when the save lands.
+  const save = useDebouncedSave((text: PromptText | null) => setPromptEdit(kind, text).then(() => draftSaved(kind, text)))
 
   const change = (next: PromptText) => {
     setDraft(next)
     // The same words as the default are no edit: nothing to remember, and Reset has nothing to do.
-    save(sameWords(next, fallback) ? null : next)
+    const edit = sameWords(next, fallback) ? null : next
+    publishDraft(kind, edit)
+    save(edit)
   }
   const reset = () => {
     setDraft({ system: fallback.system, instructions: fallback.instructions })
+    publishDraft(kind, null)
     save(null, true)
   }
 

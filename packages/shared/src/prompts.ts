@@ -244,6 +244,24 @@ export function effectivePrompt(kind: PromptKind, s: PromptSettings, opts: { are
   return { system: pick('system'), instructions: pick('instructions'), source }
 }
 
+/**
+ * The words a request sends, with an area's draft that may not be saved yet: `draft` undefined
+ * (no draft: the saved settings decide), null (the draft goes back to the default), or the words
+ * on screen. Blank parts fall through exactly as effectivePrompt's do, so the request sends
+ * what the panel previewed.
+ */
+export function requestWords(kind: PromptKind, s: PromptSettings, draft?: PromptText | null): PromptText {
+  const { [kind]: _saved, ...others } = s.aiPromptEdits
+  const edits = draft === undefined ? s.aiPromptEdits : draft === null ? others : { ...others, [kind]: draft }
+  const { system, instructions } = effectivePrompt(kind, { aiPrompts: s.aiPrompts, aiPromptEdits: edits })
+  return { system, instructions }
+}
+
+/** The prompt a conversation about `anchor` opens with, when it has words of its own (the AI panel's, Ask's). */
+export function openingPromptKind(anchor: { kind: string }): PromptKind | undefined {
+  return anchor.kind === 'free' ? 'chat' : anchor.kind === 'ask' ? 'ask' : undefined
+}
+
 /** The parts of a built prompt, in the order they are sent (what a Prompt panel shows). */
 export interface PromptParts {
   kind: PromptKind

@@ -1,4 +1,4 @@
-import { AI_AUTH_REQUIRED, defaultTarget, effectivePrompt, type AgentAuthMethod, type AiArea, type AiPermissionRequest, type AiResult, type AiTarget, type AiTask, type RecomposeProposal, type ThreadAnchor } from '@gitgoose/shared'
+import { AI_AUTH_REQUIRED, defaultTarget, requestWords, type PromptKind, type PromptText, type AgentAuthMethod, type AiArea, type AiPermissionRequest, type AiResult, type AiTarget, type AiTask, type RecomposeProposal, type ThreadAnchor } from '@gitgoose/shared'
 import { create } from 'zustand'
 import { api, toUiError } from './api'
 import { attention, choose, setSettingEntry, useStore } from './store'
@@ -99,6 +99,28 @@ export function setAreaTarget(area: AiArea, target: AiTarget | null): Promise<vo
   return setSettingEntry('aiAreaTargets', area, target)
 }
 
+/**
+ * Prompt panels' drafts, the moment they are typed (null: reset to the default). Saving is
+ * async: a request started right after the panel closes would otherwise read the settings from
+ * before the save and send the old words. A draft is dropped once its own save has landed.
+ */
+const drafts = new Map<PromptKind, PromptText | null>()
+
+export function publishDraft(kind: PromptKind, text: PromptText | null): void {
+  drafts.set(kind, text)
+}
+
+/** The save of `text` landed: the settings say it now (unless a newer draft came meanwhile). */
+export function draftSaved(kind: PromptKind, text: PromptText | null): void {
+  if (drafts.has(kind) && drafts.get(kind) === text) drafts.delete(kind)
+}
+
+/** The words a request of `kind` sends now: the panel's draft, else what is saved. */
+export function wordsFor(kind: PromptKind): PromptText | undefined {
+  const s = useStore.getState().settings
+  return s ? requestWords(kind, s, drafts.has(kind) ? drafts.get(kind) : undefined) : undefined
+}
+
 function openSettings(): void {
   useStore.setState({ page: 'settings' })
 }
@@ -119,8 +141,7 @@ export function startAi(repoId: string | null, task: AiTask, onText?: (text: str
   const target = opts.target ?? areaTarget(areaOf(task.kind)) ?? undefined
   // The words the area's Prompt panel shows (its edit, else Settings', else built-in): sent as
   // they are, so what the panel showed is what goes.
-  const settings = useStore.getState().settings
-  const prompt = settings ? (({ system, instructions }) => ({ system, instructions }))(effectivePrompt(task.kind, settings)) : undefined
+  const prompt = wordsFor(task.kind)
   const done = (async (): Promise<AiResult | null> => {
     if (!(await ensureAi(WHAT[task.kind], target))) return null
     await opts.before?.()

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_PROMPTS, effectivePrompt, joinPrompt, PROMPT_KINDS, promptKindsOf, renderTemplate } from './prompts'
+import { DEFAULT_PROMPTS, effectivePrompt, joinPrompt, PROMPT_KINDS, promptKindsOf, renderTemplate, requestWords } from './prompts'
 
 describe('prompt words', () => {
   it('fills {names} it knows and leaves the rest as typed', () => {
@@ -18,6 +18,16 @@ describe('prompt words', () => {
     expect(effectivePrompt('recompose', area)).toEqual({ system: 'S', instructions: 'Mine', source: 'area' })
     // Settings → AI looks past the area's edit.
     expect(effectivePrompt('recompose', area, { area: false }).source).toBe('settings')
+  })
+
+  it("a request uses the area's draft before it is saved, or the default when the draft went back to it", () => {
+    const def = DEFAULT_PROMPTS.recompose
+    const s = { aiPrompts: { recompose: { system: 'S', instructions: '' } }, aiPromptEdits: { recompose: { system: '', instructions: 'Saved edit' } } }
+    expect(requestWords('recompose', s)).toEqual({ system: 'S', instructions: 'Saved edit' })
+    // Typed, not saved yet: the draft, its blank system falling through to Settings'.
+    expect(requestWords('recompose', s, { system: '', instructions: 'On screen' })).toEqual({ system: 'S', instructions: 'On screen' })
+    // Reset, not saved yet: the saved edit no longer counts.
+    expect(requestWords('recompose', s, null)).toEqual({ system: 'S', instructions: def.instructions })
   })
 
   it('puts the parts together: instructions, the fixed format, then the context', () => {

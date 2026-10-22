@@ -1,6 +1,6 @@
 import type { Repo } from '@gitgoose/git'
 import {
-  commandArgv, defaultTarget, effectivePrompt, reduceThread, targetCommandLine, targetKey, targetLabel, transcript,
+  commandArgv, defaultTarget, effectivePrompt, openingPromptKind, reduceThread, targetCommandLine, targetKey, targetLabel, transcript,
   type PromptKind, type PromptPreview, type PromptText,
   type AgentInfo, type AiArtifactResult, type AiModelList, type AiPermissionAsk, type AiPermissionRequest, type AiResult, type AiRunOptions, type AiStatus, type AiTarget, type AiTask,
   type AiThread, type AiUpdate, type ArtifactKind, type GitGooseEvent, type PermissionAnswer, type ReviewProfile, type Settings, type ThreadAnchor,
@@ -128,6 +128,8 @@ interface ThreadRec {
   systemApart: boolean
   /** The API mode's system prompt. */
   system: string
+  /** The words the latest send brought for this conversation's opening (the AI panel's, Ask's). */
+  prompt?: PromptText
   /** What the feature saw, for checking artifacts with the feature's own verifier. */
   built: BuiltPrompt | null
   task: AiTask | null
@@ -246,6 +248,15 @@ export class AiService {
    * pick, and one busy listing models all stay.
    */
   onSettings(): void {
+    this.prune()
+  }
+
+  /**
+   * Stop every agent process nothing can reach: not the default, not an area's pick, holding no
+   * session and not pinned. Run when settings change, and whenever one of those holds ends (a
+   * session closes, a pin is released), or a process on an abandoned command line lives on.
+   */
+  private prune(): void {
     const s = this.deps.settings()
     const keep = new Set<string>([this.commandLine()])
     for (const t of Object.values(s.aiAreaTargets)) if (t?.provider === 'agent') keep.add(targetCommandLine(t))
@@ -265,7 +276,10 @@ export class AiService {
     } finally {
       const n = (this.pinned.get(line) ?? 1) - 1
       if (n) this.pinned.set(line, n)
-      else this.pinned.delete(line)
+      else {
+        this.pinned.delete(line)
+        this.prune()
+      }
     }
   }
 
@@ -347,6 +361,11 @@ export class AiService {
    */
   private words(kind?: PromptKind, override?: PromptText): PromptContext['words'] {
     return (k) => (k === kind && override ? override : effectivePrompt(k, this.deps.settings()))
+  }
+
+  /** The words a conversation opens with: what its send brought (the panel's, unsaved too), else the saved ones. */
+  private openingWords(rec: ThreadRec): PromptContext['words'] {
+    return this.words(openingPromptKind(rec.thread.anchor), rec.prompt)
   }
 
   /**
@@ -455,6 +474,7 @@ export class AiService {
     // The area's pick, or else whoever the thread was last with, or else the default.
     const target = this.ready(opts.target ?? rec?.thread.target)
     if (!rec) throw new AiError('This conversation is closed. Open it again.', 'ai-thread-gone')
+    if (opts.prompt) rec.prompt = opts.prompt
     if (rec.active || rec.starting) throw new AiError('The AI is still answering. Wait for it, or stop it.', 'ai-busy')
     const message = text.trim()
     if (!message) throw new AiError('Write a message first.', 'ai-empty')
@@ -584,7 +604,7 @@ export class AiService {
       const logical = history.length || opening !== undefined ? message : await first()
       // Everything that leaves is checked, every turn: the system prompt (an Ask's, set by
       // opening(), or the chat's), the conversation so far, and the new message.
-      const guarded = guardApiTurn(rec.system || effectivePrompt('chat', this.deps.settings()).system, history, logical, redact)
+      const guarded = guardApiTurn(rec.system || this.openingWords(rec)!('chat')!.system, history, logical, redact)
       rec.system = guarded.system
       const text = guarded.text
       const messages = [...guarded.history.flatMap((h) => [{ role: 'user' as const, content: h.user }, { role: 'assistant' as const, content: h.agent }]), { role: 'user' as const, content: text }]
@@ -664,10 +684,13 @@ export class AiService {
   }
 
   private leaveSession(rec: ThreadRec): void {
-    if (rec.sessionId && rec.agentLine) this.agents.get(rec.agentLine)?.closeSession(rec.sessionId)
+    const left = rec.sessionId && rec.agentLine
+    if (left) this.agents.get(rec.agentLine!)?.closeSession(rec.sessionId!)
     rec.sessionId = null
     rec.agentLine = null
     rec.primed = false
+    // That may have been the last thing keeping its agent: stop it if nothing else needs it.
+    if (left) this.prune()
   }
 
   /** "Codex · GPT-5": the session's model as the agent reports it, or the API's. */
@@ -687,11 +710,11 @@ export class AiService {
     const api = rec.target?.provider === 'anthropic'
     if (anchor.kind === 'ask') {
       // Ask's own prompt, with the question in it: the lines, their function, definitions, history.
-      const built = await buildPrompt(repo, { kind: 'ask', rev: anchor.rev === 'worktree' ? null : anchor.rev, path: anchor.path, startLine: anchor.lines[0], endLine: anchor.lines[1], question: message, earlier: [] }, { words: this.words() })
+      const built = await buildPrompt(repo, { kind: 'ask', rev: anchor.rev === 'worktree' ? null : anchor.rev, path: anchor.path, startLine: anchor.lines[0], endLine: anchor.lines[1], question: message, earlier: [] }, { words: this.openingWords(rec) })
       rec.system = built.system
       return `${api ? '' : `${built.system}\n\n`}${built.prompt}\n\n${artifactProtocol(anchor, false)}`
     }
-    return openingMessage(await anchorContext(repo, anchor, { words: this.words() }, api), anchor, message)
+    return openingMessage(await anchorContext(repo, anchor, { words: this.openingWords(rec) }, api), anchor, message)
   }
 
   /** The conversation as exchanged. A thread from disk rebuilds it: its transcript, with the anchor's context in front. */
@@ -701,7 +724,7 @@ export class AiService {
     if (past.length) {
       const anchor = rec.thread.anchor
       // As the opening was: an agent's first message carries the system prompt, the API's does not.
-      const context = anchor.kind === 'task' ? '' : await anchorContext(this.deps.repo(rec.repoId), anchor, { words: this.words() }, rec.target?.provider === 'anthropic').catch(() => '')
+      const context = anchor.kind === 'task' ? '' : await anchorContext(this.deps.repo(rec.repoId), anchor, { words: this.openingWords(rec) }, rec.target?.provider === 'anthropic').catch(() => '')
       past[0] = { ...past[0]!, user: [context, artifactProtocol(anchor, false), past[0]!.user].filter(Boolean).join('\n\n') }
       // Rebuilt the way the API was told it, without the system prompt.
       rec.systemApart = rec.target?.provider === 'anthropic'

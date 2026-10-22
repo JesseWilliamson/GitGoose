@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { SecretFile } from './keyStore'
 import { buildPrompt, cleanCommitMessage, MAX_DIFF_CHARS } from './prompts'
 import { AiService, compact, previewOf } from './service'
-import { reduceThread, targetKey, type AiTarget, type AiThread, type AiUpdate, type ThreadAnchor } from '@gitgoose/shared'
+import { reduceThread, targetCommandLine, targetKey, type AiTarget, type AiThread, type AiUpdate, type ThreadAnchor } from '@gitgoose/shared'
 
 const FAKE = join(import.meta.dirname, '../../../e2e/fake-agent.mjs')
 const memoryKeychain = { secure: () => true, encrypt: (s: string) => Buffer.from(s), decrypt: (b: Buffer) => b.toString() }
@@ -817,11 +817,50 @@ describe('replaying a conversation that began over the API', () => {
     // To agent a, then on to agent b: two fresh sessions, each told the conversation so far.
     await ended(t.events, await t.ai.sendThread(thread.id, 'one', { target: a }))
     await ended(t.events, await t.ai.sendThread(thread.id, 'two', { target: b }))
-    const sent = readFileSync(log, 'utf8').split('\n---\n').filter(Boolean)
+    // Split on the replay's own first line, not the log's "---" separator: `git show` output has "---" lines too.
+    const sent = readFileSync(log, 'utf8').split('This conversation was interrupted').slice(1)
     expect(sent).toHaveLength(2)
-    for (const s of sent) {
-      expect(s.startsWith('This conversation was interrupted')).toBe(true)
-      expect(s).toContain('You explain code changes to a teammate.\n\nExplain what this commit does')
-    }
+    for (const s of sent) expect(s).toContain('You explain code changes to a teammate.\n\nExplain what this commit does')
+  })
+})
+
+describe('agent processes and unsaved words', () => {
+  it('an agent nothing needs any more stops when its last session closes', async () => {
+    process.env.FAKE_AGENT_MODELS = '1'
+    cleanup.push(() => void delete process.env.FAKE_AGENT_MODELS)
+    const t = await setup()
+    // b is neither the default agent nor any area's pick: only this thread uses it.
+    const b: AiTarget = { provider: 'agent', agent: 'custom', agentCommand: `${t.settings.aiAgentCommand} --second` }
+    t.ai.consent(b)
+    const agents = t.ai['agents'] as Map<string, unknown>
+    const thread = await t.ai.openThread('x', { kind: 'free' })
+    await ended(t.events, await t.ai.sendThread(thread.id, 'hello', { target: b }))
+    // In use: kept even though settings changing would otherwise prune it.
+    t.ai.onSettings()
+    expect(agents.has(targetCommandLine(b))).toBe(true)
+    t.ai.deleteThread('x', thread.id)
+    expect(agents.has(targetCommandLine(b))).toBe(false)
+  })
+
+  it('Load models for an agent nobody picked leaves no process behind', async () => {
+    process.env.FAKE_AGENT_MODELS = '1'
+    cleanup.push(() => void delete process.env.FAKE_AGENT_MODELS)
+    const t = await setup()
+    const b: AiTarget = { provider: 'agent', agent: 'custom', agentCommand: `${t.settings.aiAgentCommand} --second` }
+    expect((await t.ai.loadModels(b)).known).toBe(true)
+    expect((t.ai['agents'] as Map<string, unknown>).has(targetCommandLine(b))).toBe(false)
+  })
+
+  it("a conversation opens with the words its send brought, saved or not", async () => {
+    const log = join(tempDir(), 'prompts.log')
+    process.env.FAKE_AGENT_LOG = log
+    cleanup.push(() => void delete process.env.FAKE_AGENT_LOG)
+    const t = await setup({ aiPromptEdits: { chat: { system: '', instructions: 'Saved words.' } } })
+    t.ai.consent()
+    const thread = await t.ai.openThread('x', { kind: 'free' })
+    await ended(t.events, await t.ai.sendThread(thread.id, 'first', { prompt: { system: '', instructions: 'Words on screen, not saved yet.' } }))
+    const sent = readFileSync(log, 'utf8')
+    expect(sent).toContain('Words on screen, not saved yet.')
+    expect(sent).not.toContain('Saved words.')
   })
 })
