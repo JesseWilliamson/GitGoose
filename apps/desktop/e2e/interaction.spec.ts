@@ -69,14 +69,15 @@ test('opens the branch menu when right-clicking a branch pill', async () => {
   await app.close()
 })
 
-test('stashes and pops from the toolbar', async () => {
+test('stashes from the toolbar and pops from the stash view', async () => {
   const r = makeFixture('linear')
   r.write('file.txt', 'work in progress\n')
   const { app, page } = await launch(r.dir)
   await page.getByTestId('toolbar').getByRole('button', { name: 'Stash' }).click()
   await expect(page.getByTestId('wip-row')).toHaveCount(0)
   await expect(page.getByTestId('sidebar')).toContainText('WIP on main')
-  await page.getByTestId('toolbar').getByRole('button', { name: 'Pop' }).click()
+  await page.getByTestId('stash-item').first().click()
+  await page.getByTestId('stash-header').getByRole('button', { name: 'Pop' }).click()
   await expect(page.getByTestId('wip-row')).toBeVisible()
   await app.close()
 })
