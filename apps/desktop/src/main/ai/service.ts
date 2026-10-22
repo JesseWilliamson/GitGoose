@@ -61,12 +61,17 @@ export function guardTurn(text: string, redact: boolean): string {
 }
 
 /**
- * The same check for one turn over the API, whose system prompt goes apart from the messages:
- * both parts are scanned together (one refusal lists everything) and both are redacted.
+ * The same check for one turn over the API. The API keeps no session, so a turn sends the whole
+ * conversation again: the system prompt, every earlier exchange, and the new message. All of it
+ * is scanned together (one refusal lists everything) and, when redacting, all of it is redacted.
+ * Earlier exchanges matter: a thread reopened from disk rebuilds its first message with the
+ * context as it is now, which this turn would be the first to send.
  */
-export function guardApiTurn(system: string, text: string, redact: boolean): { system: string; text: string } {
-  if (!checkSecrets(`${system}\n\n${text}`, redact)) return { system, text }
-  return { system: redactSecrets(system).text, text: redactSecrets(text).text }
+export function guardApiTurn(system: string, history: { user: string; agent: string }[], text: string, redact: boolean): { system: string; history: { user: string; agent: string }[]; text: string } {
+  const outgoing = [system, ...history.flatMap((h) => [h.user, h.agent]), text].join('\n\n')
+  if (!checkSecrets(outgoing, redact)) return { system, history, text }
+  const r = (s: string) => redactSecrets(s).text
+  return { system: r(system), history: history.map((h) => ({ user: r(h.user), agent: r(h.agent) })), text: r(text) }
 }
 
 /** True when there are hits and the user chose to send them redacted; throws when they did not. */
@@ -577,11 +582,12 @@ export class AiService {
     if (anthropic) {
       // The API takes the system prompt on its own: a feature's opening is its message as given.
       const logical = history.length || opening !== undefined ? message : await first()
-      // The system prompt (an Ask's, set by opening(), or the chat's) leaves too: checked with the turn, every turn.
-      const guarded = guardApiTurn(rec.system || effectivePrompt('chat', this.deps.settings()).system, logical, redact)
+      // Everything that leaves is checked, every turn: the system prompt (an Ask's, set by
+      // opening(), or the chat's), the conversation so far, and the new message.
+      const guarded = guardApiTurn(rec.system || effectivePrompt('chat', this.deps.settings()).system, history, logical, redact)
       rec.system = guarded.system
       const text = guarded.text
-      const messages = [...history.flatMap((h) => [{ role: 'user' as const, content: h.user }, { role: 'assistant' as const, content: h.agent }]), { role: 'user' as const, content: text }]
+      const messages = [...guarded.history.flatMap((h) => [{ role: 'user' as const, content: h.user }, { role: 'assistant' as const, content: h.agent }]), { role: 'user' as const, content: text }]
       // This turn opens the conversation, without the system prompt in its text.
       if (!history.length) rec.systemApart = true
       return { text, logical: text, messages }

@@ -7,7 +7,7 @@ import { ChevronRight, FileText, Lock, RotateCcw } from 'lucide-react'
 import { Popover } from 'radix-ui'
 import { useEffect, useRef, useState } from 'react'
 import { api, toUiError } from '../lib/api'
-import { setSettingEntry, useStore } from '../lib/store'
+import { reportError, setSettingEntry, useStore } from '../lib/store'
 import { Button, Spinner } from './ui'
 
 /**
@@ -206,15 +206,21 @@ function usePreview(repoId: string | null, task: AiTask | null, words: PromptTex
   return state
 }
 
-/** Save at most every 400 ms while typing, and for certain when the panel closes. */
+/**
+ * Save at most every 400 ms while typing, and for certain when the panel closes. A save that
+ * fails is reported (a toast with the reason): the draft on screen is not saved, and the user
+ * must hear that now rather than find the old words when the panel next opens.
+ */
 function useDebouncedSave<T>(save: (v: T) => void | Promise<void>): (v: T, now?: boolean) => void {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pending = useRef<{ v: T } | null>(null)
   const fn = useRef(save)
   fn.current = save
+  const run = (v: T) => Promise.resolve().then(() => fn.current(v)).catch((e) => reportError('Could not save the prompt', e))
   useEffect(() => () => {
     if (timer.current) clearTimeout(timer.current)
-    if (pending.current) void fn.current(pending.current.v)
+    if (pending.current) void run(pending.current.v)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   return (v, now = false) => {
     pending.current = { v }
@@ -223,7 +229,7 @@ function useDebouncedSave<T>(save: (v: T) => void | Promise<void>): (v: T, now?:
       timer.current = null
       const p = pending.current
       pending.current = null
-      if (p) void fn.current(p.v)
+      if (p) void run(p.v)
     }
     if (now) flush()
     else timer.current = setTimeout(flush, 400)

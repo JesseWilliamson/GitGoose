@@ -320,6 +320,30 @@ describe('secret scan before sending', () => {
     expect(sent).not.toContain(TOKEN)
   })
 
+  it('a thread reopened from disk resends its history over the API: that is scanned too, and redacted when asked', async () => {
+    const api = await fakeAnthropic(['ok'])
+    cleanup.push(() => api.close())
+    const t = await setup({ aiProvider: 'anthropic' }, api)
+    t.ai.setApiKey('sk-ant-test')
+    t.ai.consent()
+    t.r.write('config.ts', `export const token = '${TOKEN}'\n`)
+    t.r.git('add', 'config.ts')
+    t.r.git('commit', '-q', '-m', 'config')
+    const hash = t.r.git('rev-parse', 'HEAD').trim()
+    // A saved conversation about that commit; reopening it rebuilds the first message with the commit as it is.
+    const turn = (role: 'user' | 'agent', text: string) => ({ id: `r:${role[0]}`, role, requestId: 'r', blocks: [{ type: 'text' as const, text }], at: 1, ...(role === 'agent' ? { status: 'done' as const } : {}) })
+    t.ai.saveThread('x', { id: 'saved', repoId: 'x', anchor: { kind: 'explain', hash }, title: 'config', turns: [turn('user', 'what is this?'), turn('agent', 'A config file.')], createdAt: 1, updatedAt: 1, head: hash })
+    const thread = await t.ai.openThread('x', { kind: 'explain', hash }, 'saved')
+    // The new message is clean; the rebuilt history is not.
+    await expect(t.ai.sendThread(thread.id, 'and then?')).rejects.toMatchObject({ code: 'ai-secrets' })
+    expect(api.requests).toHaveLength(0)
+    await ended(t.events, await t.ai.sendThread(thread.id, 'and then?', { redact: true }))
+    const sent = JSON.stringify(api.requests[0])
+    expect(sent).not.toContain(TOKEN)
+    expect(api.requests[0]!.messages[0]!.content).toContain('[REDACTED GitHub token]')
+    expect(api.requests[0]!.messages.at(-1)!.content).toBe('and then?')
+  })
+
   it("checks the API's separate system prompt too: a chat's and an Ask's, refused or sent redacted", async () => {
     const api = await fakeAnthropic(['ok'])
     cleanup.push(() => api.close())
