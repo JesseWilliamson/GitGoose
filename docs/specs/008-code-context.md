@@ -102,7 +102,7 @@ In the order they would pay off:
    it and did not"). The commit-box hints compute this already (`changeInsights`); it is a
    matter of cost on big histories.
 3. **Pull request intent.** For a branch with an open PR, its title and description are the
-   intent. A network call, so only when the user turns it on (the sign-in exists).
+   intent. A network call, so only when the user turns it on (public repositories only since sign-in was removed, see spec 005).
 4. **Depth by effort.** The walkthrough rates effort 1-5; a review could pick its profile and
    the amount of context from that (CodeRabbit's "level-appropriate prompts").
 5. **Learnings scoped by symbol**, not only by path glob, now that symbols are known.

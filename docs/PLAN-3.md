@@ -57,7 +57,7 @@ Grouped by area; each item names its git plumbing. "(GK)" GitKraken, "(T)" Tower
 27. Git command log: every command GitGoose ran, with duration and stderr (GK activity log).
 28. Commit options: skip hooks, hook output on failure; file tree view and filter in change lists.
 
-**Hosting** (network only when used; the GitHub sign-in already exists)
+**Hosting** (network only when used; the GitHub sign-in already exists. It was removed on 2026-10-22, see spec 005)
 29. GitHub pull requests: create from a branch, list for the repo, badge on branches, check out a
     PR (GK, T). PLAN.md deferred PR views until after M5; M5 is done, so this is now in scope,
     deliberately small (no review threads in the app).
@@ -159,8 +159,8 @@ changes.
       a file's type from its menu (undoable), pull, lock / unlock and a locks dialog (network,
       on request), LFS images shown in image diffs from the local store. Not tested against a
       lock server (none in CI); lock / unlock surface the server's error when it refuses.
-- [x] 29 GitHub pull requests: a sidebar list loaded only when opened or refreshed (signed-out and
-      no-remote states say so), #N badges on branches, check out any PR (pull/N/head, forks
+- [x] 29 GitHub pull requests: a sidebar list loaded only when opened or refreshed (no-remote state says so;
+      the signed-out state went with sign-in on 2026-10-22), #N badges on branches, check out any PR (pull/N/head, forks
       too, undoable), create one from a branch's menu (pushes first when GitHub lacks it)
 
 Part A is complete.

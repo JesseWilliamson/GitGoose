@@ -16,7 +16,7 @@ Items, roughly smallest to largest:
 | 6 | A fuller settings page | medium |
 | 7 | Movable, resizable panes | medium |
 | 8 | Three-pane conflict resolution, IntelliJ style | large |
-| 9 | Sign in with GitHub; AI features over ACP | large |
+| 9 | Sign in with GitHub (removed 2026-10-22, see spec 005); AI features over ACP | large |
 
 ---
 
@@ -174,6 +174,8 @@ stash icon. Tags and branches stay as pills in the ref column.
     author resolves through the commits API. Unknown emails fall back to initials.
   - *Gravatar*: `https://gravatar.com/avatar/<sha256(email)>?s=48&d=404`, falls back to initials
     on 404.
+  - **Removed 2026-10-22:** Gravatar and the signed-in lookup are gone. *GitHub* is now the
+    default and uses the public commits API without a token; a miss is a 404 (spec 005).
 - **Fetching and caching live in the main process**, not the renderer: the renderer is
   sandboxed with `img-src 'self' data:` in its CSP, and it should not know URLs or emails of
   avatar services. Main exposes a custom protocol `gitgoose-avatar://<email-hash>` (registered
@@ -216,7 +218,7 @@ Sections and the settings worth having:
 | section | settings |
 |---|---|
 | Appearance | theme; UI scale; code font family and size; date format (relative / absolute / both); compact rows |
-| Graph | author avatars (initials / GitHub / Gravatar); lane colours (8 / 16); show remote branches on the graph; show tags on the graph; column width (reset) |
+| Graph | author avatars (initials / GitHub; Gravatar removed 2026-10-22); lane colours (8 / 16); show remote branches on the graph; show tags on the graph; column width (reset) |
 | Git | git executable; default pull (merge / rebase / fast-forward only); fetch on open (off / on); auto-fetch every N minutes (off by default: it is network); prune on fetch; sign-off commits; GPG sign (passes `-S`; signing itself stays with git's config) |
 | Diff | context lines (3); ignore whitespace; tab size; wrap long lines; show line numbers; syntax highlighting on/off; max file size to highlight |
 | Confirmations | confirm force push (on); confirm delete remote branch (on); confirm discard (off: it is undoable); confirm reset hard (off, undoable) |
@@ -348,6 +350,8 @@ Agent Client Protocol (ACP), so GitGoose never holds AI credentials at all.
 
 ### 9a. Sign in with GitHub
 
+> **Removed 2026-10-22:** GitHub sign-in is gone. See spec 005 for what replaced it.
+
 **Mechanism: the OAuth device flow.** It is the flow made for desktop apps: no client secret
 (GitHub's docs: "The `client_secret` is not needed for the device flow"), so nothing secret ships
 in the binary. One-time setup by Jesse: register a GitHub OAuth App, enable "Device flow" in its
@@ -472,7 +476,7 @@ are judged by eye on it. §1 and §2 are independent and small.
 | D | §5 avatars | CSP unchanged; no renderer network; cache bounds; bench budget |
 | E | §7 panes | layout reducer tests; keyboard resizing; persisted sizes |
 | F | §8 three-way merge | algorithm vs `git merge-file`; result positions after edits |
-| G | §9a GitHub sign-in | device flow error paths; token only in safeStorage; scopes minimal |
+| G | §9a GitHub sign-in (removed 2026-10-22) | device flow error paths; token only in safeStorage; scopes minimal |
 | H | §9b ACP agent | no agent spawned before consent; permission modal on every tool call; fake agent in tests |
 
 Each slice: write `docs/specs/00N-<name>.md` from the template (Jesse approves), implementer
