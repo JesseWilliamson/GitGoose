@@ -1,4 +1,4 @@
-import { FixtureRepo, makeFixture, makeLargeRepo } from '@gitgoose/fixtures'
+import { FixtureRepo, initRepo, makeFixture, makeLargeRepo } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import { basename, delimiter } from 'node:path'
 import { launch } from './app'
@@ -134,6 +134,45 @@ test('after a rewrite, back shows the rewritten commit and its diff, not the sta
   await expect(page.getByTestId('file-view')).toContainText(`in ${after.slice(0, 7)}`)
   await back(page)
   await expect(row(page, after)).toHaveAttribute('data-selected', 'true')
+  await app.close()
+})
+
+test('a lost commit shown with the graph stays selected when back returns to it', async () => {
+  const r = initRepo()
+  const root = r.commit('root', { 'a.txt': 'a\n' })
+  r.git('checkout', '-q', '-b', 'experiment')
+  const tip = r.commit('try something', { 'b.txt': 'b\n' })
+  r.checkout('main')
+  r.git('branch', '-D', 'experiment')
+  const { app, page } = await launch(r.dir)
+  const detail = page.getByTestId('detail-panel')
+  await expect(page.getByTestId('commit-count')).toHaveText('1 commit') // the whole log is in
+
+  // Picked in the reflog, then the graph (Workspace ▸ History) with it still selected.
+  await page.getByTestId('open-reflog').click()
+  await page.locator(`[data-testid="reflog-row"][data-hash="${tip}"]`).first().click()
+  await expect(detail).toContainText('try something')
+  await page.keyboard.press('ControlOrMeta+Alt+2')
+  await expect(page.getByTestId('graph-scroll')).toBeVisible()
+  await expect(detail).toContainText('try something')
+
+  // Somewhere else, then back: not in the graph, but readable, so still the selection.
+  await row(page, root).click()
+  await expect(detail).not.toContainText('try something')
+  await back(page)
+  await expect(detail).toContainText('try something')
+  await page.waitForTimeout(500) // the check that it is readable runs after the restore
+  await expect(detail).toContainText('try something')
+
+  // Pruned for good: then HEAD stands in.
+  await row(page, root).click()
+  await expect(detail).not.toContainText('try something')
+  r.git('reflog', 'expire', '--expire=now', '--all')
+  r.git('gc', '-q', '--prune=now')
+  expect(r.gitOrNull('cat-file', '-e', tip)).toBeNull()
+  await back(page)
+  await expect(row(page, root)).toHaveAttribute('data-selected', 'true')
+  await expect(detail).not.toContainText('try something')
   await app.close()
 })
 

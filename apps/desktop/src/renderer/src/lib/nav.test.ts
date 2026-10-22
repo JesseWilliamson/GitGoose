@@ -144,6 +144,16 @@ describe('followLocation', () => {
     expect(moved.line).toEqual({ hash: 'new1' })
   })
 
+  it('keeps a dropped commit as the end of a comparison or range diff (the object is still there to diff)', () => {
+    const loc: NavLocation = {
+      repoId: 'a',
+      selected: { kind: 'compare', from: 'old2', to: 'keep', fromLabel: 'old2', toLabel: 'keep' },
+      center: { kind: 'file', target: { kind: 'range', from: 'old2', to: 'keep', path: 'x.ts' }, mode: 'diff' },
+      line: null,
+    }
+    expect(followLocation(loc, follow, followSelected)).toBe(loc)
+  })
+
   it('returns the same object when nothing moved', () => {
     const loc = file('keep', 'x.ts')
     expect(followLocation(loc, follow, followSelected)).toBe(loc)

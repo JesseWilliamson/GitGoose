@@ -1,3 +1,4 @@
+import { api } from './api'
 import { NavHistory, type NavLocation } from './nav'
 import { ensureLoaded, getLog, onLogSwap, selectedHashes, useStore, type RepoView, type Selection } from './store'
 
@@ -88,25 +89,34 @@ function go(step: -1 | 1): void {
   if (!loc) return
   const v = s.repos[loc.repoId]
   if (!v) return
-  // A commit that is not in the loaded log: once the whole log is in, it is gone (a rewrite the
-  // entry could not follow) and HEAD stands in. Until then it may just not be paged in yet, as
-  // after a refresh that reloaded only the first page: load up to it so the graph can show and
-  // scroll to it, and judge it then.
+  // A selected commit the graph has not loaded may just not be paged in yet (a refresh reloads
+  // only the first page): load up to it so the graph can show it and scroll to it. It may also
+  // never be in the graph (a lost commit picked in the reflog) and still be perfectly readable:
+  // then it stays selected, as recorded. Only a commit the repository no longer has (pruned)
+  // gives way to HEAD; one a rewrite replaced was already moved by the follower (onLogSwap).
   const missing = unloaded(v, loc)
   const done = getLog(v.id).done
-  const selected = missing.length && done ? headOf(v) : loc.selected
   // One store change for tab and view, so the screen never shows the new tab with the old view.
-  quietly(() => useStore.setState((s) => ({ active: loc.repoId, repos: { ...s.repos, [loc.repoId]: { ...v, selected, center: loc.center, line: loc.line } } })))
+  quietly(() => useStore.setState((s) => ({ active: loc.repoId, repos: { ...s.repos, [loc.repoId]: { ...v, selected: loc.selected, center: loc.center, line: loc.line } } })))
   const toLoad = done ? [] : [...missing, ...unloadedLine(v, loc)]
-  if (toLoad.length) void loadSelection(loc.repoId, selected, toLoad)
+  if (missing.length || toLoad.length) void settle(loc.repoId, loc.selected, toLoad)
 }
 
-async function loadSelection(id: string, selected: Selection, hashes: string[]): Promise<void> {
-  for (const h of hashes) await ensureLoaded(id, h)
-  const v = useStore.getState().repos[id]
-  // The user moved on meanwhile, or everything was found: leave it.
-  if (!v || v.selected !== selected || !unloaded(v, { repoId: id, selected, center: v.center, line: v.line }).length) return
-  quietly(() => useStore.setState((s) => ({ repos: { ...s.repos, [id]: { ...v, selected: headOf(v) } } })))
+/** Load the restored commits into the graph; any still not there must at least be readable. */
+async function settle(id: string, selected: Selection, toLoad: string[]): Promise<void> {
+  for (const h of toLoad) await ensureLoaded(id, h)
+  // The user moved on meanwhile: leave it.
+  const current = () => {
+    const v = useStore.getState().repos[id]
+    return v && v.selected === selected ? v : null
+  }
+  const v = current()
+  if (!v) return
+  const offGraph = unloaded(v, { repoId: id, selected, center: v.center, line: v.line })
+  const readable = await Promise.all(offGraph.map((h) => api.commitDetails(id, h).then(() => true, () => false)))
+  const now = current()
+  if (!now || readable.every(Boolean)) return
+  quietly(() => useStore.setState((s) => ({ repos: { ...s.repos, [id]: { ...now, selected: headOf(now) } } })))
 }
 
 /**
