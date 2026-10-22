@@ -154,14 +154,45 @@ test('move a change to another commit or a new one; empty commits block until re
 
 /** Press on `from`, move the pointer to `to` (or a point) in steps, release: a pointer drag, not an HTML5 one. */
 async function drag(page: Page, from: ReturnType<Page['locator']>, to: ReturnType<Page['locator']> | { x: number; y: number } | (() => Promise<{ x: number; y: number }>)) {
-  // Near the top-left: a hunk card is dragged by its header, not its diff text.
-  const a = (await from.boundingBox())!
-  await page.mouse.move(a.x + 20, a.y + 12)
-  await page.mouse.down()
-  await page.mouse.move(a.x + 30, a.y + 20, { steps: 3 })
+  // The hunk may sit below the fold of its column (the third of three on a small window).
+  await from.scrollIntoViewIfNeeded()
+  // Near the top-left: a hunk card is dragged by its header, not its diff text. The lift is
+  // proven by the floating copy; when it does not appear (a press that landed before the page
+  // settled on a loaded machine), let go and try again.
+  for (let attempt = 0; ; attempt++) {
+    const a = (await from.boundingBox())!
+    await page.mouse.move(a.x + 20, a.y + 12)
+    await page.mouse.down()
+    await page.mouse.move(a.x + 30, a.y + 20, { steps: 3 })
+    if (attempt === 2) break
+    try {
+      await expect(page.locator('.drag-float')).toHaveCount(1, { timeout: 1500 })
+      break
+    } catch {
+      await page.mouse.up()
+      await expect(page.locator('.drag-float')).toHaveCount(0)
+    }
+  }
   // A function is asked once the lift has started: the dialog can re-centre as it changes height.
-  const target = typeof to === 'function' ? await to() : 'x' in to ? to : await to.boundingBox().then((b) => ({ x: b!.x + b!.width / 2, y: b!.y + b!.height / 2 }))
+  const where = async () => (typeof to === 'function' ? to() : 'x' in to ? to : to.boundingBox().then((b) => ({ x: b!.x + b!.width / 2, y: b!.y + b!.height / 2 })))
+  let target = await where()
   await page.mouse.move(target.x, target.y, { steps: 10 })
+  // The lift itself changes the layout (a placeholder, a hint under the column), which can move
+  // the target after the pointer got there; on a slow machine that lands well after the last
+  // move, and the page only learns where the pointer is from a move. Follow the target until it
+  // has stayed put for two checks in a row, then move once more so the page sees the pointer
+  // over the settled target.
+  let still = 0
+  for (let i = 0; i < 12 && still < 2; i++) {
+    await page.waitForTimeout(150)
+    const now = await where()
+    if (Math.abs(now.x - target.x) < 1 && Math.abs(now.y - target.y) < 1) still++
+    else {
+      still = 0
+      target = now
+    }
+    await page.mouse.move(target.x + (i % 2), target.y, { steps: 2 })
+  }
   return { drop: () => page.mouse.up() }
 }
 

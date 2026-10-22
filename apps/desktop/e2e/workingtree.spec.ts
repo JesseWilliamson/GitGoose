@@ -1,7 +1,7 @@
 import { makeFixture, tempDir } from '@gitgoose/fixtures'
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
-import { launch } from './app'
+import { clickRowAction, launch } from './app'
 
 test('stages a file, commits, and undoes the commit', async () => {
   const r = makeFixture('linear')
@@ -69,8 +69,7 @@ test('discards a file and brings it back with Ctrl+Z', async () => {
   const { app, page } = await launch(r.dir)
   await page.getByTestId('wip-row').click()
   const row = page.getByTestId('unstaged-file').first()
-  await row.hover()
-  await row.getByTitle('Discard changes').click()
+  await clickRowAction(page, row, 'Discard changes')
   await expect(page.getByTestId('wip-row')).toHaveCount(0)
   await page.getByTestId('graph-scroll').focus()
   await page.keyboard.press('ControlOrMeta+z')
