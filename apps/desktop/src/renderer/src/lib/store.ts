@@ -510,6 +510,7 @@ export function addRepo(snap: RepoSnapshot): void {
     set({ active: snap.id })
     return
   }
+  performance.mark('gitgoose:snapshot')
   set({ repos: { ...s.repos, [snap.id]: newView(snap) }, tabs: [...s.tabs, snap.id], active: snap.id })
   resetLog(snap.id, snap)
   void refreshAux(snap.id)
@@ -692,6 +693,7 @@ export async function boot(): Promise<void> {
   booted = true
   api.onEvent(onEvent)
   const settings = await api.getSettings()
+  performance.mark('gitgoose:settings')
   set({ settings })
   applyTheme(settings)
   // Local only (no network): whether a GitHub sign-in is stored, for avatar URLs.

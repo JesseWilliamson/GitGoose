@@ -19,6 +19,9 @@ import { applyZoom, getSettings, onSettingsChanged, setSettings } from './settin
 import { scheduleUpdateCheck } from './updater'
 import { loadWindowState, trackWindowState } from './windowState'
 
+// Startup timeline (read by tools/bench): every import above has been evaluated by now.
+performance.mark('gitgoose:main-loaded')
+
 // Tests and the benchmark point the app at a throwaway profile.
 if (process.env.GITGOOSE_USER_DATA) app.setPath('userData', process.env.GITGOOSE_USER_DATA)
 
@@ -188,6 +191,7 @@ function createWindow(): BrowserWindow {
     void win.webContents.setVisualZoomLevelLimits(1, 1)
   })
   win.once('ready-to-show', () => {
+    performance.mark('gitgoose:ready-to-show')
     if (saved?.maximized) win.maximize()
     win.show()
   })
@@ -236,6 +240,7 @@ onSettingsChanged((settings, changed) => {
 })
 
 app.whenReady().then(async () => {
+  performance.mark('gitgoose:ready')
   try {
     Object.assign(gitEnv, await askpass.start())
   } catch {
@@ -262,6 +267,7 @@ app.whenReady().then(async () => {
   refreshCredentialEnv()
   registerIpc(createHandlers(repos, prompts, gitOpts, github, ai, codegraph), repos)
   installMenu()
+  performance.mark('gitgoose:create-window')
   createWindow()
   scheduleUpdateCheck()
   app.on('activate', () => {
