@@ -10,10 +10,7 @@ export function Welcome() {
       <div className="w-[460px]">
         <div className="mb-6 flex items-center gap-3">
           <FolderGit2 size={34} className="text-accent" />
-          <div>
-            <h1 className="text-xl font-semibold">GitGoose</h1>
-            <p className="text-sm text-muted">A fast git client with the graph you like.</p>
-          </div>
+          <h1 className="text-xl font-semibold">GitGoose</h1>
         </div>
         <div className="grid grid-cols-3 gap-2">
           <Button className="h-16 flex-col" onClick={() => void openRepoDialog()}><FolderOpen size={18} />Open</Button>
