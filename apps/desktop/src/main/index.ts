@@ -145,6 +145,8 @@ const codegraph = new CodeGraphService({
   gitOpts,
   enabled: () => getSettings().codeGraph,
   emit: (repoId, status) => broadcast({ type: 'codegraph', repoId, status }),
+  // Like the commit-graph upkeep (repos.ts): after the first screen is up.
+  startDelay: 1500,
 })
 
 const repos = new RepoManager(
