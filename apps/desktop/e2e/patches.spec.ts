@@ -2,7 +2,10 @@ import { initRepo, tempDir } from '@gitgoose/fixtures'
 import { expect, test, type ElectronApplication } from '@playwright/test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { launch } from './app'
+import { launch, useClipboardLock } from './app'
+
+// These tests read and write the system clipboard, which every running test shares.
+useClipboardLock()
 
 /** Native dialogs cannot be clicked: answer them from the main process instead. */
 const answerDialogs = (app: ElectronApplication, path: string) =>

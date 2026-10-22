@@ -1,5 +1,7 @@
-import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { _electron as electron, test, type ElectronApplication, type Page } from '@playwright/test'
 import { tempDir } from '@gitgoose/fixtures'
+import { mkdirSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 export interface Launched {
@@ -46,4 +48,27 @@ export async function launch(repo?: string, env: Record<string, string> = {}, op
     await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]!.setContentSize(size.width, size.height), WINDOW)
   }
   return { app, page }
+}
+
+/**
+ * Tests run side by side, each in its own app, but every app on the machine shares one system
+ * clipboard (under xvfb-run, one X display). A file whose tests read or write it calls this at
+ * the top, so only one such test runs at a time: `mkdir` either creates the lock directory or
+ * fails because another test holds it.
+ */
+export function useClipboardLock(): void {
+  const lock = join(tmpdir(), 'gitgoose-e2e-clipboard.lock')
+  test.beforeEach(async () => {
+    const until = Date.now() + 120_000
+    for (;;) {
+      try {
+        mkdirSync(lock)
+        return
+      } catch {
+        if (Date.now() > until) throw new Error('Another test held the clipboard for two minutes')
+        await new Promise((r) => setTimeout(r, 100))
+      }
+    }
+  })
+  test.afterEach(() => rmSync(lock, { recursive: true, force: true }))
 }
