@@ -173,21 +173,30 @@ function FixDialog() {
   return <FixView fix={fix} />
 }
 
-function FixView({ fix }: { fix: NonNullable<ReturnType<typeof useAi.getState>['fix']> }) {
-  // The file as it is now, read whenever it may have changed (it can sit hidden for a while):
-  // a fix proposed for an older version must not be written over the user's edits.
-  const tick = useStore((s) => s.repos[fix.repoId]?.worktreeTick ?? 0)
-  const [now, setNow] = useState<{ key: string; text: string | null } | null>(null)
-  const key = `${fix.repoId}\0${fix.path}\0${fix.after ?? ''}`
+/**
+ * A working file's text, read again whenever the working tree changes; undefined until it has
+ * been read for this `key` (another proposal starts over).
+ */
+function useWorkingText(repoId: string, path: string, key: string, enabled = true): string | null | undefined {
+  const tick = useStore((s) => s.repos[repoId]?.worktreeTick ?? 0)
+  const id = `${repoId}\0${path}\0${key}`
+  const [now, setNow] = useState<{ id: string; text: string | null } | null>(null)
   useEffect(() => {
-    if (fix.after === null) return
+    if (!enabled) return
     let live = true
-    api.workingText(fix.repoId, fix.path).then((text) => { if (live) setNow({ key, text }) }, () => {})
+    api.workingText(repoId, path).then((text) => { if (live) setNow({ id, text }) }, () => {})
     return () => {
       live = false
     }
-  }, [key, tick])
-  const stale = fix.after !== null && now?.key === key && now.text !== fix.before
+  }, [id, tick, enabled])
+  return now?.id === id ? now.text : undefined
+}
+
+function FixView({ fix }: { fix: NonNullable<ReturnType<typeof useAi.getState>['fix']> }) {
+  // The file as it is now (a fix can sit hidden for a while): a fix proposed for an older
+  // version must not be written over the user's edits.
+  const now = useWorkingText(fix.repoId, fix.path, fix.after ?? '', fix.after !== null)
+  const stale = fix.after !== null && now !== undefined && now !== fix.before
   const discard = () => {
     if (fix.requestId) cancelAi(fix.requestId)
     useAi.setState({ fix: null })
@@ -255,8 +264,17 @@ function ProposalDialog() {
   // A question from another request (two files asked about at once) comes first: a proposal
   // dialog opened on top of it would cover it, and the agent would wait for an answer nobody can give.
   const asking = useAi((s) => s.permissions.length > 0)
-  const repoOpen = useStore((s) => (p ? !!s.repos[p.repoId] : false))
   if (!p || p.hidden || asking) return null
+  return <ProposalView p={p} />
+}
+
+function ProposalView({ p }: { p: NonNullable<ReturnType<typeof useAi.getState>['proposal']> }) {
+  const repoOpen = useStore((s) => !!s.repos[p.repoId])
+  // A proposal can wait on the jobs list while the user resolves by hand or aborts: it applies
+  // only to the conflict it was made for (main checks the same right before writing).
+  const stillConflicted = useStore((s) => !!s.repos[p.repoId]?.snapshot.status.some((e) => e.path === p.path && e.kind === 'unmerged'))
+  const now = useWorkingText(p.repoId, p.path, p.content)
+  const stale = p.expected === null || !stillConflicted || (now !== undefined && now !== p.expected)
   const markers = countConflicts(p.content)
   const close = () => {
     useAi.setState({ proposal: null })
@@ -269,7 +287,9 @@ function ProposalDialog() {
   }
   const accept = async () => {
     close()
-    const ok = await run(p.repoId, `Resolve ${p.path}`, () => api.resolveConflict(p.repoId, p.path, { content: p.content }), { quiet: true })
+    if (p.expected === null) return
+    const expected = p.expected
+    const ok = await run(p.repoId, `Resolve ${p.path}`, () => api.resolveConflict(p.repoId, p.path, { content: p.content, expected }), { quiet: true })
     if (ok) toast({ kind: 'success', title: `Resolved ${p.path} with the agent's version` })
   }
   return (
@@ -277,12 +297,19 @@ function ProposalDialog() {
       <div className="text-[13px]" data-testid="ai-proposal">
         {p.note && <p className="mb-2 text-muted">{p.note}</p>}
         <pre className="selectable max-h-[50vh] overflow-auto rounded border border-line bg-bg p-2 font-mono text-[12px]" data-testid="ai-proposal-content">{p.content}</pre>
-        <p className="mt-2 text-xs text-faint">
-          Nothing has been written yet. Use it to write this file and mark it resolved, or discard it and keep resolving by hand.
-        </p>
+        {stale ? (
+          <p className="mt-2 flex items-start gap-1 text-xs text-del" data-testid="ai-proposal-stale">
+            <CircleAlert size={12} className="mt-px shrink-0" />
+            {stillConflicted ? `${p.path} has changed since this resolution was proposed` : `${p.path} is no longer in conflict`}, so Use is off: it would overwrite that. Discard it, and ask again if you still want help.
+          </p>
+        ) : (
+          <p className="mt-2 text-xs text-faint">
+            Nothing has been written yet. Use it to write this file and mark it resolved, or discard it and keep resolving by hand.
+          </p>
+        )}
         <div className="mt-4 flex justify-end gap-2">
           <Button onClick={close} data-testid="ai-proposal-discard">Discard</Button>
-          <Button variant="primary" disabled={markers > 0 || !repoOpen} onClick={() => void accept()} data-testid="ai-proposal-accept"
+          <Button variant="primary" disabled={markers > 0 || !repoOpen || stale} onClick={() => void accept()} data-testid="ai-proposal-accept"
             title={markers ? 'The proposal still has conflict markers' : undefined}>
             Use this resolution
           </Button>

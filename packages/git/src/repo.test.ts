@@ -478,6 +478,24 @@ describe('conflicts', () => {
     expect(r.git('log', '-1', '--format=%P').trim().split(' ')).toHaveLength(2)
   })
 
+  it('a resolution proposed earlier is written only onto the conflict it was made for', async () => {
+    const r = makeFixture('conflict')
+    const repo = await open(r)
+    await expect(repo.merge('refs/heads/other')).rejects.toThrow()
+    const conflicted = read(r, 'story.txt')
+    const proposal = { content: 'one\nproposed\nthree\n', expected: conflicted }
+    // Edited by hand meanwhile: refused, the edit stays.
+    r.write('story.txt', 'one\nby hand\nthree\n')
+    await expect(repo.resolveConflict('story.txt', proposal)).rejects.toThrow('changed since this resolution was proposed')
+    expect(read(r, 'story.txt')).toBe('one\nby hand\nthree\n')
+    // The merge aborted meanwhile: refused, nothing written or staged.
+    r.write('story.txt', conflicted)
+    await repo.abortOperation()
+    await expect(repo.resolveConflict('story.txt', proposal)).rejects.toThrow('no longer in conflict')
+    expect(read(r, 'story.txt')).toContain('Two (ours)')
+    expect(r.git('status', '--porcelain')).toBe('')
+  })
+
   it('resolves by taking a side, and aborts', async () => {
     const r = makeFixture('conflict')
     const repo = await open(r)

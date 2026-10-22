@@ -23,7 +23,11 @@ export interface AiUi {
    * state when closed (the request, or the answer, is not thrown away); the AI jobs chip or the
    * "ready" toast shows them again.
    */
-  proposal: { repoId: string; path: string; content: string; note: string; hidden?: boolean } | null
+  proposal: {
+    repoId: string; path: string; content: string; note: string; hidden?: boolean
+    /** The conflicted file as it was when the agent was asked: Use writes only onto exactly that. */
+    expected: string | null
+  } | null
   /** Fix with AI: waiting for, or showing, a proposed new version of one file. */
   fix: { repoId: string; path: string; title: string; requestId: string | null; before: string | null; after: string | null; note: string; error: string | null; hidden?: boolean } | null
   /** Recompose with AI: waiting for a plan (requestId set), failed, or under review. */
@@ -328,7 +332,7 @@ export function showProposal(p: Proposal): void {
 
 /** Put a proposal aside (its dialog closed, or another took its place): its job holds it until opened. */
 export function parkProposal(p: Proposal): void {
-  const kept: Proposal = { repoId: p.repoId, path: p.path, content: p.content, note: p.note }
+  const kept: Proposal = { repoId: p.repoId, path: p.path, content: p.content, note: p.note, expected: p.expected }
   parkJob({
     id: crypto.randomUUID(),
     repoId: p.repoId,
@@ -348,6 +352,10 @@ export function parkProposal(p: Proposal): void {
 export function resolveWithAgent(repoId: string, path: string): void {
   /** What came back: a proposal, or a note in a thread. */
   let answer: { proposal?: Proposal; threadId?: string } | null = null
+  // The conflicted file as the agent is given it, read before the request goes out: a proposal
+  // can wait on the jobs list while the user resolves by hand or aborts, and Use must then refuse.
+  const snapshot = api.workingText(repoId, path)
+  snapshot.catch(() => {})
   const run = startAi(repoId, { kind: 'resolve-conflict', path }, undefined, { keepThread: true })
   const atConflicts = () => {
     const s = useStore.getState()
@@ -367,11 +375,11 @@ export function resolveWithAgent(repoId: string, path: string): void {
     stop: () => cancelAi(run.requestId),
     showing: () => (answer?.proposal ? proposalShown(answer.proposal) : panelShows(repoId, answer?.threadId ?? null)),
   })
-  run.done.then((res) => {
+  run.done.then(async (res) => {
     if (!res) return dropJob(run.requestId)
     if (res.proposal) {
       // The job holds the proposal: one for another file may be in the dialog meanwhile.
-      const proposal: Proposal = { repoId, path, content: res.proposal.content, note: res.text }
+      const proposal: Proposal = { repoId, path, content: res.proposal.content, note: res.text, expected: await snapshot.catch(() => null) }
       answer = { proposal }
       if (atConflicts()) showProposal(proposal)
     } else {
@@ -379,7 +387,7 @@ export function resolveWithAgent(repoId: string, path: string): void {
       if (res.threadId) openInPanel(repoId, res.threadId)
     }
     finishJob(run.requestId)
-  }, (e) => {
+  }).catch((e) => {
     dropJob(run.requestId)
     reportError(`The agent could not resolve ${path}`, e)
   })

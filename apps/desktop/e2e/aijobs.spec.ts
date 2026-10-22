@@ -160,6 +160,45 @@ test('two conflicted files: a proposal put aside is still there after asking abo
   await app.close()
 })
 
+test('a conflict proposal put aside never lands on a file resolved by hand, or after the merge was aborted', async () => {
+  const r = makeFixture('conflict')
+  r.tryGit('merge', 'other')
+  const story = join(r.dir, 'story.txt')
+  const { app, page } = await launch(r.dir)
+  await set(page, AGENT)
+  const content = page.getByTestId('ai-proposal-content')
+  const ask = async () => {
+    await page.getByTestId('ai-resolve').click()
+    await page.getByTestId('ai-permission-allow_once').click()
+    await expect(content).toBeVisible()
+    await page.keyboard.press('Escape') // put aside
+    await expect(content).toHaveCount(0)
+  }
+  const reopen = async () => {
+    await page.getByTestId('ai-jobs').click()
+    await page.getByTestId('ai-job-open').click()
+  }
+
+  // Edited by hand while the proposal waits: it stays as edited, Use is off.
+  await ask()
+  writeFileSync(story, 'one\nby hand\nthree\n')
+  await reopen()
+  await expect(page.getByTestId('ai-proposal-stale')).toContainText('story.txt has changed since this resolution was proposed')
+  await expect(page.getByTestId('ai-proposal-accept')).toBeDisabled()
+  expect(readFileSync(story, 'utf8')).toBe('one\nby hand\nthree\n')
+  await page.getByTestId('ai-proposal-discard').click()
+
+  // The merge aborted while it waits: nothing is written or staged.
+  await ask()
+  r.git('merge', '--abort')
+  await expect(page.getByTestId('conflicts')).toHaveCount(0)
+  await reopen()
+  await expect(page.getByTestId('ai-proposal-stale')).toContainText('story.txt is no longer in conflict')
+  await expect(page.getByTestId('ai-proposal-accept')).toBeDisabled()
+  expect(r.git('status', '--porcelain')).toBe('')
+  await app.close()
+})
+
 test('two conflict proposals arriving together: the one on screen is replaced, and kept on the list', async () => {
   const r = initRepo()
   r.commit('base', { 'a.txt': 'one\ntwo\nthree\n', 'b.txt': 'uno\ndos\ntres\n' })
@@ -249,6 +288,8 @@ test('a commit keeps its explanation: after selecting another commit while it is
   await followUp.getByTestId('thread-input').fill('and the tests?')
   await followUp.getByTestId('thread-input').press('Enter')
   await expect(followUp.getByTestId('thread-agent')).toHaveText('Turn 2. You said: and the tests?.')
+  // The text is all there before the turn has ended (and been saved): wait for Send to come back.
+  await expect(followUp.getByTestId('thread-send')).toBeVisible()
   await app.close()
 
   // The conversation is kept with the repository: a restart brings the explanation and its follow-up back.
