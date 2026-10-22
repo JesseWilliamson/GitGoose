@@ -116,7 +116,7 @@ function WipPanel({ view }: { view: RepoView }) {
     if (next.paths.includes(path)) openFile(view, t)
   }
   const isSelected = (section: 'unstaged' | 'staged', path: string, t: DiffTarget) =>
-    sel.section === section && sel.paths.length > 1 ? sel.paths.includes(path) : isOpen(view, t)
+    sel.section === section && sel.paths.length > 0 ? sel.paths.includes(path) : isOpen(view, t)
   const unstagedTarget = (e: StatusEntry): DiffTarget => (e.kind === 'untracked' ? { kind: 'untracked', path: e.path } : { kind: 'unstaged', path: e.path })
 
   return (
