@@ -417,14 +417,18 @@ export function artifactProtocol(anchor: ThreadAnchor, afterFeature: boolean): s
   ].join('\n')
 }
 
-/** What the conversation's feature knew: the start of a thread opened without the feature's own request, and of a replay. */
-export async function anchorContext(repo: Repo, anchor: ThreadAnchor, ctx: PromptContext = {}): Promise<string> {
+/**
+ * What the conversation's feature knew: the start of a thread opened without the feature's own request, and of a replay.
+ * `systemApart`: the caller sends the system prompt on its own (the API); an agent gets it at the top of the text.
+ */
+export async function anchorContext(repo: Repo, anchor: ThreadAnchor, ctx: PromptContext = {}, systemApart = false): Promise<string> {
   switch (anchor.kind) {
     case 'free': {
       const head = (await git(repo, ['log', '-n', '1', '--format=%h %s', 'HEAD']).catch(() => '')).trim()
       const branch = (await git(repo, ['symbolic-ref', '--short', '-q', 'HEAD']).catch(() => '')).trim()
       // The AI panel's words (prompt "chat"), then where we are.
-      return compose('chat', ctx, {}, `Repository: ${repo.path.split(/[\\/]/).pop()}. HEAD: ${branch ? `${branch} at ` : 'detached at '}${head || '(no commits yet)'}.`).prompt
+      const built = compose('chat', ctx, {}, `Repository: ${repo.path.split(/[\\/]/).pop()}. HEAD: ${branch ? `${branch} at ` : 'detached at '}${head || '(no commits yet)'}.`)
+      return systemApart ? built.prompt : `${built.system}\n\n${built.prompt}`
     }
     case 'review':
     case 'walkthrough':

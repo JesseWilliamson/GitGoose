@@ -151,6 +151,8 @@ describe('threads', () => {
     await ended(t.events, await t.ai.sendThread(thread.id, 'first'))
     await ended(t.events, await t.ai.sendThread(thread.id, 'second'))
     const [one, two] = readFileSync(log, 'utf8').split('\n---\n')
+    // An agent has no separate system prompt: the AI panel's goes at the top of the first message.
+    expect(one!.startsWith('You help people understand and change the code in their git repository.\n\n')).toBe(true)
     expect(one).toContain('HEAD: main at')
     expect(one).toContain('```json:commit-message')
     expect(one!.trim().endsWith('first')).toBe(true)
@@ -702,6 +704,30 @@ describe('prompts the user can read and edit', () => {
     expect(users[0]!.sent).toContain('HEAD: main at')
     expect(users[0]!.sent!.trim().endsWith('first')).toBe(true)
     expect(users[1]!.sent).toBeUndefined()
+  })
+
+  it("the AI panel's edited system prompt opens an agent conversation; the API sends it on its own", async () => {
+    const log = join(tempDir(), 'prompts.log')
+    process.env.FAKE_AGENT_LOG = log
+    cleanup.push(() => void delete process.env.FAKE_AGENT_LOG)
+    const chat: Partial<Settings> = { aiPrompts: { chat: { system: 'You answer like a lighthouse keeper.', instructions: '' } } }
+    const t = await setup(chat)
+    t.ai.consent()
+    const thread = await t.ai.openThread('x', { kind: 'free' })
+    await ended(t.events, await t.ai.sendThread(thread.id, 'first'))
+    const sent = readFileSync(log, 'utf8').split('\n---\n')[0]!
+    expect(sent.startsWith('You answer like a lighthouse keeper.\n\nYou are helping someone with their git repository')).toBe(true)
+
+    const api = await fakeAnthropic(['ok'])
+    cleanup.push(() => api.close())
+    const a = await setup({ ...chat, aiProvider: 'anthropic' }, api)
+    a.ai.setApiKey('sk-ant-test')
+    a.ai.consent()
+    const other = await a.ai.openThread('x', { kind: 'free' })
+    await ended(a.events, await a.ai.sendThread(other.id, 'first'))
+    expect(api.requests[0]!.system).toBe('You answer like a lighthouse keeper.')
+    expect(api.requests[0]!.messages[0]!.content).not.toContain('lighthouse keeper')
+    expect(api.requests[0]!.messages[0]!.content).toContain('HEAD: main at')
   })
 
   it("the API's sent text shows its separate system prompt on the first turn", async () => {

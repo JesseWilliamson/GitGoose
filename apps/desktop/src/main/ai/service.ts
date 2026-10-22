@@ -658,14 +658,15 @@ export class AiService {
   private async opening(rec: ThreadRec, message: string): Promise<string> {
     const repo = this.deps.repo(rec.repoId)
     const anchor = rec.thread.anchor
+    // The API takes the system prompt on its own; an agent gets it at the top of the text.
+    const api = rec.target?.provider === 'anthropic'
     if (anchor.kind === 'ask') {
       // Ask's own prompt, with the question in it: the lines, their function, definitions, history.
       const built = await buildPrompt(repo, { kind: 'ask', rev: anchor.rev === 'worktree' ? null : anchor.rev, path: anchor.path, startLine: anchor.lines[0], endLine: anchor.lines[1], question: message, earlier: [] }, { words: this.words() })
       rec.system = built.system
-      const api = rec.target?.provider === 'anthropic'
       return `${api ? '' : `${built.system}\n\n`}${built.prompt}\n\n${artifactProtocol(anchor, false)}`
     }
-    return openingMessage(await anchorContext(repo, anchor, { words: this.words() }), anchor, message)
+    return openingMessage(await anchorContext(repo, anchor, { words: this.words() }, api), anchor, message)
   }
 
   /** The conversation as exchanged. A thread from disk rebuilds it: its transcript, with the anchor's context in front. */
@@ -674,7 +675,8 @@ export class AiService {
     const past = transcript(rec.thread)
     if (past.length) {
       const anchor = rec.thread.anchor
-      const context = anchor.kind === 'task' ? '' : await anchorContext(this.deps.repo(rec.repoId), anchor, { words: this.words() }).catch(() => '')
+      // As the opening was: an agent's first message carries the system prompt, the API's does not.
+      const context = anchor.kind === 'task' ? '' : await anchorContext(this.deps.repo(rec.repoId), anchor, { words: this.words() }, rec.target?.provider === 'anthropic').catch(() => '')
       past[0] = { ...past[0]!, user: [context, artifactProtocol(anchor, false), past[0]!.user].filter(Boolean).join('\n\n') }
     }
     rec.history = past
