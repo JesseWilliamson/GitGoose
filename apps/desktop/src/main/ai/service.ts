@@ -117,6 +117,11 @@ interface ThreadRec {
   history: { user: string; agent: string }[] | null
   /** The API mode's system prompt. */
   system: string
+  /**
+   * The first message of `history` went to the API, which takes `system` on its own: it is not
+   * in that message, so every new agent session told the conversation gets it in front.
+   */
+  systemApart: boolean
   /** What the feature saw, for checking artifacts with the feature's own verifier. */
   built: BuiltPrompt | null
   task: AiTask | null
@@ -551,7 +556,7 @@ export class AiService {
     const rec: ThreadRec = {
       thread, repoId, path: repo?.path ?? null, cwd: repo?.path ?? tmpdir(), keep, sessionId: null, agentLine: null, target: saved?.target ?? null, primed: false,
       // A thread from disk is told its history again from its transcript, when it needs a session.
-      history: saved ? null : [], system: '', built: null, task: null, active: null, starting: false, open: false, idle: null,
+      history: saved ? null : [], system: '', systemApart: false, built: null, task: null, active: null, starting: false, open: false, idle: null,
     }
     this.threads.set(thread.id, rec)
     return rec
@@ -564,11 +569,11 @@ export class AiService {
    * session is told the conversation so far. The API keeps no session, so it gets everything.
    */
   private async outgoing(rec: ThreadRec, target: AiTarget, message: string, opening?: string, redact = false): Promise<Outgoing> {
-    // The API keeps the system prompt apart from the messages; an agent gets it in the text.
-    const fromApi = rec.target?.provider === 'anthropic' && target.provider === 'agent'
     this.moveTo(rec, target)
     const anthropic = target.provider === 'anthropic'
     const history = await this.historyOf(rec)
+    // This turn's message opens the conversation: the API keeps the system prompt apart from it, an agent gets it in the text.
+    if (!history.length) rec.systemApart = anthropic
     const first = async (): Promise<string> => opening ?? await this.opening(rec, message)
     if (anthropic) {
       // The API takes the system prompt on its own: a feature's opening is its message as given.
@@ -612,8 +617,9 @@ export class AiService {
       const text = guardTurn(await first(), redact)
       return { text, logical: text }
     }
-    // Moving here from the API: its system prompt was never in the messages, so it goes first.
-    const told = fromApi && rec.system && history[0] ? [{ ...history[0], user: `${rec.system}\n\n${history[0].user}` }, ...history.slice(1)] : history
+    // The conversation opened over the API: its system prompt was never in the messages, so it
+    // goes first, for every new session (not only the first one after the move from the API).
+    const told = rec.systemApart && rec.system && history[0] ? [{ ...history[0], user: `${rec.system}\n\n${history[0].user}` }, ...history.slice(1)] : history
     return { text: guardTurn(replayMessage(told, message), redact), logical: guardTurn(message, redact) }
   }
 
@@ -687,7 +693,9 @@ export class AiService {
     if (past.length) {
       const anchor = rec.thread.anchor
       // As the opening was: an agent's first message carries the system prompt, the API's does not.
-      const context = anchor.kind === 'task' ? '' : await anchorContext(this.deps.repo(rec.repoId), anchor, { words: this.words() }, rec.target?.provider === 'anthropic').catch(() => '')
+      const api = rec.target?.provider === 'anthropic'
+      rec.systemApart = api
+      const context = anchor.kind === 'task' ? '' : await anchorContext(this.deps.repo(rec.repoId), anchor, { words: this.words() }, api).catch(() => '')
       past[0] = { ...past[0]!, user: [context, artifactProtocol(anchor, false), past[0]!.user].filter(Boolean).join('\n\n') }
     }
     rec.history = past

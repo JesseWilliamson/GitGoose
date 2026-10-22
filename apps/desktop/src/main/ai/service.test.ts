@@ -5,7 +5,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { SecretFile } from './keyStore'
-import { buildPrompt, cleanCommitMessage, MAX_DIFF_CHARS } from './prompts'
+import { buildPrompt, cleanCommitMessage, MAX_DIFF_CHARS, REPLAY_USER } from './prompts'
 import { AiService, compact, previewOf } from './service'
 import { reduceThread, targetKey, type AiTarget, type AiThread, type AiUpdate, type ThreadAnchor } from '@gitgoose/shared'
 
@@ -659,6 +659,36 @@ describe('choosing who answers', () => {
     expect(t.ai.liveThreads()).toEqual([thread.id])
   })
 
+  it("a kept feature thread from the API tells every new agent session the feature's system prompt", async () => {
+    const log = join(tempDir(), 'prompts.log')
+    process.env.FAKE_AGENT_LOG = log
+    cleanup.push(() => void delete process.env.FAKE_AGENT_LOG)
+    const api = await fakeAnthropic(['It adds widgets.'])
+    cleanup.push(() => api.close())
+    const t = await setup({ aiProvider: 'anthropic' }, api)
+    t.ai.setApiKey('sk-ant-test')
+    t.ai.consent()
+    const a: AiTarget = { provider: 'agent', agent: 'custom', agentCommand: t.settings.aiAgentCommand }
+    const b: AiTarget = { ...a, agentCommand: `${t.settings.aiAgentCommand} --second` }
+    t.ai.consent(a)
+    t.ai.consent(b)
+    // The user's edit of the feature's system prompt: the API gets it on its own, not in the message.
+    const system = 'You explain commits like a ship captain.'
+    const res = await t.ai.run('k1', 'x', { kind: 'explain-commit', hash: t.r.git('rev-parse', 'HEAD').trim() }, { keepThread: true, prompt: { system, instructions: '' } })
+    expect(api.requests[0]!.system).toBe(system)
+    expect(api.requests[0]!.messages[0]!.content).not.toContain(system)
+    const thread = await t.ai.openThread('x', { kind: 'explain', hash: '' }, res.threadId)
+    // To an agent: a new session, told the conversation with the system prompt in front.
+    await ended(t.events, await t.ai.sendThread(thread.id, 'and the first agent?', { target: a }))
+    // To another agent: a new session again, and it still gets the system prompt (just once).
+    await ended(t.events, await t.ai.sendThread(thread.id, 'and the second?', { target: b }))
+    expect(replyOf(mirror(t.events, thread))).toBe('Turn 3. You said: and the second?. (replayed 2 earlier turns)')
+    const [one, two] = readFileSync(log, 'utf8').split('\n---\n')
+    for (const sent of [one!, two!]) {
+      expect(sent).toContain(`${REPLAY_USER}\n${system}\n\nExplain what this commit does`)
+      expect(sent.split(system)).toHaveLength(2)
+    }
+  })
   it('a thread without a pick carries on with whoever it was last with', async () => {
     const t = await two()
     const thread = await t.ai.openThread('x', { kind: 'free' })
