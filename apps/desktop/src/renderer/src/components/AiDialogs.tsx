@@ -185,7 +185,7 @@ function FixDialog() {
                   : <div key={i} className={clsx('px-2', r.kind === '+' && 'bg-add-bg', r.kind === '-' && 'bg-del-bg')}>{r.kind} {r.text}</div>)}
               </pre>
             )}
-            <p className="mt-2 text-xs text-faint">Nothing has been written. Use writes {fix.path} (undoable); it is refused if the file changes meanwhile.</p>
+            <p className="mt-2 text-xs text-faint">Nothing has been written. Use writes {fix.path}; it is refused if the file changes meanwhile.</p>
           </>
         )}
         <div className="mt-4 flex justify-end gap-2">

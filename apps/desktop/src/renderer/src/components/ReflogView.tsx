@@ -80,7 +80,7 @@ export function ReflogView({ view }: { view: RepoView }) {
                 <CM.Sub label={`Reset ${head.branch} to here`}>
                   <CM.Item onSelect={() => void reset(view.id, e.hash, 'soft')}>Soft: keep changes staged</CM.Item>
                   <CM.Item onSelect={() => void reset(view.id, e.hash, 'mixed')}>Mixed: keep changes unstaged</CM.Item>
-                  <CM.Item onSelect={() => void reset(view.id, e.hash, 'hard')}>Hard: discard changes (undoable)</CM.Item>
+                  <CM.Item onSelect={() => void reset(view.id, e.hash, 'hard')}>Hard: discard changes</CM.Item>
                 </CM.Sub>
               )}
               <CM.Separator />

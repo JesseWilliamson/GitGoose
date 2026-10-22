@@ -21,6 +21,10 @@ describe('search across every field', () => {
     // A SHA prefix.
     const target = log[3]!
     expect(await repo.search('all', target.slice(0, 7))).toContain(target)
+    // Any part of the SHA, the whole of it, and in capitals.
+    expect(await repo.search('all', target.slice(13, 25))).toContain(target)
+    expect(await repo.search('all', target)).toEqual([target])
+    expect(await repo.search('all', target.slice(30).toUpperCase())).toContain(target)
     // A tag name, and a branch name: the commits they point at.
     expect(await subjects(repo, await repo.search('all', 'v9.9'))).toEqual(['Subject line'])
     expect(await subjects(repo, await repo.search('all', 'wip'))).toEqual(['F'])

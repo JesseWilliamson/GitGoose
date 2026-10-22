@@ -57,6 +57,9 @@
   --lane-5: #f07c2a;
   --lane-6: #e6c13e;
   --lane-7: #3fbf6a;
+  /* Blame heatmap: the newest change in a file is hot, the oldest has cooled to the page. */
+  --heat-new: #ff7a3d;
+  --heat-old: #3a4a66;
   color-scheme: dark;
 }
 
@@ -87,6 +90,8 @@
   --lane-5: #d2601a;
   --lane-6: #a88400;
   --lane-7: #1f8f47;
+  --heat-new: #f0622a;
+  --heat-old: #b9c4d6;
   color-scheme: light;
 }
 

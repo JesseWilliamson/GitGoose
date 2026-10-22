@@ -62,20 +62,21 @@ test('a branch on top of main goes straight up instead of out to the right', asy
   await app.close()
 })
 
-test('with main checked out and a change, the WIP line runs beside the branch on top and joins main', async () => {
+test('with main checked out and a change, the WIP line runs straight up from main; the branch on top goes beside it', async () => {
   const { r, B, topic } = onTop()
   r.checkout('main')
   r.write('notes.txt', 'draft\n')
   const { app, page } = await launch(r.dir)
   const row = (hash: string) => page.locator(`[data-testid="commit-row"][data-hash="${hash}"]`)
-  for (const h of [...topic, B]) await expect(row(h)).toHaveAttribute('data-lane', '0')
-  // The WIP node sits above, in HEAD's lane (0); its dashed line steps to lane 1 under Z
-  // (laneX(1) = 42), runs down beside the branch and curves into B.
+  for (const h of topic) await expect(row(h)).toHaveAttribute('data-lane', '1')
+  await expect(row(B)).toHaveAttribute('data-lane', '0')
+  // The WIP node sits above, in HEAD's lane (0), and its dashed line never leaves it
+  // (laneX(0) = 18): straight down every row and straight into B.
   await expect(page.getByTestId('wip-node')).toHaveAttribute('data-lane', '0')
   const dashed = (hash: string) => row(hash).locator('path[stroke-dasharray="3 4"]')
-  await expect(dashed(topic[2]!)).toHaveAttribute('d', /^M18 0C18 \d+ 42 \d+ 42 \d+$/)
-  await expect(dashed(topic[1]!)).toHaveAttribute('d', /^M42 0V\d+$/)
-  await expect(dashed(B)).toHaveAttribute('d', /^M42 0V.*H18$/)
+  for (const h of topic) await expect(dashed(h)).toHaveAttribute('d', /^M18 0V\d+$/)
+  await expect(dashed(B)).toHaveAttribute('d', /^M18 0V\d+$/)
+  await expect(page.locator('path[stroke-dasharray="3 4"][d*="C"]')).toHaveCount(0)
   await app.close()
 })
 
@@ -176,7 +177,7 @@ test('comfy look: two-line rows beside hollow nodes, text indented by the lanes,
   await app.close()
 })
 
-test('one-line rows: the same graph, branch pills in a column on the left joined to their node', async () => {
+test('compact rows: avatar nodes, pills on the left, messages in one column', async () => {
   const r = makeFixture('linear')
   for (let i = 0; i < 12; i++) {
     r.checkout('-b', `b${i}`, 'main~4')
@@ -186,30 +187,26 @@ test('one-line rows: the same graph, branch pills in a column on the left joined
   const { app, page } = await launch(r.dir)
   await page.evaluate(() => window.gitgoose.setSettings({ graphStyle: 'compact' }))
   const head = page.locator(`[data-testid="commit-row"][data-hash="${r.head()}"]`)
-  await expect.poll(async () => (await head.boundingBox())!.height).toBe(28)
-  // The pill is in the column on the left, joined to the node by a line; the node is the same
-  // hollow ring as in two-line rows, and the avatar, hash, author and date share the one line.
+  await expect.poll(async () => (await head.boundingBox())!.height).toBe(32)
+  await expect(page.getByTestId('graph-header')).toContainText('Commit message')
+  // The pill is in the column on the left, joined to the node by a line; the node is the
+  // author's avatar (initials until an image loads), with the lane band and strip behind it.
   await expect(head.getByTestId('refs-cell').locator('[data-testid="ref-pill"][data-ref="refs/heads/main"]')).toBeVisible()
   await expect(head.locator('svg [data-testid="ref-line"]')).toHaveCount(1)
-  await expect(head.locator('[data-testid="commit-node"] circle').last()).toHaveAttribute('fill', 'var(--gs-bg)')
-  await expect(head.getByTestId('row-avatar')).toContainText('AL')
-  await expect(head.getByTestId('row-sha')).toHaveText(r.head().slice(0, 7))
-  // The author is on the row but yields to the subject when the pane is narrow, as in this window.
-  await expect(head.getByTestId('row-author')).toHaveText('Ada Lovelace')
-  await expect(head.getByTestId('row-author')).toBeHidden()
+  await expect(head.getByTestId('avatar-node')).toContainText('AL')
+  await expect(head.getByTestId('lane-strip')).toHaveCount(1)
+  await expect(head.getByTestId('row-avatar')).toHaveCount(0)
   // A commit without refs has an empty column and no connector.
   const plain = page.getByTestId('commit-row').filter({ hasText: 'Commit 3' })
   await expect(plain.locator('svg [data-testid="ref-line"]')).toHaveCount(0)
   await expect(plain.getByTestId('refs-cell').locator('[data-testid="ref-pill"]')).toHaveCount(0)
-  // The text still indents by the lanes open at that point, as in two-line rows: the first tip
-  // listed has two lanes open beside it, the last has every other tip's line passing through.
-  // (HEAD itself is no quieter: the branches fork from the root, so their lines cross every
-  // older row.) The quietest row's text starts past the branch column: 160 + cellWidth(2) = 214.
-  const xs = await page.locator('[data-testid="commit-row"]:has-text("work on b") [data-testid="row-body"]')
-    .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().x))
-  expect(Math.max(...xs)).toBeGreaterThan(Math.min(...xs) + 100)
-  const pane = (await page.getByTestId('graph-scroll').boundingBox())!
-  expect(Math.min(...xs) - pane.x).toBe(160 + 54)
+  // Columns, not an indent: every message starts at the same x however many lanes are open
+  // beside it, right under the header's "Commit message".
+  const xs = await page.locator('[data-testid="commit-row"] [data-testid="row-body"]').evaluateAll((els) => els.map((el) => el.getBoundingClientRect().x))
+  expect(xs.length).toBeGreaterThan(10)
+  expect(new Set(xs).size).toBe(1)
+  const title = (await page.getByTestId('graph-header').getByText('Commit message').boundingBox())!
+  expect(Math.abs(title.x - xs[0]!)).toBeLessThan(1)
   await app.close()
 })
 

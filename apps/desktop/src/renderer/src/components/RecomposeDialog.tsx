@@ -16,10 +16,10 @@ import { Button, CM, DM, Modal, Spinner } from './ui'
 
 /**
  * Recompose with AI: the AI proposes a new set of commits for the selected
- * ones, and you shape it before anything changes. The proposed commits are a list on the left;
- * the selected one's message and hunks on the right. Drag a commit to reorder (the list makes
- * room as you go), drag a hunk onto a commit to move it there or into the open space below the
- * commits to start a new one; Shift-click several commits and right-click to squash them.
+ * ones, and you shape it before anything changes. The proposed commits are a list on the left,
+ * newest at the top and oldest at the bottom like the graph; the selected one's message and
+ * hunks on the right. Drag a commit to reorder (the list makes room as you go), drag a hunk onto
+ * a commit to move it there or into the space above the newest commit to start a new one; Shift-click several commits and right-click to squash them.
  *
  * However the plan is edited, every change stays in exactly one commit (lib/recomposeDraft.ts),
  * so the new commits add up to the same final code; main checks that again, and Undo puts the
@@ -142,6 +142,11 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
   /** Row tops before a live reorder, so the other rows can slide into their new places. */
   const slide = useRef<{ tops: number[]; from: number; to: number } | null>(null)
   const drags = useRef(0)
+  /**
+   * Set when a drag ends: the click that follows the release is not a click on a row. (The rows
+   * around the dropped one are still sliding into place, so it can land on a different one.)
+   */
+  const dropped = useRef(false)
   /** Clear the drag view once a clone has settled, unless a newer drag has started since. */
   const settled = (token: number) => () => { if (drags.current === token) setDrag(null) }
   const busy = useStore((s) => !!s.repos[repoId]?.busy)
@@ -203,7 +208,10 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
   // ---- Drag and drop, with the pointer rather than HTML5 drag events, so the dragged card can
   // stay in the list as an empty slot while a clone of it follows the pointer, and the other
   // rows slide out of its way. A press that moves less than 5px is a click.
-  const rows = () => Array.from(listRef.current?.querySelectorAll<HTMLElement>(ROW) ?? [])
+  // The list shows the plan newest at the top, oldest at the bottom, the way the graph does; the
+  // draft itself stays oldest first (the order the commits are made in). rows() is in draft order,
+  // so rows()[i] is commit i wherever it is drawn.
+  const rows = () => Array.from(listRef.current?.querySelectorAll<HTMLElement>(ROW) ?? []).sort((a, b) => Number(a.dataset.index) - Number(b.dataset.index))
   const rowRect = (i: number) => rows()[i]?.getBoundingClientRect() ?? null
 
   const endLift = () => {
@@ -274,12 +282,15 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
     l.ghost.style.transform = `translate3d(${l.left}px,${l.top}px,0)`
     if (l.kind === 'commit') {
       // The slot moves to wherever the clone's middle is, live; the rows in between slide over.
+      // Positions on screen run the other way from the draft: work in screen order, top to bottom.
       const all = rows()
+      const last = all.length - 1
       const from = l.key as number
       const center = l.top + l.ghost.offsetHeight / 2
-      let to = all.findIndex((r) => { const b = r.getBoundingClientRect(); return center < b.top + b.height / 2 })
-      if (to < 0) to = all.length - 1
-      else if (to > from) to--
+      let at = [...all].reverse().findIndex((r) => { const b = r.getBoundingClientRect(); return center < b.top + b.height / 2 })
+      if (at < 0) at = last
+      else if (at > last - from) at--
+      const to = last - at
       if (to !== from) {
         slide.current = { tops: all.map((r) => r.getBoundingClientRect().top), from, to }
         l.key = to
@@ -302,6 +313,8 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
     if (!l) return
     endLift()
     if (!l.ghost) return // a click
+    dropped.current = true
+    setTimeout(() => { dropped.current = false })
     let dest: DOMRect | null
     let fade = false
     if (l.kind === 'commit') dest = rowRect(l.key as number)
@@ -340,7 +353,7 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
         <Button size="sm" variant="ghost" disabled={!hist.future.length} onClick={stepForward} title={`Redo (${isMac ? '⌘⇧' : 'Ctrl+Shift+'}Z)`} data-testid="recompose-redo"><Redo2 size={12} /> Redo</Button>
         <span className="flex-1" />
         <Button size="sm" variant="ghost" disabled={!hist.past.length} onClick={() => { update(() => structuredClone(proposal.commits)); focus(0) }} data-testid="recompose-reset"
-          title="Back to what the AI proposed (undoable)"><RotateCcw size={12} /> Reset to proposal</Button>
+          title="Back to what the AI proposed"><RotateCcw size={12} /> Reset to proposal</Button>
         <Button size="sm" variant={chat ? 'default' : 'ghost'} onClick={() => setChat(!chat)} data-testid="recompose-chat-toggle"
           title='Ask the AI to change the plan ("put the tests in their own commit")'><MessagesSquare size={12} /> Chat</Button>
       </div>
@@ -355,7 +368,7 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
       )}
 
       <div className="flex min-h-0 flex-1 overflow-hidden rounded-md border border-line">
-        {/* The proposed commits, applied top to bottom. While a hunk is in the air this column is
+        {/* The proposed commits, applied bottom to top (oldest at the bottom, as in the graph). While a hunk is in the air this column is
             the only place it can go, so everything else dims. */}
         <div className="flex w-80 shrink-0 flex-col border-r border-line bg-panel" data-testid="recompose-commits-column">
           {/* One line, never wrapping: a hint that changed the header's height would move the rows
@@ -363,14 +376,22 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
           <div className="flex items-center gap-2 px-3 pt-2 pb-1 text-[11px] font-semibold tracking-wide whitespace-nowrap text-faint uppercase">
             <span className="shrink-0">Commits</span>
             <span className="min-w-0 flex-1 truncate text-right font-normal normal-case tracking-normal">
-              {draggingUnit ? <span className="text-accent">drop on a commit, or below for a new one</span> : `${draft.length}, oldest first`}
+              {draggingUnit ? <span className="text-accent">drop on a commit, or above for a new one</span> : `${draft.length}, oldest at the bottom`}
             </span>
           </div>
           <ContextMenu.Root>
             <ContextMenu.Trigger asChild>
               {/* Focusable, so a click or drag on a row keeps focus in the dialog and Ctrl+Z still reaches it. */}
               <ol ref={listRef} tabIndex={-1} className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2 outline-none" data-testid="recompose-commits">
-                {draft.map((c, i) => {
+                {/* Above the newest commit: drop a hunk here to start a new commit with it. */}
+                {draggingUnit && (
+                  <li data-testid="recompose-new-commit" data-target={drag.over === 'new' || undefined}
+                    className={clsx('mt-1 flex min-h-16 shrink-0 items-center justify-center gap-1.5 rounded-md border border-dashed text-xs',
+                      drag.over === 'new' ? 'border-accent bg-accent/15 text-fg' : 'border-faint text-muted')}>
+                    <Plus size={12} /> New commit
+                  </li>
+                )}
+                {draft.map((c, i) => ({ c, i })).reverse().map(({ c, i }) => {
                   const stats = c.units.reduce((s, id) => ({ add: s.add + (units.get(id)?.added ?? 0), del: s.del + (units.get(id)?.removed ?? 0) }), { add: 0, del: 0 })
                   const files = new Set(c.units.map((id) => units.get(id)?.path)).size
                   const isSlot = drag?.kind === 'commit' && drag.index === i
@@ -378,7 +399,7 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
                   return (
                     <li key={i} data-testid="recompose-commit" data-index={i} data-selected={pickedSet.has(i) || undefined} data-target={target || undefined}
                       onPointerDown={(e) => beginLift(e, 'commit', i, i)}
-                      onClick={(e) => select(i, e)}
+                      onClick={(e) => { if (!dropped.current) select(i, e) }}
                       onContextMenu={() => { if (!pickedSet.has(i)) focus(i) }}
                       className={clsx('group relative mt-1 flex shrink-0 cursor-grab gap-2 rounded-md border px-2 py-1.5 select-none',
                         isSlot && 'drag-placeholder',
@@ -394,22 +415,15 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
                         </div>
                       </div>
                       <div className={clsx('flex shrink-0 flex-col opacity-0 group-hover:opacity-100 group-data-[selected]:opacity-100', draggingUnit && 'hidden')}>
-                        <button title="Earlier" disabled={i === 0} onClick={(e) => { e.stopPropagation(); update((d) => moveCommit(d, i, i - 1)); focus(i - 1) }}
-                          className="rounded p-0.5 text-muted hover:bg-hover disabled:opacity-30" data-testid="recompose-up"><ArrowUp size={12} /></button>
+                        {/* Up is later (newer), as in the graph. */}
                         <button title="Later" disabled={i === draft.length - 1} onClick={(e) => { e.stopPropagation(); update((d) => moveCommit(d, i, i + 1)); focus(i + 1) }}
+                          className="rounded p-0.5 text-muted hover:bg-hover disabled:opacity-30" data-testid="recompose-up"><ArrowUp size={12} /></button>
+                        <button title="Earlier" disabled={i === 0} onClick={(e) => { e.stopPropagation(); update((d) => moveCommit(d, i, i - 1)); focus(i - 1) }}
                           className="rounded p-0.5 text-muted hover:bg-hover disabled:opacity-30" data-testid="recompose-down"><ArrowDown size={12} /></button>
                       </div>
                     </li>
                   )
                 })}
-                {/* The open space below the commits: drop a hunk here to start a new commit with it. */}
-                {draggingUnit && (
-                  <li data-testid="recompose-new-commit" data-target={drag.over === 'new' || undefined}
-                    className={clsx('mt-1 flex min-h-16 flex-1 items-center justify-center gap-1.5 rounded-md border border-dashed text-xs',
-                      drag.over === 'new' ? 'border-accent bg-accent/15 text-fg' : 'border-faint text-muted')}>
-                    <Plus size={12} /> New commit
-                  </li>
-                )}
               </ol>
             </ContextMenu.Trigger>
             <CM.Content>
@@ -510,11 +524,12 @@ function UnitCard({ unit, draft, here, slot, onPointerDown, onMove }: {
             <button className="rounded px-1.5 py-0.5 text-muted hover:bg-hover hover:text-fg" data-testid="recompose-move">Move to…</button>
           </DropdownMenu.Trigger>
           <DM.Content align="end">
-            {draft.map((c, i) => i === here ? null : (
+            {/* Newest first, like the list. */}
+            <DM.Item onSelect={() => onMove(draft.length)}>A new commit</DM.Item>
+            <DM.Separator />
+            {draft.map((c, i) => ({ c, i })).reverse().map(({ c, i }) => i === here ? null : (
               <DM.Item key={i} onSelect={() => onMove(i)}>{i + 1}. {c.message.split('\n')[0] || '(no message)'}</DM.Item>
             ))}
-            <DM.Separator />
-            <DM.Item onSelect={() => onMove(draft.length)}>A new commit</DM.Item>
           </DM.Content>
         </DropdownMenu.Root>
       </div>

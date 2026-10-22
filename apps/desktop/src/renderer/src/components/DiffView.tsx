@@ -5,6 +5,7 @@ import { ChevronDown, ExternalLink, MessageCircleQuestion, X } from 'lucide-reac
 import { DropdownMenu } from 'radix-ui'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AskPanel } from './AskPanel'
+import { Avatar } from './Avatar'
 import { CodePeekPanel, identifierFromClick } from './CodePeek'
 import { ImageDiff, imageMime } from './ImageDiff'
 
@@ -13,9 +14,11 @@ type SvgView = 'image' | 'text'
 let lastSvgView: SvgView = 'image'
 import { discard, openDiffTool, openInEditor, restoreFileFrom, run } from '../lib/actions'
 import { api } from '../lib/api'
-import { formatDate, hashColor, laneColor, relativeTime, shortHash, splitPath } from '../lib/format'
+import { formatDate, relativeTime, shortHash, splitPath } from '../lib/format'
 import { pairs, segments, splitRows, wordDiff, type Ranges } from '../lib/diffLayout'
 import { tokenize, type Tokens } from '../lib/highlight'
+import { heatByCommit, heatColor } from '../lib/heat'
+import { avatarSrc, useAvatarVariant } from '../lib/avatar'
 import { codeLineHeight, ensureLoaded, reportError, saveSettings, updateRepo, useSetting, type FileMode, type RepoView } from '../lib/store'
 import { Button, DM, Spinner } from './ui'
 import { modName } from '../lib/keys'
@@ -503,25 +506,32 @@ function BlamePane({ view, path, rev }: { view: RepoView; path: string; rev?: st
   const lineH = codeLineHeight(useSetting('codeFontSize'))
   const virt = useVirtualizer({ count: lines?.length ?? 0, getScrollElement: () => scrollRef.current, estimateSize: () => lineH, overscan: 30 })
   useEffect(() => virt.measure(), [lineH, virt])
+  const heats = useMemo(() => heatByCommit(lines ?? []), [lines])
+  const avatars = useSetting('avatars')
+  const avatarVariant = useAvatarVariant()
   if (!lines) return <div className="flex flex-1 items-center justify-center text-faint"><Spinner /></div>
-  const newest = Math.max(...lines.map((l) => l.date), 1)
-  const oldest = Math.min(...lines.map((l) => l.date), newest)
   return (
     <div ref={scrollRef} className="selectable min-h-0 flex-1 overflow-auto" style={CODE_STYLE} data-testid="blame">
       <div style={{ height: virt.getTotalSize(), position: 'relative' }} className="w-max min-w-full">
         {virt.getVirtualItems().map((vi) => {
           const l = lines[vi.index]!
           const first = vi.index === 0 || lines[vi.index - 1]!.hash !== l.hash
-          // Newer lines get a stronger stripe, so recent changes stand out.
-          const age = newest === oldest ? 1 : (l.date - oldest) / (newest - oldest)
+          // The heatmap: one colour per commit by how recent it is, so new changes stand out
+          // whichever branch they came from (see lib/heat.ts).
+          const h = heats.get(l.hash) ?? 0
+          const heat = heatColor(h)
           return (
             <div key={vi.key} style={{ position: 'absolute', top: 0, left: 0, minWidth: '100%', height: lineH, lineHeight: `${lineH}px`, transform: `translateY(${vi.start}px)` }}
               className={clsx('flex whitespace-pre', first && vi.index > 0 && 'border-t border-line/50')}>
-              <span className="sticky left-0 flex w-[300px] shrink-0 items-center gap-2 bg-panel pr-2 font-sans text-[11px]">
-                <span className="h-full w-1 shrink-0" style={{ background: laneColor(hashColor(l.hash)), opacity: 0.25 + age * 0.75 }} />
+              <span className="sticky left-0 flex w-[300px] shrink-0 items-center gap-2 pr-2 font-sans text-[11px]"
+                style={{ background: `color-mix(in srgb, ${heat} 14%, var(--gs-panel))` }}>
+                <span className="h-full w-1 shrink-0" style={{ background: heat }} data-testid="blame-heat" data-heat={h} />
                 {first && (
-                  <button className="flex min-w-0 flex-1 items-center gap-2 text-left hover:text-accent" title={l.summary}
+                  <button className="flex min-w-0 flex-1 items-center gap-2 text-left hover:text-accent" title={`${l.summary}\n${l.author} <${l.email}>`}
                     onClick={() => { updateRepo(view.id, { selected: { kind: 'commit', hash: l.hash } }); void ensureLoaded(view.id, l.hash) }}>
+                    <span data-testid="blame-avatar" className="flex shrink-0">
+                      <Avatar name={l.author} email={l.email} src={avatarSrc(l.email, avatars, avatarVariant)} size={Math.min(16, lineH - 2)} />
+                    </span>
                     <span className="font-mono text-faint">{shortHash(l.hash)}</span>
                     <span className="min-w-0 flex-1 truncate">{l.summary}</span>
                     <span className="text-faint">{l.author.split(' ')[0]}</span>

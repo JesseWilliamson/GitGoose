@@ -1,4 +1,4 @@
-import { makeFixture } from '@gitgoose/fixtures'
+import { initRepo, makeFixture } from '@gitgoose/fixtures'
 import { expect, test } from '@playwright/test'
 import { delimiter } from 'node:path'
 import { launch, pickFromSubmenu } from './app'
@@ -76,6 +76,26 @@ test('shows file history and blame', async () => {
   await expect(page.getByTestId('file-history').locator('button')).toHaveCount(5)
   await page.getByRole('button', { name: 'blame' }).click()
   await expect(page.getByTestId('blame')).toContainText('Commit 5')
+  await app.close()
+})
+
+test('blame colours lines by how recent they are and shows who wrote them', async () => {
+  const r = initRepo()
+  r.commit('old', { 'f.txt': 'one\ntwo\nthree\n' })
+  r.commit('middle', { 'f.txt': 'one\nTWO\nthree\n' })
+  r.git('commit', '-q', '--allow-empty', '-m', 'unrelated')
+  r.commit('new', { 'f.txt': 'one\nTWO\nTHREE\n' })
+  const { app, page } = await launch(r.dir)
+  await page.getByTestId('commit-row').first().click()
+  await page.getByTestId('commit-file').first().click()
+  await page.getByRole('button', { name: 'blame' }).click()
+  // A heatmap, not branch colours: oldest 0, newest 1, by rank among the file's commits.
+  await expect(page.getByTestId('blame-heat')).toHaveCount(3)
+  const heats = await page.getByTestId('blame-heat').evaluateAll((els) => els.map((e) => Number((e as HTMLElement).dataset.heat)))
+  expect(heats).toEqual([0, 0.5, 1])
+  // Each block of lines from one commit starts with its author's avatar (initials without images).
+  await expect(page.getByTestId('blame-avatar')).toHaveCount(3)
+  await expect(page.getByTestId('blame-avatar').first()).toHaveText('AL')
   await app.close()
 })
 
