@@ -262,6 +262,25 @@ export function openingPromptKind(anchor: { kind: string }): PromptKind | undefi
   return anchor.kind === 'free' ? 'chat' : anchor.kind === 'ask' ? 'ask' : undefined
 }
 
+/**
+ * Whose system prompt a conversation about `anchor` speaks with: its feature's (a review thread,
+ * the review's), the AI panel's for free chat. The API keeps the system prompt apart from the
+ * messages, so a conversation reopened from disk has to be given it again from here.
+ */
+export function systemPromptKind(anchor: { kind: string; task?: string }): PromptKind | undefined {
+  switch (anchor.kind) {
+    case 'review': case 'changestack': return 'review'
+    case 'explain': return 'explain-commit'
+    case 'impact': return 'assess-impact'
+    case 'error': return 'explain-error'
+    case 'conflict': return 'resolve-conflict'
+    case 'free': return 'chat'
+    case 'recompose': case 'walkthrough': case 'ask': return anchor.kind
+    case 'task': return anchor.task as PromptKind | undefined
+    default: return undefined
+  }
+}
+
 /** The parts of a built prompt, in the order they are sent (what a Prompt panel shows). */
 export interface PromptParts {
   kind: PromptKind

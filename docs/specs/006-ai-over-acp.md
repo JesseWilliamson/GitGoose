@@ -63,13 +63,23 @@ lists are kept under, and which process a session lives in.
 |---|---|---|
 | Commit box → **Write** | staged diff (lockfiles excluded, 60k chars max) and 12 recent subjects | streams into Summary / Description |
 | Commit details → **Explain** | `git show` of the commit | streams into a box under the message |
-| Attention bar → **Explain** | the failed action and git's output | streams into a modal |
-| Conflict file → **Ask AI** (agent only) | the file path; the agent reads the file | a *proposal* dialog: Use this resolution / Discard |
+| Attention bar → **Explain** | the failed action and git's output | a kept thread, streamed into the AI panel (a modal only with no repository open) |
+| Conflict file → **Ask AI** (agent only) | the file path; the agent reads the file | a *proposal* dialog: Use this resolution / Discard; with no proposal, its note as a thread in the AI panel |
 | Review, Walkthrough, Impact → **Chat** | the feature's context (the change, numbered) and what you write | a thread in a rail beside the result |
 | Explain box → **Ask a follow-up** | what you write (the session has the commit) | the thread grows under the explanation |
 | Recompose → **Chat** | what you write (the session has the pieces) | a thread beside the plan; revised plans as cards |
 | Diff selection → **Ask** | the lines, their function, definitions, history; then what you write | a thread under the diff (spec 007) |
-| **AI panel** (Mod+Shift+A, View → AI Chat) | the repository's name and HEAD, then what you write | a free-standing thread |
+| **AI panel** (Mod+Shift+A, View → AI Chat) | the repository's name and HEAD, then what you write | a free-standing thread; its history lists every kept thread of the repository |
+
+**Waiting never blocks, and answers are not lost.** Every long request (explain, review,
+walkthrough, impact, recompose, fix, conflict help) is an *AI job* (`lib/aiJobs.ts`): a chip in
+the status bar shows what is running and how many answers are ready, with Open / Stop / Dismiss,
+and a toast with Open says when an answer arrives while its view is not on screen. Closing the
+Fix, Recompose or proposal dialog only hides it (the request, or the result and its edits, wait
+on the chip); Stop and Discard are the explicit ways to throw one away. A commit's explanation
+belongs to the commit, not to the panel showing it (`lib/explain.ts`): selecting another commit
+and coming back, or restarting, shows it again from the kept `explain` thread. The commit
+message and push checks are short inline waits and are not jobs.
 
 ## The prompts, shown and editable
 
@@ -109,14 +119,15 @@ per AI task plus `chat` (the AI panel's opening). A prompt is four parts, sent i
   provider (for agents: this exact command). The agent process is not started before that.
   The renderer asks first, naming what each feature sends.
 - **One session per thread.** Every AI feature is a *thread*: an anchor (what it is about:
-  `review`, `explain`, `recompose`, `walkthrough`, `impact`, `ask`, `changestack`, `free`, or
-  `task` for one-shot requests) and turns. A thread owns one ACP session (`session/new` with
+  `review`, `explain`, `recompose`, `walkthrough`, `impact`, `ask`, `changestack`, `free`,
+  `error` (why an action failed), `conflict` (the conflict agent's work on a file), or `task` for
+  one-shot requests that are never kept) and turns. A thread owns one ACP session (`session/new` with
   cwd = the repository) while its view is open, plus a 10-minute idle grace after the view
   closes; then the session is closed (`session/close` where supported) and the thread stays
   saved. Threads are independent of each other, as requests were before: a shared session would
   serialize them and drag every earlier diff along. Within a thread, follow-ups go to the same
-  session, so the agent remembers. A one-shot request (commit message, push checks, conflict
-  help, `aiRun`) is a thread that is opened, sent and closed; a feature whose view chats on
+  session, so the agent remembers. A one-shot request (commit message, push checks, a fix for
+  a finding, `aiRun`) is a thread that is opened, sent and closed; a feature whose view chats on
   (`keepThread`) keeps it, and its own request is the thread's first turn.
 - **The first message carries the context.** A feature's thread starts with the feature's own
   prompt; a thread that starts with the user's words starts with the anchor's context (the

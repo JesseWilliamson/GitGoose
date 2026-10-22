@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_PROMPTS, effectivePrompt, joinPrompt, PROMPT_KINDS, promptKindsOf, renderTemplate, requestWords } from './prompts'
+import { DEFAULT_PROMPTS, effectivePrompt, joinPrompt, PROMPT_KINDS, promptKindsOf, renderTemplate, requestWords, systemPromptKind } from './prompts'
 
 describe('prompt words', () => {
   it('fills {names} it knows and leaves the rest as typed', () => {
@@ -28,6 +28,14 @@ describe('prompt words', () => {
     expect(requestWords('recompose', s, { system: '', instructions: 'On screen' })).toEqual({ system: 'S', instructions: 'On screen' })
     // Reset, not saved yet: the saved edit no longer counts.
     expect(requestWords('recompose', s, null)).toEqual({ system: 'S', instructions: def.instructions })
+  })
+
+  it("every conversation knows whose system prompt it speaks with", () => {
+    expect(systemPromptKind({ kind: 'ask' })).toBe('ask')
+    expect(systemPromptKind({ kind: 'free' })).toBe('chat')
+    expect(systemPromptKind({ kind: 'changestack' })).toBe('review')
+    expect(systemPromptKind({ kind: 'error' })).toBe('explain-error')
+    expect(systemPromptKind({ kind: 'task', task: 'commit-message' })).toBe('commit-message')
   })
 
   it('puts the parts together: instructions, the fixed format, then the context', () => {

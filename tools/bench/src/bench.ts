@@ -9,7 +9,9 @@
  *   1. git:    open the repo and read the first page of the log (LogStream), in date order and in
  *              topological order, each without and with a commit-graph file (ADR-003)
  *   2. layout: lane layout for every commit
- *   3. app:    launch Electron, time to the first painted graph rows, then scroll fps
+ *   3. app:    launch Electron, time to the first painted graph rows, then scroll fps; where
+ *              the startup time went (the app's performance marks, from process start); and
+ *              what the main bundle loads before the window can open
  *   4. sidebar: the 3,000-commit dev repository with 2,000 generated branches and tags (in
  *              folders), every section open: time to the first sidebar rows, rows in the DOM,
  *              and scroll fps through the whole list (PLAN-4 phase 4)
@@ -19,7 +21,7 @@ import { Repo } from '@gitgoose/git'
 import { layout } from '@gitgoose/graph'
 import { _electron as electron, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -44,6 +46,27 @@ const BUDGET = {
   sidebarFirstPaintMs: 2500,
   /** Rows the sidebar may keep in the DOM: what fits on screen plus overscan, never the whole list. */
   sidebarDomRows: 120,
+}
+
+/**
+ * Modules the main process must not load before its window opens: each costs tens to hundreds
+ * of milliseconds and is needed only later, or only in the indexer process. See
+ * apps/desktop/src/main/startup.test.ts, which checks the sources; this checks the build.
+ */
+const LAZY_MODULES = ['@anthropic-ai/sdk', '@agentclientprotocol/sdk', '@parcel/watcher', 'web-tree-sitter', 'electron-updater']
+
+/** Bare modules the built main entry (and the chunks it imports) import statically. */
+function staticImports(entry: string, seen = new Set<string>()): string[] {
+  if (seen.has(entry)) return []
+  seen.add(entry)
+  const text = readFileSync(entry, 'utf8')
+  const out: string[] = []
+  for (const m of text.matchAll(/^import\s+(?:[^'"]*?\s+from\s+)?["']([^'"]+)["']/gm)) {
+    const spec = m[1]!
+    if (spec.startsWith('.')) out.push(...staticImports(resolve(entry, '..', spec), seen))
+    else out.push(spec)
+  }
+  return out
 }
 
 async function time<T>(fn: () => Promise<T> | T): Promise<[T, number]> {
@@ -93,6 +116,8 @@ async function main() {
   let appFirstPaintMs = NaN
   let scrollFps = NaN
   let idleFps = NaN
+  let startup: Record<string, number> = {}
+  let eagerModules: string[] = []
   if (!existsSync(main)) {
     console.log('Skipping the app benchmark: build it first (pnpm build).')
   } else {
@@ -105,6 +130,9 @@ async function main() {
         GITGOOSE_OPEN: cache,
         GITGOOSE_USER_DATA: mkdtempSync(join(tmpdir(), 'gitgoose-bench-')),
         GITGOOSE_NO_UPDATE: '1',
+        // Off the network: the budgets measure the app, not avatar downloads.
+        GITGOOSE_GITHUB_API: 'http://127.0.0.1:9',
+        GITGOOSE_AVATAR_GITHUB_BASE: 'http://127.0.0.1:9',
       } as Record<string, string>,
     })
     // One throwaway launch first: on a fresh CI machine the first start also reads Electron's
@@ -118,6 +146,8 @@ async function main() {
     const page = await app.firstWindow()
     await page.getByTestId('commit-row').first().waitFor()
     appFirstPaintMs = performance.now() - t0
+    startup = await startupTimeline(app, page)
+    eagerModules = staticImports(main).filter((m) => LAZY_MODULES.includes(m))
 
     // Scroll the graph continuously for two seconds and count animation frames.
     // Passed as a string: tsx rewrites named functions with a helper that does not exist in the page.
@@ -139,6 +169,8 @@ async function main() {
     fullLogMs: round(fullLogMs),
     layoutAllMs: round(layoutAllMs),
     appFirstPaintMs: round(appFirstPaintMs),
+    ...startup,
+    mainEagerModules: eagerModules.join(', ') || 'none',
     idleFps: round(idleFps),
     scrollFps: round(scrollFps),
     sidebarRefs: sidebar.refs,
@@ -160,6 +192,7 @@ async function main() {
     if (results.topoFirstPageMs > BUDGET.firstPageMs) failures.push(`first log page, topological ${results.topoFirstPageMs} ms > ${BUDGET.firstPageMs} ms`)
     if (results.layoutAllMs > BUDGET.layoutAllMs) failures.push(`layout ${results.layoutAllMs} ms > ${BUDGET.layoutAllMs} ms`)
     if (results.appFirstPaintMs > BUDGET.appFirstPaintMs) failures.push(`app first paint ${results.appFirstPaintMs} ms > ${BUDGET.appFirstPaintMs} ms`)
+    if (eagerModules.length) failures.push(`the main process loads ${eagerModules.join(', ')} before its window opens (import them where they are used)`)
     // Scrolling must keep up with what the machine can draw at all, minus a little slack.
     const fpsBudget = Math.min(BUDGET.scrollFps, results.idleFps * 0.9)
     if (results.scrollFps < fpsBudget) failures.push(`scroll ${results.scrollFps} fps < ${round(fpsBudget)} fps (idle: ${results.idleFps})`)
@@ -171,6 +204,36 @@ async function main() {
       process.exit(1)
     }
     console.log('All performance budgets met.')
+  }
+}
+
+/**
+ * Where the startup time went, in ms from the main process's start: the performance marks the
+ * main process and the window set (gitgoose:*), the window's first contentful paint, the first
+ * page of the log and the frame that draws its rows. Main and renderer clocks are put on one
+ * line through their timeOrigin.
+ */
+async function startupTimeline(app: Awaited<ReturnType<typeof electron.launch>>, page: Page): Promise<Record<string, number>> {
+  await page.waitForFunction(() => performance.getEntriesByName('gitgoose:rows').length > 0)
+  const main = await app.evaluate(() => ({ origin: performance.timeOrigin, marks: performance.getEntriesByType('mark').map((m) => [m.name, m.startTime] as const) }))
+  const win = (await page.evaluate(`({
+    origin: performance.timeOrigin,
+    marks: performance.getEntriesByType('mark').map((m) => [m.name, m.startTime]),
+    fcp: performance.getEntriesByName('first-contentful-paint')[0]?.startTime ?? NaN,
+  })`)) as { origin: number; marks: [string, number][]; fcp: number }
+  const fromMain = (t: number) => round(win.origin + t - main.origin)
+  const first = (name: string) => win.marks.find(([n]) => n === `gitgoose:${name}`)?.[1] ?? NaN
+  const at = (name: string) => round(main.marks.find(([n]) => n === `gitgoose:${name}`)?.[1] ?? NaN)
+  return {
+    startMainLoadedMs: at('main-loaded'),
+    startReadyMs: at('ready'),
+    startWindowMs: at('create-window'),
+    startReadyToShowMs: at('ready-to-show'),
+    startFirstPaintMs: fromMain(win.fcp),
+    startSettingsMs: fromMain(first('settings')),
+    startSnapshotMs: fromMain(first('snapshot')),
+    startFirstPageMs: fromMain(first('first-page')),
+    startRowsMs: fromMain(first('rows')),
   }
 }
 
@@ -225,7 +288,7 @@ async function sidebarBench(main: string) {
   const t0 = performance.now()
   const app = await electron.launch({
     args: launchArgs,
-    env: { ...process.env, GITGOOSE_OPEN: dir, GITGOOSE_USER_DATA: mkdtempSync(join(tmpdir(), 'gitgoose-bench-')), GITGOOSE_NO_UPDATE: '1' } as Record<string, string>,
+    env: { ...process.env, GITGOOSE_OPEN: dir, GITGOOSE_USER_DATA: mkdtempSync(join(tmpdir(), 'gitgoose-bench-')), GITGOOSE_NO_UPDATE: '1', GITGOOSE_GITHUB_API: 'http://127.0.0.1:9', GITGOOSE_AVATAR_GITHUB_BASE: 'http://127.0.0.1:9' } as Record<string, string>,
   })
   const page: Page = await app.firstWindow()
   await page.getByTestId('sidebar-ref').first().waitFor()

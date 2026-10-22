@@ -1,6 +1,6 @@
 import type { Repo } from '@gitgoose/git'
 import {
-  commandArgv, defaultTarget, effectivePrompt, openingPromptKind, reduceThread, targetCommandLine, targetKey, targetLabel, transcript,
+  commandArgv, defaultTarget, effectivePrompt, openingPromptKind, reduceThread, systemPromptKind, targetCommandLine, targetKey, targetLabel, transcript,
   type PromptKind, type PromptPreview, type PromptText,
   type AgentInfo, type AiArtifactResult, type AiModelList, type AiPermissionAsk, type AiPermissionRequest, type AiResult, type AiRunOptions, type AiStatus, type AiTarget, type AiTask,
   type AiThread, type AiUpdate, type ArtifactKind, type GitGooseEvent, type PermissionAnswer, type ReviewProfile, type Settings, type ThreadAnchor,
@@ -728,6 +728,10 @@ export class AiService {
       past[0] = { ...past[0]!, user: [context, artifactProtocol(anchor, false), past[0]!.user].filter(Boolean).join('\n\n') }
       // Rebuilt the way the API was told it, without the system prompt.
       rec.systemApart = rec.target?.provider === 'anthropic'
+      // And that system prompt is not saved with the thread: give the conversation its own again
+      // (an Ask's, a review's), not the chat's that the API path would otherwise fall back to.
+      const kind = systemPromptKind(anchor)
+      if (!rec.system && kind) rec.system = this.openingWords(rec)!(kind)!.system
     }
     rec.history = past
     return past
@@ -749,6 +753,8 @@ export class AiService {
     const by = this.byLabel(rec)
     const sent = sentText(rec, out, user.text)
     emit({ kind: 'turn', text: user.text, at: Date.now(), ...(user.feature ? { feature: user.feature } : {}), ...(by ? { by } : {}), ...(sent ? { sent } : {}) })
+    // Saved from the start, so a conversation is in the AI panel's history while its answer streams.
+    this.persist(rec)
     try {
       let text: string
       let stopReason: string

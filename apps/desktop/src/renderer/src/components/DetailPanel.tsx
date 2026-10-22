@@ -6,13 +6,14 @@ import { DropdownMenu } from 'radix-ui'
 import { useEffect, useRef, useState } from 'react'
 import { copy, discard as discardFiles, lfsLock, lfsPatternFor, lfsTrack, openDiffTool, openInEditor, pop, restoreFileFrom, run, snapshot, stashApply, stashDrop, stashToBranch, stashWith, stashWithMessage } from '../lib/actions'
 import { cancelAi, startAi, useAi, useAiEnabled } from '../lib/ai'
-import { api, toUiError } from '../lib/api'
+import { api } from '../lib/api'
 import { dateTime, opName, sentence, shortHash, stashLabel } from '../lib/format'
-import { avatarSrc, useAvatarVariant } from '../lib/avatar'
+import { avatarSrc } from '../lib/avatar'
 import { addTrailer, isUntouched, splitTemplate } from '../lib/commitMessage'
 import { startReview } from '../lib/review'
 import { openAsk } from '../lib/ask'
 import { useThread } from '../lib/thread'
+import { closeExplanation, explainCommit, useExplanation } from '../lib/explain'
 import { Markdown } from './Markdown'
 import { Thread } from './Thread'
 import { startWalkthrough } from '../lib/walkthrough'
@@ -573,7 +574,6 @@ const MAX_GATHERED = 100
  */
 function MultiPanel({ view, hashes }: { view: RepoView; hashes: string[] }) {
   const avatarSource = useSetting('avatars')
-  const avatarVariant = useAvatarVariant()
   const [fileFilter, setFileFilter] = useState('')
   const log = getLog(view.id)
   const commits = hashes.map((h) => log.commits[log.index.get(h) ?? -1]).filter((c): c is NonNullable<typeof c> => !!c)
@@ -629,7 +629,7 @@ function MultiPanel({ view, hashes }: { view: RepoView; hashes: string[] }) {
         {commits.map((c) => (
           <button key={c.hash} className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-hover" data-testid="multi-commit"
             onClick={() => selectCommit(view.id, c.hash)} title="Select only this commit">
-            <Avatar name={c.authorName} email={c.authorEmail} src={avatarSrc(c.authorEmail, avatarSource, avatarVariant)} size={24} />
+            <Avatar name={c.authorName} email={c.authorEmail} src={avatarSrc(c.authorEmail, avatarSource)} size={24} />
             <div className="min-w-0 flex-1">
               <div className="truncate text-[13px]">{c.subject}</div>
               <div className="truncate text-[11px] text-muted">{dateTime(c.authorDate)} by {c.authorName}</div>
@@ -644,7 +644,7 @@ function MultiPanel({ view, hashes }: { view: RepoView; hashes: string[] }) {
       {list && list.length > 0 && (
         <div className="px-3 pb-1 text-xs text-muted" data-testid="multi-summary">
           {[...counts].map(([kind, n]) => `${n} ${kind}`).join(' · ')}
-          {base === undefined && <div className="text-faint">Not consecutive, so there is no single diff: a file shows the newest selected commit's change.</div>}
+          {base === undefined && <div className="text-faint">Not consecutive: each file shows the newest selected commit's change.</div>}
         </div>
       )}
       {list && list.length > 1 && <FileListTools filter={fileFilter} onFilter={setFileFilter} />}
@@ -674,12 +674,11 @@ const detailsCache = new Map<string, CommitDetails>()
 
 function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
   const avatarSource = useSetting('avatars')
-  const avatarVariant = useAvatarVariant()
   const [details, setDetails] = useState<CommitDetails | null>(() => detailsCache.get(hash) ?? null)
   const [fileFilter, setFileFilter] = useState('')
   const latest = useRef(hash)
   const aiOn = useAiEnabled()
-  const [explained, setExplained] = useState<{ hash: string; text: string; requestId: string | null; error: string | null; threadId?: string } | null>(null)
+  const explanation = useExplanation(view.id, hash, aiOn)
   useEffect(() => {
     latest.current = hash
     const cached = detailsCache.get(hash)
@@ -704,19 +703,11 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
 
   if (!details) return <div className="flex flex-1 items-center justify-center text-faint"><Spinner /></div>
   const d = details
-  const explanation = explained?.hash === d.hash ? explained : null
-  const explain = () => {
-    if (explanation?.requestId) return cancelAi(explanation.requestId)
-    const target = d.hash
-    const update = (patch: Partial<NonNullable<typeof explained>>) =>
-      setExplained((e) => (e && e.hash === target ? { ...e, ...patch } : e))
-    const r = startAi(view.id, { kind: 'explain-commit', hash: target }, (text) => update({ text }), { keepThread: true })
-    setExplained({ hash: target, text: '', requestId: r.requestId, error: null })
-    r.done.then(
-      (res) => (res ? update({ text: res.text, requestId: null, threadId: res.threadId }) : setExplained((e) => (e?.hash === target && !e.text ? null : e && { ...e, requestId: null }))),
-      (e) => update({ requestId: null, error: toUiError(e).message }),
-    )
-  }
+  // The panel can show the previous commit while this one loads: only its own explanation.
+  const shown = d.hash === hash ? explanation : null
+  // Not while the panel still shows the previous commit: that would ask again about it.
+  const loading = d.hash !== hash
+  const explain = () => (loading ? undefined : shown?.requestId ? cancelAi(shown.requestId) : explainCommit(view.id, d.hash))
   // A stash is a commit too: its first parent is where it was made, so the file list is its changes.
   const stash = view.stashes.find((s) => s.hash === d.hash)
   const adds = d.files.reduce((n, f) => n + f.additions, 0)
@@ -744,9 +735,9 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
         {d.body && <pre className="mt-2 max-h-40 overflow-y-auto font-sans text-[13px] whitespace-pre-wrap text-muted">{d.body}</pre>}
         {aiOn && !stash && (
           <div className="mt-2">
-            {!explanation ? (
+            {!shown ? (
               <span className="flex items-center gap-2">
-                <Button size="sm" variant="ghost" onClick={explain} data-testid="ai-explain-commit"><Sparkles size={12} /> Explain</Button>
+                <Button size="sm" variant="ghost" onClick={explain} disabled={loading} data-testid="ai-explain-commit"><Sparkles size={12} /> Explain</Button>
                 <ModelPicker area="explain" />
                 <PromptButton area="explain" repoId={view.id} task={{ kind: 'explain-commit', hash: d.hash }} />
               </span>
@@ -754,23 +745,20 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
               <div className="rounded-md border border-line bg-bg/60 p-2 text-[13px]" data-testid="ai-explanation">
                 <div className="mb-1 flex items-center gap-1 text-[11px] text-faint">
                   <Sparkles size={11} /> <span className="flex-1">AI explanation</span>
-                  {explanation.requestId && <Button size="sm" variant="ghost" onClick={explain}>Stop</Button>}
-                  <button title="Close" className="rounded p-0.5 hover:bg-hover" onClick={() => {
-                    if (explanation.requestId) cancelAi(explanation.requestId)
-                    setExplained(null)
-                  }}><X size={12} /></button>
+                  {shown.requestId && <Button size="sm" variant="ghost" onClick={explain}>Stop</Button>}
+                  <button title="Close" className="rounded p-0.5 hover:bg-hover" onClick={() => closeExplanation(view.id, d.hash)}><X size={12} /></button>
                 </div>
                 <div data-testid="ai-explanation-text">
-                  {explanation.text ? <Markdown text={explanation.text} /> : (explanation.requestId ? <span className="flex items-center gap-2 text-muted"><Spinner /> Thinking…</span> : null)}
+                  {shown.text ? <Markdown text={shown.text} /> : (shown.requestId ? <span className="flex items-center gap-2 text-muted"><Spinner /> Thinking…</span> : null)}
                 </div>
-                {explanation.error && <div className="mt-1 text-xs text-del">{explanation.error}</div>}
-                {explanation.threadId && <ExplainFollowUp repoId={view.id} hash={explanation.hash} threadId={explanation.threadId} />}
+                {shown.error && <div className="mt-1 text-xs text-del">{shown.error}</div>}
+                {shown.threadId && <ExplainFollowUp repoId={view.id} hash={d.hash} threadId={shown.threadId} />}
               </div>
             )}
           </div>
         )}
         <div className="mt-3 flex items-center gap-2">
-          <Avatar name={d.authorName} email={d.authorEmail} src={avatarSrc(d.authorEmail, avatarSource, avatarVariant)} size={28} />
+          <Avatar name={d.authorName} email={d.authorEmail} src={avatarSrc(d.authorEmail, avatarSource)} size={28} />
           <div className="min-w-0 text-xs">
             <div className="truncate"><b>{d.authorName}</b> <span className="text-faint">&lt;{d.authorEmail}&gt;</span></div>
             <div className="text-muted">authored {dateTime(d.authorDate)}</div>

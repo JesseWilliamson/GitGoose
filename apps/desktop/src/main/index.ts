@@ -1,5 +1,5 @@
 import { AskpassServer } from '@gitgoose/git'
-import { DEFAULT_AVATAR_BASES } from '@gitgoose/shared'
+import { DEFAULT_AVATAR_BASE } from '@gitgoose/shared'
 import { app, BrowserWindow, nativeTheme, net, protocol, safeStorage } from 'electron'
 import { existsSync } from 'node:fs'
 import { delimiter, join, resolve } from 'node:path'
@@ -9,7 +9,6 @@ import { AvatarCache } from './avatars'
 import { CodeGraphService } from './codegraph'
 import { githubEndpoints } from './github/config'
 import { GitHubService } from './github/service'
-import { TokenStore } from './github/tokenStore'
 import { installCrashHandlers } from './diagnostics'
 import { broadcast, createHandlers, registerIpc } from './ipc'
 import { DESKTOP_NAME, installDevDesktopEntry } from './linuxDesktop'
@@ -18,6 +17,9 @@ import { RepoManager } from './repos'
 import { applyZoom, getSettings, onSettingsChanged, setSettings } from './settings'
 import { scheduleUpdateCheck } from './updater'
 import { loadWindowState, trackWindowState } from './windowState'
+
+// Startup timeline (read by tools/bench): every import above has been evaluated by now.
+performance.mark('gitgoose:main-loaded')
 
 // Tests and the benchmark point the app at a throwaway profile.
 if (process.env.GITGOOSE_USER_DATA) app.setPath('userData', process.env.GITGOOSE_USER_DATA)
@@ -46,20 +48,8 @@ if (process.platform === 'linux' && process.env.ELECTRON_RENDERER_URL) {
   }
 }
 
-// ------------------------------------------------------------ credential prompts
-
-// ------------------------------------------------------------ GitHub sign-in
-
-/** One environment object shared by every repository's GitRunner, updated in place. */
+/** One environment object shared by every repository's GitRunner (askpass adds to it at start). */
 const gitEnv: Record<string, string> = {}
-let credentialKeys: string[] = []
-/** Switch the github.com credential-helper override on or off for every open repository. */
-function refreshCredentialEnv(): void {
-  for (const k of credentialKeys) delete gitEnv[k]
-  const extra = github.credentialEnv()
-  credentialKeys = Object.keys(extra)
-  Object.assign(gitEnv, extra)
-}
 
 // Linux without a secret service falls back to a hard-coded key ("basic_text"): no better than
 // plain text, so secrets then stay in memory only.
@@ -69,39 +59,29 @@ const keychain = {
   decrypt: (b: Buffer) => safeStorage.decryptString(b),
 }
 
+// ------------------------------------------------------------ GitHub (no sign-in) and avatars
+
 const github = new GitHubService({
   endpoints: githubEndpoints(),
-  store: new TokenStore(join(app.getPath('userData'), 'github.json'), keychain),
   // Electron's net uses Chromium's network stack: the system proxy settings apply.
   fetch: (input, init) => net.fetch(input instanceof Request ? input : String(input), init),
   repos: () => repos.all(),
-  httpsEnabled: () => getSettings().githubHttps,
-  onChange: (status) => {
-    refreshCredentialEnv()
-    broadcast({ type: 'github', status })
-  },
 })
 
 const avatars = new AvatarCache({
   dir: join(app.getPath('userData'), 'avatars'),
   source: () => getSettings().avatars,
-  // Tests point these at a local server; nothing else should.
-  bases: {
-    github: process.env.GITGOOSE_AVATAR_GITHUB_BASE ?? DEFAULT_AVATAR_BASES.github,
-    gravatar: process.env.GITGOOSE_AVATAR_GRAVATAR_BASE ?? DEFAULT_AVATAR_BASES.gravatar,
-  },
-  resolve: (email) => github.resolveAvatar(email),
-  variant: () => github.avatarVariant(),
+  lookup: (email) => github.authorAvatar(email),
+  // Tests point this at a local server; nothing else should.
+  avatarBase: process.env.GITGOOSE_AVATAR_GITHUB_BASE ?? DEFAULT_AVATAR_BASE,
 })
 
+// ------------------------------------------------------------ credential prompts
 
 let nextPrompt = 1
 const pending = new Map<number, (answer: string | null) => void>()
 const prompts = {
   ask(message: string, secret: boolean): Promise<string | null> {
-    // github.com over HTTPS, signed in with repository access and the setting on: no dialog.
-    const known = github.answerPrompt(message)
-    if (known !== null) return Promise.resolve(known)
     const promptId = nextPrompt++
     return new Promise((resolve) => {
       const timer = setTimeout(() => finish(null), 5 * 60_000)
@@ -142,6 +122,8 @@ const codegraph = new CodeGraphService({
   gitOpts,
   enabled: () => getSettings().codeGraph,
   emit: (repoId, status) => broadcast({ type: 'codegraph', repoId, status }),
+  // Like the commit-graph upkeep (repos.ts): after the first screen is up.
+  startDelay: 1500,
 })
 
 const repos = new RepoManager(
@@ -188,6 +170,7 @@ function createWindow(): BrowserWindow {
     void win.webContents.setVisualZoomLevelLimits(1, 1)
   })
   win.once('ready-to-show', () => {
+    performance.mark('gitgoose:ready-to-show')
     if (saved?.maximized) win.maximize()
     win.show()
   })
@@ -200,6 +183,17 @@ function createWindow(): BrowserWindow {
     return { action: 'deny' }
   })
   win.webContents.on('will-navigate', (e) => e.preventDefault())
+  // Back and forward (the renderer's history, lib/navigation.ts): the mouse's side buttons as
+  // Windows and Linux report them to the window, and a three-finger swipe on macOS. The page sees
+  // the side buttons too and drops whichever report of a click comes second.
+  win.on('app-command', (_e, command) => {
+    if (command === 'browser-backward') broadcast({ type: 'command', name: 'back' })
+    else if (command === 'browser-forward') broadcast({ type: 'command', name: 'forward' })
+  })
+  win.on('swipe', (_e, direction) => {
+    if (direction === 'left') broadcast({ type: 'command', name: 'back' })
+    else if (direction === 'right') broadcast({ type: 'command', name: 'forward' })
+  })
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL)
   else void win.loadFile(join(here, '../renderer/index.html'))
   return win
@@ -212,7 +206,6 @@ onSettingsChanged((settings, changed) => {
   // Saved AI conversations are read through aiThreads, not settings: a saved turn is no reason
   // to send every window the whole settings file (threads and all) again.
   if (changed.size === 1 && changed.has('aiThreads')) return
-  refreshCredentialEnv()
   ai.onSettings()
   if (settings.codeGraph !== lastCodeGraph) {
     lastCodeGraph = settings.codeGraph
@@ -235,12 +228,16 @@ onSettingsChanged((settings, changed) => {
   broadcast({ type: 'settings', settings })
 })
 
-app.whenReady().then(async () => {
-  try {
-    Object.assign(gitEnv, await askpass.start())
-  } catch {
+app.whenReady().then(() => {
+  performance.mark('gitgoose:ready')
+  // The credential prompt server starts alongside the window rather than before it. Only
+  // commands that talk to a remote can prompt, and IPC waits for it (registerIpc below), so no
+  // request from the window can run git without it.
+  const askpassReady = askpass.start().then(
+    (env) => void Object.assign(gitEnv, env),
     // Without askpass, git falls back to the user's credential helpers.
-  }
+    () => {},
+  )
   // `gitgoose repo1 repo2` or GITGOOSE_OPEN=repo1:repo2 (; on Windows) opens those repositories
   // as tabs instead of restoring the last session. Used from a shell, by tests and by the benchmark.
   const paths = process.env.GITGOOSE_OPEN
@@ -253,16 +250,20 @@ app.whenReady().then(async () => {
   if (process.env.ELECTRON_RENDERER_URL && !paths.length && !getSettings().openRepos.length && getSettings().openDevRepo && existsSync(join(devRepo, '.git'))) {
     setSettings({ openRepos: [devRepo] })
   }
-  // gitgoose-avatar://author/<email> -> image bytes (or a transparent pixel; see avatars.ts).
+  // gitgoose-avatar://author/<email> -> image bytes, or 404 for a miss (see avatars.ts): the
+  // page's <img> then fails and the initials stay.
   protocol.handle('gitgoose-avatar', async (req) => {
     const email = decodeURIComponent(new URL(req.url).pathname.slice(1))
-    const img = await avatars.get(email)
+    const img = await avatars.get(email).catch(() => null)
+    if (!img) return new Response(null, { status: 404 })
     return new Response(new Uint8Array(img.body), { headers: { 'content-type': img.type, 'cache-control': 'max-age=3600' } })
   })
-  refreshCredentialEnv()
-  registerIpc(createHandlers(repos, prompts, gitOpts, github, ai, codegraph), repos)
+  registerIpc(createHandlers(repos, prompts, gitOpts, github, ai, codegraph), repos, askpassReady)
   installMenu()
+  performance.mark('gitgoose:create-window')
   createWindow()
+  // The window will ask for these tabs as soon as it has loaded: open them while it loads.
+  for (const path of getSettings().openRepos) repos.preopen(path)
   scheduleUpdateCheck()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

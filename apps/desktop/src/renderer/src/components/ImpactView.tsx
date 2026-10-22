@@ -93,7 +93,7 @@ export function ImpactView({ view }: { view: RepoView }) {
 
             <h3 className="mb-2 text-[12px] font-semibold text-muted uppercase">Tests</h3>
             <div className="mb-5" data-testid="impact-tests">
-              {r.tests.length ? r.tests.map((t) => <div key={t} className="font-mono text-[12px]">{t}</div>) : <p className="text-faint">No tests found for this code. Worth adding one?</p>}
+              {r.tests.length ? r.tests.map((t) => <div key={t} className="font-mono text-[12px]">{t}</div>) : <p className="text-faint">No tests found for this code.</p>}
             </div>
           </>
         )}

@@ -1,12 +1,13 @@
 import { countConflicts } from '@gitgoose/shared'
 import clsx from 'clsx'
-import { Copy, ShieldQuestion, Sparkles, SquareTerminal } from 'lucide-react'
-import { useState } from 'react'
+import { CircleAlert, Copy, ShieldQuestion, Sparkles, SquareTerminal } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { run } from '../lib/actions'
-import { answerPermission, cancelAi, useAi } from '../lib/ai'
+import { answerPermission, cancelAi, conflictJobKey, parkProposal, useAi } from '../lib/ai'
+import { dropFinishedJob, parkJob } from '../lib/aiJobs'
 import { api, toUiError } from '../lib/api'
 import { fileDiffRows } from '../lib/diffLayout'
-import { acceptFix } from '../lib/review'
+import { acceptFix, showFix } from '../lib/review'
 import { toast, useStore } from '../lib/store'
 import { RecomposeDialog } from './RecomposeDialog'
 import { Button, Modal, Spinner } from './ui'
@@ -165,19 +166,69 @@ function OutputDialog() {
   )
 }
 
-/** Fix with AI: the proposed file as a diff against the current one. Nothing is written until Use. */
+/**
+ * Fix with AI: the proposed file as a diff against the current one. Nothing is written until Use.
+ * Closing only hides it (the request, or the proposal, waits in the AI jobs chip); Stop and
+ * Discard are the explicit ways to throw it away.
+ */
 function FixDialog() {
   const fix = useAi((s) => s.fix)
-  if (!fix) return null
-  const close = () => {
+  if (!fix || fix.hidden) return null
+  return <FixView fix={fix} />
+}
+
+/**
+ * A working file's text, read again whenever the working tree changes; undefined until it has
+ * been read for this `key` (another proposal starts over).
+ */
+function useWorkingText(repoId: string, path: string, key: string, enabled = true): string | null | undefined {
+  const tick = useStore((s) => s.repos[repoId]?.worktreeTick ?? 0)
+  const id = `${repoId}\0${path}\0${key}`
+  const [now, setNow] = useState<{ id: string; text: string | null } | null>(null)
+  useEffect(() => {
+    if (!enabled) return
+    let live = true
+    api.workingText(repoId, path).then((text) => { if (live) setNow({ id, text }) }, () => {})
+    return () => {
+      live = false
+    }
+  }, [id, tick, enabled])
+  return now?.id === id ? now.text : undefined
+}
+
+function FixView({ fix }: { fix: NonNullable<ReturnType<typeof useAi.getState>['fix']> }) {
+  // The file as it is now (a fix can sit hidden for a while): a fix proposed for an older
+  // version must not be written over the user's edits.
+  const now = useWorkingText(fix.repoId, fix.path, fix.after ?? '', fix.after !== null)
+  const stale = fix.after !== null && now !== undefined && now !== fix.before
+  const discard = () => {
     if (fix.requestId) cancelAi(fix.requestId)
     useAi.setState({ fix: null })
+    dropFinishedJob('fix')
+  }
+  // A wait (its job is running) or a proposal (back on the jobs list) is kept; an error or a
+  // note has been read, so closing ends it.
+  const hide = () => {
+    if (!fix.requestId && fix.after === null) return discard()
+    useAi.setState({ fix: { ...fix, hidden: true } })
+    if (!fix.requestId) {
+      const after = fix.after
+      parkJob({
+        id: crypto.randomUUID(), repoId: fix.repoId, key: 'fix', title: `Fix: ${fix.title}`, open: showFix,
+        showing: () => { const f = useAi.getState().fix; return !!f && !f.hidden && f.after === after },
+      })
+    }
   }
   const rows = fix.before !== null && fix.after !== null ? fileDiffRows(fix.before, fix.after) : []
   return (
-    <Modal open onClose={close} title={`Fix: ${fix.title}`} width={760}>
+    <Modal open onClose={hide} title={`Fix: ${fix.title}`} width={760}>
       <div className="text-[13px]" data-testid="ai-fix">
-        {fix.requestId && <p className="flex items-center gap-2 text-muted"><Spinner /> Asking for a fix to {fix.path}…</p>}
+        {fix.requestId && (
+          <>
+            <p className="flex items-center gap-2 text-muted"><Spinner /> Asking for a fix to {fix.path}…</p>
+            <p className="mt-2 text-xs text-faint">You can close this; the fix waits in the status bar.</p>
+          </>
+        )}
         {fix.error && <p className="text-del">{fix.error}</p>}
         {fix.note && <p className="mb-2 text-muted">{fix.note}</p>}
         {fix.after !== null && (
@@ -189,12 +240,23 @@ function FixDialog() {
                   : <div key={i} className={clsx('px-2', r.kind === '+' && 'bg-add-bg', r.kind === '-' && 'bg-del-bg')}>{r.kind} {r.text}</div>)}
               </pre>
             )}
-            <p className="mt-2 text-xs text-faint">Nothing has been written. Use writes {fix.path}; it is refused if the file changes meanwhile.</p>
+            {stale
+              ? <p className="mt-2 flex items-start gap-1 text-xs text-del" data-testid="ai-fix-stale"><CircleAlert size={12} className="mt-px shrink-0" /> {fix.path} has changed since this fix was asked for, so Use is off: it would overwrite those changes. Discard it and ask for a new fix.</p>
+              : <p className="mt-2 text-xs text-faint">Nothing has been written. Use writes {fix.path}; it is refused if the file changes meanwhile.</p>}
           </>
         )}
         <div className="mt-4 flex justify-end gap-2">
-          <Button onClick={close} data-testid="ai-fix-discard">{fix.after !== null ? 'Discard' : 'Cancel'}</Button>
-          {fix.after !== null && <Button variant="primary" disabled={!rows.length} onClick={() => void acceptFix()} data-testid="ai-fix-accept">Use this fix</Button>}
+          {fix.requestId ? (
+            <>
+              <Button onClick={discard} data-testid="ai-fix-stop">Stop</Button>
+              <Button variant="primary" onClick={hide} data-testid="ai-fix-hide">Close</Button>
+            </>
+          ) : fix.after !== null ? (
+            <>
+              <Button onClick={discard} data-testid="ai-fix-discard">Discard</Button>
+              <Button variant="primary" disabled={!rows.length || stale} onClick={() => void acceptFix()} data-testid="ai-fix-accept">Use this fix</Button>
+            </>
+          ) : <Button onClick={discard} data-testid="ai-fix-discard">Close</Button>}
         </div>
       </div>
     </Modal>
@@ -203,26 +265,55 @@ function FixDialog() {
 
 function ProposalDialog() {
   const p = useAi((s) => s.proposal)
-  const repoOpen = useStore((s) => (p ? !!s.repos[p.repoId] : false))
-  if (!p) return null
+  // A question from another request (two files asked about at once) comes first: a proposal
+  // dialog opened on top of it would cover it, and the agent would wait for an answer nobody can give.
+  const asking = useAi((s) => s.permissions.length > 0)
+  if (!p || p.hidden || asking) return null
+  return <ProposalView p={p} />
+}
+
+function ProposalView({ p }: { p: NonNullable<ReturnType<typeof useAi.getState>['proposal']> }) {
+  const repoOpen = useStore((s) => !!s.repos[p.repoId])
+  // A proposal can wait on the jobs list while the user resolves by hand or aborts: it applies
+  // only to the conflict it was made for (main checks the same right before writing).
+  const stillConflicted = useStore((s) => !!s.repos[p.repoId]?.snapshot.status.some((e) => e.path === p.path && e.kind === 'unmerged'))
+  const now = useWorkingText(p.repoId, p.path, p.content)
+  const stale = p.expected === null || !stillConflicted || (now !== undefined && now !== p.expected)
   const markers = countConflicts(p.content)
-  const close = () => useAi.setState({ proposal: null })
+  const close = () => {
+    useAi.setState({ proposal: null })
+    dropFinishedJob(conflictJobKey(p.repoId, p.path))
+  }
+  // Esc or a click outside keeps the proposal (open it again from the AI jobs chip); Discard drops it.
+  const hide = () => {
+    useAi.setState({ proposal: { ...p, hidden: true } })
+    parkProposal(p)
+  }
   const accept = async () => {
     close()
-    const ok = await run(p.repoId, `Resolve ${p.path}`, () => api.resolveConflict(p.repoId, p.path, { content: p.content }), { quiet: true })
+    if (p.expected === null) return
+    const expected = p.expected
+    const ok = await run(p.repoId, `Resolve ${p.path}`, () => api.resolveConflict(p.repoId, p.path, { content: p.content, expected }), { quiet: true })
     if (ok) toast({ kind: 'success', title: `Resolved ${p.path} with the agent's version` })
   }
   return (
-    <Modal open onClose={close} title={`Proposed resolution for ${p.path}`} width={720}>
+    <Modal open onClose={hide} title={`Proposed resolution for ${p.path}`} width={720}>
       <div className="text-[13px]" data-testid="ai-proposal">
         {p.note && <p className="mb-2 text-muted">{p.note}</p>}
         <pre className="selectable max-h-[50vh] overflow-auto rounded border border-line bg-bg p-2 font-mono text-[12px]" data-testid="ai-proposal-content">{p.content}</pre>
-        <p className="mt-2 text-xs text-faint">
-          Nothing has been written yet. Use it to write this file and mark it resolved, or discard it and keep resolving by hand.
-        </p>
+        {stale ? (
+          <p className="mt-2 flex items-start gap-1 text-xs text-del" data-testid="ai-proposal-stale">
+            <CircleAlert size={12} className="mt-px shrink-0" />
+            {stillConflicted ? `${p.path} has changed since this resolution was proposed` : `${p.path} is no longer in conflict`}, so Use is off: it would overwrite that. Discard it, and ask again if you still want help.
+          </p>
+        ) : (
+          <p className="mt-2 text-xs text-faint">
+            Nothing has been written yet. Use it to write this file and mark it resolved, or discard it and keep resolving by hand.
+          </p>
+        )}
         <div className="mt-4 flex justify-end gap-2">
           <Button onClick={close} data-testid="ai-proposal-discard">Discard</Button>
-          <Button variant="primary" disabled={markers > 0 || !repoOpen} onClick={() => void accept()} data-testid="ai-proposal-accept"
+          <Button variant="primary" disabled={markers > 0 || !repoOpen || stale} onClick={() => void accept()} data-testid="ai-proposal-accept"
             title={markers ? 'The proposal still has conflict markers' : undefined}>
             Use this resolution
           </Button>

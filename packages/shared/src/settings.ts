@@ -38,9 +38,9 @@ interface Meta {
   keywords?: string
 }
 
-export type Section = 'Appearance' | 'Graph' | 'Git' | 'Diff' | 'Confirmations' | 'Integrations' | 'AI' | 'Accounts' | 'Startup' | 'Keyboard'
+export type Section = 'Appearance' | 'Graph' | 'Git' | 'Diff' | 'Confirmations' | 'Integrations' | 'AI' | 'Startup' | 'Keyboard'
 
-export const SECTIONS: Section[] = ['Appearance', 'Graph', 'Git', 'Diff', 'Confirmations', 'Integrations', 'AI', 'Accounts', 'Startup', 'Keyboard']
+export const SECTIONS: Section[] = ['Appearance', 'Graph', 'Git', 'Diff', 'Confirmations', 'Integrations', 'AI', 'Startup', 'Keyboard']
 
 export type SettingSpec =
   | (Meta & { kind: 'boolean'; default: boolean })
@@ -67,11 +67,11 @@ export const SETTINGS = {
     { label: 'Theme', section: 'Appearance' }),
   uiScale: num(1, 0.8, 1.75, 0.05, {
     label: 'UI scale', section: 'Appearance', format: 'percent', keywords: 'zoom size font bigger smaller',
-    description: 'Scales the whole window. Ctrl/⌘ + and − change it too; Ctrl/⌘ 0 resets.',
+    description: 'Ctrl/⌘ + and − change it; Ctrl/⌘ 0 resets.',
   }),
   codeFontSize: num(12, 10, 20, 1, { label: 'Code font size', section: 'Appearance', unit: 'px', description: 'Diffs, blame, conflict editors and the commit message.' }),
   codeFontFamily: text('', { label: 'Code font', section: 'Appearance', placeholder: 'System monospace', description: 'A CSS font family list, e.g. "JetBrains Mono", monospace.' }),
-  fileTree: bool(false, { label: 'Show changed files as a tree', section: 'Appearance', keywords: 'folder list view', description: 'In the changes and commit file lists. Also the toggle beside their filter box.' }),
+  fileTree: bool(false, { label: 'Show changed files as a tree', section: 'Appearance', keywords: 'folder list view' }),
   dateFormat: choice('relative', [{ value: 'relative', label: 'Relative (3 days ago)' }, { value: 'absolute', label: 'Absolute (12 Mar 2026)' }, { value: 'both', label: 'Both' }],
     { label: 'Dates', section: 'Appearance' }),
   // 'comfy' was 'comfortable' until the layouts were renamed; an old saved value is not an option
@@ -81,35 +81,33 @@ export const SETTINGS = {
     { value: 'compact', label: 'Compact: one-line rows, branches on the left' },
   ], {
     label: 'Graph layout', section: 'Appearance', keywords: 'comfy comfortable compact density row height columns tower',
-    description: 'Comfy: author and branches over hash and subject. Compact: the same graph, each commit on one shorter line, branch and tag names in a column on the left.',
   }),
 
   sidebarFolders: bool(true, {
     label: 'Group branches and tags in folders', section: 'Appearance', keywords: 'sidebar tree folder slash',
-    description: 'In the sidebar, names with a slash (feature/login) sit in folders. Also in the gear menu below the sidebar.',
+    description: 'Names with a slash (feature/login) sit in folders.',
   }),
   sidebarTags: choice('250', [
     { value: '50', label: 'Newest 50' }, { value: '100', label: 'Newest 100' }, { value: '250', label: 'Newest 250' }, { value: 'all', label: 'All' },
-  ], { label: 'Tags in the sidebar', section: 'Appearance', keywords: 'sidebar tags limit', description: 'Newest first. Also View ▸ Tags. The filter box always searches all of them.' }),
+  ], { label: 'Tags in the sidebar', section: 'Appearance', keywords: 'sidebar tags limit', description: 'The filter box always searches all tags.' }),
 
   // ---------------------------------------------------------------- Graph
-  avatars: choice('initials', [
-    { value: 'initials', label: 'Initials (no network)' },
+  avatars: choice('github', [
     { value: 'github', label: 'GitHub' },
-    { value: 'gravatar', label: 'Gravatar' },
+    { value: 'initials', label: 'Initials (no network)' },
   ], {
-    label: 'Author avatars', section: 'Graph', keywords: 'picture photo image node',
-    description: 'GitHub: authors with a GitHub noreply address; once you sign in with GitHub (Accounts), any author whose commits GitHub has. Gravatar: sends a hash of each author email. Images are cached for 30 days.',
+    label: 'Author avatars', section: 'Graph', keywords: 'picture photo image node github',
+    description: 'GitHub pictures for authors of repositories with a GitHub remote, asked for without signing in.',
   }),
   showRemoteBranches: bool(true, { label: 'Show remote branches on the graph', section: 'Graph' }),
   showTags: bool(true, { label: 'Show tags on the graph', section: 'Graph' }),
-  showStashes: bool(true, { label: 'Show stashes on the graph', section: 'Graph', description: 'Each stash as a node beside the commit it was made on.' }),
+  showStashes: bool(true, { label: 'Show stashes on the graph', section: 'Graph' }),
   commitOrder: choice('date', [
     { value: 'date', label: 'Date (newest first; branches interleaved by time)' },
     { value: 'topo', label: 'Topological (each branch kept together)' },
   ], {
     label: 'Commit order', section: 'Graph', keywords: 'sort topological topo date order',
-    description: "Date: newest first, branches interleaved by time (GitKraken, Tower). Topological: each branch's commits kept together; dates run out of order.",
+    description: 'Topological: dates run out of order.',
   }),
 
   // ---------------------------------------------------------------- Git
@@ -118,7 +116,7 @@ export const SETTINGS = {
     { label: 'Pull', section: 'Git', description: 'What the Pull button does when your branch and its upstream have both moved.' }),
   pushSecretCheck: bool(true, {
     label: 'Scan pushes for secrets', section: 'Git', keywords: 'pre-push check credential token key',
-    description: 'Before a push, the commits being pushed are scanned for keys and tokens (on this computer; nothing is sent). A match stops the push until you choose to push anyway.',
+    description: 'Looks for keys and tokens on this computer; nothing is sent. A match stops the push until you choose to push anyway.',
   }),
   fetchOnOpen: bool(false, { label: 'Fetch when a repository opens', section: 'Git', description: 'Off by default: it uses the network.' }),
   autoFetchMinutes: num(0, 0, 60, 5, { label: 'Fetch automatically every', section: 'Git', unit: 'min', description: '0 turns it off.' }),
@@ -126,10 +124,10 @@ export const SETTINGS = {
   signOff: bool(false, { label: 'Add Signed-off-by to commits', section: 'Git', keywords: 'dco' }),
   codeGraph: bool(true, {
     label: 'Index code for Peek and Impact', section: 'Git', keywords: 'code graph tree-sitter symbols index parse',
-    description: 'Parses the repository in the background when it opens; a commit or checkout re-indexes only what changed. Off: Peek and Impact fall back to text search.',
+    description: 'Runs in the background when a repository opens. Off: Peek and Impact fall back to text search.',
   }),
   gpgSign: bool(false, { label: 'Sign commits (-S)', section: 'Git', keywords: 'gpg ssh signing', description: 'Uses the signing key from your git config.' }),
-  changeHints: bool(true, { label: 'Show whose lines you are changing', section: 'Git', keywords: 'owners blame authors history hints', description: 'Above the commit box: who last wrote the lines you are changing. Computed locally from history.' }),
+  changeHints: bool(true, { label: 'Show whose lines you are changing', section: 'Git', keywords: 'owners blame authors history hints', description: 'Above the commit box. Computed locally from history.' }),
   signTags: bool(false, { label: 'Sign tags (-s)', section: 'Git', keywords: 'gpg ssh signing', description: 'New tags are signed (and annotated) with the signing key from your git config.' }),
 
   // ---------------------------------------------------------------- Diff
@@ -138,10 +136,10 @@ export const SETTINGS = {
   tabSize: num(4, 1, 8, 1, { label: 'Tab size', section: 'Diff', unit: 'spaces' }),
   wrapLines: bool(false, { label: 'Wrap long lines', section: 'Diff' }),
   diffLayout: choice('unified', [{ value: 'unified', label: 'Unified' }, { value: 'split', label: 'Side by side' }],
-    { label: 'Diff layout', section: 'Diff', keywords: 'split side-by-side', description: 'Also switchable above each diff. Changed words are highlighted in both.' }),
+    { label: 'Diff layout', section: 'Diff', keywords: 'unified split side-by-side' }),
   syntaxHighlighting: bool(true, { label: 'Syntax highlighting', section: 'Diff' }),
-  diffTool: text('', { label: 'External diff tool', section: 'Diff', placeholder: 'git\'s diff.tool', keywords: 'difftool meld beyond compare kdiff3 vscode', description: 'A tool name git knows (git difftool --tool-help), or one you configured with difftool.<name>.cmd. Empty: git\'s diff.tool.' }),
-  mergeTool: text('', { label: 'External merge tool', section: 'Diff', placeholder: 'git\'s merge.tool', keywords: 'mergetool meld kdiff3 p4merge vscode', description: 'Offered in the conflict view. Empty: git\'s merge.tool.' }),
+  diffTool: text('', { label: 'External diff tool', section: 'Diff', placeholder: 'git\'s diff.tool', keywords: 'difftool meld beyond compare kdiff3 vscode', description: 'A tool name git knows (git difftool --tool-help), or one you configured with difftool.<name>.cmd.' }),
+  mergeTool: text('', { label: 'External merge tool', section: 'Diff', placeholder: 'git\'s merge.tool', keywords: 'mergetool meld kdiff3 p4merge vscode', description: 'Offered in the conflict view.' }),
   highlightMaxKb: num(400, 50, 4000, 50, { label: 'Highlight files up to', section: 'Diff', unit: 'KB' }),
   mergeView: choice('three-pane', [
     { value: 'three-pane', label: 'Three panes' },
@@ -149,7 +147,7 @@ export const SETTINGS = {
     { value: 'blocks', label: 'Blocks' },
   ], {
     label: 'Conflict view', section: 'Diff', keywords: 'merge resolve intellij',
-    description: 'Three panes: yours, the result and theirs, IntelliJ style. Blocks: pick a side per conflict. Small means fewer than 3 conflicts.',
+    description: 'Three panes: yours, the result and theirs. Blocks: pick a side per conflict. Small means fewer than 3 conflicts.',
   }),
 
   // ---------------------------------------------------------------- Confirmations
@@ -179,7 +177,7 @@ export const SETTINGS = {
     { value: 'codex', label: 'Codex' },
     { value: 'gemini', label: 'Gemini CLI' },
     { value: 'custom', label: 'Custom command' },
-  ], { label: 'Agent', section: 'AI', description: 'Started on first use and kept running until GitGoose quits. It uses its own login.' }),
+  ], { label: 'Agent', section: 'AI', description: 'Started on first use and kept running until GitGoose quits.' }),
   aiAgentCommand: text('', {
     label: 'Custom agent command', section: 'AI', placeholder: 'my-agent --acp',
     description: 'Used when Agent is "Custom command". It must speak the Agent Client Protocol on stdin/stdout.',
@@ -201,26 +199,20 @@ export const SETTINGS = {
   aiPromptEdits: internal<Partial<Record<PromptKind, PromptText>>>({}),
   anthropicMaxTokens: num(8192, 1024, 64000, 1024, {
     label: 'Longest answer (API key only)', section: 'AI', unit: 'tokens', keywords: 'max_tokens length limit',
-    description: 'The most one answer may use. Long reviews and walkthroughs need room; a lower limit costs less.',
+    description: 'Long reviews and walkthroughs need room; a lower limit costs less.',
   }),
   /** Providers the user agreed to send content to, e.g. "agent:npx -y …" or "anthropic". */
   reviewProfile: choice('chill', [{ value: 'quiet', label: 'Quiet: only real problems' }, { value: 'chill', label: 'Chill: no nits or style' }, { value: 'assertive', label: 'Assertive: everything, nits too' }],
-    { label: 'Review style', section: 'AI', keywords: 'code review findings nits coderabbit', description: 'How much AI review says. Findings are always checked against the diff before they are shown.' }),
+    { label: 'Review style', section: 'AI', keywords: 'code review findings nits coderabbit' }),
   reviewLinter: text('', {
     label: 'Extra linter for reviews', section: 'AI', placeholder: 'npx stylelint --formatter unix {files}', keywords: 'lint eslint ruff shellcheck',
-    description: 'Runs on the changed files during an AI review, besides the linters GitGoose finds in the repository (ESLint, Ruff, ShellCheck). {files} is replaced by the files; output as path:line:col: message. Asked for once per repository.',
+    description: 'Runs on the changed files during AI reviews, besides ESLint, Ruff and ShellCheck when the repository uses them. {files} is replaced by the files; output as path:line:col: message. Asked for once per repository.',
   }),
   aiConsent: internal([] as string[]),
   /** The user's own pre-push checks, per repository path (besides those in .coderabbit.yaml). */
   pushChecks: internal<Record<string, PushCheck[]>>({}),
   /** Linter commands the user allowed (true) or refused (false), keyed "<repo path>\n<command>". */
   linterDecisions: internal<Record<string, boolean>>({}),
-
-  // ---------------------------------------------------------------- Accounts
-  githubHttps: bool(false, {
-    label: 'Use your GitHub sign-in for HTTPS push and fetch', section: 'Accounts', keywords: 'token password credential',
-    description: 'Answers GitHub\'s password prompt with your sign-in (needs repository access, asked for once). Your credential helpers are skipped for github.com while this is on.',
-  }),
 
   // ---------------------------------------------------------------- Startup
   reopenTabs: bool(true, { label: 'Reopen last session’s tabs', section: 'Startup' }),
@@ -231,7 +223,7 @@ export const SETTINGS = {
   keybindings: { kind: 'keybindings' as const, default: {} as Record<string, string>, label: 'Shortcuts', section: 'Keyboard' as const, description: 'Click a shortcut, then press the new keys. Esc cancels; Backspace restores the default.' },
 
   // ---------------------------------------------------------------- app state
-  settingsVersion: internal(4),
+  settingsVersion: internal(5),
   recentRepos: internal<string[]>([]),
   openRepos: internal<string[]>([]),
   /**
@@ -330,7 +322,14 @@ export function migrateSettings(stored: Record<string, unknown>): Settings {
     }
     delete s.askThreads
   }
-  s.settingsVersion = 4
+  if (version < 5) {
+    // v4 had GitHub sign-in (the githubHttps switch) and Gravatar avatars; both are gone. Every
+    // v4 file starts over at the new default (GitHub): 'initials' was v4's default and the file
+    // cannot tell a choice from it, and a Gravatar choice has no equivalent any more.
+    delete s.githubHttps
+    delete s.avatars
+  }
+  s.settingsVersion = 5
   const out = defaultSettings() as Record<string, unknown>
   for (const k of Object.keys(SETTINGS)) if (k in s) out[k] = validateSetting(k as SettingKey, s[k])
   return out as Settings

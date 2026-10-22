@@ -1,16 +1,10 @@
 /** Where an author's avatar comes from, by email. Pure, so it is shared and unit-tested. */
 
-export type AvatarSource = 'initials' | 'github' | 'gravatar'
+/** 'initials' never touches the network; 'github' asks GitHub without signing in (src/main/avatars.ts). */
+export type AvatarSource = 'initials' | 'github'
 
-export interface AvatarBases {
-  github: string
-  gravatar: string
-}
-
-export const DEFAULT_AVATAR_BASES: AvatarBases = {
-  github: 'https://avatars.githubusercontent.com',
-  gravatar: 'https://gravatar.com',
-}
+/** Where GitHub serves avatar images. Tests point the app at a local stand-in instead. */
+export const DEFAULT_AVATAR_BASE = 'https://avatars.githubusercontent.com'
 
 /** "12345+octocat@users.noreply.github.com" -> 12345; older noreply addresses have no id. */
 export function githubNoreplyId(email: string): string | null {
@@ -18,15 +12,10 @@ export function githubNoreplyId(email: string): string | null {
 }
 
 /**
- * The image URL for an author, or null when this source cannot know them (the initials then show).
- * `sha256Hex` is passed in so this file needs no crypto import (it also runs in the renderer).
+ * The image URL for a GitHub noreply address, which names the account by id, so no API call is
+ * needed. Null for any other address (main then asks GitHub's commits API, see avatars.ts).
  */
-export function avatarUrl(email: string, source: AvatarSource, sha256Hex: (s: string) => string, bases: AvatarBases = DEFAULT_AVATAR_BASES): string | null {
-  const e = email.trim().toLowerCase()
-  if (!e || source === 'initials') return null
-  if (source === 'github') {
-    const id = githubNoreplyId(e)
-    return id ? `${bases.github}/u/${id}?s=64&v=4` : null
-  }
-  return `${bases.gravatar}/avatar/${sha256Hex(e)}?s=64&d=404`
+export function noreplyAvatarUrl(email: string, base: string = DEFAULT_AVATAR_BASE): string | null {
+  const id = githubNoreplyId(email)
+  return id ? `${base}/u/${id}?s=64&v=4` : null
 }

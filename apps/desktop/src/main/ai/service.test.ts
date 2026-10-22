@@ -263,6 +263,27 @@ describe('threads', () => {
     expect(replyOf(mirror(t.events, again))).toBe('Turn 2. You said: two. (replayed 1 earlier turns)')
   })
 
+  it('an explained failure is kept as a thread about the error; reopened later, a follow-up is told the error again', async () => {
+    const log = join(tempDir(), 'prompts.log')
+    process.env.FAKE_AGENT_LOG = log
+    cleanup.push(() => void delete process.env.FAKE_AGENT_LOG)
+    const t = await setup({}, undefined, { threadIdleMs: 60 })
+    t.ai.consent()
+    const res = await t.ai.run('e1', 'x', { kind: 'explain-error', title: 'Push failed', detail: 'policy: pushes to main need review' }, { keepThread: true })
+    expect(res.text).toContain('This change explains itself.')
+    const [kept] = t.ai.listThreads('x')
+    expect(kept).toMatchObject({ id: res.threadId, title: 'Why did this fail: Push failed', anchor: { kind: 'error', title: 'Push failed', detail: 'policy: pushes to main need review' } })
+    // Nobody opened it: the session ends after the idle grace, the thread stays saved.
+    await new Promise((ok) => setTimeout(ok, 150))
+    expect(t.ai.liveThreads()).toEqual([])
+    const again = await t.ai.openThread('x', { kind: 'free' }, res.threadId)
+    expect(again.anchor.kind).toBe('error')
+    await ended(t.events, await t.ai.sendThread(again.id, 'what now?'))
+    const replay = readFileSync(log, 'utf8').split('\n---\n').at(-2)!
+    expect(replay).toContain('policy: pushes to main need review')
+    expect(replay.trim().endsWith('what now?')).toBe(true)
+  })
+
   it('refuses before the turn starts: consent, and a secret in the message (sent redacted when asked)', async () => {
     const TOKEN = 'ghp_' + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8'
     const t = await setup()
@@ -372,6 +393,26 @@ describe('secret scan before sending', () => {
       expect(api.requests.at(-1)!.system).toBe('You know the token [REDACTED GitHub token].')
       expect(api.requests.at(-1)!.messages.at(-1)!.content).toBe('and then?')
     }
+  })
+
+  it('an explained failure sent redacted is kept redacted: a follow-up after the session ended cannot send the secret', async () => {
+    const api = await fakeAnthropic(['Use a credential helper.'])
+    cleanup.push(() => api.close())
+    const t = await setup({ aiProvider: 'anthropic' }, api, { threadIdleMs: 30 })
+    t.ai.setApiKey('sk-ant-test')
+    t.ai.consent()
+    const task = { kind: 'explain-error' as const, title: `Push to https://${TOKEN}@github.com`, detail: `remote: https://${TOKEN}@github.com/o/r rejected` }
+    const res = await t.ai.run('s3', 'x', task, { redact: true, keepThread: true })
+    const [kept] = t.ai.listThreads('x')
+    expect(kept!.anchor).toMatchObject({ kind: 'error', detail: expect.stringContaining('[REDACTED GitHub token]') })
+    expect(JSON.stringify(t.settings.aiThreads)).not.toContain(TOKEN)
+    // The session is gone; the follow-up is rebuilt from what was saved.
+    await new Promise((ok) => setTimeout(ok, 100))
+    const again = await t.ai.openThread('x', { kind: 'free' }, res.threadId)
+    await ended(t.events, await t.ai.sendThread(again.id, 'what now?'))
+    expect(api.requests).toHaveLength(2)
+    expect(JSON.stringify(api.requests[1])).toContain('[REDACTED GitHub token]')
+    expect(JSON.stringify(api.requests[1])).not.toContain(TOKEN)
   })
 
   it('says which file and line a secret in a review diff is on', async () => {
@@ -862,5 +903,21 @@ describe('agent processes and unsaved words', () => {
     const sent = readFileSync(log, 'utf8')
     expect(sent).toContain('Words on screen, not saved yet.')
     expect(sent).not.toContain('Saved words.')
+  })
+})
+
+describe('a conversation reopened from disk over the API', () => {
+  it("speaks with its own system prompt again (an Ask's, as edited), not the chat's", async () => {
+    const api = await fakeAnthropic(['ok'])
+    cleanup.push(() => api.close())
+    const t = await setup({ aiProvider: 'anthropic', aiPrompts: { ask: { system: 'You are the Ask helper.', instructions: '' } } }, api)
+    t.ai.setApiKey('sk-ant-test')
+    t.ai.consent()
+    const turn = (role: 'user' | 'agent', text: string) => ({ id: `r:${role[0]}`, role, requestId: 'r', blocks: [{ type: 'text' as const, text }], at: 1, ...(role === 'agent' ? { status: 'done' as const } : {}) })
+    const anchor = { kind: 'ask' as const, rev: 'worktree', path: 'widgets.ts', lines: [1, 1] as [number, number], code: '' }
+    t.ai.saveThread('x', { id: 'asked', repoId: 'x', anchor, title: 'q', turns: [turn('user', 'what is this?'), turn('agent', 'A map.')], createdAt: 1, updatedAt: 1, head: '' })
+    const thread = await t.ai.openThread('x', anchor, 'asked')
+    await ended(t.events, await t.ai.sendThread(thread.id, 'and why?'))
+    expect(api.requests[0]!.system).toBe('You are the Ask helper.')
   })
 })

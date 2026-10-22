@@ -2,7 +2,7 @@ import clsx from 'clsx'
 import { KeyRound } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { pickGitHubRemote, type Identity, type LfsLock, type PushCheck, type PushCheckResult, type ReviewLearning } from '@gitgoose/shared'
-import { cleanupCandidates, cloneRepo, confirmAction, deleteBranches, lfsLock, loadPulls, openPull, run, STALE_DAYS } from '../lib/actions'
+import { cleanupCandidates, cloneRepo, confirmAction, deleteBranches, lfsLock, openPull, run, STALE_DAYS } from '../lib/actions'
 import { relativeTime } from '../lib/format'
 import { COMMANDS, FIXED_KEYS, formatCombo, keymap, modName } from '../lib/keys'
 import { api } from '../lib/api'
@@ -183,7 +183,9 @@ function IdentityDialog({ repoId, onSaved, close }: { repoId: string; onSaved?: 
 /**
  * Open a pull request for a branch. If GitHub does not have the branch's latest commits yet, it
  * is pushed first (to the GitHub remote, under the same name), since a pull request is made of
- * what is on GitHub.
+ * what is on GitHub. Then GitHub's own "new pull request" page opens in the browser with the
+ * title, description and base filled in: creating it through the API would need a sign-in,
+ * which GitGoose does not have, while the browser usually is signed in already.
  */
 function CreatePullDialog({ repoId, branch, close }: { repoId: string; branch: string; close: () => void }) {
   const view = useStore((s) => s.repos[repoId])
@@ -194,7 +196,6 @@ function CreatePullDialog({ repoId, branch, close }: { repoId: string; branch: s
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [base, setBase] = useState(() => ['main', 'master', 'develop'].find((b) => bases.includes(b)) ?? bases[0] ?? 'main')
-  const [draft, setDraft] = useState(false)
   const local = view?.snapshot.refs.find((r) => r.name === `refs/heads/${branch}`)
   useEffect(() => {
     if (local) void api.commitDetails(repoId, local.hash).then((d) => setTitle((t) => t || d.subject), () => {})
@@ -208,9 +209,8 @@ function CreatePullDialog({ repoId, branch, close }: { repoId: string; branch: s
     close()
     const create = () => void run(repoId, 'Create pull request', async () => {
       if (needsPush) await api.push(repoId, { branch, remote })
-      const pr = await api.createPullRequest(repoId, { branch, base, title: title.trim(), body: body.trim(), draft })
-      toast({ kind: 'success', title: `Opened pull request #${pr.number}`, action: { label: 'Open', run: () => openPull(pr.url) } }, 8000)
-      void loadPulls(repoId)
+      const url = await api.createPullRequest(repoId, { branch, base, title: title.trim(), body: body.trim() })
+      toast({ kind: 'success', title: 'Finish the pull request on GitHub, in your browser', action: { label: 'Open again', run: () => openPull(url) } }, 8000)
     }, { quiet: true })
     // The push the pull request needs goes through the same pre-push checks as any other.
     if (needsPush) void withPushChecks(repoId, branch, create)
@@ -231,12 +231,11 @@ function CreatePullDialog({ repoId, branch, close }: { repoId: string; branch: s
               {(bases.length ? bases : [base]).map((b) => <option key={b} value={b}>{b}</option>)}
             </select>
           </label>
-          <label className="flex items-center gap-1.5"><input type="checkbox" checked={draft} onChange={(e) => setDraft(e.target.checked)} /> Draft</label>
         </div>
         {needsPush && <p className="text-xs text-muted">{branch} will be pushed to {remote} first.</p>}
         <div className="flex justify-end gap-2">
           <Button type="button" onClick={close}>Cancel</Button>
-          <Button type="submit" variant="primary" disabled={!title.trim() || !remote} data-testid="dialog-submit">Create pull request</Button>
+          <Button type="submit" variant="primary" disabled={!title.trim() || !remote} data-testid="dialog-submit">Continue on GitHub</Button>
         </div>
       </form>
     </Modal>
@@ -285,7 +284,7 @@ function PushChecksDialog({ d, close }: { d: Extract<NonNullable<ReturnType<type
     <Modal open onClose={close} title={d.outcome === 'block' ? 'A pre-push check failed' : 'Pre-push checks'} width={560}>
       <p className="mb-3 text-[13px] text-muted">
         {d.label}. {failed ? `${failed} of ${d.results.length} check${d.results.length === 1 ? '' : 's'} failed.` : 'A blocking check could not be judged.'}
-        {d.outcome === 'block' ? ' A blocking check failed, so nothing was pushed.' : ''}
+        {d.outcome === 'block' ? ' Nothing was pushed.' : ''}
       </p>
       <div className="mb-4 max-h-80 overflow-y-auto" data-testid="push-checks">
         {d.results.map((r, i) => (
@@ -334,7 +333,7 @@ function PushRulesDialog({ repoId, close }: { repoId: string; close: () => void 
   return (
     <Modal open onClose={close} title="Pre-push checks" width={600}>
       <p className="mb-3 text-[13px] text-muted">
-        Rules in plain words, checked by the AI against the commits you push. A check that blocks stops the push when it fails (you can still push anyway); one that warns only tells you. The secret scan is separate (Settings → Git).
+        Rules in plain words, checked by the AI against the commits you push. A failing Block check stops the push (you can still push anyway); Warn only tells you.
       </p>
       {repo.length > 0 && (
         <div className="mb-3">

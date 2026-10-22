@@ -1,7 +1,8 @@
-import { AI_AUTH_REQUIRED, defaultTarget, requestWords, type PromptKind, type PromptText, type AgentAuthMethod, type AiArea, type AiPermissionRequest, type AiResult, type AiTarget, type AiTask, type RecomposeProposal, type ThreadAnchor } from '@gitgoose/shared'
+import { AI_AUTH_REQUIRED, defaultTarget, requestWords, type AgentAuthMethod, type AiArea, type AiPermissionRequest, type AiResult, type AiTarget, type AiTask, type PromptKind, type PromptText, type RecomposeProposal, type ReviewScope, type ThreadAnchor } from '@gitgoose/shared'
 import { create } from 'zustand'
+import { dropJob, finishJob, onJobReady, parkJob, registerJob, sweepJobs } from './aiJobs'
 import { api, toUiError } from './api'
-import { attention, choose, setSettingEntry, useStore } from './store'
+import { attention, choose, reportError, setSettingEntry, toast, updateRepo, useStore } from './store'
 
 /**
  * Renderer side of the AI features. `startAi` does the asking (set up? agreed? logged in?) and
@@ -15,15 +16,24 @@ export interface AiUi {
   login: { agent: string; methods: AgentAuthMethod[]; repoId: string | null; target?: AiTarget; resolve: (ok: boolean) => void } | null
   /** Tool calls waiting for an answer, oldest first. */
   permissions: AiPermissionRequest[]
-  /** A streamed answer shown in a modal (error explanations, conflict notes). */
+  /** A streamed answer shown in a modal: only an error explained with no repository open (see explainFailure). */
   output: { title: string; text: string; requestId: string | null; error: string | null } | null
-  /** A conflict resolution the agent proposed, for review. */
-  proposal: { repoId: string; path: string; content: string; note: string } | null
+  /**
+   * A conflict resolution the agent proposed, for review. `hidden`: the dialogs below keep their
+   * state when closed (the request, or the answer, is not thrown away); the AI jobs chip or the
+   * "ready" toast shows them again.
+   */
+  proposal: {
+    repoId: string; path: string; content: string; note: string; hidden?: boolean
+    /** The conflicted file as it was when the agent was asked: Use writes only onto exactly that. */
+    expected: string | null
+  } | null
   /** Fix with AI: waiting for, or showing, a proposed new version of one file. */
-  fix: { repoId: string; path: string; title: string; requestId: string | null; before: string | null; after: string | null; note: string; error: string | null } | null
+  fix: { repoId: string; path: string; title: string; requestId: string | null; before: string | null; after: string | null; note: string; error: string | null; hidden?: boolean } | null
   /** Recompose with AI: waiting for a plan (requestId set), failed, or under review. */
   recompose: {
     repoId: string; hashes: string[]; requestId: string | null; proposal: RecomposeProposal | null; error: string | null
+    hidden?: boolean
     /** The conversation the plan came from (the chat column beside the plan). */
     threadId?: string
     /** A plan applied from the chat: the editor takes it as one undo step (see lib/artifacts.ts). */
@@ -35,7 +45,22 @@ export interface AiUi {
 
 export const useAi = create<AiUi>(() => ({ consent: null, login: null, permissions: [], output: null, proposal: null, recompose: null, fix: null, draft: null }))
 
+// A dialog shown again some other way (a plan applied from a chat) counts as seen, like the views in the store.
+useAi.subscribe(sweepJobs)
+
 const textListeners = new Map<string, (text: string) => void>()
+const threadListeners = new Map<string, (threadId: string) => void>()
+
+/**
+ * The first 'ai-update' of a kept request names its thread (AiResult.threadId only comes with
+ * the answer): a view can show the thread while it streams. Called by lib/thread.ts.
+ */
+export function onAiThread(requestId: string, threadId: string): void {
+  const listener = threadListeners.get(requestId)
+  if (!listener) return
+  threadListeners.delete(requestId)
+  listener(threadId)
+}
 
 /** Called from the store's event handler. */
 export function onAiEvent(e: { type: 'ai-text'; requestId: string; text: string } | { type: 'ai-permission'; request: AiPermissionRequest } | { type: 'ai-permission-closed'; permissionId: number }): void {
@@ -135,7 +160,7 @@ export interface AiRun {
  * `before` runs once the provider is set up and agreed to, just before the request: for questions
  * that only make sense when the request will really happen (which linters a review may run).
  */
-export function startAi(repoId: string | null, task: AiTask, onText?: (text: string) => void, opts: { before?: () => Promise<void>; keepThread?: boolean; target?: AiTarget } = {}): AiRun {
+export function startAi(repoId: string | null, task: AiTask, onText?: (text: string) => void, opts: { before?: () => Promise<void>; keepThread?: boolean; onThread?: (threadId: string) => void; target?: AiTarget } = {}): AiRun {
   const requestId = crypto.randomUUID()
   // Decided once, up front: changing the picker mid-request applies to the next one.
   const target = opts.target ?? areaTarget(areaOf(task.kind)) ?? undefined
@@ -146,6 +171,7 @@ export function startAi(repoId: string | null, task: AiTask, onText?: (text: str
     if (!(await ensureAi(WHAT[task.kind], target))) return null
     await opts.before?.()
     if (onText) textListeners.set(requestId, onText)
+    if (opts.onThread) threadListeners.set(requestId, opts.onThread)
     try {
       let redact = false
       for (let attempt = 0; ; attempt++) {
@@ -166,6 +192,7 @@ export function startAi(repoId: string | null, task: AiTask, onText?: (text: str
       }
     } finally {
       textListeners.delete(requestId)
+      threadListeners.delete(requestId)
     }
   })()
   return { requestId, done }
@@ -209,6 +236,8 @@ export function whatFor(anchor: ThreadAnchor): string {
     case 'impact': return `${WHAT['assess-impact']}, and what you write`
     case 'ask': return `${WHAT.ask}, and what you write`
     case 'free': return "the repository's name and current commit, and what you write (an agent can ask to read files in the repository)"
+    case 'error': return `${WHAT['explain-error']}, and what you write`
+    case 'conflict': return `the conflicted file (the agent reads it), and what you write`
     case 'task': return WHAT[anchor.task]
   }
 }
@@ -233,8 +262,201 @@ export function cancelAi(requestId: string): void {
   void api.aiCancel(requestId)
 }
 
-/** Show a streamed answer in the AI output modal. */
-export function explainInModal(title: string, repoId: string | null, task: AiTask): void {
+// ------------------------------------------------------------------ answers that wait for the user
+
+// A job that finished while its view was not on screen: say so, with a way to it.
+onJobReady((job) => toast({
+  kind: 'info',
+  title: job.status === 'error' ? `AI request failed: ${job.title}` : `AI answer ready: ${job.title}`,
+  detail: job.error,
+  // Opens even if the user has seen it meanwhile (the job is gone from the list then).
+  action: {
+    label: 'Open',
+    run: () => {
+      dropJob(job.id)
+      job.open()
+    },
+  },
+}, 10_000))
+
+/** Bring a repository's tab to the front: a job's Open may come from another tab or from Settings. */
+export function showRepo(repoId: string): void {
+  // A toast can outlive its repository's tab.
+  if (useStore.getState().repos[repoId]) useStore.setState({ active: repoId, page: null })
+}
+
+/** Open a repository's AI panel on a thread. */
+export function openInPanel(repoId: string, threadId: string): void {
+  updateRepo(repoId, (v) => ({ chat: { ...v.chat, open: true, threadId } }))
+}
+
+/** Is this thread on screen in the AI panel? */
+function panelShows(repoId: string, threadId: string | null): boolean {
+  const s = useStore.getState()
+  const chat = s.repos[repoId]?.chat
+  return !!threadId && s.active === repoId && !s.page && !!chat?.open && chat.threadId === threadId
+}
+
+/** A run's end finishes its job: an answer or an error stays until seen; nothing at all (stopped, not set up) drops it. */
+export function followJob(run: AiRun): void {
+  run.done.then((res) => (res ? finishJob(run.requestId) : dropJob(run.requestId)), (e) => finishJob(run.requestId, toUiError(e).message))
+}
+
+/** A short name for a change, for a job's title. */
+export function scopeLabel(scope: ReviewScope): string {
+  switch (scope.kind) {
+    case 'staged': return 'staged changes'
+    case 'working': return 'uncommitted changes'
+    case 'branch': return scope.branch
+    case 'commits': return scope.hashes.length === 1 ? scope.hashes[0]!.slice(0, 7) : `${scope.hashes.length} commits`
+    case 'outgoing': return 'outgoing commits'
+  }
+}
+
+/**
+ * Review, walkthrough and impact keep their result in the repository's view, so it survives
+ * navigation already; the job is how the user hears it is ready while looking at something else.
+ */
+export function centerJob(run: AiRun, repoId: string, center: 'review' | 'walkthrough' | 'impact', title: string): void {
+  registerJob({
+    id: run.requestId,
+    repoId,
+    key: `${center}:${repoId}`,
+    title,
+    open: () => {
+      showRepo(repoId)
+      updateRepo(repoId, { center: { kind: center } })
+    },
+    stop: () => cancelAi(run.requestId),
+    showing: () => {
+      const s = useStore.getState()
+      return s.active === repoId && !s.page && s.repos[repoId]?.center.kind === center
+    },
+  })
+  followJob(run)
+}
+
+/**
+ * "Why did this fail?" With a repository open, the answer is a kept thread, shown in the AI panel
+ * as it streams: the panel is not modal, so the user carries on meanwhile, and the answer stays
+ * in the panel's history (with any follow-ups) instead of going when a dialog closes. With no
+ * repository open there is nothing to keep it with (main keeps threads per repository), so it
+ * is shown in the modal.
+ */
+export function explainFailure(repoId: string | null, title: string, detail: string): void {
+  const task: AiTask = { kind: 'explain-error', title, detail }
+  if (!repoId) return explainInModal(`Why: ${title}`, null, task)
+  let threadId: string | null = null
+  const run = startAi(repoId, task, undefined, {
+    keepThread: true,
+    onThread: (id) => {
+      threadId = id
+      openInPanel(repoId, id)
+    },
+  })
+  registerJob({
+    id: run.requestId,
+    repoId,
+    title: `Why: ${title}`,
+    open: () => {
+      showRepo(repoId)
+      if (threadId) openInPanel(repoId, threadId)
+    },
+    stop: () => cancelAi(run.requestId),
+    showing: () => panelShows(repoId, threadId),
+  })
+  followJob(run)
+}
+
+export const conflictJobKey = (repoId: string, path: string) => `conflict:${repoId}:${path}`
+
+type Proposal = Omit<NonNullable<AiUi['proposal']>, 'hidden'>
+
+const sameProposal = (a: Proposal, b: Proposal) => a.repoId === b.repoId && a.path === b.path && a.content === b.content
+
+function proposalShown(p: Proposal): boolean {
+  const cur = useAi.getState().proposal
+  return !!cur && !cur.hidden && sameProposal(cur, p)
+}
+
+/**
+ * Show a conflict proposal in the (single) proposal dialog. One for another file that is on
+ * screen goes back on the jobs list first, so neither answer is lost.
+ */
+export function showProposal(p: Proposal): void {
+  const cur = useAi.getState().proposal
+  if (cur && !cur.hidden && !sameProposal(cur, p)) parkProposal(cur)
+  // The new proposal first: showRepo changes the store, which sweeps jobs whose answer is on
+  // screen, and the one just parked must not count as on screen any more.
+  useAi.setState({ proposal: { ...p, hidden: false } })
+  showRepo(p.repoId)
+}
+
+/** Put a proposal aside (its dialog closed, or another took its place): its job holds it until opened. */
+export function parkProposal(p: Proposal): void {
+  const kept: Proposal = { repoId: p.repoId, path: p.path, content: p.content, note: p.note, expected: p.expected }
+  parkJob({
+    id: crypto.randomUUID(),
+    repoId: p.repoId,
+    key: conflictJobKey(p.repoId, p.path),
+    title: `Resolve ${p.path}`,
+    open: () => showProposal(kept),
+    showing: () => proposalShown(kept),
+  })
+}
+
+/**
+ * Ask the agent to resolve a conflicted file. It answers with a proposed file (reviewed in the
+ * proposal dialog before anything is written) or only a note (why it changed nothing), which is
+ * a kept thread shown in the AI panel. The user can leave the conflict view meanwhile: a
+ * proposal that arrives while they are elsewhere waits, hidden, until they open it.
+ */
+export function resolveWithAgent(repoId: string, path: string): void {
+  /** What came back: a proposal, or a note in a thread. */
+  let answer: { proposal?: Proposal; threadId?: string } | null = null
+  // The conflicted file as the agent is given it, read before the request goes out: a proposal
+  // can wait on the jobs list while the user resolves by hand or aborts, and Use must then refuse.
+  const snapshot = api.workingText(repoId, path)
+  snapshot.catch(() => {})
+  const run = startAi(repoId, { kind: 'resolve-conflict', path }, undefined, { keepThread: true })
+  const atConflicts = () => {
+    const s = useStore.getState()
+    return s.active === repoId && !s.page && s.repos[repoId]?.center.kind === 'conflicts'
+  }
+  registerJob({
+    id: run.requestId,
+    repoId,
+    key: conflictJobKey(repoId, path),
+    title: `Resolve ${path}`,
+    open: () => {
+      showRepo(repoId)
+      if (answer?.proposal) showProposal(answer.proposal)
+      else if (answer?.threadId) openInPanel(repoId, answer.threadId)
+      else updateRepo(repoId, { center: { kind: 'conflicts' } })
+    },
+    stop: () => cancelAi(run.requestId),
+    showing: () => (answer?.proposal ? proposalShown(answer.proposal) : panelShows(repoId, answer?.threadId ?? null)),
+  })
+  run.done.then(async (res) => {
+    if (!res) return dropJob(run.requestId)
+    if (res.proposal) {
+      // The job holds the proposal: one for another file may be in the dialog meanwhile.
+      const proposal: Proposal = { repoId, path, content: res.proposal.content, note: res.text, expected: await snapshot.catch(() => null) }
+      answer = { proposal }
+      if (atConflicts()) showProposal(proposal)
+    } else {
+      answer = { threadId: res.threadId }
+      if (res.threadId) openInPanel(repoId, res.threadId)
+    }
+    finishJob(run.requestId)
+  }).catch((e) => {
+    dropJob(run.requestId)
+    reportError(`The agent could not resolve ${path}`, e)
+  })
+}
+
+/** Show a streamed answer in the AI output modal (an error explained with no repository open). */
+function explainInModal(title: string, repoId: string | null, task: AiTask): void {
   const run = startAi(repoId, task, (text) => useAi.setState((s) => (s.output ? { output: { ...s.output, text } } : s)))
   useAi.setState({ output: { title, text: '', requestId: run.requestId, error: null } })
   run.done.then(

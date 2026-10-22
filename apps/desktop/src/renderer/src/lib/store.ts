@@ -1,11 +1,13 @@
 import { GraphLayout, type Row } from '@gitgoose/graph'
-import { SETTINGS, type SidebarPrefs, type PullRequestList, type CodeGraphStatus, type Commit, type DiffTarget, type GitHubStatus, type GitGooseEvent, type AskThread, type ThreadAnchor, type LfsInfo, type PushCheckResult, type Ref, type Remote, type RepoSnapshot, type Submodule, type Worktree, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitgoose/shared'
+import { FIRST_LOG_PAGE, SETTINGS, type LogPage, type SidebarPrefs, type PullRequestList, type CodeGraphStatus, type Commit, type DiffTarget, type GitGooseEvent, type AskThread, type ThreadAnchor, type LfsInfo, type PushCheckResult, type Ref, type Remote, type RepoSnapshot, type Submodule, type Worktree, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitgoose/shared'
 import { create } from 'zustand'
 import { api, toUiError, type UiError } from './api'
 import { onAiEvent } from './ai'
+import { dropRepoJobs, sweepJobs } from './aiJobs'
 import { onThreadUpdate } from './thread'
 import { opName } from './format'
-import { followRewrite } from './rewrite'
+import { followRewrite, type CommitIndex } from './rewrite'
+import { followLocation, type NavLocation } from './nav'
 import type { ReviewState } from './review'
 import type { WalkthroughState } from './walkthrough'
 import type { ImpactState } from './impact'
@@ -190,8 +192,6 @@ interface State {
   cloneProgress: string | null
   /** A full-window page shown instead of the repository (or welcome) view. */
   page: 'settings' | null
-  /** GitHub sign-in state; loaded when first needed (the Accounts panel), then kept by events. */
-  github: GitHubStatus | null
 }
 
 export const useStore = create<State>(() => ({
@@ -209,11 +209,13 @@ export const useStore = create<State>(() => ({
   menu: null,
   cloneProgress: null,
   page: null,
-  github: null,
 }))
 
 const set = useStore.setState
 const get = useStore.getState
+
+// AI answers the user reaches by themselves (selecting the commit, opening the panel) count as seen.
+useStore.subscribe(sweepJobs)
 
 export function updateRepo(id: string, patch: Partial<RepoView> | ((v: RepoView) => Partial<RepoView>)): void {
   set((s) => {
@@ -307,14 +309,17 @@ function logGeneration(id: string): number {
  * every commit, checkout or reorder. The first page is as big as what was loaded before (up to
  * one regular page), so the swap does not shorten the list under the scrollbar.
  */
-function resetLog(id: string, snap: RepoSnapshot): void {
+function resetLog(id: string, snap: RepoSnapshot, first?: LogPage): void {
   const next = emptyLog(snap, snap.refsVersion)
   const live = logs.get(id)
   if (!live || live.commits.length === 0) {
     pending.delete(id)
     logs.set(id, next)
+    // A first page fetched with the snapshot goes straight in (see boot), so the graph's first
+    // render already has its rows.
+    if (!first || first.generation !== next.generation) void loadInto(id, next)
+    else appendPage(id, next, first)
     updateRepo(id, (v) => ({ logVersion: v.logVersion + 1 }))
-    void loadInto(id, next)
     return
   }
   pending.set(id, next)
@@ -325,7 +330,8 @@ function resetLog(id: string, snap: RepoSnapshot): void {
  * The new log's first page is in: it replaces the one on screen. A selection that pointed at
  * commits the rewrite replaced (a rebase gives every replayed commit a new hash) follows them to
  * their new hashes, so the detail panel shows the commit the user just moved, not a stale copy.
- * A selected commit that is gone (dropped, or folded into another) gives way to HEAD.
+ * A selected commit that is gone (dropped, or folded into another) gives way to HEAD. An open diff
+ * of such a commit follows it the same way, or gives way to the graph.
  */
 function swapIn(id: string, log: LogData): void {
   const old = logs.get(id)
@@ -333,22 +339,58 @@ function swapIn(id: string, log: LogData): void {
   logs.set(id, log)
   const v = get().repos[id]
   if (!old || !v) return
-  const sel = v.selected
+  const follow = rewriteFollower(old, log, v.snapshot.head.hash)
+  // Back/forward history follows first, so the change below matches its current entry and is not
+  // recorded as a step of its own.
+  swapListeners.forEach((l) => l(id, follow))
+  const here: NavLocation = { repoId: id, selected: v.selected, center: v.center, line: v.line }
+  const next = follow(here)
+  if (next !== here) updateRepo(id, { selected: next.selected, center: next.center, line: next.line })
+}
+
+/**
+ * How a view moves from one log to the next: the selection by followSelection, and a file diff or
+ * line of a rewritten commit to its new hash too, so the diff never shows the stale copy of the
+ * commit the detail panel has moved on from (see followLocation).
+ */
+function rewriteFollower(old: CommitIndex, log: CommitIndex, head: string | undefined): (loc: NavLocation) => NavLocation {
+  const moved = new Map<string, string | null>()
+  const followHash = (h: string): string | null => {
+    if (log.index.has(h) || !old.index.has(h)) return h
+    let to = moved.get(h)
+    if (to === undefined) moved.set(h, (to = followRewrite([h], old, log)[0] ?? null))
+    return to
+  }
+  return (loc) => followLocation(loc, followHash, (sel) => followSelection(sel, old, log, head))
+}
+
+/**
+ * Where a selection lands in a new log: unchanged when its commits are all still there (or were
+ * never in the graph: a lost commit picked in the reflog, a hidden stash), else on their new hashes
+ * (followRewrite), else on HEAD.
+ */
+export function followSelection(sel: Selection, old: CommitIndex, log: CommitIndex, head: string | undefined): Selection {
   const hashes = selectedHashes(sel)
-  if (!hashes.length || hashes.every((h) => log.index.has(h))) return
+  if (hashes.every((h) => log.index.has(h) || !old.index.has(h))) return sel
   const next = followRewrite(hashes, old, log)
-  const head = v.snapshot.head.hash
   let selected: Selection = next[0] ? { kind: 'commit', hash: next[0] } : head ? { kind: 'commit', hash: head } : { kind: 'wip' }
   if (sel.kind === 'commits' && next.length > 1) {
     const [anchor] = followRewrite([sel.anchor], old, log)
     const [cursor] = followRewrite([sel.cursor], old, log)
     selected = { kind: 'commits', hashes: next, anchor: anchor ?? next[0]!, cursor: cursor ?? next[next.length - 1]! }
   }
-  updateRepo(id, { selected })
+  return selected
+}
+
+const swapListeners = new Set<(id: string, follow: (loc: NavLocation) => NavLocation) => void>()
+/** Hear when a repository's log is replaced by a new walk, with how a location follows rewritten commits. */
+export function onLogSwap(l: (id: string, follow: (loc: NavLocation) => NavLocation) => void): () => void {
+  swapListeners.add(l)
+  return () => swapListeners.delete(l)
 }
 
 /** First page small so the first screen paints fast; later pages large to cut round trips. */
-const FIRST_PAGE = 300
+const FIRST_PAGE = FIRST_LOG_PAGE
 const PAGE = 3000
 
 export function loadMore(id: string): Promise<void> {
@@ -357,6 +399,28 @@ export function loadMore(id: string): Promise<void> {
   const next = pending.get(id)
   if (next) return next.loading ?? Promise.resolve()
   return loadInto(id, getLog(id))
+}
+
+/** Lay out a page of the log and add it (its walk must be the log's: see `generation`). */
+function appendPage(id: string, log: LogData, page: LogPage): void {
+  const offset = log.commits.length
+  const rows = log.layout.push(page.commits)
+  for (let i = 0; i < page.commits.length; i++) {
+    const c = page.commits[i]!
+    log.index.set(c.hash, log.commits.length)
+    log.commits.push(c)
+    log.rows.push(rows[i]!)
+    const parent = c.parents[0]
+    if (parent !== undefined) {
+      const children = log.firstChildren.get(parent)
+      if (children) children.push(c.hash)
+      else log.firstChildren.set(parent, [c.hash])
+    }
+    if (rows[i]!.width > log.maxWidth) log.maxWidth = rows[i]!.width
+  }
+  log.done = page.done
+  if (pending.get(id) === log) swapIn(id, log)
+  else if (offset === 0) performance.mark('gitgoose:first-page')
 }
 
 function loadInto(id: string, log: LogData, firstPage = FIRST_PAGE): Promise<void> {
@@ -374,23 +438,7 @@ function loadInto(id: string, log: LogData, firstPage = FIRST_PAGE): Promise<voi
           onSnapshot(await api.snapshot(id))
           return
         }
-        const rows = log.layout.push(page.commits)
-        for (let i = 0; i < page.commits.length; i++) {
-          const c = page.commits[i]!
-          log.index.set(c.hash, log.commits.length)
-          log.commits.push(c)
-          log.rows.push(rows[i]!)
-          const parent = c.parents[0]
-          if (parent !== undefined) {
-            const children = log.firstChildren.get(parent)
-            if (children) children.push(c.hash)
-            else log.firstChildren.set(parent, [c.hash])
-          }
-          if (rows[i]!.width > log.maxWidth) log.maxWidth = rows[i]!.width
-        }
-        log.done = page.done
-        if (pending.get(id) === log) swapIn(id, log)
-        else if (offset === 0) performance.mark('gitgoose:first-page')
+        appendPage(id, log, page)
         updateRepo(id, (v) => ({ logVersion: v.logVersion + 1 }))
       },
       (e) => {
@@ -504,14 +552,17 @@ function newView(snap: RepoSnapshot): RepoView {
   }
 }
 
-export function addRepo(snap: RepoSnapshot): void {
+/** Show a repository in a new tab (or switch to its tab). `first`: its log's first page, when already fetched. */
+export function addRepo(snap: RepoSnapshot, first?: LogPage): void {
+  early.delete(snap.id)
   const s = get()
   if (s.repos[snap.id]) {
     set({ active: snap.id })
     return
   }
+  performance.mark('gitgoose:snapshot')
   set({ repos: { ...s.repos, [snap.id]: newView(snap) }, tabs: [...s.tabs, snap.id], active: snap.id })
-  resetLog(snap.id, snap)
+  resetLog(snap.id, snap, first)
   void refreshAux(snap.id)
   void api.askThreads(snap.id).then((askThreads) => updateRepo(snap.id, { askThreads }), () => {})
   void api.codeGraphStatus(snap.id).then((codegraph) => updateRepo(snap.id, { codegraph }), () => {})
@@ -552,15 +603,29 @@ export async function closeTab(id: string): Promise<void> {
   const i = s.tabs.indexOf(id)
   const active = s.active === id ? (tabs[Math.min(i, tabs.length - 1)] ?? null) : s.active
   set({ tabs, repos, active })
+  // Main ends the repository's AI sessions; their jobs have nowhere to open any more.
+  dropRepoJobs(id)
   logs.delete(id)
   pending.delete(id)
   await api.closeRepo(id)
   set({ settings: await api.getSettings() })
 }
 
+/**
+ * The last snapshot pushed for a repository that has no tab yet. boot() adds a restored tab only
+ * once its first page is in (and the tabs before it are): a change the watcher reports after
+ * openRepo answered would otherwise be lost, and the tab would show the answer's older status.
+ * boot() clears the entry when openRepo answers (anything pushed before that is no newer than
+ * the answer) and shows what arrived after it; addRepo clears it for every other caller.
+ */
+const early = new Map<string, RepoSnapshot>()
+
 export function onSnapshot(snap: RepoSnapshot): void {
   const view = get().repos[snap.id]
-  if (!view) return
+  if (!view) {
+    early.set(snap.id, snap)
+    return
+  }
   const hadConflicts = view.snapshot.status.some((e) => e.kind === 'unmerged')
   const hasConflicts = snap.status.some((e) => e.kind === 'unmerged')
   updateRepo(snap.id, (v) => ({
@@ -612,9 +677,6 @@ function onEvent(e: GitGooseEvent): void {
       set({ settings: e.settings })
       applyTheme(e.settings)
       break
-    case 'github':
-      set({ github: e.status })
-      break
     case 'ai-text':
     case 'ai-permission':
     case 'ai-permission-closed':
@@ -623,14 +685,6 @@ function onEvent(e: GitGooseEvent): void {
     case 'ai-update':
       onThreadUpdate(e)
       break
-  }
-}
-
-export async function loadGitHub(): Promise<void> {
-  try {
-    set({ github: await api.githubStatus() })
-  } catch (e) {
-    reportError('Could not read the GitHub sign-in', e)
   }
 }
 
@@ -712,22 +766,41 @@ export async function boot(): Promise<void> {
   booted = true
   api.onEvent(onEvent)
   const settings = await api.getSettings()
+  performance.mark('gitgoose:settings')
   set({ settings })
   applyTheme(settings)
-  // Local only (no network): whether a GitHub sign-in is stored, for avatar URLs.
-  void loadGitHub()
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     const s = get().settings
     if (s) applyTheme(s)
   })
-  for (const path of settings.openRepos) {
-    try {
-      addRepo(await api.openRepo(path))
-    } catch {
+  // All at once. The main process has usually opened them and read their first pages while
+  // this window loaded (RepoManager.preopen), so they come back together, each with its first
+  // page: every tab that has arrived is added in one go, in the saved order, and the window
+  // renders once with the last one showing (the tab a restore ends on), with its rows, instead
+  // of once per tab and again per first page.
+  const paths = settings.openRepos
+  const results = paths.map(async (path) => {
+    const snap = await api.openRepo(path)
+    early.delete(snap.id)
+    return { snap, first: await api.logPage(snap.id, 0, FIRST_PAGE).catch(() => undefined) }
+  })
+  const settled: ({ ok: true; snap: RepoSnapshot; first?: LogPage } | { ok: false })[] = []
+  results.forEach((r, i) => void r.then((v) => (settled[i] = { ok: true, ...v }), () => (settled[i] = { ok: false })))
+  const gone: string[] = []
+  for (let i = 0; i < paths.length;) {
+    await results[i]!.catch(() => {})
+    for (; i < paths.length && settled[i]; i++) {
+      const r = settled[i]!
+      // A change pushed while it waited (see `early`). If that moved the refs, the first page is
+      // from the old walk: resetLog sees that and reads the log afresh.
+      if (r.ok) addRepo(early.get(r.snap.id) ?? r.snap, r.first)
       // The folder was moved or deleted; drop it from the session.
-      const s = await api.getSettings()
-      await api.setSettings({ openRepos: s.openRepos.filter((p) => p !== path) })
+      else gone.push(paths[i]!)
     }
+  }
+  if (gone.length) {
+    const s = await api.getSettings()
+    await api.setSettings({ openRepos: s.openRepos.filter((p) => !gone.includes(p)) })
   }
 }
 

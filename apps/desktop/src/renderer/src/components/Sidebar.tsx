@@ -418,17 +418,11 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
           className={base}>
           <span className="shrink-0 text-[11px] text-faint">#{p.number}</span>
           <span className="min-w-0 flex-1 truncate">{p.title}</span>
-          {p.draft && <Badge title="Draft">draft</Badge>}
+          {p.draft && <Badge>draft</Badge>}
           {p.fromFork && <Badge title="From a fork">fork</Badge>}
         </div>
       )
     }
-    case 'pulls-signin':
-      return (
-        <div style={{ ...style, paddingLeft: pad(2) }} className="flex items-center text-xs text-muted" onContextMenu={noMenu}>
-          <button className="text-accent hover:underline" onClick={() => useStore.setState({ page: 'settings' })}>Sign in with GitHub</button>&nbsp;to see pull requests.
-        </div>
-      )
     case 'worktree': {
       const w = row.worktree
       const folder = w.path.split(/[\\/]/).filter(Boolean).pop()
@@ -446,7 +440,7 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
           {w.current && <span className="-ml-4 w-3 text-[10px] text-accent">✓</span>}
           <span className="min-w-0 flex-1 truncate">{w.branch ?? `detached at ${w.head?.slice(0, 7) ?? '?'}`}</span>
           <span className="max-w-24 truncate text-[10px] text-faint">{folder}</span>
-          {w.locked !== undefined && <Badge title={w.locked || 'Locked'}>locked</Badge>}
+          {w.locked !== undefined && <Badge title={w.locked || undefined}>locked</Badge>}
           {w.prunable && <Badge title={w.prunable}>missing</Badge>}
         </div>
       )
@@ -583,7 +577,7 @@ function SmallButton({ label, title, onClick, children }: { label: string; title
   )
 }
 
-function Badge({ title, children }: { title: string; children: ReactNode }) {
+function Badge({ title, children }: { title?: string; children: ReactNode }) {
   return <span title={title} className="rounded bg-hover px-1 text-[10px] text-faint">{children}</span>
 }
 

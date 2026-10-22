@@ -174,6 +174,9 @@ export class Repo {
   }
 
   private async readSnapshot(): Promise<RepoSnapshot> {
+    // straightTips needs git's version; asked once, alongside the reads below rather than after
+    // them, so the first snapshot does not wait for one more process in a row.
+    void this.hasAheadBehind()
     const [statusOut, refsOut] = await Promise.all([
       this.read(['status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all']),
       this.read(['for-each-ref', `--format=${REFS_FORMAT}`]),
@@ -2808,6 +2811,14 @@ export class Repo {
   resolveConflict(path: string, resolution: Resolution): Promise<void> {
     return this.exclusive(async () => {
       if (typeof resolution === 'object') {
+        if (resolution.expected !== undefined) {
+          // A resolution proposed earlier: only onto the conflict it was made for. Checked here,
+          // under the lock, so a change between the dialog's check and the click is refused too.
+          const unmerged = (await this.git(['ls-files', '-u', '-z', '--', path], { readOnly: true })).stdout
+          if (!unmerged) throw new Error(`${path} is no longer in conflict: this resolution was proposed for a conflict that is gone.`)
+          const now = await readFile(join(this.path, path), 'utf8').catch(() => null)
+          if (now !== resolution.expected) throw new Error(`${path} changed since this resolution was proposed: ask again.`)
+        }
         await writeFile(join(this.path, path), resolution.content)
         await this.git(['add', '--', path])
         return

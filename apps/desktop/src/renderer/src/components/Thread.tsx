@@ -149,18 +149,25 @@ function UserTurn({ turn, testid }: { turn: AiTurn; testid: string }) {
   )
 }
 
+/**
+ * Features whose own answer is prose (an explanation, why something failed, the conflict
+ * agent's note): in a thread shown without that feature's view (the AI panel), it reads as an
+ * ordinary answer. The Explain box hides it (hideFeature) and shows it above instead.
+ */
+const PROSE_FEATURES = new Set<AiThread['anchor']['kind']>(['explain', 'error', 'conflict'])
+
 function AgentTurn({ turn, thread, repoId, testid, retry, by }: { turn: AiTurn; thread: AiThread; repoId: string; testid: string; retry?: () => void; by?: string }) {
   const [raw, setRaw] = useState(false)
   // Shown where the speaker changes (the first answer, and after a switch).
   const who = by ? <div className="mt-1 text-[11px] text-faint" data-testid="thread-by">{by}</div> : null
-  if (turn.feature) {
+  if (turn.feature && !PROSE_FEATURES.has(thread.anchor.kind)) {
     // The feature's own answer (JSON the view has already turned into its result).
     return (
       <div className="mt-0.5 text-xs text-faint" data-testid="thread-feature-answer">
         {who}
         {turn.status === 'running' ? <span className="flex items-center gap-1.5"><Spinner /> Working on it…</span>
           : turn.status === 'error' ? <span className="text-del">{turn.error?.message}</span>
-          : <>Answered; the result is shown here. <button className="hover:text-fg" onClick={() => setRaw(!raw)}>{raw ? 'Hide' : 'Show'} the raw answer</button></>}
+          : <>Answered; the result is shown in its own view. <button className="hover:text-fg" onClick={() => setRaw(!raw)}>{raw ? 'Hide' : 'Show'} the raw answer</button></>}
         {raw && <pre className="selectable mt-1 max-h-48 overflow-auto rounded border border-line bg-bg p-2 font-mono text-[11px] whitespace-pre-wrap">{textOf(turn)}</pre>}
       </div>
     )
