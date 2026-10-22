@@ -1,10 +1,10 @@
 import { countConflicts } from '@gitgoose/shared'
 import clsx from 'clsx'
-import { Copy, ShieldQuestion, Sparkles, SquareTerminal } from 'lucide-react'
-import { useState } from 'react'
+import { CircleAlert, Copy, ShieldQuestion, Sparkles, SquareTerminal } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { run } from '../lib/actions'
-import { answerPermission, cancelAi, conflictJobKey, showRepo, useAi } from '../lib/ai'
-import { parkJob } from '../lib/aiJobs'
+import { answerPermission, cancelAi, conflictJobKey, parkProposal, useAi } from '../lib/ai'
+import { dropFinishedJob, parkJob } from '../lib/aiJobs'
 import { api, toUiError } from '../lib/api'
 import { fileDiffRows } from '../lib/diffLayout'
 import { acceptFix, showFix } from '../lib/review'
@@ -170,16 +170,41 @@ function OutputDialog() {
 function FixDialog() {
   const fix = useAi((s) => s.fix)
   if (!fix || fix.hidden) return null
+  return <FixView fix={fix} />
+}
+
+function FixView({ fix }: { fix: NonNullable<ReturnType<typeof useAi.getState>['fix']> }) {
+  // The file as it is now, read whenever it may have changed (it can sit hidden for a while):
+  // a fix proposed for an older version must not be written over the user's edits.
+  const tick = useStore((s) => s.repos[fix.repoId]?.worktreeTick ?? 0)
+  const [now, setNow] = useState<{ key: string; text: string | null } | null>(null)
+  const key = `${fix.repoId}\0${fix.path}\0${fix.after ?? ''}`
+  useEffect(() => {
+    if (fix.after === null) return
+    let live = true
+    api.workingText(fix.repoId, fix.path).then((text) => { if (live) setNow({ key, text }) }, () => {})
+    return () => {
+      live = false
+    }
+  }, [key, tick])
+  const stale = fix.after !== null && now?.key === key && now.text !== fix.before
   const discard = () => {
     if (fix.requestId) cancelAi(fix.requestId)
     useAi.setState({ fix: null })
+    dropFinishedJob('fix')
   }
   // A wait (its job is running) or a proposal (back on the jobs list) is kept; an error or a
   // note has been read, so closing ends it.
   const hide = () => {
     if (!fix.requestId && fix.after === null) return discard()
     useAi.setState({ fix: { ...fix, hidden: true } })
-    if (!fix.requestId) parkJob({ id: crypto.randomUUID(), repoId: fix.repoId, key: 'fix', title: `Fix: ${fix.title}`, open: showFix })
+    if (!fix.requestId) {
+      const after = fix.after
+      parkJob({
+        id: crypto.randomUUID(), repoId: fix.repoId, key: 'fix', title: `Fix: ${fix.title}`, open: showFix,
+        showing: () => { const f = useAi.getState().fix; return !!f && !f.hidden && f.after === after },
+      })
+    }
   }
   const rows = fix.before !== null && fix.after !== null ? fileDiffRows(fix.before, fix.after) : []
   return (
@@ -202,7 +227,9 @@ function FixDialog() {
                   : <div key={i} className={clsx('px-2', r.kind === '+' && 'bg-add-bg', r.kind === '-' && 'bg-del-bg')}>{r.kind} {r.text}</div>)}
               </pre>
             )}
-            <p className="mt-2 text-xs text-faint">Nothing has been written. Use writes {fix.path}; it is refused if the file changes meanwhile.</p>
+            {stale
+              ? <p className="mt-2 flex items-start gap-1 text-xs text-del" data-testid="ai-fix-stale"><CircleAlert size={12} className="mt-px shrink-0" /> {fix.path} has changed since this fix was asked for, so Use is off: it would overwrite those changes. Discard it and ask for a new fix.</p>
+              : <p className="mt-2 text-xs text-faint">Nothing has been written. Use writes {fix.path}; it is refused if the file changes meanwhile.</p>}
           </>
         )}
         <div className="mt-4 flex justify-end gap-2">
@@ -214,7 +241,7 @@ function FixDialog() {
           ) : fix.after !== null ? (
             <>
               <Button onClick={discard} data-testid="ai-fix-discard">Discard</Button>
-              <Button variant="primary" disabled={!rows.length} onClick={() => void acceptFix()} data-testid="ai-fix-accept">Use this fix</Button>
+              <Button variant="primary" disabled={!rows.length || stale} onClick={() => void acceptFix()} data-testid="ai-fix-accept">Use this fix</Button>
             </>
           ) : <Button onClick={discard} data-testid="ai-fix-discard">Close</Button>}
         </div>
@@ -228,17 +255,14 @@ function ProposalDialog() {
   const repoOpen = useStore((s) => (p ? !!s.repos[p.repoId] : false))
   if (!p || p.hidden) return null
   const markers = countConflicts(p.content)
-  const close = () => useAi.setState({ proposal: null })
+  const close = () => {
+    useAi.setState({ proposal: null })
+    dropFinishedJob(conflictJobKey(p.repoId, p.path))
+  }
   // Esc or a click outside keeps the proposal (open it again from the AI jobs chip); Discard drops it.
   const hide = () => {
     useAi.setState({ proposal: { ...p, hidden: true } })
-    parkJob({
-      id: crypto.randomUUID(), repoId: p.repoId, key: conflictJobKey(p.repoId, p.path), title: `Resolve ${p.path}`,
-      open: () => {
-        showRepo(p.repoId)
-        useAi.setState((s) => (s.proposal ? { proposal: { ...s.proposal, hidden: false } } : s))
-      },
-    })
+    parkProposal(p)
   }
   const accept = async () => {
     close()

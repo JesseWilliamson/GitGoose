@@ -83,6 +83,11 @@ export function dropJob(id: string): void {
   set((jobs) => jobs.filter((j) => j.id !== id))
 }
 
+/** The answer behind `key` was used or thrown away where it is shown: a finished job for it has nothing left to open. */
+export function dropFinishedJob(key: string): void {
+  set((jobs) => jobs.filter((j) => j.key !== key || j.status === 'running'))
+}
+
 /** The user dismissed a finished job (its answer stays where it is: a dialog, a thread). */
 export const dismissJob = dropJob
 

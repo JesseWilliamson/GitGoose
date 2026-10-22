@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { dismissJob, dropJob, dropRepoJobs, finishJob, onJobReady, openJob, parkJob, registerJob, stopJob, sweepJobs, useAiJobs, type AiJob, type JobSpec } from './aiJobs'
+import { dismissJob, dropFinishedJob, dropJob, dropRepoJobs, finishJob, onJobReady, openJob, parkJob, registerJob, stopJob, sweepJobs, useAiJobs, type AiJob, type JobSpec } from './aiJobs'
 
 const jobs = () => useAiJobs.getState().jobs
 let announced: AiJob[] = []
@@ -95,6 +95,14 @@ describe('AI jobs', () => {
     expect(jobs().map((j) => j.id)).toEqual(['a', 'b'])
     onScreen = true
     sweepJobs()
+    expect(jobs().map((j) => j.id)).toEqual(['b'])
+  })
+
+  it('an answer used or discarded where it is shown takes its finished job along, not a running one', () => {
+    parkJob(spec('a', { key: 'recompose' }))
+    registerJob(spec('b', { key: 'fix' }))
+    dropFinishedJob('recompose')
+    dropFinishedJob('fix')
     expect(jobs().map((j) => j.id)).toEqual(['b'])
   })
 

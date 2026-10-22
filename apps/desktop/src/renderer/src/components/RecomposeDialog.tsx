@@ -5,7 +5,7 @@ import { ContextMenu, DropdownMenu } from 'radix-ui'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { run } from '../lib/actions'
 import { cancelAi, showRepo, startAi, useAi } from '../lib/ai'
-import { dropJob, finishJob, parkJob, registerJob } from '../lib/aiJobs'
+import { dropFinishedJob, dropJob, finishJob, parkJob, registerJob } from '../lib/aiJobs'
 import { api, toUiError } from '../lib/api'
 import { splitPath } from '../lib/format'
 import { history, push, redo, undo, type History } from '../lib/history'
@@ -80,6 +80,7 @@ export function RecomposeDialog() {
   const discard = () => {
     if (state.requestId) cancelAi(state.requestId)
     useAi.setState({ recompose: null })
+    dropFinishedJob('recompose')
   }
   const n = state.hashes.length
   const title = `Recompose ${n === 1 ? '1 commit' : `${n} commits`}`
@@ -88,7 +89,14 @@ export function RecomposeDialog() {
   const hide = () => {
     if (state.error) return discard()
     useAi.setState({ recompose: { ...state, hidden: true } })
-    if (state.proposal) parkJob({ id: crypto.randomUUID(), repoId: state.repoId, key: 'recompose', title, open: showRecompose })
+    const plan = state.proposal
+    if (plan) {
+      parkJob({
+        id: crypto.randomUUID(), repoId: state.repoId, key: 'recompose', title, open: showRecompose,
+        // Shown again some other way (a plan applied from a chat opens the dialog): seen.
+        showing: () => { const rc = useAi.getState().recompose; return rc?.proposal === plan && !rc.hidden },
+      })
+    }
   }
   return (
     <Modal open onClose={hide} title={`${title} with AI`} width={state.proposal ? 1120 : 560} tall={!!state.proposal}
@@ -181,7 +189,12 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
 }) {
   const [chat, setChat] = useState(false)
   /** The plan, with everything done to it so far (Ctrl+Z / Ctrl+Shift+Z step through); as it was if the dialog was hidden. */
-  const [hist, setHist] = useState<History<Draft>>(() => edits.get(proposal)?.hist ?? history(structuredClone(proposal.commits)))
+  // A restored history starts a fresh burst: its last drag's key must not merge with the next
+  // drag (the drag counter starts again from 0), or one undo would take back both.
+  const [hist, setHist] = useState<History<Draft>>(() => {
+    const saved = edits.get(proposal)?.hist
+    return saved ? { ...saved, key: null } : history(structuredClone(proposal.commits))
+  })
   /** The proposal `hist` started from, and the last plan taken from the chat: a remount must not apply either again. */
   const base = useRef(proposal)
   const taken = useRef(edits.get(proposal)?.nonce)
@@ -206,6 +219,10 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
   /** Clear the drag view once a clone has settled, unless a newer drag has started since. */
   const settled = (token: number) => () => { if (drags.current === token) setDrag(null) }
   const busy = useStore((s) => !!s.repos[repoId]?.busy)
+  // Recompose rewrites the checked-out branch. A plan put aside can come back after a checkout:
+  // then it is for another branch, and applying it here would rewrite the wrong one.
+  const headBranch = useStore((s) => s.repos[repoId]?.snapshot.head.branch ?? null)
+  const wrongBranch = headBranch !== proposal.branch
   useEffect(() => {
     if (base.current === proposal) return
     base.current = proposal
@@ -257,6 +274,7 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
   }
 
   const apply = async () => {
+    if (wrongBranch) return
     const ok = await run(repoId, 'Recompose', () => api.recomposeApply(repoId, proposal.hashes, draft), { quiet: true })
     if (ok) {
       close()
@@ -538,14 +556,16 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
 
       <div className="mt-3 flex items-center gap-3">
         <p className="flex min-w-0 flex-1 items-center gap-1 text-xs text-faint">
-          {problems.length ? (
+          {wrongBranch ? (
+            <span className="flex items-center gap-1 text-del" data-testid="recompose-wrong-branch"><CircleAlert size={12} className="shrink-0" /> This plan is for {proposal.branch}, but {headBranch ?? 'no branch'} is checked out. Check out {proposal.branch} to create these commits.</span>
+          ) : problems.length ? (
             <span className="flex items-center gap-1 text-del" data-testid="recompose-problems"><CircleAlert size={12} className="shrink-0" /> {problems[0]}{problems.length > 1 ? ` (and ${problems.length - 1} more)` : ''}</span>
           ) : (
             <><Sparkles size={11} className="shrink-0" /> Replaces {proposal.hashes.length === 1 ? 'the commit' : `the ${proposal.hashes.length} commits`} on {proposal.branch}. Every change stays in exactly one commit, so the final code is the same; your working tree is not touched, and Undo puts the old commits back.</>
           )}
         </p>
         <Button onClick={close} data-testid="recompose-discard">Discard</Button>
-        <Button variant="primary" onClick={() => void apply()} disabled={busy || problems.length > 0} data-testid="recompose-apply">
+        <Button variant="primary" onClick={() => void apply()} disabled={busy || wrongBranch || problems.length > 0} data-testid="recompose-apply">
           Create {draft.length} {draft.length === 1 ? 'commit' : 'commits'}
         </Button>
       </div>

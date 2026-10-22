@@ -339,6 +339,26 @@ describe('secret scan before sending', () => {
     expect(sent).not.toContain(TOKEN)
   })
 
+  it('an explained failure sent redacted is kept redacted: a follow-up after the session ended cannot send the secret', async () => {
+    const api = await fakeAnthropic(['Use a credential helper.'])
+    cleanup.push(() => api.close())
+    const t = await setup({ aiProvider: 'anthropic' }, api, { threadIdleMs: 30 })
+    t.ai.setApiKey('sk-ant-test')
+    t.ai.consent()
+    const task = { kind: 'explain-error' as const, title: `Push to https://${TOKEN}@github.com`, detail: `remote: https://${TOKEN}@github.com/o/r rejected` }
+    const res = await t.ai.run('s3', 'x', task, { redact: true, keepThread: true })
+    const [kept] = t.ai.listThreads('x')
+    expect(kept!.anchor).toMatchObject({ kind: 'error', detail: expect.stringContaining('[REDACTED GitHub token]') })
+    expect(JSON.stringify(t.settings.aiThreads)).not.toContain(TOKEN)
+    // The session is gone; the follow-up is rebuilt from what was saved.
+    await new Promise((ok) => setTimeout(ok, 100))
+    const again = await t.ai.openThread('x', { kind: 'free' }, res.threadId)
+    await ended(t.events, await t.ai.sendThread(again.id, 'what now?'))
+    expect(api.requests).toHaveLength(2)
+    expect(JSON.stringify(api.requests[1])).toContain('[REDACTED GitHub token]')
+    expect(JSON.stringify(api.requests[1])).not.toContain(TOKEN)
+  })
+
   it('says which file and line a secret in a review diff is on', async () => {
     const { ai, r } = await setup()
     ai.consent()

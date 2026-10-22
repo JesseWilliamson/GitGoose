@@ -701,7 +701,9 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
   const d = details
   // The panel can show the previous commit while this one loads: only its own explanation.
   const shown = d.hash === hash ? explanation : null
-  const explain = () => (shown?.requestId ? cancelAi(shown.requestId) : explainCommit(view.id, d.hash))
+  // Not while the panel still shows the previous commit: that would ask again about it.
+  const loading = d.hash !== hash
+  const explain = () => (loading ? undefined : shown?.requestId ? cancelAi(shown.requestId) : explainCommit(view.id, d.hash))
   // A stash is a commit too: its first parent is where it was made, so the file list is its changes.
   const stash = view.stashes.find((s) => s.hash === d.hash)
   const adds = d.files.reduce((n, f) => n + f.additions, 0)
@@ -730,7 +732,7 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
         {aiOn && !stash && (
           <div className="mt-2">
             {!shown ? (
-              <Button size="sm" variant="ghost" onClick={explain} data-testid="ai-explain-commit"><Sparkles size={12} /> Explain</Button>
+              <Button size="sm" variant="ghost" onClick={explain} disabled={loading} data-testid="ai-explain-commit"><Sparkles size={12} /> Explain</Button>
             ) : (
               <div className="rounded-md border border-line bg-bg/60 p-2 text-[13px]" data-testid="ai-explanation">
                 <div className="mb-1 flex items-center gap-1 text-[11px] text-faint">

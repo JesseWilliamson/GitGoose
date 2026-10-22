@@ -1,7 +1,7 @@
 import type { DiffTarget, ReviewFinding, ReviewProfile, ReviewResult, ReviewScope } from '@gitgoose/shared'
 import { api, toUiError } from './api'
 import { cancelAi, centerJob, scopeLabel, showRepo, startAi, useAi } from './ai'
-import { dropJob, finishJob, registerJob } from './aiJobs'
+import { dropFinishedJob, dropJob, finishJob, registerJob } from './aiJobs'
 import { choose, setting, toast, updateRepo, useStore, type RepoView } from './store'
 import { ask, run } from './actions'
 
@@ -113,6 +113,11 @@ export function applySuggestion(id: string, f: ReviewFinding): Promise<boolean> 
 export function fixWithAi(id: string, f: ReviewFinding): void {
   const old = useAi.getState().fix
   if (old?.requestId) cancelAi(old.requestId)
+  // The file as it is when the fix is asked for, read before the request goes out: the diff is
+  // shown against it and Use writes only while the file is still exactly this, so edits made
+  // while the AI works (or while the fix waits on the chip) are never overwritten.
+  const snapshot = api.workingText(id, f.path)
+  snapshot.catch(() => {})
   const run = startAi(id, { kind: 'fix-finding', finding: f })
   useAi.setState({ fix: { repoId: id, path: f.path, title: f.title, requestId: run.requestId, before: null, after: null, note: '', error: null, hidden: false } })
   const mine = () => useAi.getState().fix?.requestId === run.requestId
@@ -137,7 +142,7 @@ export function fixWithAi(id: string, f: ReviewFinding): void {
     }
     // No new file: the agent's note says why (it was not allowed to edit, or saw nothing to fix).
     if (!res.proposal) return settle({ note: res.text || 'The agent did not propose a change.' })
-    const before = await api.workingText(id, f.path)
+    const before = await snapshot
     if (mine()) settle({ before, after: res.proposal.content, note: res.text })
   }).catch((e) => {
     if (mine()) settle({ error: toUiError(e).message }, toUiError(e).message)
@@ -156,6 +161,7 @@ export function showFix(): void {
 export async function acceptFix(): Promise<void> {
   const fix = useAi.getState().fix
   useAi.setState({ fix: null })
+  dropFinishedJob('fix')
   if (!fix?.after || fix.before === null) return
   await run(fix.repoId, `Apply AI fix to ${fix.path}`, () => api.writeFileChecked(fix.repoId, fix.path, fix.before!, fix.after!))
 }

@@ -116,6 +116,61 @@ test('closing the dialog only hides it: the plan arrives later, and its edits su
   await app.close()
 })
 
+test('a plan put aside is only applied to its own branch', async () => {
+  const { r, C1, C2, C3 } = setup()
+  const { app, page } = await launch(r.dir)
+  await page.evaluate((p) => window.gitgoose.setSettings(p as never), AGENT)
+  await row(page, C2).click()
+  await row(page, C1).click({ modifiers: ['Shift'] })
+  await row(page, C1).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Recompose with AI…' }).click()
+  await expect(page.getByTestId('recompose-commit')).toHaveCount(2)
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('recompose-dialog')).toHaveCount(0)
+
+  // Meanwhile another branch is checked out (here, outside the app).
+  r.git('checkout', '-q', '-b', 'elsewhere')
+  await expect(page.getByTestId('status-bar')).toContainText('elsewhere')
+  await page.getByTestId('ai-jobs').click()
+  await page.getByTestId('ai-job-open').click()
+  await expect(page.getByTestId('recompose-wrong-branch')).toContainText('This plan is for main, but elsewhere is checked out')
+  await expect(page.getByTestId('recompose-apply')).toBeDisabled()
+
+  r.git('checkout', '-q', 'main')
+  await expect(page.getByTestId('recompose-wrong-branch')).toHaveCount(0)
+  await expect(page.getByTestId('recompose-apply')).toBeEnabled()
+  expect(r.head()).toBe(C3)
+  await app.close()
+})
+
+test('a plan put aside and then shown by applying one from its chat leaves nothing stale on the jobs list', async () => {
+  const { r, C1, C2 } = setup()
+  const { app, page } = await launch(r.dir)
+  await page.evaluate((p) => window.gitgoose.setSettings(p as never), AGENT)
+  await row(page, C2).click()
+  await row(page, C1).click({ modifiers: ['Shift'] })
+  await row(page, C1).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Recompose with AI…' }).click()
+  await expect(page.getByTestId('recompose-commit')).toHaveCount(2)
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('ai-jobs')).toHaveText(/1 answer ready/)
+
+  // The plan's conversation, reopened in the AI panel: a revised plan applied there shows the editor again.
+  await page.keyboard.press('ControlOrMeta+Shift+A')
+  const panel = page.getByTestId('ai-chat-panel')
+  await page.getByTestId('ai-chat-history').click()
+  await page.getByTestId('ai-chat-history-item').filter({ hasText: 'Recompose' }).first().click()
+  await panel.getByTestId('thread-input').fill('Put the first piece last. FAKE:plan')
+  await panel.getByTestId('thread-input').press('Enter')
+  await panel.getByTestId('thread-artifact').getByTestId('artifact-apply').click()
+  await expect(page.getByTestId('recompose-dialog')).toHaveCount(1)
+  await expect(page.locator('[data-testid="recompose-commit"][data-index="1"] [data-testid="recompose-title"]')).toHaveText('test: the first piece on its own')
+  await expect(page.getByTestId('ai-jobs')).toHaveCount(0)
+  await page.getByTestId('recompose-discard').click()
+  await expect(page.getByTestId('ai-jobs')).toHaveCount(0)
+  await app.close()
+})
+
 test('squashing in the review, and refusing a selection that is not a range', async () => {
   const { r, C1, C3 } = setup()
   const { app, page } = await launch(r.dir)

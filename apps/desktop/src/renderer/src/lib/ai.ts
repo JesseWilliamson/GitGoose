@@ -1,6 +1,6 @@
 import { AI_AUTH_REQUIRED, type AgentAuthMethod, type AiPermissionRequest, type AiResult, type AiTask, type RecomposeProposal, type ReviewScope, type ThreadAnchor } from '@gitgoose/shared'
 import { create } from 'zustand'
-import { dropJob, finishJob, onJobReady, registerJob } from './aiJobs'
+import { dropJob, finishJob, onJobReady, parkJob, registerJob, sweepJobs } from './aiJobs'
 import { api, toUiError } from './api'
 import { attention, choose, reportError, toast, updateRepo, useStore } from './store'
 
@@ -40,6 +40,9 @@ export interface AiUi {
 }
 
 export const useAi = create<AiUi>(() => ({ consent: null, login: null, permissions: [], output: null, proposal: null, recompose: null, fix: null, draft: null }))
+
+// A dialog shown again some other way (a plan applied from a chat) counts as seen, like the views in the store.
+useAi.subscribe(sweepJobs)
 
 const textListeners = new Map<string, (text: string) => void>()
 const threadListeners = new Map<string, (threadId: string) => void>()
@@ -301,6 +304,39 @@ export function explainFailure(repoId: string | null, title: string, detail: str
 
 export const conflictJobKey = (repoId: string, path: string) => `conflict:${repoId}:${path}`
 
+type Proposal = Omit<NonNullable<AiUi['proposal']>, 'hidden'>
+
+const sameProposal = (a: Proposal, b: Proposal) => a.repoId === b.repoId && a.path === b.path && a.content === b.content
+
+function proposalShown(p: Proposal): boolean {
+  const cur = useAi.getState().proposal
+  return !!cur && !cur.hidden && sameProposal(cur, p)
+}
+
+/**
+ * Show a conflict proposal in the (single) proposal dialog. One for another file that is on
+ * screen goes back on the jobs list first, so neither answer is lost.
+ */
+export function showProposal(p: Proposal): void {
+  const cur = useAi.getState().proposal
+  if (cur && !cur.hidden && !sameProposal(cur, p)) parkProposal(cur)
+  showRepo(p.repoId)
+  useAi.setState({ proposal: { ...p, hidden: false } })
+}
+
+/** Put a proposal aside (its dialog closed, or another took its place): its job holds it until opened. */
+export function parkProposal(p: Proposal): void {
+  const kept: Proposal = { repoId: p.repoId, path: p.path, content: p.content, note: p.note }
+  parkJob({
+    id: crypto.randomUUID(),
+    repoId: p.repoId,
+    key: conflictJobKey(p.repoId, p.path),
+    title: `Resolve ${p.path}`,
+    open: () => showProposal(kept),
+    showing: () => proposalShown(kept),
+  })
+}
+
 /**
  * Ask the agent to resolve a conflicted file. It answers with a proposed file (reviewed in the
  * proposal dialog before anything is written) or only a note (why it changed nothing), which is
@@ -308,8 +344,8 @@ export const conflictJobKey = (repoId: string, path: string) => `conflict:${repo
  * proposal that arrives while they are elsewhere waits, hidden, until they open it.
  */
 export function resolveWithAgent(repoId: string, path: string): void {
-  /** What came back: a proposal ({}), or a note in a thread. */
-  let answer: { threadId?: string } | null = null
+  /** What came back: a proposal, or a note in a thread. */
+  let answer: { proposal?: Proposal; threadId?: string } | null = null
   const run = startAi(repoId, { kind: 'resolve-conflict', path }, undefined, { keepThread: true })
   const atConflicts = () => {
     const s = useStore.getState()
@@ -322,18 +358,20 @@ export function resolveWithAgent(repoId: string, path: string): void {
     title: `Resolve ${path}`,
     open: () => {
       showRepo(repoId)
-      if (answer?.threadId) openInPanel(repoId, answer.threadId)
-      else if (answer) useAi.setState((s) => (s.proposal ? { proposal: { ...s.proposal, hidden: false } } : s))
+      if (answer?.proposal) showProposal(answer.proposal)
+      else if (answer?.threadId) openInPanel(repoId, answer.threadId)
       else updateRepo(repoId, { center: { kind: 'conflicts' } })
     },
     stop: () => cancelAi(run.requestId),
-    showing: () => (answer?.threadId ? panelShows(repoId, answer.threadId) : useAi.getState().proposal?.hidden === false),
+    showing: () => (answer?.proposal ? proposalShown(answer.proposal) : panelShows(repoId, answer?.threadId ?? null)),
   })
   run.done.then((res) => {
     if (!res) return dropJob(run.requestId)
     if (res.proposal) {
-      answer = {}
-      useAi.setState({ proposal: { repoId, path, content: res.proposal.content, note: res.text, hidden: !atConflicts() } })
+      // The job holds the proposal: one for another file may be in the dialog meanwhile.
+      const proposal: Proposal = { repoId, path, content: res.proposal.content, note: res.text }
+      answer = { proposal }
+      if (atConflicts()) showProposal(proposal)
     } else {
       answer = { threadId: res.threadId }
       if (res.threadId) openInPanel(repoId, res.threadId)

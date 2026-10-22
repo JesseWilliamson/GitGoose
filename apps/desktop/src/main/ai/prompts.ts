@@ -1,5 +1,5 @@
 import type { Repo } from '@gitgoose/git'
-import { addedLines, carryOver, codeContextInfo, contextBudget, textKey, describeHunks, globToRegExp, hunkKey, numberedDiff, onlyChanged, renderCodeContext, reviewableLines, secretFindings, walkthroughHunks, type AddedLines, type ReviewableLines } from '@gitgoose/git'
+import { addedLines, carryOver, codeContextInfo, contextBudget, textKey, describeHunks, globToRegExp, hunkKey, numberedDiff, onlyChanged, redactSecrets, renderCodeContext, reviewableLines, secretFindings, walkthroughHunks, type AddedLines, type ReviewableLines } from '@gitgoose/git'
 import type { AiTask, ArtifactKind, ImpactResult, LinterRun, ReviewContextInfo, ReviewFinding, ReviewLearning, ReviewProfile, ThreadAnchor, WalkthroughResult } from '@gitgoose/shared'
 import { join } from 'node:path'
 
@@ -580,7 +580,9 @@ export function anchorOf(task: AiTask): ThreadAnchor {
     case 'recompose': return { kind: 'recompose', hashes: task.hashes }
     case 'explain-commit': return { kind: 'explain', hash: task.hash }
     // The anchor carries what a later session needs to know: the feature's prompt is not saved.
-    case 'explain-error': return { kind: 'error', title: task.title, detail: truncate(task.detail, 8_000) }
+    // It is saved and replayed as context, so anything that looks like a secret is masked here,
+    // always: a request that got this far either had none or was sent redacted.
+    case 'explain-error': return { kind: 'error', title: redactSecrets(task.title).text, detail: redactSecrets(truncate(task.detail, 8_000)).text }
     case 'resolve-conflict': return { kind: 'conflict', path: task.path }
     case 'ask': return { kind: 'ask', rev: task.rev ?? 'worktree', path: task.path, lines: [task.startLine, task.endLine], code: '' }
     default: return { kind: 'task', task: task.kind }
@@ -595,7 +597,7 @@ export function featureLabel(task: AiTask, built: BuiltPrompt): string {
     case 'assess-impact': return 'Assess which uses of the changed code are at risk'
     case 'recompose': return `Propose a better series for ${task.hashes.length === 1 ? 'this commit' : `these ${task.hashes.length} commits`}`
     case 'explain-commit': return `Explain commit ${task.hash.slice(0, 7)}`
-    case 'explain-error': return `Why did this fail: ${task.title}`
+    case 'explain-error': return `Why did this fail: ${redactSecrets(task.title).text}`
     case 'resolve-conflict': return `Resolve the conflict in ${task.path}`
     default: return task.kind
   }

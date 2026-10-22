@@ -93,6 +93,73 @@ test('fix with AI: closing the dialog while it works hides it; the app stays usa
   await app.close()
 })
 
+test('fix with AI: a file edited while the fix was being written is never overwritten by it', async () => {
+  const r = initRepo()
+  r.commit('root', { 'src/calc.ts': 'export function total(a: number, b: number) {\n  return a + b\n}\n' })
+  const broken = 'export function total(a: number, b: number) {\n  return a - b\n}\n'
+  r.write('src/calc.ts', broken)
+  const file = () => readFileSync(join(r.dir, 'src/calc.ts'), 'utf8')
+  const gate = join(tempDir(), 'gate')
+  writeFileSync(gate, '')
+  const { app, page } = await launch(r.dir, { FAKE_AGENT_GATE: gate })
+  await set(page, AGENT)
+  await page.getByTestId('review-menu').click()
+  await page.getByRole('menuitem', { name: 'Review all uncommitted changes' }).click()
+  await expect(page.getByTestId('finding')).toHaveCount(1)
+
+  rmSync(gate)
+  await page.getByTestId('finding').getByTestId('fix-with-ai').click()
+  await page.keyboard.press('Escape')
+  // The user edits the file while the AI works.
+  const edited = `${broken}// checked by hand\n`
+  writeFileSync(join(r.dir, 'src/calc.ts'), edited)
+  writeFileSync(gate, '')
+  await page.getByTestId('ai-permission-allow_once').click()
+  await page.getByTestId('toast-action').filter({ hasText: 'Open' }).click()
+  await expect(page.getByTestId('ai-fix-stale')).toContainText('has changed since this fix was asked for')
+  await expect(page.getByTestId('ai-fix-accept')).toBeDisabled()
+  expect(file()).toBe(edited)
+  await page.getByTestId('ai-fix-discard').click()
+  await expect(page.getByTestId('ai-jobs')).toHaveCount(0)
+  await app.close()
+})
+
+test('two conflicted files: a proposal put aside is still there after asking about the other one', async () => {
+  const r = initRepo()
+  r.commit('base', { 'a.txt': 'one\ntwo\nthree\n', 'b.txt': 'uno\ndos\ntres\n' })
+  r.checkout('-b', 'other')
+  r.commit('theirs', { 'a.txt': 'one\nTWO (theirs)\nthree\n', 'b.txt': 'uno\nDOS (theirs)\ntres\n' })
+  r.checkout('main')
+  r.commit('ours', { 'a.txt': 'one\nTwo (ours)\nthree\n', 'b.txt': 'uno\nDos (ours)\ntres\n' })
+  r.tryGit('merge', 'other')
+  const { app, page } = await launch(r.dir)
+  await set(page, AGENT)
+  await expect(page.getByTestId('conflict-file')).toHaveCount(2)
+  const content = page.getByTestId('ai-proposal-content')
+
+  await page.getByTestId('conflict-file').filter({ hasText: 'a.txt' }).click()
+  await page.getByTestId('ai-resolve').click()
+  await page.getByTestId('ai-permission-allow_once').click()
+  await expect(content).toHaveText('one\nTwo (ours)\nTWO (theirs)\nthree\n')
+  await page.keyboard.press('Escape') // put aside
+
+  await page.getByTestId('conflict-file').filter({ hasText: 'b.txt' }).click()
+  await page.getByTestId('ai-resolve').click()
+  await page.getByTestId('ai-permission-allow_once').click()
+  await expect(content).toHaveText('uno\nDos (ours)\nDOS (theirs)\ntres\n')
+  await page.getByTestId('ai-proposal-discard').click()
+
+  // a.txt's proposal is on the list, and opens as itself.
+  await page.getByTestId('ai-jobs').click()
+  await page.getByTestId('ai-job').filter({ hasText: 'Resolve a.txt' }).getByTestId('ai-job-open').click()
+  await expect(content).toHaveText('one\nTwo (ours)\nTWO (theirs)\nthree\n')
+  await page.getByTestId('ai-proposal-accept').click()
+  await expect(page.getByTestId('conflict-file')).toHaveCount(1)
+  expect(r.git('show', ':a.txt')).toBe('one\nTwo (ours)\nTWO (theirs)\nthree\n')
+  await expect(page.getByTestId('ai-jobs')).toHaveCount(0)
+  await app.close()
+})
+
 test('a commit keeps its explanation: after selecting another commit while it is written, and after a restart', async () => {
   const r = makeFixture('linear')
   const gate = join(tempDir(), 'gate')

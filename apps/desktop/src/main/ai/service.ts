@@ -434,7 +434,9 @@ export class AiService {
       const logical = history.length || opening !== undefined ? message : await first()
       const text = guardTurn(logical, redact)
       if (!rec.system) rec.system = 'You help people understand and change the code in their git repository.'
-      const messages = [...history.flatMap((h) => [{ role: 'user' as const, content: h.user }, { role: 'assistant' as const, content: h.agent }]), { role: 'user' as const, content: text }]
+      // The API gets the whole conversation every time: a history rebuilt from disk carries the
+      // anchor's context again, so it goes through the same secret check as the new message.
+      const messages = [...history.flatMap((h) => [{ role: 'user' as const, content: guardTurn(h.user, redact) }, { role: 'assistant' as const, content: guardTurn(h.agent, redact) }]), { role: 'user' as const, content: text }]
       return { text, logical: text, messages }
     }
     this.onSettings()

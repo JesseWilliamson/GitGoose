@@ -1,10 +1,10 @@
-import { turnText } from '@gitgoose/shared'
+import { setCollapsed, turnText } from '@gitgoose/shared'
 import { useEffect } from 'react'
 import { create } from 'zustand'
 import { cancelAi, showRepo, startAi } from './ai'
 import { dropJob, finishJob, registerJob } from './aiJobs'
 import { api, toUiError } from './api'
-import { ensureLoaded, updateRepo, useStore } from './store'
+import { ensureLoaded, saveSettings, setting, updateRepo, useStore } from './store'
 
 /**
  * Commit explanations, outside any component: the detail panel shows a commit's explanation,
@@ -32,11 +32,20 @@ function patch(k: string, p: Partial<Explanation>): void {
   useExplains.setState((s) => (s[k] ? { [k]: { ...s[k], ...p } } : s))
 }
 
-/** Is this commit on screen in the detail panel? */
+/** Is this commit's explanation on screen: the commit selected, and the Details side not collapsed? */
 function selected(repoId: string, hash: string): boolean {
   const s = useStore.getState()
   const sel = s.repos[repoId]?.selected
-  return s.active === repoId && !s.page && sel?.kind === 'commit' && sel.hash === hash
+  return s.active === repoId && !s.page && !setting('layout').right.collapsed && sel?.kind === 'commit' && sel.hash === hash
+}
+
+/** Show a commit in the Details side, opening the side if it is collapsed. */
+function showCommit(repoId: string, hash: string): void {
+  showRepo(repoId)
+  const layout = setting('layout')
+  if (layout.right.collapsed) void saveSettings({ layout: setCollapsed(layout, 'right', false) })
+  updateRepo(repoId, { selected: { kind: 'commit', hash } })
+  void ensureLoaded(repoId, hash)
 }
 
 export function explainCommit(repoId: string, hash: string): void {
@@ -48,11 +57,7 @@ export function explainCommit(repoId: string, hash: string): void {
     repoId,
     key: `explain:${k}`,
     title: `Explain ${hash.slice(0, 7)}`,
-    open: () => {
-      showRepo(repoId)
-      updateRepo(repoId, { selected: { kind: 'commit', hash } })
-      void ensureLoaded(repoId, hash)
-    },
+    open: () => showCommit(repoId, hash),
     stop: () => cancelAi(run.requestId),
     showing: () => selected(repoId, hash),
   })

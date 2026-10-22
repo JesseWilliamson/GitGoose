@@ -60,8 +60,11 @@ export function AiChatPanel({ view }: { view: RepoView }) {
               <>
                 <DM.Separator />
                 <DM.Item onSelect={() => {
-                  void api.aiThreadDelete(view.id, thread.id)
-                  forgetExplanationThread(view.id, thread.id)
+                  const id = thread.id
+                  // Other views list kept threads too: a commit's questions, the Ask under a diff, an explanation.
+                  void api.aiThreadDelete(view.id, id).then(() => api.askThreads(view.id)).then((askThreads) => updateRepo(view.id, { askThreads }), () => {})
+                  updateRepo(view.id, (v) => (v.ask?.threadId === id ? { ask: null } : {}))
+                  forgetExplanationThread(view.id, id)
                   newChat(view.id)
                 }}><Trash2 size={12} /> Delete this conversation</DM.Item>
               </>
