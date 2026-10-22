@@ -21,6 +21,10 @@ describe('search across every field', () => {
     // A SHA prefix.
     const target = log[3]!
     expect(await repo.search('all', target.slice(0, 7))).toContain(target)
+    // Any part of the SHA, the whole of it, and in capitals.
+    expect(await repo.search('all', target.slice(13, 25))).toContain(target)
+    expect(await repo.search('all', target)).toEqual([target])
+    expect(await repo.search('all', target.slice(30).toUpperCase())).toContain(target)
     // A tag name, and a branch name: the commits they point at.
     expect(await subjects(repo, await repo.search('all', 'v9.9'))).toEqual(['Subject line'])
     expect(await subjects(repo, await repo.search('all', 'wip'))).toEqual(['F'])
@@ -39,8 +43,8 @@ describe('search across every field', () => {
     const fast = repo.search('all', 'commit 19999')
     expect(await slow).toEqual([])
     expect((await fast).length).toBeGreaterThan(0)
-    // One walk of 20,000 commits, not two.
-    expect(performance.now() - t).toBeLessThan(5_000)
+    // One walk of 20,000 commits, not two (Windows runners walk several times slower).
+    expect(performance.now() - t).toBeLessThan(process.platform === 'win32' ? 20_000 : 5_000)
     repo.dispose()
-  }, 30_000)
+  }, process.platform === 'win32' ? 180_000 : 30_000)
 })

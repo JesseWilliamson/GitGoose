@@ -10,11 +10,15 @@
   twelve lanes; a node in a lane past that is left out rather than pinned on another branch's
   line. Every row is the same height: there are no month headings (they made rows uneven and
   broke up the lines; the date is on every row).
-- Settings → Appearance → Graph layout also offers **Compact**: the same graph and nodes,
-  each commit on one 28px line (avatar, short SHA, subject, author, date), with the branch and
-  tag pills moved to a 160px column on the left of the graph and joined to their node by a line
-  in the lane colour. Author and date are fixed-width, right-aligned columns, so they line up
-  from row to row whatever the date reads. The View menu and the command palette switch between
+- Settings → Appearance → Graph layout also offers **Compact**, GitKraken's graph: each commit
+  on one 32px line in fixed columns under a header (Branch / Tag, Graph, Commit message, Author,
+  Date, SHA). The node is the author's avatar ringed in the lane colour (a merge is a plain dot),
+  with a faint band in the lane colour from the node to a solid strip at the graph column's edge.
+  Branch and tag pills sit in a 160px column on the left, joined to their node by a line in the
+  lane colour. The graph column is one width on every row (the widest the loaded history has
+  been, up to eight lanes; wider lanes are clipped, and the header shows "›"), so every message
+  starts at the same x instead of indenting by the lanes open beside it. Author and SHA drop out
+  when the pane is narrow, then the date; the message never does. The View menu and the command palette switch between
   the two layouts. (Comfy was called "comfortable"; a saved old value reads as comfy.)
 - A detached HEAD gets a **HEAD** pill on its commit, in the checked-out branch's colours: with no
   branch checked out, nothing else says "you are here".
@@ -24,18 +28,20 @@
   master) is always the leftmost lane, whatever is checked out, so a checkout does not reshuffle
   the graph. HEAD sits on it when HEAD is a trunk tip, otherwise in the lane next to it.
   Uncommitted changes appear as a dashed node at the top in HEAD's lane, joined to HEAD by a
-  dashed line. A merge of HEAD (a branch that merged the checked-out main) joins that lane, and
+  dashed line that runs straight down that lane: it never steps aside or bends. A merge of HEAD (a branch that merged the checked-out main) joins that lane, and
   from there down the line is solid: it is a parent line now, shown with or without changes.
 - A merge of the main line's tip (a branch that merged main in) goes straight into the leftmost
   lane where main will arrive, not out to a new lane on the right and back across the branch.
 - A branch sitting on top of the main line (or of HEAD) goes straight up from it, as in Tower,
   instead of opening a lane to the right and curving back in. With `topic: X-Y-Z` on `main`'s tip
   B, Z, Y, X and B are one line in the leftmost lane. Checked out, topic shares that lane with
-  the main line from the top. When main is checked out and there are uncommitted changes, the
-  dashed line from the WIP node steps one lane right under Z, runs beside the branch and curves
-  into B. Only one branch can continue a line; a second one on top of main curves in as before.
+  the main line from the top. When main is checked out, HEAD's straight dashed line owns the
+  leftmost lane above B, so topic runs beside it and joins B from the side; the same when an
+  older commit on main's line is checked out (or local main is behind origin/main). Only one branch can continue a line; a second one on top of main curves in as before.
   "On top" means the branch's own line (first parents) runs down to the tip: a branch that merged
   main contains it but does not count. Needs git 2.41 or newer; older git draws as before.
+- A stash sits beside the commit it was made on as a tinted card with an archive box, joined to
+  it by a dashed line (a stash is not history).
 - History loads as you scroll; the status bar shows "N+ commits" until it is complete.
 - Settings → Graph → Commit order: date (default; newest first, branches interleaved by time) or
   topological (each branch's commits kept together; dates run out of order). Also in View →

@@ -190,8 +190,9 @@ test('recompose chat: a revised plan replaces the editor plan as one undo step',
   await row(C1).click({ modifiers: ['Shift'] })
   await row(C1).click({ button: 'right' })
   await page.getByRole('menuitem', { name: 'Recompose with AI…' }).click()
-  const titles = page.getByTestId('recompose-title')
-  await expect(titles.nth(1)).toHaveText('feat: everything else')
+  // In plan order (oldest first); the list draws them newest at the top.
+  const title = (i: number) => page.locator(`[data-testid="recompose-commit"][data-index="${i}"] [data-testid="recompose-title"]`)
+  await expect(title(1)).toHaveText('feat: everything else')
 
   await page.getByTestId('recompose-chat-toggle').click()
   const chatCol = page.getByTestId('recompose-chat')
@@ -200,10 +201,11 @@ test('recompose chat: a revised plan replaces the editor plan as one undo step',
   const card = chatCol.getByTestId('thread-artifact')
   await expect(card.getByTestId('artifact-summary')).toContainText('2 commits')
   await card.getByTestId('artifact-apply').click()
-  await expect(titles).toHaveText(['feat: everything else first', 'test: the first piece on its own'])
+  await expect(title(0)).toHaveText('feat: everything else first')
+  await expect(title(1)).toHaveText('test: the first piece on its own')
   // One step: Undo goes back to the plan as it was before Apply.
   await page.getByTestId('recompose-undo').click()
-  await expect(titles.nth(1)).toHaveText('feat: everything else')
+  await expect(title(1)).toHaveText('feat: everything else')
   await app.close()
 })
 

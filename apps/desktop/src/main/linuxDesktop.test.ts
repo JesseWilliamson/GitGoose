@@ -1,5 +1,6 @@
 import { tempDir } from '@gitgoose/fixtures'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { applicationsDir, installDevDesktopEntry } from './linuxDesktop'
@@ -30,7 +31,7 @@ describe('dev desktop entry', () => {
   })
 
   it('honours XDG_DATA_HOME', () => {
-    expect(applicationsDir({ XDG_DATA_HOME: '/data' })).toBe('/data/applications')
-    expect(applicationsDir({})).toMatch(/\.local\/share\/applications$/)
+    expect(applicationsDir({ XDG_DATA_HOME: '/data' })).toBe(join('/data', 'applications'))
+    expect(applicationsDir({})).toBe(join(homedir(), '.local', 'share', 'applications'))
   })
 })

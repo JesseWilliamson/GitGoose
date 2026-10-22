@@ -1,10 +1,10 @@
 import { makeFixture } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import { createServer } from 'node:http'
-import { launch } from './app'
+import { dragTo, launch } from './app'
 
 async function dragRef(page: Page, from: string, to: string) {
-  await page.locator(`[data-testid="ref-pill"][data-ref="${from}"]`).dragTo(page.locator(`[data-testid="ref-pill"][data-ref="${to}"]`))
+  await dragTo(page, page.locator(`[data-testid="ref-pill"][data-ref="${from}"]`), page.locator(`[data-testid="ref-pill"][data-ref="${to}"]`))
 }
 
 test('drags a branch onto the checked-out branch to merge it (no chooser: the drop is the merge)', async () => {
@@ -69,14 +69,15 @@ test('opens the branch menu when right-clicking a branch pill', async () => {
   await app.close()
 })
 
-test('stashes and pops from the toolbar', async () => {
+test('stashes from the toolbar and pops from the stash view', async () => {
   const r = makeFixture('linear')
   r.write('file.txt', 'work in progress\n')
   const { app, page } = await launch(r.dir)
   await page.getByTestId('toolbar').getByRole('button', { name: 'Stash' }).click()
   await expect(page.getByTestId('wip-row')).toHaveCount(0)
   await expect(page.getByTestId('sidebar')).toContainText('WIP on main')
-  await page.getByTestId('toolbar').getByRole('button', { name: 'Pop' }).click()
+  await page.getByTestId('stash-item').first().click()
+  await page.getByTestId('stash-header').getByRole('button', { name: 'Pop' }).click()
   await expect(page.getByTestId('wip-row')).toBeVisible()
   await app.close()
 })

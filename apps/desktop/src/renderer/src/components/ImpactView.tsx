@@ -95,13 +95,6 @@ export function ImpactView({ view }: { view: RepoView }) {
             <div className="mb-5" data-testid="impact-tests">
               {r.tests.length ? r.tests.map((t) => <div key={t} className="font-mono text-[12px]">{t}</div>) : <p className="text-faint">No tests found for this code. Worth adding one?</p>}
             </div>
-
-            {r.coChange.length > 0 && (
-              <>
-                <h3 className="mb-2 text-[12px] font-semibold text-muted uppercase">Usually change together, not in this change</h3>
-                {r.coChange.map((c) => <div key={c.path} className="font-mono text-[12px]">{c.path} <span className="font-sans text-xs text-faint">with {c.with}, {c.together} of {c.total} commits</span></div>)}
-              </>
-            )}
           </>
         )}
       </div>

@@ -1,6 +1,6 @@
 import { initRepo } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
-import { launch, pickFromSubmenu } from './app'
+import { dragTo, launch, pickFromSubmenu } from './app'
 
 /** root - A - B - C - D (main), each commit adding its own file. */
 function setup() {
@@ -44,16 +44,14 @@ test('drag one commit, or a selection, to a new place in the branch', async () =
   const { r, A, D } = setup()
   const { app, page } = await launch(r.dir)
   // D onto the lower half of A: D goes just below (older than) A.
-  const a = (await row(page, A).boundingBox())!
-  await row(page, D).dragTo(row(page, A), { targetPosition: { x: a.width / 2, y: a.height * 0.8 } })
+  await dragTo(page, row(page, D), row(page, A), { at: 0.8 })
   await expect.poll(() => subjects(r)).toEqual(['C', 'B', 'A', 'D', 'root'])
 
   // Select B and C (Shift-click) and drag them onto the upper half of the D commit.
   const [c, b, , d] = r.git('log', '--format=%H', '-4').trim().split('\n')
   await row(page, c!).click()
   await row(page, b!).click({ modifiers: ['Shift'] })
-  const box = (await row(page, d!).boundingBox())!
-  await row(page, b!).dragTo(row(page, d!), { targetPosition: { x: box.width / 2, y: box.height * 0.2 } })
+  await dragTo(page, row(page, b!), row(page, d!), { at: 0.2 })
   await expect.poll(() => subjects(r)).toEqual(['A', 'C', 'B', 'D', 'root'])
   await app.close()
 })
@@ -64,8 +62,7 @@ test('a move that conflicts stops with an alert you cannot miss; Abort puts it b
   const X = r.commit('X', { 'f.txt': '2\n' })
   const Y = r.commit('Y', { 'f.txt': '3\n' })
   const { app, page } = await launch(r.dir)
-  const x = (await row(page, X).boundingBox())!
-  await row(page, Y).dragTo(row(page, X), { targetPosition: { x: x.width / 2, y: x.height * 0.8 } })
+  await dragTo(page, row(page, Y), row(page, X), { at: 0.8 })
   const alert = page.getByTestId('attention-row').filter({ hasText: 'conflicts' })
   await expect(alert).toContainText('The rebase stopped: 1 file has conflicts')
   await expect(page.getByTestId('conflicts')).toBeVisible()
@@ -118,7 +115,7 @@ test('reword a commit; squash it into the one below; undo and redo', async () =>
 test('drag a commit onto another to squash it in; fixup staged changes into an older commit', async () => {
   const { r, A, D } = setup()
   const { app, page } = await launch(r.dir)
-  await row(page, D).dragTo(row(page, A))
+  await dragTo(page, row(page, D), row(page, A))
   await expect.poll(() => subjects(r)).toEqual(['C', 'B', 'A', 'root'])
   expect(r.git('show', '--stat', '--format=%B', 'HEAD~2')).toContain('D.txt')
 
@@ -127,7 +124,8 @@ test('drag a commit onto another to squash it in; fixup staged changes into an o
   const a = r.git('rev-parse', 'HEAD~2').trim()
   await row(page, a).click({ button: 'right' })
   await page.getByRole('menuitem', { name: 'Fixup staged changes into this commit' }).click()
-  await expect.poll(() => r.git('show', 'HEAD~2:A.txt')).toBe('A fixed\n')
+  // Mid-rebase the branch is shorter than three commits, so HEAD~2 may not exist yet.
+  await expect.poll(() => r.gitOrNull('show', 'HEAD~2:A.txt')).toBe('A fixed\n')
   expect(subjects(r)).toEqual(['C', 'B', 'A', 'root'])
   await app.close()
 })

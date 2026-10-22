@@ -464,7 +464,7 @@ export function GraphMenu({ repoId }: { repoId: string }) {
       <CM.Sub label={`Reset ${headName} to here`}>
         <CM.Item onSelect={() => void reset(repoId, hash, 'soft')}>Soft: keep changes staged</CM.Item>
         <CM.Item onSelect={() => void reset(repoId, hash, 'mixed')}>Mixed: keep changes unstaged</CM.Item>
-        <CM.Item onSelect={() => void reset(repoId, hash, 'hard')}>Hard: discard changes (undoable)</CM.Item>
+        <CM.Item onSelect={() => void reset(repoId, hash, 'hard')}>Hard: discard changes</CM.Item>
       </CM.Sub>
       <CM.Separator />
       <CM.Item onSelect={() => void copyCommits(repoId, [hash], 'patch')}>Copy as patch</CM.Item>
