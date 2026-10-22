@@ -77,7 +77,7 @@ export function ModelPicker({ area, defaults, className, onPicked }: {
       )}
       <select
         value={target.model ?? ''}
-        disabled={list.loading || list.list?.fixed}
+        disabled={list.loading || (list.list?.fixed && !target.model)}
         onChange={(e) => (e.target.value === LOAD ? void list.load() : setModel(e.target.value))}
         className={select}
         aria-label="Model"
