@@ -1,6 +1,6 @@
 import * as acp from '@agentclientprotocol/sdk'
 import { realPathOf } from '@gitgoose/git'
-import { AI_AUTH_REQUIRED, type AgentAuthMethod, type AgentInfo, type AiToolCall, type AiToolContent, type AiUpdate } from '@gitgoose/shared'
+import { AI_AUTH_REQUIRED, type AgentAuthMethod, type AgentInfo, type AiModel, type AiToolCall, type AiToolContent, type AiUpdate } from '@gitgoose/shared'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { isAbsolute, relative, resolve } from 'node:path'
@@ -19,6 +19,9 @@ import { Readable, Writable } from 'node:stream'
  *   session/prompt      one turn; the agent streams session/update notifications back (text,
  *                       thoughts, tool calls with their diffs, plans), which we pass on typed
  *   session/load        reopen a thread's session after the agent restarted, when it can
+ *   session/set_config_option   pick the session's model. The agent owns its model list: it is
+ *                       the config option with category "model" in session/new's (or load's)
+ *                       configOptions, and the agent may change it any time (config_option_update)
  *   session/cancel      stop the turn in progress
  *
  * and the agent calls *us* for anything outside its own process:
@@ -84,8 +87,31 @@ export class SessionGoneError extends Error {
   }
 }
 
+/**
+ * A session's model choice, from its ACP config options: the option with category "model"
+ * (the first one, if an agent sends several: the spec says array order is priority).
+ */
+export interface SessionModels {
+  configId: string
+  current: string
+  options: AiModel[]
+}
+
+/** The model option out of a session's config options; null when the agent offers none. */
+export function modelsOf(configOptions: acp.SessionConfigOption[] | null | undefined): SessionModels | null {
+  const opt = configOptions?.find((o) => o.category === 'model' && o.type === 'select')
+  if (!opt || opt.type !== 'select') return null
+  // Options come flat or in groups (never mixed); a picker only needs them flat, in order.
+  const flat = (opt.options as (acp.SessionConfigSelectOption | acp.SessionConfigSelectGroup)[])
+    .flatMap((o) => ('group' in o ? o.options : [o]))
+    .map((o): AiModel => ({ id: o.value, name: o.name, ...(o.description ? { description: o.description } : {}) }))
+  return { configId: opt.id, current: opt.currentValue, options: flat }
+}
+
 interface Session {
   cwd: string
+  /** The model option as the agent last reported it (null: it offers none). */
+  models: SessionModels | null
   /** The turn in progress (null between turns). */
   hooks: PromptHooks | null
   text: string
@@ -111,7 +137,11 @@ export class AcpAgent {
   /** How many times the agent process has been started (tests use it to see restarts). */
   starts = 0
 
-  constructor(private launch: () => AgentLaunch) {}
+  /**
+   * `onModels` hears the model list of every new session, with the agent's default as `current`:
+   * the service keeps it so a picker can show the models before this agent is started again.
+   */
+  constructor(private launch: () => AgentLaunch, private hooks: { onModels?: (m: SessionModels | null) => void } = {}) {}
 
   /** Start the agent if it is not running, and run initialize. */
   start(): Promise<Running> {
@@ -216,14 +246,50 @@ export class AcpAgent {
   /** A new conversation in `cwd`. */
   async openSession(cwd: string): Promise<string> {
     const { conn, init } = await this.start()
-    let sessionId: string
+    let res: acp.NewSessionResponse
     try {
-      sessionId = (await conn.agent.request(acp.methods.agent.session.new, { cwd, mcpServers: [] })).sessionId
+      res = await conn.agent.request(acp.methods.agent.session.new, { cwd, mcpServers: [] })
     } catch (e) {
       throw this.authError(e, init)
     }
-    this.bySession.set(sessionId, newSession(cwd))
-    return sessionId
+    const models = modelsOf(res.configOptions)
+    this.bySession.set(res.sessionId, { ...newSession(cwd), models })
+    // A fresh session's model is the agent's default: what "Default" means in a picker.
+    this.hooks.onModels?.(models)
+    return res.sessionId
+  }
+
+  /** The session's model option as the agent last reported it (null: none, or no such session). */
+  models(sessionId: string): SessionModels | null {
+    return this.bySession.get(sessionId)?.models ?? null
+  }
+
+  /**
+   * Switch the session's model (session/set_config_option). Fails before anything is sent when
+   * the agent does not offer that model, so the turn never starts on a model nobody picked.
+   */
+  async setModel(sessionId: string, model: string): Promise<void> {
+    const { conn, init } = await this.start()
+    const entry = this.bySession.get(sessionId)
+    if (!entry) throw new SessionGoneError()
+    const m = entry.models
+    if (m?.current === model) return
+    if (!m) throw new Error('This agent does not let GitGoose choose its model. Pick "Default" for it.')
+    if (!m.options.some((o) => o.id === model)) {
+      throw new Error(`This agent does not offer the model "${model}". It offers: ${m.options.map((o) => o.name).join(', ')}.`)
+    }
+    try {
+      const res = await conn.agent.request(acp.methods.agent.session.setConfigOption, { sessionId, configId: m.configId, value: model })
+      // The reply is the whole list again: a model change can change other options (or the list).
+      entry.models = modelsOf(res.configOptions) ?? { ...m, current: model }
+    } catch (e) {
+      throw this.authError(e, init)
+    }
+  }
+
+  /** Sessions open in the running agent (the service does not stop an agent that has any). */
+  sessionCount(): number {
+    return this.bySession.size
   }
 
   /** The session still exists in the running agent (false after a restart). */
@@ -246,7 +312,8 @@ export class AcpAgent {
     const entry = { ...newSession(cwd), loading: true }
     this.bySession.set(sessionId, entry)
     try {
-      await conn.agent.request(acp.methods.agent.session.load, { sessionId, cwd, mcpServers: [] })
+      const res = await conn.agent.request(acp.methods.agent.session.load, { sessionId, cwd, mcpServers: [] })
+      entry.models = modelsOf(res.configOptions)
     } catch (e) {
       this.bySession.delete(sessionId)
       throw this.authError(e, init)
@@ -320,9 +387,12 @@ export class AcpAgent {
 
   private onUpdate(n: acp.SessionNotification): void {
     const entry = this.bySession.get(n.sessionId)
+    const u = n.update
+    // The agent changed its options itself (a fallback model after a rate limit, say): keep the
+    // session's state right even between turns, so the next setModel compares with the truth.
+    if (entry && u.sessionUpdate === 'config_option_update') entry.models = modelsOf(u.configOptions)
     const hooks = entry?.hooks
     if (!entry || entry.loading || !hooks) return
-    const u = n.update
     switch (u.sessionUpdate) {
       case 'agent_message_chunk':
         if (u.content.type !== 'text') return
@@ -426,7 +496,7 @@ export async function allInside(dir: string, paths: string[]): Promise<boolean> 
 }
 
 function newSession(cwd: string): Session {
-  return { cwd, hooks: null, text: '', loading: false, tools: new Map(), allowed: new Set() }
+  return { cwd, models: null, hooks: null, text: '', loading: false, tools: new Map(), allowed: new Set() }
 }
 
 /**

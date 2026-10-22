@@ -21,6 +21,93 @@ export function agentCommandLine(preset: AgentPreset, custom: string): string {
   return preset === 'custom' ? custom.trim() : AGENT_PRESETS[preset].command
 }
 
+/**
+ * Who answers a request: a provider, for agents which agent, and a model. Settings → AI holds
+ * the default; each AI area can pick its own (settings `aiAreaTargets`), and a thread records the
+ * one its session is on.
+ *
+ * `model` empty means "the default": for an agent its own default (what session/new reports),
+ * for the API the `anthropicModel` setting. Agent model ids are the agent's own: they are the
+ * values of its ACP config option with category "model", not anything GitGoose defines.
+ */
+export interface AiTarget {
+  provider: 'agent' | 'anthropic'
+  /** Agents only. */
+  agent?: AgentPreset
+  /** Agents only, when `agent` is "custom". */
+  agentCommand?: string
+  model?: string
+}
+
+/** Where AI is used. Each area remembers the target picked there. */
+export type AiArea = 'commit' | 'explain' | 'review' | 'walkthrough' | 'impact' | 'recompose' | 'ask' | 'chat' | 'conflict' | 'push-checks' | 'error'
+
+export interface AiModel {
+  id: string
+  name: string
+  description?: string
+}
+
+export interface AiModelList {
+  models: AiModel[]
+  /** The model used when none is picked (the agent's own default, or the API setting). */
+  defaultModel?: string
+  /**
+   * Agents: false until GitGoose has seen a session of this agent, since only a session lists
+   * its models (the picker then offers "Load models"). The API: false when the list failed.
+   */
+  known: boolean
+  /** The agent has no model option at all: it picks its model itself. */
+  fixed?: boolean
+  error?: string
+}
+
+/** The settings a default target is made from (structural, so this file need not import Settings). */
+interface TargetSettings {
+  aiProvider: string
+  aiAgent: string
+  aiAgentCommand: string
+  anthropicModel: string
+  aiAgentModel: Record<string, string>
+}
+
+/** Settings → AI as a target; null when AI is off. */
+export function defaultTarget(s: TargetSettings): AiTarget | null {
+  if (s.aiProvider === 'anthropic') return { provider: 'anthropic', model: s.anthropicModel }
+  if (s.aiProvider !== 'agent') return null
+  const agent = s.aiAgent as AgentPreset
+  const base: AiTarget = { provider: 'agent', agent, ...(agent === 'custom' ? { agentCommand: s.aiAgentCommand } : {}) }
+  const model = s.aiAgentModel[targetKey(base)]
+  return model ? { ...base, model } : base
+}
+
+/** The command line a target's agent runs ('' for the API, or a custom agent with no command). */
+export function targetCommandLine(t: AiTarget): string {
+  return t.provider === 'agent' ? agentCommandLine(t.agent ?? 'claude', t.agentCommand ?? '') : ''
+}
+
+/**
+ * Which process answers, ignoring the model: "agent:<command line>" or "anthropic". Two targets
+ * with the same key share an agent process (and a session can switch model in place); a
+ * different key means a different process, so a thread moving there starts a new session.
+ * It is also what consent is given to, and what cached model lists are kept under.
+ */
+export function targetKey(t: AiTarget): string {
+  return t.provider === 'anthropic' ? 'anthropic' : `agent:${targetCommandLine(t)}`
+}
+
+export function sameTarget(a: AiTarget | null | undefined, b: AiTarget | null | undefined): boolean {
+  if (!a || !b) return a === b
+  return targetKey(a) === targetKey(b) && (a.model ?? '') === (b.model ?? '')
+}
+
+/** "Claude", "Codex · gpt-5", "Anthropic API · claude-opus-5-5". Model names come from a list when one is given. */
+export function targetLabel(t: AiTarget, models?: AiModel[]): string {
+  const who = t.provider === 'anthropic' ? 'Anthropic API' : agentLabel(t.agent ?? 'claude', t.agentCommand ?? '')
+  if (!t.model) return who
+  return `${who} · ${models?.find((m) => m.id === t.model)?.name ?? t.model}`
+}
+
 export function agentLabel(preset: AgentPreset, custom: string): string {
   if (preset !== 'custom') return AGENT_PRESETS[preset].label
   // The program's name, or for "node agent.js"-style commands the script's.
@@ -297,6 +384,11 @@ export interface AiRunOptions {
    * result chats on in the same session. Without it the session is closed straight away.
    */
   keepThread?: boolean
+  /**
+   * Who answers. Omitted: Settings → AI. On a thread send, a target with another agent (or the
+   * API) moves the conversation there: a new session told the conversation so far.
+   */
+  target?: AiTarget
 }
 
 export type AiTask =
@@ -493,6 +585,8 @@ export interface AiTurn {
   status?: 'running' | 'done' | 'cancelled' | 'error'
   error?: { message: string; code?: string }
   at: number
+  /** Agent turns: who answered ("Codex · gpt-5"), so a thread that switched shows who said what. */
+  by?: string
 }
 
 export interface AiThread {
@@ -509,6 +603,8 @@ export interface AiThread {
   /** The agent's session mode, and the slash commands it offers (ACP current_mode_update, available_commands_update). */
   mode?: string
   commands?: string[]
+  /** Who the conversation is with now (set by its first turn, and again when it switches). */
+  target?: AiTarget
 }
 
 /**
@@ -517,7 +613,7 @@ export interface AiThread {
  */
 export type AiUpdate =
   /** A user turn was sent (and the agent's turn begins). */
-  | { kind: 'turn'; text: string; feature?: string; at: number }
+  | { kind: 'turn'; text: string; feature?: string; at: number; by?: string }
   /** Streamed text, appended. */
   | { kind: 'text'; text: string }
   | { kind: 'thought'; text: string }
@@ -526,7 +622,7 @@ export type AiUpdate =
   | { kind: 'plan'; entries: AiPlanEntry[] }
   | { kind: 'permission'; permission: AiPermissionAsk }
   | { kind: 'permission-answered'; permissionId: number; answer: PermissionAnswer }
-  | { kind: 'meta'; mode?: string; commands?: string[] }
+  | { kind: 'meta'; mode?: string; commands?: string[]; target?: AiTarget }
   | { kind: 'done'; stopReason: string }
   | { kind: 'error'; message: string; code?: string }
 

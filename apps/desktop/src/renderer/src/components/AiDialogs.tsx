@@ -10,6 +10,7 @@ import { acceptFix } from '../lib/review'
 import { toast, useStore } from '../lib/store'
 import { RecomposeDialog } from './RecomposeDialog'
 import { Button, Modal, Spinner } from './ui'
+import { ModelPicker } from './ModelPicker'
 
 /** Every AI modal: consent, login, tool permission, streamed answers, conflict proposals. */
 export function AiDialogs() {
@@ -64,7 +65,7 @@ function LoginDialog() {
     setBusy(methodId)
     setError(null)
     try {
-      await api.aiAuthenticate(methodId)
+      await api.aiAuthenticate(methodId, l.target)
       done(true)
     } catch (e) {
       setError(toUiError(e).message)
@@ -151,7 +152,8 @@ function OutputDialog() {
         {o.error && <div className="mt-2 text-xs text-del" data-testid="ai-output-error">{o.error}</div>}
         <div className="mt-4 flex items-center justify-between gap-2">
           <span className="flex items-center gap-1 text-[11px] text-faint"><Sparkles size={11} /> AI-written; check it before acting on it.</span>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            <ModelPicker area="error" />
             {o.requestId && <Button onClick={() => cancelAi(o.requestId!)}>Stop</Button>}
             <Button variant="primary" onClick={close}>Close</Button>
           </div>

@@ -9,6 +9,7 @@ import { api } from '../lib/api'
 import { withPushChecks } from '../lib/pushchecks'
 import { dismissToast, setting, toast, useStore } from '../lib/store'
 import { Button, Modal, TextField } from './ui'
+import { ModelPicker } from './ModelPicker'
 
 export function Dialogs() {
   const dialog = useStore((s) => s.dialog)
@@ -301,6 +302,8 @@ function PushChecksDialog({ d, close }: { d: Extract<NonNullable<ReturnType<type
       </div>
       <div className="flex items-center gap-2">
         <Button variant="ghost" onClick={() => useStore.setState({ dialog: { kind: 'push-rules', repoId: d.repoId } })}>Edit checks…</Button>
+        {/* For the next push: the checks above were judged already. */}
+        <ModelPicker area="push-checks" />
         <span className="flex-1" />
         <Button autoFocus onClick={close}>Cancel</Button>
         <Button variant={d.outcome === 'block' ? 'danger' : 'primary'} onClick={() => { close(); d.onPush() }} data-testid="push-anyway">

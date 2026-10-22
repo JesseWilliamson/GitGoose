@@ -1,5 +1,6 @@
-import { initRepo } from '@gitgoose/fixtures'
+import { initRepo, tempDir } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { launch } from './app'
 
@@ -223,5 +224,41 @@ test('drag: a hunk onto a commit, a hunk into the open space for a new commit, a
   d = await drag(page, commits.nth(2), commits.nth(1))
   await d.drop()
   await expect(commits).toHaveCount(3)
+  await app.close()
+})
+
+test("recompose asks the area's model, and its chat can switch models", async () => {
+  const { r, C1, C2 } = setup()
+  const log = join(tempDir(), 'prompts.log')
+  const { app, page } = await launch(r.dir, { FAKE_AGENT_MODELS: '1', FAKE_AGENT_LOG: log })
+  const target = { provider: 'agent', agent: 'custom', agentCommand: AGENT_CMD }
+  // Recompose's own pick; everywhere else still uses Settings → AI (the agent's default model).
+  await page.evaluate((p) => window.gitgoose.setSettings(p as never), { ...AGENT, aiAreaTargets: { recompose: { ...target, model: 'fast' } } })
+  await row(page, C2).click()
+  await row(page, C1).click({ modifiers: ['Shift'] })
+  await row(page, C1).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Recompose with AI…' }).click()
+  await expect(page.getByTestId('recompose-commit')).toHaveCount(2)
+  // The session was switched to the picked model before the plan was asked for.
+  expect(readFileSync(log, 'utf8').split('\n---\n')[0]).toBe('set model fast')
+
+  await page.getByTestId('recompose-chat-toggle').click()
+  const chat = page.getByTestId('recompose-chat')
+  const model = chat.getByTestId('model-picker-recompose').getByTestId('model-picker-model')
+  // The list came from the session that answered: no "Load models…" needed.
+  await expect(model).toHaveValue('fast')
+  await expect(model.locator('option')).toHaveText(['Default (Fake Smart)', 'Fake Fast', 'Fake Smart'])
+  await expect(chat.getByTestId('thread-by').first()).toHaveText('fake-agent · Fake Fast')
+
+  await model.selectOption('smart')
+  await chat.getByTestId('thread-input').fill('FAKE:model')
+  await chat.getByTestId('thread-input').press('Enter')
+  await expect(chat.getByText('Model: smart')).toBeVisible()
+  // The switch shows where it happened.
+  await expect(chat.getByTestId('thread-by')).toHaveText(['fake-agent · Fake Fast', 'fake-agent · Fake Smart'])
+  // Remembered for Recompose only.
+  const s = await page.evaluate(() => window.gitgoose.getSettings())
+  expect(s.aiAreaTargets.recompose?.model).toBe('smart')
+  expect(s.aiAreaTargets.commit).toBeUndefined()
   await app.close()
 })

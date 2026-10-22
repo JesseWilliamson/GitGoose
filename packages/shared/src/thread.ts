@@ -14,12 +14,20 @@ export function reduceThread(thread: AiThread, requestId: string, update: AiUpda
   if (update.kind === 'turn') {
     if (thread.turns.some((t) => t.requestId === requestId)) return thread
     const user: AiTurn = { id: `${requestId}:u`, role: 'user', requestId, blocks: [{ type: 'text', text: update.text }], at: update.at, ...(update.feature ? { feature: update.feature } : {}) }
-    const agent: AiTurn = { id: `${requestId}:a`, role: 'agent', requestId, blocks: [], status: 'running', at: update.at, ...(update.feature ? { feature: update.feature } : {}) }
+    const agent: AiTurn = {
+      id: `${requestId}:a`, role: 'agent', requestId, blocks: [], status: 'running', at: update.at,
+      ...(update.feature ? { feature: update.feature } : {}), ...(update.by ? { by: update.by } : {}),
+    }
     const title = thread.title || update.feature || firstLine(update.text)
     return { ...thread, title, turns: [...thread.turns, user, agent], updatedAt: update.at }
   }
   if (update.kind === 'meta') {
-    return { ...thread, ...(update.mode !== undefined ? { mode: update.mode } : {}), ...(update.commands ? { commands: update.commands } : {}) }
+    return {
+      ...thread,
+      ...(update.mode !== undefined ? { mode: update.mode } : {}),
+      ...(update.commands ? { commands: update.commands } : {}),
+      ...(update.target ? { target: update.target } : {}),
+    }
   }
   const i = thread.turns.findIndex((t) => t.requestId === requestId && t.role === 'agent')
   if (i < 0) return thread

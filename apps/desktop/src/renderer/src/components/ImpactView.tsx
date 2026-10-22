@@ -8,6 +8,7 @@ import { assessImpact, showImpact } from '../lib/impact'
 import { updateRepo, type RepoView } from '../lib/store'
 import { RailToggle, ThreadRail, useRailOpen } from './ThreadRail'
 import { Button, Spinner } from './ui'
+import { ModelPicker } from './ModelPicker'
 
 const CHANGE_STYLE = { changed: 'bg-warn/15 text-warn', added: 'bg-add/15 text-add', removed: 'bg-del/15 text-del' }
 
@@ -36,6 +37,7 @@ export function ImpactView({ view }: { view: RepoView }) {
             {st.loading ? (indexingText(view.codegraph) ?? 'Looking for uses…') : r ? `${r.symbols.length} definition${r.symbols.length === 1 ? '' : 's'} touched, used in ${r.callers.length} other place${r.callers.length === 1 ? '' : 's'}` : ''}
           </div>
         </div>
+        {aiOn && r && r.callers.length > 0 && <ModelPicker area="impact" />}
         {aiOn && r && r.callers.length > 0 && (
           st.requestId ? <Button disabled><Spinner /> Assessing…</Button>
             : <Button onClick={() => assessImpact(view.id)} data-testid="assess-impact"><Sparkles size={13} /> Assess impact</Button>

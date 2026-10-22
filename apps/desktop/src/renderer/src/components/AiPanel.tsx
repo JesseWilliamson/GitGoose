@@ -3,6 +3,7 @@ import { CheckCircle2, CircleAlert, KeyRound, PlugZap } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { api, toUiError } from '../lib/api'
 import { useSetting } from '../lib/store'
+import { ModelPicker } from './ModelPicker'
 import { Button, Spinner } from './ui'
 
 /**
@@ -58,6 +59,7 @@ export function AiPanel() {
           {test?.error && (
             <pre className="selectable mt-2 max-h-32 overflow-auto rounded bg-bg p-2 text-[11px] whitespace-pre-wrap text-del" data-testid="ai-test-error">{test.error}</pre>
           )}
+          <DefaultModel />
         </>
       ) : (
         <>
@@ -87,8 +89,22 @@ export function AiPanel() {
             </p>
           )}
           <p className="mt-2 text-xs text-faint">Text features only: resolving conflicts needs an agent, because it edits a file.</p>
+          {status.hasApiKey && <DefaultModel />}
         </>
       )}
+    </div>
+  )
+}
+
+/** The default model; each AI area has the same picker and can choose differently. */
+function DefaultModel() {
+  return (
+    <div className="mt-3 flex items-center gap-2 border-t border-line pt-3">
+      <span className="flex-1">
+        Default model
+        <span className="block text-xs text-faint">Every AI area (Recompose, Review, chats, …) starts with this, and has its own picker to use another agent or model.</span>
+      </span>
+      <ModelPicker defaults />
     </div>
   )
 }

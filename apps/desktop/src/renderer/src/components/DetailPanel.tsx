@@ -23,6 +23,7 @@ import { ChangeHints } from './ChangeHints'
 import { FileListTools, FileListView, FileRow, statusKind } from './FileList'
 import { modName } from '../lib/keys'
 import { Button, CM, DM, SectionHeader, Spinner } from './ui'
+import { ModelPicker } from './ModelPicker'
 
 export function DetailPanel({ view }: { view: RepoView }) {
   return (
@@ -408,6 +409,7 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
               <DM.Item onSelect={() => useStore.setState({ dialog: { kind: 'identity', repoId: id, onSaved: () => setIdentityTick((t) => t + 1) } })}>Change who you commit as…</DM.Item>
             </DM.Content>
           </DropdownMenu.Root>
+          {aiOn && <ModelPicker area="commit" />}
           {aiOn && (
             <Button size="sm" variant="ghost" onClick={() => void writeMessage()} disabled={!writing && stagedCount === 0} data-testid="ai-commit-message"
               title={writing ? 'Stop' : 'Write the message with AI, from the staged changes'}>
@@ -717,7 +719,10 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
         {aiOn && !stash && (
           <div className="mt-2">
             {!explanation ? (
-              <Button size="sm" variant="ghost" onClick={explain} data-testid="ai-explain-commit"><Sparkles size={12} /> Explain</Button>
+              <span className="flex items-center gap-2">
+                <Button size="sm" variant="ghost" onClick={explain} data-testid="ai-explain-commit"><Sparkles size={12} /> Explain</Button>
+                <ModelPicker area="explain" />
+              </span>
             ) : (
               <div className="rounded-md border border-line bg-bg/60 p-2 text-[13px]" data-testid="ai-explanation">
                 <div className="mb-1 flex items-center gap-1 text-[11px] text-faint">

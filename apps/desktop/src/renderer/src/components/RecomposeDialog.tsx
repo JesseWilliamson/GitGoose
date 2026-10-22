@@ -11,6 +11,7 @@ import { history, push, redo, undo, type History } from '../lib/history'
 import { addCommit, draftProblems, editMessage, moveCommit, moveUnit, removeEmpty, squashCommits, type Draft } from '../lib/recomposeDraft'
 import { toast, updateRepo, useStore } from '../lib/store'
 import { useThread } from '../lib/thread'
+import { ModelPicker } from './ModelPicker'
 import { Thread } from './Thread'
 import { Button, CM, DM, Modal, Spinner } from './ui'
 
@@ -48,6 +49,11 @@ export function RecomposeDialog() {
     useAi.setState({ recompose: null })
   }
   const n = state.hashes.length
+  // A new pick while it is still asking: stop that request and ask the new pick instead.
+  const restart = () => {
+    if (state.requestId) cancelAi(state.requestId)
+    recomposeWithAi(state.repoId, state.hashes)
+  }
   return (
     <Modal open onClose={close} title={`Recompose ${n === 1 ? '1 commit' : `${n} commits`} with AI`} width={state.proposal ? 1120 : 560} tall={!!state.proposal}
       onEscapeKeyDown={(e) => {
@@ -62,7 +68,8 @@ export function RecomposeDialog() {
         ) : state.error ? (
           <>
             <div className="flex items-start gap-2 text-del" data-testid="recompose-error"><CircleAlert size={15} className="mt-px shrink-0" /> {state.error}</div>
-            <div className="mt-4 flex justify-end gap-2">
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <ModelPicker area="recompose" className="mr-auto" />
               <Button onClick={close}>Close</Button>
               <Button variant="primary" onClick={() => recomposeWithAi(state.repoId, state.hashes)}>Try again</Button>
             </div>
@@ -70,7 +77,10 @@ export function RecomposeDialog() {
         ) : (
           <>
             <div className="flex items-center gap-2 text-muted"><Spinner /> Asking the AI how to split these changes into commits…</div>
-            <div className="mt-4 flex justify-end"><Button onClick={close}>Stop</Button></div>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <ModelPicker area="recompose" className="mr-auto" onPicked={restart} />
+              <Button onClick={close}>Stop</Button>
+            </div>
           </>
         )}
       </div>

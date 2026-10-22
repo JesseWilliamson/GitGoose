@@ -1,5 +1,5 @@
 import { Repo } from '@gitgoose/git'
-import { fakeAnthropic, makeFixture, tempDir, type FakeAnthropic } from '@gitgoose/fixtures'
+import { FAKE_MODELS, fakeAnthropic, makeFixture, tempDir, type FakeAnthropic } from '@gitgoose/fixtures'
 import { defaultSettings, type GitGooseEvent, type Settings } from '@gitgoose/shared'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { SecretFile } from './keyStore'
 import { buildPrompt, cleanCommitMessage, MAX_DIFF_CHARS } from './prompts'
 import { AiService, compact, previewOf } from './service'
-import { reduceThread, type AiThread, type AiUpdate } from '@gitgoose/shared'
+import { reduceThread, targetKey, type AiTarget, type AiThread, type AiUpdate } from '@gitgoose/shared'
 
 const FAKE = join(import.meta.dirname, '../../../e2e/fake-agent.mjs')
 const memoryKeychain = { secure: () => true, encrypt: (s: string) => Buffer.from(s), decrypt: (b: Buffer) => b.toString() }
@@ -527,5 +527,95 @@ describe('recompose previews', () => {
     const cut = previewOf(body(300)).split('\n')
     expect(cut).toHaveLength(201)
     expect(cut.at(-1)).toBe('… 101 more lines')
+  })
+})
+
+describe('choosing who answers', () => {
+  /** Two agents: the fake twice, with different command lines (so: two processes, two consents). */
+  async function two() {
+    process.env.FAKE_AGENT_MODELS = '1'
+    cleanup.push(() => void delete process.env.FAKE_AGENT_MODELS)
+    const t = await setup()
+    const a: AiTarget = { provider: 'agent', agent: 'custom', agentCommand: t.settings.aiAgentCommand }
+    const b: AiTarget = { provider: 'agent', agent: 'custom', agentCommand: `${t.settings.aiAgentCommand} --second` }
+    t.ai.consent(a)
+    t.ai.consent(b)
+    return { ...t, a, b }
+  }
+
+  it("a run uses the area's model: the session switches before the prompt, and the agent's list is kept", async () => {
+    const log = join(tempDir(), 'prompts.log')
+    process.env.FAKE_AGENT_LOG = log
+    cleanup.push(() => void delete process.env.FAKE_AGENT_LOG)
+    const t = await two()
+    await t.ai.run('m1', 'x', { kind: 'commit-message' }, { target: { ...t.a, model: 'fast' } })
+    expect(readFileSync(log, 'utf8').split('\n---\n')[0]).toBe('set model fast')
+    // Kept for pickers: the models, and the agent's own default (a new session's model).
+    expect(t.settings.aiAgentModels[targetKey(t.a)]).toMatchObject({ known: true, defaultModel: 'smart', models: [{ id: 'fast', name: 'Fake Fast' }, { id: 'smart' }] })
+  })
+
+  it('a model the agent does not offer is refused before the turn starts', async () => {
+    const t = await two()
+    await expect(t.ai.run('m2', 'x', { kind: 'commit-message' }, { target: { ...t.a, model: 'huge' } })).rejects.toMatchObject({ code: 'ai-model' })
+  })
+
+  it('listing models starts nothing until the user asks; then one session lists them', async () => {
+    const t = await two()
+    expect(await t.ai.models(t.b)).toEqual({ models: [], known: false })
+    expect(t.ai.agent.starts).toBe(0)
+    const list = await t.ai.loadModels(t.b)
+    expect(list).toMatchObject({ known: true, defaultModel: 'smart' })
+    expect(list.models.map((m) => m.id)).toEqual(['fast', 'smart'])
+    // The default agent was never started: only b was.
+    expect(t.ai.agent.starts).toBe(0)
+  })
+
+  it('consent is per agent, not per model', async () => {
+    const t = await setup()
+    t.ai.consent()
+    const base: AiTarget = { provider: 'agent', agent: 'custom', agentCommand: t.settings.aiAgentCommand }
+    expect(t.ai.status({ ...base, model: 'fast' }).consented).toBe(true)
+    expect(t.ai.status({ ...base, agentCommand: 'other-agent --acp' }).consented).toBe(false)
+  })
+
+  it('a thread switches model in place, and moves to another agent with the conversation so far', async () => {
+    const t = await two()
+    const thread = await t.ai.openThread('x', { kind: 'free' })
+    await ended(t.events, await t.ai.sendThread(thread.id, 'hello there', { target: { ...t.a, model: 'fast' } }))
+    // Same agent, other model: the same session (the fake counts turns per session).
+    await ended(t.events, await t.ai.sendThread(thread.id, 'FAKE:model', { target: { ...t.a, model: 'smart' } }))
+    let seen = mirror(t.events, thread)
+    expect(replyOf(seen)).toBe('Model: smart')
+    // Another agent: a new session there, told the conversation so far.
+    await ended(t.events, await t.ai.sendThread(thread.id, 'and now?', { target: t.b }))
+    seen = mirror(t.events, thread)
+    expect(replyOf(seen)).toBe('Turn 3. You said: and now?. (replayed 2 earlier turns)')
+    expect(seen.target).toEqual({ ...t.b })
+    // Each answer says who gave it, so the switch shows in the thread.
+    expect(seen.turns.filter((x) => x.role === 'agent').map((x) => x.by)).toEqual(['fake-agent · Fake Fast', 'fake-agent · Fake Smart', 'fake-agent · Fake Smart'])
+    // The old agent's session is closed; the thread holds only the new one.
+    expect(t.ai.liveThreads()).toEqual([thread.id])
+  })
+
+  it('a thread without a pick carries on with whoever it was last with', async () => {
+    const t = await two()
+    const thread = await t.ai.openThread('x', { kind: 'free' })
+    await ended(t.events, await t.ai.sendThread(thread.id, 'one', { target: { ...t.b, model: 'fast' } }))
+    await ended(t.events, await t.ai.sendThread(thread.id, 'FAKE:model'))
+    expect(replyOf(mirror(t.events, thread))).toBe('Model: fast')
+  })
+
+  it("the API key's models come from the API, and a run uses the picked one", async () => {
+    const api = await fakeAnthropic(['ok'])
+    cleanup.push(() => api.close())
+    const { ai } = await setup({ aiProvider: 'anthropic' }, api)
+    expect(await ai.models({ provider: 'anthropic' })).toMatchObject({ known: false })
+    ai.setApiKey('sk-ant-test')
+    ai.consent()
+    const list = await ai.models({ provider: 'anthropic' })
+    expect(list).toMatchObject({ known: true, defaultModel: 'claude-opus-5-5' })
+    expect(list.models).toEqual(FAKE_MODELS)
+    await ai.run('m3', 'x', { kind: 'explain-error', title: 'x', detail: 'y' }, { target: { provider: 'anthropic', model: 'claude-haiku-5-5' } })
+    expect(api.requests.at(-1)).toMatchObject({ model: 'claude-haiku-5-5' })
   })
 })
