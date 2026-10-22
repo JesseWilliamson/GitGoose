@@ -99,7 +99,7 @@ In the order they would pay off:
    that says a definition is unused when `references` finds uses, or that a signature change
    breaks callers when none exist, can be downgraded or dropped before it is shown.
 2. **Pull request intent.** For a branch with an open PR, its title and description are the
-   intent. A network call, so only when the user turns it on (the sign-in exists).
+   intent. A network call, so only when the user turns it on (public repositories only since sign-in was removed, see spec 005).
 3. **Depth by effort.** The walkthrough rates effort 1-5; a review could pick its profile and
    the amount of context from that (CodeRabbit's "level-appropriate prompts").
 4. **Learnings scoped by symbol**, not only by path glob, now that symbols are known.

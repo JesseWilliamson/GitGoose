@@ -8,7 +8,7 @@ import { copy, discard as discardFiles, lfsLock, lfsPatternFor, lfsTrack, openDi
 import { cancelAi, startAi, useAi, useAiEnabled } from '../lib/ai'
 import { api, toUiError } from '../lib/api'
 import { dateTime, opName, sentence, shortHash, stashLabel } from '../lib/format'
-import { avatarSrc, useAvatarVariant } from '../lib/avatar'
+import { avatarSrc } from '../lib/avatar'
 import { addTrailer, isUntouched, splitTemplate } from '../lib/commitMessage'
 import { startReview } from '../lib/review'
 import { openAsk } from '../lib/ask'
@@ -567,7 +567,6 @@ const MAX_GATHERED = 100
  */
 function MultiPanel({ view, hashes }: { view: RepoView; hashes: string[] }) {
   const avatarSource = useSetting('avatars')
-  const avatarVariant = useAvatarVariant()
   const [fileFilter, setFileFilter] = useState('')
   const log = getLog(view.id)
   const commits = hashes.map((h) => log.commits[log.index.get(h) ?? -1]).filter((c): c is NonNullable<typeof c> => !!c)
@@ -623,7 +622,7 @@ function MultiPanel({ view, hashes }: { view: RepoView; hashes: string[] }) {
         {commits.map((c) => (
           <button key={c.hash} className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-hover" data-testid="multi-commit"
             onClick={() => selectCommit(view.id, c.hash)} title="Select only this commit">
-            <Avatar name={c.authorName} email={c.authorEmail} src={avatarSrc(c.authorEmail, avatarSource, avatarVariant)} size={24} />
+            <Avatar name={c.authorName} email={c.authorEmail} src={avatarSrc(c.authorEmail, avatarSource)} size={24} />
             <div className="min-w-0 flex-1">
               <div className="truncate text-[13px]">{c.subject}</div>
               <div className="truncate text-[11px] text-muted">{dateTime(c.authorDate)} by {c.authorName}</div>
@@ -668,7 +667,6 @@ const detailsCache = new Map<string, CommitDetails>()
 
 function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
   const avatarSource = useSetting('avatars')
-  const avatarVariant = useAvatarVariant()
   const [details, setDetails] = useState<CommitDetails | null>(() => detailsCache.get(hash) ?? null)
   const [fileFilter, setFileFilter] = useState('')
   const latest = useRef(hash)
@@ -760,7 +758,7 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
           </div>
         )}
         <div className="mt-3 flex items-center gap-2">
-          <Avatar name={d.authorName} email={d.authorEmail} src={avatarSrc(d.authorEmail, avatarSource, avatarVariant)} size={28} />
+          <Avatar name={d.authorName} email={d.authorEmail} src={avatarSrc(d.authorEmail, avatarSource)} size={28} />
           <div className="min-w-0 text-xs">
             <div className="truncate"><b>{d.authorName}</b> <span className="text-faint">&lt;{d.authorEmail}&gt;</span></div>
             <div className="text-muted">authored {dateTime(d.authorDate)}</div>
