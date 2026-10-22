@@ -25,14 +25,14 @@ describe('settings schema', () => {
     expect(s.gitPath).toBe('/usr/bin/git')
     expect(s.recentRepos).toEqual(['/a'])
     expect(s.openRepos).toEqual([])
-    expect(s.settingsVersion).toBe(4)
+    expect(s.settingsVersion).toBe(5)
     expect('fontSize' in s).toBe(false)
   })
 
   it('migrates a v3 file: Ask threads become AI threads with an ask anchor', () => {
     const ask = { id: 'q1', rev: 'abc1234', path: 'src/a.ts', startLine: 2, endLine: 3, code: 'x', updated: 7, messages: [{ role: 'user', text: 'Why?' }, { role: 'ai', text: 'Because.' }] }
     const s = migrateSettings({ settingsVersion: 3, askThreads: { '/repo': [ask, 'junk'] } })
-    expect(s.settingsVersion).toBe(4)
+    expect(s.settingsVersion).toBe(5)
     expect('askThreads' in s).toBe(false)
     const [t, ...rest] = s.aiThreads['/repo']!
     expect(rest).toEqual([])
@@ -42,19 +42,30 @@ describe('settings schema', () => {
     expect(migrateSettings({ settingsVersion: 4, aiThreads: { '/r': [] } }).aiThreads).toEqual({ '/r': [] })
   })
 
+  it('migrates a v4 file: the sign-in switch is dropped, Gravatar becomes GitHub, a chosen Initials stays', () => {
+    const s = migrateSettings({ settingsVersion: 4, githubHttps: true, avatars: 'gravatar', theme: 'dark' })
+    expect(s.settingsVersion).toBe(5)
+    expect('githubHttps' in s).toBe(false)
+    expect(s.avatars).toBe('github')
+    expect(s.theme).toBe('dark')
+    expect(migrateSettings({ settingsVersion: 4, avatars: 'initials' }).avatars).toBe('initials')
+    // A window still running the old renderer cannot set either one back.
+    expect(validatePatch({ githubHttps: true, avatars: 'gravatar' })).toEqual({ avatars: 'github' })
+  })
+
   it('migrates a v2 file: compact rows become the compact graph layout', () => {
     const on = migrateSettings({ settingsVersion: 2, compactRows: true })
     expect(on.graphStyle).toBe('compact')
     expect('compactRows' in on).toBe(false)
     const off = migrateSettings({ settingsVersion: 2, compactRows: false })
     expect(off.graphStyle).toBe('comfy')
-    expect(off.settingsVersion).toBe(4)
+    expect(off.settingsVersion).toBe(5)
   })
 
   it('has a complete default set', () => {
     const d = defaultSettings()
     expect(d.contextLines).toBe(3)
-    expect(d.avatars).toBe('initials')
+    expect(d.avatars).toBe('github')
     expect(d.graphStyle).toBe('comfy')
   })
 
