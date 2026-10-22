@@ -60,6 +60,15 @@ export function guardTurn(text: string, redact: boolean): string {
   return checkSecrets(text, redact) ? redactSecrets(text).text : text
 }
 
+/**
+ * The same check for one turn over the API, whose system prompt goes apart from the messages:
+ * both parts are scanned together (one refusal lists everything) and both are redacted.
+ */
+export function guardApiTurn(system: string, text: string, redact: boolean): { system: string; text: string } {
+  if (!checkSecrets(`${system}\n\n${text}`, redact)) return { system, text }
+  return { system: redactSecrets(system).text, text: redactSecrets(text).text }
+}
+
 /** True when there are hits and the user chose to send them redacted; throws when they did not. */
 function checkSecrets(outgoing: string, redact: boolean): boolean {
   const hits = scanSecrets(outgoing)
@@ -564,8 +573,10 @@ export class AiService {
     if (anthropic) {
       // The API takes the system prompt on its own: a feature's opening is its message as given.
       const logical = history.length || opening !== undefined ? message : await first()
-      const text = guardTurn(logical, redact)
-      if (!rec.system) rec.system = effectivePrompt('chat', this.deps.settings()).system
+      // The system prompt (an Ask's, set by opening(), or the chat's) leaves too: checked with the turn, every turn.
+      const guarded = guardApiTurn(rec.system || effectivePrompt('chat', this.deps.settings()).system, logical, redact)
+      rec.system = guarded.system
+      const text = guarded.text
       const messages = [...history.flatMap((h) => [{ role: 'user' as const, content: h.user }, { role: 'assistant' as const, content: h.agent }]), { role: 'user' as const, content: text }]
       return { text, logical: text, messages }
     }

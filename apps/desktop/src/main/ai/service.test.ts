@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { SecretFile } from './keyStore'
 import { buildPrompt, cleanCommitMessage, MAX_DIFF_CHARS } from './prompts'
 import { AiService, compact, previewOf } from './service'
-import { reduceThread, targetKey, type AiTarget, type AiThread, type AiUpdate } from '@gitgoose/shared'
+import { reduceThread, targetKey, type AiTarget, type AiThread, type AiUpdate, type ThreadAnchor } from '@gitgoose/shared'
 
 const FAKE = join(import.meta.dirname, '../../../e2e/fake-agent.mjs')
 const memoryKeychain = { secure: () => true, encrypt: (s: string) => Buffer.from(s), decrypt: (b: Buffer) => b.toString() }
@@ -318,6 +318,36 @@ describe('secret scan before sending', () => {
     const sent = JSON.stringify(api.requests[0])
     expect(sent).toContain('[REDACTED GitHub token]')
     expect(sent).not.toContain(TOKEN)
+  })
+
+  it("checks the API's separate system prompt too: a chat's and an Ask's, refused or sent redacted", async () => {
+    const api = await fakeAnthropic(['ok'])
+    cleanup.push(() => api.close())
+    const words = { system: `You know the token ${TOKEN}.`, instructions: '' }
+    const t = await setup({ aiProvider: 'anthropic', aiPrompts: { chat: words, ask: words } }, api)
+    t.ai.setApiKey('sk-ant-test')
+    t.ai.consent()
+    const anchors: ThreadAnchor[] = [{ kind: 'free' }, { kind: 'ask', rev: 'worktree', path: 'widgets.ts', lines: [1, 1], code: '' }]
+    for (const anchor of anchors) {
+      const thread = await t.ai.openThread('x', anchor)
+      const before = api.requests.length
+      // The message itself is clean: only the system prompt holds the secret.
+      await expect(t.ai.sendThread(thread.id, 'what is this?')).rejects.toMatchObject({ code: 'ai-secrets', message: expect.not.stringContaining(TOKEN) })
+      expect(api.requests).toHaveLength(before)
+      await ended(t.events, await t.ai.sendThread(thread.id, 'what is this?', { redact: true }))
+      expect(api.requests).toHaveLength(before + 1)
+      expect(api.requests.at(-1)!.system).toBe('You know the token [REDACTED GitHub token].')
+      expect(JSON.stringify(api.requests.at(-1))).not.toContain(TOKEN)
+      // The Sent view shows the system prompt as it went out; the turn is what was typed.
+      const seen = mirror(t.events, thread)
+      expect(seen.turns[0]!.blocks).toEqual([{ type: 'text', text: 'what is this?' }])
+      expect(seen.turns[0]!.sent!.startsWith('[System prompt]\nYou know the token [REDACTED GitHub token].\n\n[Message]\n')).toBe(true)
+      expect(JSON.stringify(seen)).not.toContain(TOKEN)
+      // Later turns carry the redacted system prompt, with nothing left to refuse.
+      await ended(t.events, await t.ai.sendThread(thread.id, 'and then?'))
+      expect(api.requests.at(-1)!.system).toBe('You know the token [REDACTED GitHub token].')
+      expect(api.requests.at(-1)!.messages.at(-1)!.content).toBe('and then?')
+    }
   })
 
   it('says which file and line a secret in a review diff is on', async () => {
