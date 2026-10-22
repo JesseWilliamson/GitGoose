@@ -108,3 +108,23 @@ export async function dragTo(page: Page, from: Locator, to: Locator, opts: { at?
   await page.mouse.up()
   await expect(badge).toBeHidden()
 }
+
+/**
+ * Click one of a file row's hover-only actions (the buttons in FileList shown with
+ * `group-hover:flex`). The hover is synthetic, and a re-render between the hover and the click
+ * (a snapshot arriving) can leave the row un-hovered and the button display:none; Playwright then
+ * waits for a button that will never show. Hover again from outside the row and retry.
+ */
+export async function clickRowAction(page: Page, row: Locator, title: string): Promise<void> {
+  const button = row.getByTitle(title)
+  for (let attempt = 0; ; attempt++) {
+    await page.mouse.move(0, 0)
+    await row.hover()
+    try {
+      await button.click({ timeout: 2000 })
+      return
+    } catch (e) {
+      if (attempt === 4) throw e
+    }
+  }
+}
