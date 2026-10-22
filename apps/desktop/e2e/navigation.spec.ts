@@ -3,6 +3,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { basename, delimiter } from 'node:path'
 import { launch } from './app'
 
+const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
 const row = (page: Page, hash: string) => page.locator(`[data-testid="commit-row"][data-hash="${hash}"]`)
 const back = (page: Page) => page.keyboard.press('Alt+ArrowLeft')
 const forward = (page: Page) => page.keyboard.press('Alt+ArrowRight')
@@ -163,5 +164,21 @@ test('back to a commit the refreshed log has not loaded yet loads it and shows i
   await back(page)
   await expect(page.getByTestId('graph-scroll')).toBeVisible()
   await expect(row(page, root)).toHaveAttribute('data-selected', 'true')
+
+  // The line view's anchor is loaded the same way: the line through the root, with the cursor
+  // moved up to HEAD, must come back as the line through the root, not through the cursor.
+  await row(page, root).click()
+  await page.keyboard.press(`${mod}+l`)
+  await expect(page.getByTestId('line-bar')).toContainText(root.slice(0, 7))
+  await page.keyboard.press('Home')
+  await expect(row(page, r.head())).toHaveAttribute('data-selected', 'true')
+  await expect(page.getByTestId('line-bar')).toContainText(root.slice(0, 7))
+  await page.getByTestId('open-reflog').click()
+  await expect(page.getByTestId('reflog')).toBeVisible()
+  r.git('branch', 'elsewhere-too')
+  await expect(count).toHaveText(/^3,000\+ commits$/)
+
+  await back(page)
+  await expect(page.getByTestId('line-bar')).toContainText(root.slice(0, 7))
   await app.close()
 })

@@ -51,6 +51,15 @@ function unloaded(v: RepoView, loc: NavLocation): string[] {
   return selectedHashes(loc.selected).filter((h) => !log.index.has(h) && !v.stashes.some((s) => s.hash === h))
 }
 
+/**
+ * The line view's anchor when the graph has not loaded it: the graph shows the line through the
+ * cursor (or HEAD) instead until it is in, which is the wrong line.
+ */
+function unloadedLine(v: RepoView, loc: NavLocation): string[] {
+  if (loc.center.kind !== 'graph' || !loc.line) return []
+  return getLog(v.id).index.has(loc.line.hash) ? [] : [loc.line.hash]
+}
+
 function headOf(v: RepoView): Selection {
   return v.snapshot.head.hash ? { kind: 'commit', hash: v.snapshot.head.hash } : { kind: 'wip' }
 }
@@ -88,7 +97,8 @@ function go(step: -1 | 1): void {
   const selected = missing.length && done ? headOf(v) : loc.selected
   // One store change for tab and view, so the screen never shows the new tab with the old view.
   quietly(() => useStore.setState((s) => ({ active: loc.repoId, repos: { ...s.repos, [loc.repoId]: { ...v, selected, center: loc.center, line: loc.line } } })))
-  if (missing.length && !done) void loadSelection(loc.repoId, selected, missing)
+  const toLoad = done ? [] : [...missing, ...unloadedLine(v, loc)]
+  if (toLoad.length) void loadSelection(loc.repoId, selected, toLoad)
 }
 
 async function loadSelection(id: string, selected: Selection, hashes: string[]): Promise<void> {
