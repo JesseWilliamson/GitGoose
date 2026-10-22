@@ -105,6 +105,9 @@ async function main() {
         GITGOOSE_OPEN: cache,
         GITGOOSE_USER_DATA: mkdtempSync(join(tmpdir(), 'gitgoose-bench-')),
         GITGOOSE_NO_UPDATE: '1',
+        // Off the network: the budgets measure the app, not avatar downloads.
+        GITGOOSE_GITHUB_API: 'http://127.0.0.1:9',
+        GITGOOSE_AVATAR_GITHUB_BASE: 'http://127.0.0.1:9',
       } as Record<string, string>,
     })
     // One throwaway launch first: on a fresh CI machine the first start also reads Electron's
@@ -225,7 +228,7 @@ async function sidebarBench(main: string) {
   const t0 = performance.now()
   const app = await electron.launch({
     args: launchArgs,
-    env: { ...process.env, GITGOOSE_OPEN: dir, GITGOOSE_USER_DATA: mkdtempSync(join(tmpdir(), 'gitgoose-bench-')), GITGOOSE_NO_UPDATE: '1' } as Record<string, string>,
+    env: { ...process.env, GITGOOSE_OPEN: dir, GITGOOSE_USER_DATA: mkdtempSync(join(tmpdir(), 'gitgoose-bench-')), GITGOOSE_NO_UPDATE: '1', GITGOOSE_GITHUB_API: 'http://127.0.0.1:9', GITGOOSE_AVATAR_GITHUB_BASE: 'http://127.0.0.1:9' } as Record<string, string>,
   })
   const page: Page = await app.firstWindow()
   await page.getByTestId('sidebar-ref').first().waitFor()
