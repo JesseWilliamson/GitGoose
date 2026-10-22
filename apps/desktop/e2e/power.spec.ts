@@ -1,12 +1,12 @@
 import { initRepo, makeFixture } from '@gitgoose/fixtures'
 import { expect, test } from '@playwright/test'
 import { delimiter } from 'node:path'
-import { launch, pickFromSubmenu } from './app'
+import { dragTo, launch, pickFromSubmenu } from './app'
 
 test('resolves a merge conflict in the wizard and continues', async () => {
   const r = makeFixture('conflict')
   const { app, page } = await launch(r.dir)
-  await page.locator('[data-testid="ref-pill"][data-ref="refs/heads/other"]').dragTo(page.locator('[data-testid="ref-pill"][data-ref="refs/heads/main"]'))
+  await dragTo(page, page.locator('[data-testid="ref-pill"][data-ref="refs/heads/other"]'), page.locator('[data-testid="ref-pill"][data-ref="refs/heads/main"]'))
   await expect(page.getByTestId('conflicts')).toBeVisible()
   await expect(page.getByTestId('conflict-file')).toHaveCount(1)
   await page.getByTestId('view-blocks').click()
