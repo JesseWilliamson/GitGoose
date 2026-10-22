@@ -1,42 +1,32 @@
-# 005: Sign in with GitHub
+# 005: GitHub without signing in
 
-PLAN-2 §9a. Code: `apps/desktop/src/main/github/` (main process only), `packages/shared/src/github.ts`
-(pure rules), `components/AccountsPanel.tsx`. Tests: `main/github/github.test.ts`,
-`shared/src/github.test.ts`, `e2e/github.spec.ts`, all against `fakeGitHub` from `@gitgoose/fixtures`.
+Sign in with GitHub (the OAuth device flow, the token in the keychain, HTTPS push with it, the
+Accounts settings) was removed on 2026-10-22. GitGoose holds no GitHub token and sends no
+Authorization header. What remains asks GitHub as anyone may, for public data:
 
-## Behaviour
+- **Pull request list** (sidebar, Workspace → Pull Requests): an unauthenticated
+  `GET /repos/:o/:r/pulls`, only when the list is opened or refreshed. Works for public
+  repositories; for a private one GitHub answers 404, and the error says so.
+- **Create pull request…**: pushes the branch first if GitHub lacks its latest commits (through the
+  pre-push checks), then opens GitHub's compare page in the browser, filled in:
+  `https://github.com/:o/:r/compare/:base...:branch?expand=1&title=…&body=…`. Main builds the URL
+  from the repository's GitHub remote and opens only pages on GitHub's host.
+- **Checking out a pull request** fetches `refs/pull/N/head` with git, as before.
+- **Avatars** (setting *GitHub*, the default; *Initials* never uses the network): a noreply
+  address maps straight to `avatars.githubusercontent.com/u/<id>`; any other author's newest
+  pushed commit (on a GitHub remote's tracking refs of an open repository) is looked up with the
+  public `GET /repos/:o/:r/commits/:sha`, whose `author.avatar_url` is the picture. Pictures are
+  cached on disk for 30 days, GitHub's "no such account" for 24 hours. A miss is a 404 from the
+  `gitgoose-avatar:` scheme, and the page keeps the initials.
 
-- Settings → Accounts → **Sign in with GitHub** starts the OAuth device flow: a dialog shows the
-  user code, **Copy code and open GitHub** copies it and opens the verification page (main opens
-  it, and only if it is on GitHub's host). The dialog waits; on approval it closes with a toast.
-- Errors: `access_denied` ("cancelled on GitHub"), `expired_token` (code expired), network,
-  unexpected answers. Each shows in the dialog with **Try again**. `authorization_pending` and
-  `slow_down` (interval from GitHub, else +5 s) are waited out. Cancel stops polling.
-- First grant asks for `read:user` only. Turning on *Use your GitHub sign-in for HTTPS push and
-  fetch* shows **Grant access**, a second device flow for `repo`.
-- **Sign out** forgets the token on this computer. GitHub's revoke API needs the client secret,
-  which a desktop app cannot keep, so the panel links to github.com's authorized-apps page.
-- Without an OAuth client id (`main/github/config.ts`, or `GITGOOSE_GITHUB_CLIENT_ID`) the panel
-  says sign-in is not set up.
+Code: `apps/desktop/src/main/github/` (api.ts, avatarLookup.ts, remote.ts, service.ts),
+`apps/desktop/src/main/avatars.ts`. Tests: `main/github/github.test.ts`, `main/avatars.test.ts`,
+`e2e/pulls.spec.ts`, `e2e/avatars.spec.ts`, against `fakeGitHub` from `@gitgoose/fixtures`.
 
-## What the token is used for
+## Rate limit
 
-- **Avatars** (source *GitHub*): for an author without a noreply address, find their latest
-  commit on a github.com remote's tracking refs (`--remotes=<remote>`, so only pushed commits)
-  and ask `GET /repos/:o/:r/commits/:sha` for the account's avatar. Cached 30 days per email by
-  the existing avatar cache, whose key includes the sign-in state; the renderer adds `?v=gh` to
-  avatar URLs so the browser's own image cache is bypassed after signing in.
-- **HTTPS push/fetch** (setting on and `repo` granted): the askpass broker answers
-  `Username/Password for 'https://github.com'` itself (exact host match). While active,
-  `credential.https://github.com.helper` is set to empty through `GIT_CONFIG_COUNT/KEY/VALUE`,
-  so the user's credential helpers neither supply nor store the token for github.com.
-
-## Storage
-
-The token is encrypted with Electron `safeStorage` into `github.json` in the profile (mode 600,
-atomic write). If there is no real keychain (Linux `basic_text` backend), the token is kept in
-memory only and the panel says it will be asked for again after a restart.
-
-## Network
-
-None until the user clicks Sign in. Startup only reads the local file (status for avatar URLs).
+Without a token GitHub allows 60 API requests an hour per IP address. On a 403 or 429 the app
+reads `retry-after`, or `x-ratelimit-reset` when `x-ratelimit-remaining` is 0 (else waits a
+minute), and asks GitHub nothing until then; a success with nothing remaining pauses too. Avatar
+lookups that could not be made are served as misses but not written to disk, so they are tried
+again after the pause. The pull request list shows the time the limit resets.

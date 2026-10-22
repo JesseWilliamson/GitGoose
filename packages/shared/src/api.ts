@@ -6,7 +6,7 @@ import type {
   AgentInfo, AiArtifactResult, AiPermissionRequest, AiResult, AiRunOptions, AiStatus, AiTask, AiThread, AiUpdate, ArtifactKind, AskThread, ImpactResult, LinterInfo, PermissionAnswer, PushCheck, PushCheckPlan,
   ReviewLearning, ReviewScope, ThreadAnchor,
 } from './ai'
-import type { DeviceCodeInfo, GitHubAccount, GitHubStatus, PullRequest, PullRequestList } from './github'
+import type { PullRequestList } from './github'
 import type { Settings } from './settings'
 
 export interface LogPage {
@@ -81,19 +81,14 @@ export interface GitGooseApi {
   cloneRepo(url: string, parentDir: string): Promise<RepoSnapshot>
   respondPrompt(promptId: number, answer: string | null): Promise<void>
 
-  // GitHub sign-in (device flow; see apps/desktop/src/main/github/)
-  githubStatus(): Promise<GitHubStatus>
-  /** Start signing in; 'repo' also asks for access to repositories (HTTPS push and fetch). */
-  githubSignIn(access: 'basic' | 'repo'): Promise<DeviceCodeInfo>
-  /** Resolves when the user has approved on github.com; rejects on denial, expiry or cancel. */
-  githubWaitForSignIn(): Promise<GitHubAccount>
-  githubCancelSignIn(): Promise<void>
-  /** Open a GitHub page in the browser: where to enter the code, or where to revoke access. */
-  githubOpenPage(page: 'verification' | 'applications'): Promise<void>
-  githubSignOut(): Promise<void>
-  /** Network: the GitHub remote's open pull requests (only when the user opens the list). */
+  // GitHub pull requests, without signing in (see apps/desktop/src/main/github/)
+  /** Network: the GitHub remote's open pull requests (only when the user opens the list). Public repositories only. */
   pullRequests(repoId: string): Promise<PullRequestList>
-  createPullRequest(repoId: string, pr: { branch: string; base: string; title: string; body: string; draft: boolean }): Promise<PullRequest>
+  /**
+   * Open GitHub's "new pull request" page in the browser, filled in with the title, description
+   * and base (the branch must be on GitHub already). Returns the URL opened.
+   */
+  createPullRequest(repoId: string, pr: { branch: string; base: string; title: string; body: string }): Promise<string>
   /** Fetch pull/N/head into pr/N (or `branch`) and check it out. Undoable. */
   checkoutPullRequest(repoId: string, num: number, branch?: string): Promise<UndoId>
   /** Open a pull request's page (GitHub URLs only). */
@@ -367,7 +362,7 @@ export type ApiMethod = keyof GitGooseApi
 export const API_METHODS = [
   'getSettings', 'setSettings', 'pickDirectory', 'openRepo', 'closeRepo', 'initRepo', 'cloneRepo',
   'respondPrompt', 'openPath', 'openInEditor', 'openTerminal', 'revealPath', 'logError',
-  'githubStatus', 'githubSignIn', 'githubWaitForSignIn', 'githubCancelSignIn', 'githubOpenPage', 'githubSignOut', 'pullRequests', 'createPullRequest', 'checkoutPullRequest', 'openPullRequest',
+  'pullRequests', 'createPullRequest', 'checkoutPullRequest', 'openPullRequest',
   'aiStatus', 'aiConsent', 'aiRun', 'aiCancel', 'aiRespondPermission', 'aiAgentInfo', 'aiAuthenticate', 'aiSetApiKey',
   'aiThreadOpen', 'aiThreadSend', 'aiThreadCancel', 'aiThreadClose', 'aiThreads', 'aiThreadDelete', 'aiThreadPermission', 'aiThreadArtifact', 'openExternal',
   'snapshot', 'logPage', 'commitDetails', 'diff', 'fileHistory', 'blame', 'search', 'searchCommits', 'listFiles', 'stashList', 'reflog', 'setGraphFilter', 'submodules', 'updateSubmodules', 'syncSubmodules', 'addSubmodule', 'removeSubmodule', 'worktrees', 'addWorktree', 'removeWorktree', 'lockWorktree', 'pruneWorktrees',
@@ -400,8 +395,6 @@ export type GitGooseEvent =
   | { type: 'command'; name: string }
   /** Settings changed (from any window, or main): every window re-applies theme, fonts, scale. */
   | { type: 'settings'; settings: Settings }
-  /** Signed in or out of GitHub. */
-  | { type: 'github'; status: GitHubStatus }
   /** An AI request's reply so far. */
   | { type: 'ai-text'; requestId: string; text: string }
   /** The agent wants to use a tool: ask the user. */
