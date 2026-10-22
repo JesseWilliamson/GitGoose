@@ -222,7 +222,7 @@ function FixView({ fix }: { fix: NonNullable<ReturnType<typeof useAi.getState>['
         {fix.requestId && (
           <>
             <p className="flex items-center gap-2 text-muted"><Spinner /> Asking for a fix to {fix.path}…</p>
-            <p className="mt-2 text-xs text-faint">You can close this and carry on: the fix waits in the status bar until you open it.</p>
+            <p className="mt-2 text-xs text-faint">You can close this; the fix waits in the status bar.</p>
           </>
         )}
         {fix.error && <p className="text-del">{fix.error}</p>}

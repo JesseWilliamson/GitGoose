@@ -71,7 +71,7 @@ export function AiChatPanel({ view }: { view: RepoView }) {
       </div>
       {thread
         ? <Thread thread={thread} repoId={view.id} className="flex-1" placeholder="Ask about this repository (Enter sends, Shift+Enter for a new line)"
-            hint={`Ask anything about ${view.snapshot.name}. The first message goes with the repository's name and current commit only; the agent asks before reading anything.`} />
+            hint="The first message sends only the repository's name and current commit; the agent asks before reading anything." />
         : <div className="flex flex-1 items-center justify-center"><Spinner /></div>}
     </div>
   )
