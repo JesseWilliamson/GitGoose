@@ -16,17 +16,31 @@ import { launch } from './app'
  * is over the target (as a person would), and one more move makes the page see it.
  */
 async function drag(page: Page, from: Locator, to: Locator, opts: { alt?: boolean; badge?: string | RegExp; other?: string | RegExp; at?: number } = {}) {
+  const badge = page.getByTestId('drag-badge')
   await from.scrollIntoViewIfNeeded()
-  await from.hover()
-  await page.mouse.down()
   await to.scrollIntoViewIfNeeded()
   const box = (await to.boundingBox())!
   const x = box.x + box.width / 2
   const y = box.y + box.height * (opts.at ?? 0.5)
-  await page.mouse.move(x, y, { steps: 6 })
-  if (opts.alt) await page.keyboard.down('Alt')
-  await page.mouse.move(x + 1, y)
-  const badge = page.getByTestId('drag-badge')
+  // Chromium starts a native drag only when the pointer moves soon after the button goes down;
+  // on a loaded machine (tests running side by side) that first move can land before the page
+  // is ready and no drag begins. When a badge is expected and none shows, let go and try again.
+  for (let attempt = 0; ; attempt++) {
+    await from.hover()
+    await page.mouse.down()
+    await page.mouse.move(x, y, { steps: 6 })
+    if (opts.alt) await page.keyboard.down('Alt')
+    await page.mouse.move(x + 1, y)
+    if (!opts.badge || attempt === 2) break
+    try {
+      await expect(badge).toBeVisible({ timeout: 1500 })
+      break
+    } catch {
+      if (opts.alt) await page.keyboard.up('Alt')
+      await page.mouse.up()
+      await expect(badge).toBeHidden()
+    }
+  }
   if (opts.badge) await expect(badge.getByTestId('drag-badge-label')).toHaveText(opts.badge)
   if (opts.other) await expect(badge.getByTestId('drag-badge-alt')).toHaveText(opts.other)
   await page.mouse.up()
