@@ -2,6 +2,7 @@ import { DEFAULT_LAYOUT, setCollapsed, type Settings } from '@gitgoose/shared'
 import { useEffect } from 'react'
 import { applyPatchFile, applyPatchFromClipboard, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, redo, showHistory, showWorkingCopy, stash, undo } from '../lib/actions'
 import { comboOf, keymap } from '../lib/keys'
+import { goBack, goForward, installMouseNavigation, installNavigation } from '../lib/navigation'
 import { closeTab, onCommand, runCommand, updateRepo, saveSettings, setting, toggleLine, useActiveRepo, useStore } from '../lib/store'
 import { AttentionBar } from './AttentionBar'
 import { OmniSearch } from './OmniSearch'
@@ -48,6 +49,8 @@ function useCommands() {
         case 'toggle-details': return toggleSlot('right')
         case 'layout-default': return void saveSettings({ layout: structuredClone(DEFAULT_LAYOUT) })
         case 'layout-wide-graph': return void saveSettings({ layout: setCollapsed(setCollapsed(setting('layout'), 'left', true), 'right', true) })
+        case 'back': return goBack()
+        case 'forward': return goForward()
       }
       if (!id) return
       switch (name) {
@@ -105,15 +108,19 @@ function useCommands() {
       }
       const name = keymap(setting('keybindings')).get(combo)
       if (!name) return
-      // In a text field, undo and redo belong to the text field.
-      if ((name === 'undo' || name === 'redo') && isTyping()) return
+      // In a text field, undo and redo belong to the text field. So do back and forward, and any
+      // Alt shortcut without mod: on macOS Option+Arrow moves by word, Option+letter types a letter.
+      if ((name === 'undo' || name === 'redo' || name === 'back' || name === 'forward' || !combo.startsWith('mod+')) && isTyping()) return
       e.preventDefault()
       // Through the same path as the menu, so components listening for a command hear keys too.
       runCommand(name)
     }
     window.addEventListener('keydown', onKey)
+    installNavigation()
+    const offMouse = installMouseNavigation()
     return () => {
       off()
+      offMouse()
       window.removeEventListener('keydown', onKey)
     }
   }, [])
