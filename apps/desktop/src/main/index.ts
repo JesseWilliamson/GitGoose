@@ -200,6 +200,17 @@ function createWindow(): BrowserWindow {
     return { action: 'deny' }
   })
   win.webContents.on('will-navigate', (e) => e.preventDefault())
+  // Back and forward (the renderer's history, lib/navigation.ts): the mouse's side buttons as
+  // Windows and Linux report them to the window, and a three-finger swipe on macOS. The page sees
+  // the side buttons too and drops whichever report of a click comes second.
+  win.on('app-command', (_e, command) => {
+    if (command === 'browser-backward') broadcast({ type: 'command', name: 'back' })
+    else if (command === 'browser-forward') broadcast({ type: 'command', name: 'forward' })
+  })
+  win.on('swipe', (_e, direction) => {
+    if (direction === 'left') broadcast({ type: 'command', name: 'back' })
+    else if (direction === 'right') broadcast({ type: 'command', name: 'forward' })
+  })
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL)
   else void win.loadFile(join(here, '../renderer/index.html'))
   return win

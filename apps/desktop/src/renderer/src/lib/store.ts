@@ -5,7 +5,7 @@ import { api, toUiError, type UiError } from './api'
 import { onAiEvent } from './ai'
 import { onThreadUpdate } from './thread'
 import { opName } from './format'
-import { followRewrite } from './rewrite'
+import { followRewrite, type CommitIndex } from './rewrite'
 import type { ReviewState } from './review'
 import type { WalkthroughState } from './walkthrough'
 import type { ImpactState } from './impact'
@@ -333,18 +333,35 @@ function swapIn(id: string, log: LogData): void {
   logs.set(id, log)
   const v = get().repos[id]
   if (!old || !v) return
-  const sel = v.selected
+  // Back/forward history follows first, so the selection change below matches its current entry
+  // and is not recorded as a step of its own.
+  swapListeners.forEach((l) => l(id, old, log))
+  const selected = followSelection(v.selected, old, log, v.snapshot.head.hash)
+  if (selected !== v.selected) updateRepo(id, { selected })
+}
+
+/**
+ * Where a selection lands in a new log: unchanged when its commits are all still there, else on
+ * their new hashes (followRewrite), else on HEAD.
+ */
+export function followSelection(sel: Selection, old: CommitIndex, log: CommitIndex, head: string | undefined): Selection {
   const hashes = selectedHashes(sel)
-  if (!hashes.length || hashes.every((h) => log.index.has(h))) return
+  if (!hashes.length || hashes.every((h) => log.index.has(h))) return sel
   const next = followRewrite(hashes, old, log)
-  const head = v.snapshot.head.hash
   let selected: Selection = next[0] ? { kind: 'commit', hash: next[0] } : head ? { kind: 'commit', hash: head } : { kind: 'wip' }
   if (sel.kind === 'commits' && next.length > 1) {
     const [anchor] = followRewrite([sel.anchor], old, log)
     const [cursor] = followRewrite([sel.cursor], old, log)
     selected = { kind: 'commits', hashes: next, anchor: anchor ?? next[0]!, cursor: cursor ?? next[next.length - 1]! }
   }
-  updateRepo(id, { selected })
+  return selected
+}
+
+const swapListeners = new Set<(id: string, old: LogData, log: LogData) => void>()
+/** Hear when a repository's log is replaced by a new walk (lib/navigation.ts follows rewrites with it). */
+export function onLogSwap(l: (id: string, old: LogData, log: LogData) => void): () => void {
+  swapListeners.add(l)
+  return () => swapListeners.delete(l)
 }
 
 /** First page small so the first screen paints fast; later pages large to cut round trips. */
