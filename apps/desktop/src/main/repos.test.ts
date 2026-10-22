@@ -4,8 +4,10 @@ import type { RepoSnapshot } from '@gitgoose/shared'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RepoManager } from './repos'
 
-/** Longer than the watcher's 100 ms debounce, so a refresh it schedules has run. */
+/** Longer than the watcher's 100 ms debounce: time for a refresh it schedules to have run. */
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
+// A snapshot that is expected is waited for (vi.waitFor): a fixed wait failed on a slow Windows
+// runner. A snapshot that must NOT come is asserted after a fixed wait, as there is no event to wait for.
 
 describe('RepoManager', () => {
   let manager: RepoManager | null = null
@@ -28,8 +30,7 @@ describe('RepoManager', () => {
     const { r, repo, emitted, m } = await setup()
     r.commit('one')
     m.schedule(repo.id, 0)
-    await wait(300)
-    expect(emitted).toHaveLength(1)
+    await vi.waitFor(() => expect(emitted).toHaveLength(1), { timeout: 5000 })
     expect(emitted[0]!.head.hash).toBe(r.git('rev-parse', 'HEAD').trim())
   })
 
@@ -55,8 +56,7 @@ describe('RepoManager', () => {
     // Afterwards the watcher is back to normal.
     r.commit('later')
     m.schedule(repo.id, 0)
-    await wait(300)
-    expect(emitted).toHaveLength(2)
+    await vi.waitFor(() => expect(emitted).toHaveLength(2), { timeout: 5000 })
   })
 
   describe('a tab restored at startup', () => {

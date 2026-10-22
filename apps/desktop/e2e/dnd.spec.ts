@@ -1,9 +1,9 @@
 import { initRepo, makeFixture } from '@gitgoose/fixtures'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { launch } from './app'
+import { launch, readOrNull } from './app'
 
 /**
  * The drop matrix (docs/specs/003-branches-and-remotes.md), driven in the app: the badge says
@@ -16,17 +16,31 @@ import { launch } from './app'
  * is over the target (as a person would), and one more move makes the page see it.
  */
 async function drag(page: Page, from: Locator, to: Locator, opts: { alt?: boolean; badge?: string | RegExp; other?: string | RegExp; at?: number } = {}) {
+  const badge = page.getByTestId('drag-badge')
   await from.scrollIntoViewIfNeeded()
-  await from.hover()
-  await page.mouse.down()
   await to.scrollIntoViewIfNeeded()
   const box = (await to.boundingBox())!
   const x = box.x + box.width / 2
   const y = box.y + box.height * (opts.at ?? 0.5)
-  await page.mouse.move(x, y, { steps: 6 })
-  if (opts.alt) await page.keyboard.down('Alt')
-  await page.mouse.move(x + 1, y)
-  const badge = page.getByTestId('drag-badge')
+  // Chromium starts a native drag only when the pointer moves soon after the button goes down;
+  // on a loaded machine (tests running side by side) that first move can land before the page
+  // is ready and no drag begins. When a badge is expected and none shows, let go and try again.
+  for (let attempt = 0; ; attempt++) {
+    await from.hover()
+    await page.mouse.down()
+    await page.mouse.move(x, y, { steps: 6 })
+    if (opts.alt) await page.keyboard.down('Alt')
+    await page.mouse.move(x + 1, y)
+    if (!opts.badge || attempt === 2) break
+    try {
+      await expect(badge).toBeVisible({ timeout: 1500 })
+      break
+    } catch {
+      if (opts.alt) await page.keyboard.up('Alt')
+      await page.mouse.up()
+      await expect(badge).toBeHidden()
+    }
+  }
   if (opts.badge) await expect(badge.getByTestId('drag-badge-label')).toHaveText(opts.badge)
   if (opts.other) await expect(badge.getByTestId('drag-badge-alt')).toHaveText(opts.other)
   await page.mouse.up()
@@ -186,7 +200,7 @@ test('stashes and files: a stash onto the working copy applies, Alt pops; a comm
   const { app, page } = await launch(r.dir)
   const stash = page.getByTestId('stash-item')
   await drag(page, stash, workspace(page, 'working-copy'), { badge: 'Apply stash@{0}', other: 'Alt: Pop stash@{0}' })
-  await expect.poll(() => readFileSync(join(r.dir, 'a.txt'), 'utf8')).toBe('stashed a\n')
+  await expect.poll(() => readOrNull(join(r.dir, 'a.txt'))).toBe('stashed a\n')
   expect(r.git('stash', 'list').trim()).not.toBe('')
   r.git('checkout', '--', 'a.txt')
   await drag(page, stash, page.getByTestId('wip-row'), { alt: true, badge: 'Pop stash@{0}' })
@@ -199,16 +213,16 @@ test('stashes and files: a stash onto the working copy applies, Alt pops; a comm
   await row(page, P2).click()
   const file = page.locator('[data-testid="commit-file"][data-path="shared.txt"]')
   await drag(page, file, page.getByTestId('wip-row'), { badge: `Apply shared.txt's change from ${P2.slice(0, 7)} to the working copy` })
-  await expect.poll(() => readFileSync(join(r.dir, 'shared.txt'), 'utf8')).toBe('one\nTWO\n')
+  await expect.poll(() => readOrNull(join(r.dir, 'shared.txt'))).toBe('one\nTWO\n')
   await undo(page)
-  await expect.poll(() => readFileSync(join(r.dir, 'shared.txt'), 'utf8')).toBe('one\ntwo\n')
+  await expect.poll(() => readOrNull(join(r.dir, 'shared.txt'))).toBe('one\ntwo\n')
 
   // A changed file onto the Stashes item: only it is stashed.
   r.write('b.txt', 'edited b\n')
   await page.getByTestId('wip-row').click()
   await drag(page, page.locator('[data-testid="unstaged-file"][data-path="b.txt"]'), workspace(page, 'stashes'), { badge: 'Stash b.txt' })
   // git lists the new stash before it resets the file: wait for the file.
-  await expect.poll(() => readFileSync(join(r.dir, 'b.txt'), 'utf8')).toBe('b\n')
+  await expect.poll(() => readOrNull(join(r.dir, 'b.txt'))).toBe('b\n')
   expect(r.git('stash', 'list').split('\n').filter(Boolean)).toHaveLength(2)
   expect(existsSync(join(r.dir, 'note.txt'))).toBe(true)
   await app.close()
