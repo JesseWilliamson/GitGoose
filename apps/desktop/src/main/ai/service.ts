@@ -440,7 +440,9 @@ export class AiService {
       if (res.stopReason === 'cancelled') throw new AiError('Stopped.', 'ai-cancelled')
       return { ...result(res.text, { proposal }), ...(keep ? { threadId: rec.thread.id } : {}) }
     } finally {
-      if (!keep) this.dispose(rec)
+      // Kept, but it failed before its first turn (a model the agent does not offer, a refusal):
+      // the caller got no threadId and can never close it, so it ends here like a one-shot.
+      if (!keep || !rec.thread.turns.length) this.dispose(rec)
       else this.persist(rec)
     }
   }

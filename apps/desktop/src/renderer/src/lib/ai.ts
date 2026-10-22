@@ -116,7 +116,10 @@ export function areaOfAnchor(anchor: ThreadAnchor): AiArea {
 export function areaTarget(area: AiArea): AiTarget | null {
   const s = useStore.getState().settings
   if (!s || s.aiProvider === 'off') return null
-  return s.aiAreaTargets[area] ?? defaultTarget(s)
+  const picked = s.aiAreaTargets[area]
+  // Resolving a conflict needs an agent (it edits the file): an API pick saved there is ignored.
+  if (area === 'conflict' && picked?.provider === 'anthropic') return defaultTarget(s)
+  return picked ?? defaultTarget(s)
 }
 
 /** Remember an area's pick; null goes back to following Settings → AI. */

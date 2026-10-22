@@ -921,3 +921,16 @@ describe('a conversation reopened from disk over the API', () => {
     expect(api.requests[0]!.system).toBe('You are the Ask helper.')
   })
 })
+
+describe('a kept run that never started', () => {
+  it('closes its session when it fails before the first turn (here, a model the agent does not offer)', async () => {
+    process.env.FAKE_AGENT_MODELS = '1'
+    cleanup.push(() => void delete process.env.FAKE_AGENT_MODELS)
+    const t = await setup()
+    t.ai.consent()
+    const target: AiTarget = { provider: 'agent', agent: 'custom', agentCommand: t.settings.aiAgentCommand, model: 'huge' }
+    await expect(t.ai.run('k1', 'x', { kind: 'review', scope: { kind: 'staged' }, profile: 'chill' }, { keepThread: true, target })).rejects.toMatchObject({ code: 'ai-model' })
+    expect(t.ai.liveThreads()).toEqual([])
+    expect(t.ai.agent.sessionCount()).toBe(0)
+  })
+})

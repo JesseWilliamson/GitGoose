@@ -18,12 +18,14 @@ import { reportError, saveSettings, setSettingEntry, useStore } from '../lib/sto
  * the agent to ask (the user clicked, as with Settings → Test). The API's list is a network call,
  * so it too waits for "Load models…", and is then kept while the app runs.
  */
-export function ModelPicker({ area, defaults, className, onPicked }: {
+export function ModelPicker({ area, defaults, className, onPicked, agentsOnly }: {
   area?: AiArea
   defaults?: boolean
   className?: string
   /** After a pick is saved (Recompose restarts its request on the new pick). */
   onPicked?: () => void
+  /** Only agents can answer here (resolving a conflict edits a file; the API only writes text). */
+  agentsOnly?: boolean
 }) {
   const settings = useStore((s) => s.settings)
   const picked = area ? settings?.aiAreaTargets[area] : undefined
@@ -71,7 +73,7 @@ export function ModelPicker({ area, defaults, className, onPicked }: {
           <option value="default">Default ({targetLabel({ ...base, model: undefined })})</option>
           {(Object.keys(AGENT_PRESETS) as Exclude<AgentPreset, 'custom'>[]).map((p) => <option key={p} value={`agent:${p}`}>{AGENT_PRESETS[p].label}</option>)}
           {settings.aiAgentCommand.trim() && <option value="agent:custom">{agentLabel('custom', settings.aiAgentCommand)}</option>}
-          {(hasKey || picked?.provider === 'anthropic') && <option value="anthropic">Anthropic API</option>}
+          {!agentsOnly && (hasKey || picked?.provider === 'anthropic') && <option value="anthropic">Anthropic API</option>}
         </select>
       )}
       <select
