@@ -174,6 +174,9 @@ export class Repo {
   }
 
   private async readSnapshot(): Promise<RepoSnapshot> {
+    // straightTips needs git's version; asked once, alongside the reads below rather than after
+    // them, so the first snapshot does not wait for one more process in a row.
+    void this.hasAheadBehind()
     const [statusOut, refsOut] = await Promise.all([
       this.read(['status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all']),
       this.read(['for-each-ref', `--format=${REFS_FORMAT}`]),

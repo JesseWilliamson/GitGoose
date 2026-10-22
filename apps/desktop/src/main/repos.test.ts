@@ -1,7 +1,7 @@
 import { Repo } from '@gitgoose/git'
 import { makeFixture } from '@gitgoose/fixtures'
 import type { RepoSnapshot } from '@gitgoose/shared'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RepoManager } from './repos'
 
 /** Longer than the watcher's 100 ms debounce, so a refresh it schedules has run. */
@@ -57,6 +57,37 @@ describe('RepoManager', () => {
     m.schedule(repo.id, 0)
     await wait(300)
     expect(emitted).toHaveLength(2)
+  })
+
+  describe('a tab restored at startup', () => {
+    async function preopened() {
+      const r = makeFixture('linear')
+      // The path as git reports it (symlinks resolved), which is how open tabs are saved.
+      const probe = await Repo.open(r.dir, { env: r.env() as Record<string, string> })
+      const path = probe.path
+      probe.dispose()
+      manager = new RepoManager(() => ({ gitPath: 'git', env: r.env() as Record<string, string> }), () => {}, () => {}, () => {})
+      manager.preopen(path)
+      return { path, m: manager }
+    }
+
+    it('is opened once, however many times it is asked for while it opens', async () => {
+      const { path, m } = await preopened()
+      const [a, b] = await Promise.all([m.openPath(path), m.openPath(path)])
+      expect(a.id).toBe(b.id)
+      expect(m.all()).toHaveLength(1)
+    })
+
+    it('hands the window the snapshot read ahead, then reads fresh ones as before', async () => {
+      const { path, m } = await preopened()
+      while (!m.all()[0]?.lastSnapshot) await wait(10)
+      const repo = m.all()[0]!
+      const read = vi.spyOn(repo, 'snapshot')
+      expect(await m.openPath(path)).toBe(repo.lastSnapshot)
+      expect(read).not.toHaveBeenCalled()
+      await m.openPath(path)
+      expect(read).toHaveBeenCalledTimes(1)
+    })
   })
 
   it('still refreshes after a write that throws, and lets the error through', async () => {

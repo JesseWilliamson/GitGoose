@@ -372,12 +372,14 @@ export function serializeError(e: unknown): SerializedError {
 /**
  * One channel for every method. The renderer sends (method, args); we look the method up in the
  * handler table. Results and errors both come back as data (IpcResult), because Electron turns a
- * thrown error into a generic message and loses git's stderr.
+ * thrown error into a generic message and loses git's stderr. Requests wait for `ready`: what
+ * must be in place before any of them runs (the credential prompt server).
  */
-export function registerIpc(handlers: GitGooseApi, repos: RepoManager): void {
+export function registerIpc(handlers: GitGooseApi, repos: RepoManager, ready: Promise<void> = Promise.resolve()): void {
   const known = new Set<string>(API_METHODS)
   ipcMain.handle(IPC_INVOKE, async (_event, method: string, args: unknown[]): Promise<IpcResult<unknown>> => {
     if (!known.has(method)) return { ok: false, error: { message: `Unknown method ${method}` } }
+    await ready
     const fn = handlers[method as ApiMethod] as (...a: unknown[]) => Promise<unknown>
     // Most write methods take the repo id first. The watcher stays quiet while the write runs, and
     // one refresh right after it pushes the result, rather than waiting for the watcher.

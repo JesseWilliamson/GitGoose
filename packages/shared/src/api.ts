@@ -17,6 +17,13 @@ export interface LogPage {
   generation: number
 }
 
+/**
+ * The size of the log's first page: small, so the first screen paints fast (later pages are
+ * larger to cut round trips). The main process reads it ahead for repositories it opens at
+ * startup, so it must match what the renderer asks for.
+ */
+export const FIRST_LOG_PAGE = 300
+
 /** Which lines of which hunks to act on. Omit `lines` to take the whole hunk. */
 export interface HunkSelection {
   hunk: number

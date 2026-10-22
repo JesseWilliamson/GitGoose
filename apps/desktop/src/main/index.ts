@@ -239,13 +239,16 @@ onSettingsChanged((settings, changed) => {
   broadcast({ type: 'settings', settings })
 })
 
-app.whenReady().then(async () => {
+app.whenReady().then(() => {
   performance.mark('gitgoose:ready')
-  try {
-    Object.assign(gitEnv, await askpass.start())
-  } catch {
+  // The credential prompt server starts alongside the window rather than before it. Only
+  // commands that talk to a remote can prompt, and IPC waits for it (registerIpc below), so no
+  // request from the window can run git without it.
+  const askpassReady = askpass.start().then(
+    (env) => void Object.assign(gitEnv, env),
     // Without askpass, git falls back to the user's credential helpers.
-  }
+    () => {},
+  )
   // `gitgoose repo1 repo2` or GITGOOSE_OPEN=repo1:repo2 (; on Windows) opens those repositories
   // as tabs instead of restoring the last session. Used from a shell, by tests and by the benchmark.
   const paths = process.env.GITGOOSE_OPEN
@@ -258,17 +261,19 @@ app.whenReady().then(async () => {
   if (process.env.ELECTRON_RENDERER_URL && !paths.length && !getSettings().openRepos.length && getSettings().openDevRepo && existsSync(join(devRepo, '.git'))) {
     setSettings({ openRepos: [devRepo] })
   }
+  refreshCredentialEnv()
   // gitgoose-avatar://author/<email> -> image bytes (or a transparent pixel; see avatars.ts).
   protocol.handle('gitgoose-avatar', async (req) => {
     const email = decodeURIComponent(new URL(req.url).pathname.slice(1))
     const img = await avatars.get(email)
     return new Response(new Uint8Array(img.body), { headers: { 'content-type': img.type, 'cache-control': 'max-age=3600' } })
   })
-  refreshCredentialEnv()
-  registerIpc(createHandlers(repos, prompts, gitOpts, github, ai, codegraph), repos)
+  registerIpc(createHandlers(repos, prompts, gitOpts, github, ai, codegraph), repos, askpassReady)
   installMenu()
   performance.mark('gitgoose:create-window')
   createWindow()
+  // The window will ask for these tabs as soon as it has loaded: open them while it loads.
+  for (const path of getSettings().openRepos) repos.preopen(path)
   scheduleUpdateCheck()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
