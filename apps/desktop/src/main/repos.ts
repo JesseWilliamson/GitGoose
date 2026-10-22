@@ -1,11 +1,11 @@
 import { Repo } from '@gitgoose/git'
 import type { CommitOrder, GraphFilter, RepoSnapshot } from '@gitgoose/shared'
-import watcher from '@parcel/watcher'
+import type { AsyncSubscription } from '@parcel/watcher'
 import { relative, sep } from 'node:path'
 
 interface Open {
   repo: Repo
-  subscriptions: watcher.AsyncSubscription[]
+  subscriptions: AsyncSubscription[]
   timer: NodeJS.Timeout | null
   lastJson: string
   /** Writes of ours in flight (see `during`); watcher refreshes wait while this is above zero. */
@@ -16,6 +16,13 @@ interface Open {
 
 /** Paths whose changes never affect what we show. Objects change on every commit but refs and the index cover it. */
 const IGNORE = ['.git/objects', '.git/lfs', 'node_modules', '.git/fsmonitor--daemon']
+
+/**
+ * The native watcher module, loaded when the first repository opens rather than with the app:
+ * loading it is ~25 ms the window would otherwise wait for.
+ */
+let watcherModule: Promise<typeof import('@parcel/watcher')> | null = null
+const loadWatcher = () => (watcherModule ??= import('@parcel/watcher').then((m) => m.default))
 
 /**
  * Open repositories and their file watchers.
@@ -70,6 +77,7 @@ export class RepoManager {
     }
     const ignore = IGNORE.map((p) => p.split('/').join(sep))
     try {
+      const watcher = await loadWatcher()
       entry.subscriptions.push(await watcher.subscribe(repo.path, onEvents, { ignore }))
       // Linked worktrees keep their git dir outside the working tree; watch it too.
       const rel = relative(repo.path, repo.gitDir)

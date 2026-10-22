@@ -10,7 +10,8 @@
  *              topological order, each without and with a commit-graph file (ADR-003)
  *   2. layout: lane layout for every commit
  *   3. app:    launch Electron, time to the first painted graph rows, then scroll fps; where
- *              the startup time went (the app's performance marks, from process start)
+ *              the startup time went (the app's performance marks, from process start); and
+ *              what the main bundle loads before the window can open
  *   4. sidebar: the 3,000-commit dev repository with 2,000 generated branches and tags (in
  *              folders), every section open: time to the first sidebar rows, rows in the DOM,
  *              and scroll fps through the whole list (PLAN-4 phase 4)
@@ -20,7 +21,7 @@ import { Repo } from '@gitgoose/git'
 import { layout } from '@gitgoose/graph'
 import { _electron as electron, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -45,6 +46,27 @@ const BUDGET = {
   sidebarFirstPaintMs: 2500,
   /** Rows the sidebar may keep in the DOM: what fits on screen plus overscan, never the whole list. */
   sidebarDomRows: 120,
+}
+
+/**
+ * Modules the main process must not load before its window opens: each costs tens to hundreds
+ * of milliseconds and is needed only later, or only in the indexer process. See
+ * apps/desktop/src/main/startup.test.ts, which checks the sources; this checks the build.
+ */
+const LAZY_MODULES = ['@anthropic-ai/sdk', '@agentclientprotocol/sdk', '@parcel/watcher', 'web-tree-sitter', 'electron-updater']
+
+/** Bare modules the built main entry (and the chunks it imports) import statically. */
+function staticImports(entry: string, seen = new Set<string>()): string[] {
+  if (seen.has(entry)) return []
+  seen.add(entry)
+  const text = readFileSync(entry, 'utf8')
+  const out: string[] = []
+  for (const m of text.matchAll(/^import\s+(?:[^'"]*?\s+from\s+)?["']([^'"]+)["']/gm)) {
+    const spec = m[1]!
+    if (spec.startsWith('.')) out.push(...staticImports(resolve(entry, '..', spec), seen))
+    else out.push(spec)
+  }
+  return out
 }
 
 async function time<T>(fn: () => Promise<T> | T): Promise<[T, number]> {
@@ -95,6 +117,7 @@ async function main() {
   let scrollFps = NaN
   let idleFps = NaN
   let startup: Record<string, number> = {}
+  let eagerModules: string[] = []
   if (!existsSync(main)) {
     console.log('Skipping the app benchmark: build it first (pnpm build).')
   } else {
@@ -114,6 +137,7 @@ async function main() {
     await page.getByTestId('commit-row').first().waitFor()
     appFirstPaintMs = performance.now() - t0
     startup = await startupTimeline(app, page)
+    eagerModules = staticImports(main).filter((m) => LAZY_MODULES.includes(m))
 
     // Scroll the graph continuously for two seconds and count animation frames.
     // Passed as a string: tsx rewrites named functions with a helper that does not exist in the page.
@@ -136,6 +160,7 @@ async function main() {
     layoutAllMs: round(layoutAllMs),
     appFirstPaintMs: round(appFirstPaintMs),
     ...startup,
+    mainEagerModules: eagerModules.join(', ') || 'none',
     idleFps: round(idleFps),
     scrollFps: round(scrollFps),
     sidebarRefs: sidebar.refs,
@@ -157,6 +182,7 @@ async function main() {
     if (results.topoFirstPageMs > BUDGET.firstPageMs) failures.push(`first log page, topological ${results.topoFirstPageMs} ms > ${BUDGET.firstPageMs} ms`)
     if (results.layoutAllMs > BUDGET.layoutAllMs) failures.push(`layout ${results.layoutAllMs} ms > ${BUDGET.layoutAllMs} ms`)
     if (results.appFirstPaintMs > BUDGET.appFirstPaintMs) failures.push(`app first paint ${results.appFirstPaintMs} ms > ${BUDGET.appFirstPaintMs} ms`)
+    if (eagerModules.length) failures.push(`the main process loads ${eagerModules.join(', ')} before its window opens (import them where they are used)`)
     // Scrolling must keep up with what the machine can draw at all, minus a little slack.
     const fpsBudget = Math.min(BUDGET.scrollFps, results.idleFps * 0.9)
     if (results.scrollFps < fpsBudget) failures.push(`scroll ${results.scrollFps} fps < ${round(fpsBudget)} fps (idle: ${results.idleFps})`)
