@@ -515,6 +515,7 @@ function newView(snap: RepoSnapshot): RepoView {
 
 /** Show a repository in a new tab (or switch to its tab). `first`: its log's first page, when already fetched. */
 export function addRepo(snap: RepoSnapshot, first?: LogPage): void {
+  early.delete(snap.id)
   const s = get()
   if (s.repos[snap.id]) {
     set({ active: snap.id })
@@ -569,9 +570,21 @@ export async function closeTab(id: string): Promise<void> {
   set({ settings: await api.getSettings() })
 }
 
+/**
+ * The last snapshot pushed for a repository that has no tab yet. boot() adds a restored tab only
+ * once its first page is in (and the tabs before it are): a change the watcher reports after
+ * openRepo answered would otherwise be lost, and the tab would show the answer's older status.
+ * boot() clears the entry when openRepo answers (anything pushed before that is no newer than
+ * the answer) and shows what arrived after it; addRepo clears it for every other caller.
+ */
+const early = new Map<string, RepoSnapshot>()
+
 export function onSnapshot(snap: RepoSnapshot): void {
   const view = get().repos[snap.id]
-  if (!view) return
+  if (!view) {
+    early.set(snap.id, snap)
+    return
+  }
   const hadConflicts = view.snapshot.status.some((e) => e.kind === 'unmerged')
   const hasConflicts = snap.status.some((e) => e.kind === 'unmerged')
   updateRepo(snap.id, (v) => ({
@@ -720,6 +733,7 @@ export async function boot(): Promise<void> {
   const paths = settings.openRepos
   const results = paths.map(async (path) => {
     const snap = await api.openRepo(path)
+    early.delete(snap.id)
     return { snap, first: await api.logPage(snap.id, 0, FIRST_PAGE).catch(() => undefined) }
   })
   const settled: ({ ok: true; snap: RepoSnapshot; first?: LogPage } | { ok: false })[] = []
@@ -729,7 +743,9 @@ export async function boot(): Promise<void> {
     await results[i]!.catch(() => {})
     for (; i < paths.length && settled[i]; i++) {
       const r = settled[i]!
-      if (r.ok) addRepo(r.snap, r.first)
+      // A change pushed while it waited (see `early`). If that moved the refs, the first page is
+      // from the old walk: resetLog sees that and reads the log afresh.
+      if (r.ok) addRepo(early.get(r.snap.id) ?? r.snap, r.first)
       // The folder was moved or deleted; drop it from the session.
       else gone.push(paths[i]!)
     }
