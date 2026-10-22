@@ -127,7 +127,8 @@ test('drag a commit onto another to squash it in; fixup staged changes into an o
   const a = r.git('rev-parse', 'HEAD~2').trim()
   await row(page, a).click({ button: 'right' })
   await page.getByRole('menuitem', { name: 'Fixup staged changes into this commit' }).click()
-  await expect.poll(() => r.git('show', 'HEAD~2:A.txt')).toBe('A fixed\n')
+  // Mid-rebase the branch is shorter than three commits, so HEAD~2 may not exist yet.
+  await expect.poll(() => r.gitOrNull('show', 'HEAD~2:A.txt')).toBe('A fixed\n')
   expect(subjects(r)).toEqual(['C', 'B', 'A', 'root'])
   await app.close()
 })
