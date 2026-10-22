@@ -3,9 +3,11 @@ import { FIRST_LOG_PAGE, SETTINGS, type LogPage, type SidebarPrefs, type PullReq
 import { create } from 'zustand'
 import { api, toUiError, type UiError } from './api'
 import { onAiEvent } from './ai'
+import { dropRepoJobs, sweepJobs } from './aiJobs'
 import { onThreadUpdate } from './thread'
 import { opName } from './format'
-import { followRewrite } from './rewrite'
+import { followRewrite, type CommitIndex } from './rewrite'
+import { followLocation, type NavLocation } from './nav'
 import type { ReviewState } from './review'
 import type { WalkthroughState } from './walkthrough'
 import type { ImpactState } from './impact'
@@ -212,6 +214,9 @@ export const useStore = create<State>(() => ({
 const set = useStore.setState
 const get = useStore.getState
 
+// AI answers the user reaches by themselves (selecting the commit, opening the panel) count as seen.
+useStore.subscribe(sweepJobs)
+
 export function updateRepo(id: string, patch: Partial<RepoView> | ((v: RepoView) => Partial<RepoView>)): void {
   set((s) => {
     const v = s.repos[id]
@@ -325,7 +330,8 @@ function resetLog(id: string, snap: RepoSnapshot, first?: LogPage): void {
  * The new log's first page is in: it replaces the one on screen. A selection that pointed at
  * commits the rewrite replaced (a rebase gives every replayed commit a new hash) follows them to
  * their new hashes, so the detail panel shows the commit the user just moved, not a stale copy.
- * A selected commit that is gone (dropped, or folded into another) gives way to HEAD.
+ * A selected commit that is gone (dropped, or folded into another) gives way to HEAD. An open diff
+ * of such a commit follows it the same way, or gives way to the graph.
  */
 function swapIn(id: string, log: LogData): void {
   const old = logs.get(id)
@@ -333,18 +339,54 @@ function swapIn(id: string, log: LogData): void {
   logs.set(id, log)
   const v = get().repos[id]
   if (!old || !v) return
-  const sel = v.selected
+  const follow = rewriteFollower(old, log, v.snapshot.head.hash)
+  // Back/forward history follows first, so the change below matches its current entry and is not
+  // recorded as a step of its own.
+  swapListeners.forEach((l) => l(id, follow))
+  const here: NavLocation = { repoId: id, selected: v.selected, center: v.center, line: v.line }
+  const next = follow(here)
+  if (next !== here) updateRepo(id, { selected: next.selected, center: next.center, line: next.line })
+}
+
+/**
+ * How a view moves from one log to the next: the selection by followSelection, and a file diff or
+ * line of a rewritten commit to its new hash too, so the diff never shows the stale copy of the
+ * commit the detail panel has moved on from (see followLocation).
+ */
+function rewriteFollower(old: CommitIndex, log: CommitIndex, head: string | undefined): (loc: NavLocation) => NavLocation {
+  const moved = new Map<string, string | null>()
+  const followHash = (h: string): string | null => {
+    if (log.index.has(h) || !old.index.has(h)) return h
+    let to = moved.get(h)
+    if (to === undefined) moved.set(h, (to = followRewrite([h], old, log)[0] ?? null))
+    return to
+  }
+  return (loc) => followLocation(loc, followHash, (sel) => followSelection(sel, old, log, head))
+}
+
+/**
+ * Where a selection lands in a new log: unchanged when its commits are all still there (or were
+ * never in the graph: a lost commit picked in the reflog, a hidden stash), else on their new hashes
+ * (followRewrite), else on HEAD.
+ */
+export function followSelection(sel: Selection, old: CommitIndex, log: CommitIndex, head: string | undefined): Selection {
   const hashes = selectedHashes(sel)
-  if (!hashes.length || hashes.every((h) => log.index.has(h))) return
+  if (hashes.every((h) => log.index.has(h) || !old.index.has(h))) return sel
   const next = followRewrite(hashes, old, log)
-  const head = v.snapshot.head.hash
   let selected: Selection = next[0] ? { kind: 'commit', hash: next[0] } : head ? { kind: 'commit', hash: head } : { kind: 'wip' }
   if (sel.kind === 'commits' && next.length > 1) {
     const [anchor] = followRewrite([sel.anchor], old, log)
     const [cursor] = followRewrite([sel.cursor], old, log)
     selected = { kind: 'commits', hashes: next, anchor: anchor ?? next[0]!, cursor: cursor ?? next[next.length - 1]! }
   }
-  updateRepo(id, { selected })
+  return selected
+}
+
+const swapListeners = new Set<(id: string, follow: (loc: NavLocation) => NavLocation) => void>()
+/** Hear when a repository's log is replaced by a new walk, with how a location follows rewritten commits. */
+export function onLogSwap(l: (id: string, follow: (loc: NavLocation) => NavLocation) => void): () => void {
+  swapListeners.add(l)
+  return () => swapListeners.delete(l)
 }
 
 /** First page small so the first screen paints fast; later pages large to cut round trips. */
@@ -561,6 +603,8 @@ export async function closeTab(id: string): Promise<void> {
   const i = s.tabs.indexOf(id)
   const active = s.active === id ? (tabs[Math.min(i, tabs.length - 1)] ?? null) : s.active
   set({ tabs, repos, active })
+  // Main ends the repository's AI sessions; their jobs have nowhere to open any more.
+  dropRepoJobs(id)
   logs.delete(id)
   pending.delete(id)
   await api.closeRepo(id)

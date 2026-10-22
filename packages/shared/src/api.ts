@@ -56,7 +56,11 @@ export type UndoId = number | null
 
 export type ResetMode = 'soft' | 'mixed' | 'hard' | 'keep'
 
-export type Resolution = 'ours' | 'theirs' | { content: string }
+/**
+ * How to resolve a conflicted file. With `expected` (a proposal made earlier, such as the AI's),
+ * the file is written only while it still reads exactly that and is still in conflict.
+ */
+export type Resolution = 'ours' | 'theirs' | { content: string; expected?: string }
 
 export interface ConflictVersions {
   base: string | null
