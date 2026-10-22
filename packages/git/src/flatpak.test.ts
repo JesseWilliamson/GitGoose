@@ -1,5 +1,5 @@
 import { initRepo, tempDir } from '@gitgoose/fixtures'
-import { chmodSync, writeFileSync } from 'node:fs'
+import { chmodSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { GitRunner, flatpakCommandLine, inFlatpakSandbox } from './runner'
@@ -50,7 +50,8 @@ describe('running git on the host from a flatpak sandbox', () => {
     expect(line.args).toEqual(['--host', '--directory=/home/ada/work', '--env=LC_ALL=C', 'git', 'status'])
   })
 
-  it('runs real git through flatpak-spawn, in the repository and with our environment', async () => {
+  // The fake flatpak-spawn is a shell script: Windows cannot start it (and has no flatpak).
+  it.skipIf(process.platform === 'win32')('runs real git through flatpak-spawn, in the repository and with our environment', async () => {
     const r = initRepo()
     r.commit('root')
     process.env.PATH = `${fakeFlatpakSpawn()}:${savedPath}`
@@ -62,7 +63,8 @@ describe('running git on the host from a flatpak sandbox', () => {
     // --directory, not the cwd of the flatpak-spawn process, is what puts git in the repository:
     // the fake starts git from an empty environment, as the portal does.
     const top = await runner.run(['rev-parse', '--show-toplevel'], { readOnly: true })
-    expect(top.stdout.trim()).toBe(r.dir)
+    // Both resolved: macOS keeps temp folders behind a symlink (/var -> /private/var).
+    expect(realpathSync(top.stdout.trim())).toBe(realpathSync(r.dir))
 
     // Proof that the variables cross as --env arguments: from a directory that is not a
     // repository at all, git finds this one only through GIT_DIR.
