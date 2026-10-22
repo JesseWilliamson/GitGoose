@@ -1,6 +1,6 @@
 import { _electron as electron, expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { tempDir } from '@gitgoose/fixtures'
-import { mkdirSync, rmSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -126,5 +126,18 @@ export async function clickRowAction(page: Page, row: Locator, title: string): P
     } catch (e) {
       if (attempt === 4) throw e
     }
+  }
+}
+
+/**
+ * A file's text, or null while it does not exist. git rewrites a file by removing it first, so a
+ * read in an expect.poll can land in between; a thrown ENOENT fails the poll at once instead of
+ * being retried, null is retried.
+ */
+export function readOrNull(path: string): string | null {
+  try {
+    return readFileSync(path, 'utf8')
+  } catch {
+    return null
   }
 }

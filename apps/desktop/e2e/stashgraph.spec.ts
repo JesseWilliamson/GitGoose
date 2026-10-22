@@ -1,8 +1,7 @@
 import { makeFixture } from '@gitgoose/fixtures'
 import { expect, test } from '@playwright/test'
-import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { launch } from './app'
+import { launch, readOrNull } from './app'
 
 test('stashes appear in the graph beside their base commit, with their own menu', async () => {
   const r = makeFixture('stash')
@@ -23,7 +22,7 @@ test('stashes appear in the graph beside their base commit, with their own menu'
   await expect(page.getByRole('menu')).toContainText('stash@{1}: first stash')
   await page.getByRole('menuitem', { name: 'Pop stash' }).click()
   await expect(stashRows).toHaveCount(1)
-  await expect.poll(() => readFileSync(join(r.dir, 'x.txt'), 'utf8')).toBe('changed once\n')
+  await expect.poll(() => readOrNull(join(r.dir, 'x.txt'))).toBe('changed once\n')
 
   // Settings → Graph can turn them off.
   await page.evaluate(() => window.gitgoose.setSettings({ showStashes: false }))

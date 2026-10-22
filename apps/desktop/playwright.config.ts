@@ -5,7 +5,10 @@ export default defineConfig({
   timeout: 60_000,
   // Windows CI starts processes several times slower (Git for Windows' MSYS2 layer, Defender
   // scanning): the app alone can take longer than the default 5 s to show a repository there.
-  expect: { timeout: process.platform === 'win32' ? 20_000 : 5_000 },
+  // Ceilings, not costs: a passing expectation returns at once. Shared CI runners run several
+  // times slower some days (a conflict resolution on the dev repository went past 5 s), so CI
+  // gets more room; Windows most of all.
+  expect: { timeout: process.platform === 'win32' ? 20_000 : process.env.CI ? 15_000 : 5_000 },
   // Every test starts its own app with its own profile and fixture, so they can run side by side.
   // Three at a time on Linux CI (four cores); one on macOS and Windows, where the app is slow to
   // start and the runners are smaller; by hand, Playwright's default (half the cores).
