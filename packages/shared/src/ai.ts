@@ -260,8 +260,6 @@ export interface ImpactResult {
   callers: { id: string; symbol: string; path: string; line: number; text: string; within?: string; test: boolean }[]
   /** Test files that cover the changed files or use the changed symbols. */
   tests: string[]
-  /** Files that usually change with these but are not in the change. */
-  coChange: { path: string; with: string; together: number; total: number }[]
   /** Set by "Assess impact": which call sites the model thinks are at risk, and why. */
   assessment?: { summary: string; risks: { id: string; why: string }[]; dropped: number }
 }
