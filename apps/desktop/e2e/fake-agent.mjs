@@ -82,7 +82,8 @@ async function answer(id, session, text, cx) {
   const lastLine = text.trim().split('\n').at(-1)
   const first = history[0]?.user ?? (replayed ? text : '')
 
-  if (text.includes('FAKE:model')) {
+  // The new message only: a replay carries earlier "FAKE:model" turns that must not answer again.
+  if (lastLine.includes('FAKE:model')) {
     await say(cx, id, `Model: ${session.model ?? 'none'}`)
     return { stopReason: 'end_turn' }
   }

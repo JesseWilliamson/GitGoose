@@ -602,7 +602,8 @@ describe('choosing who answers', () => {
     const b: AiTarget = { provider: 'agent', agent: 'custom', agentCommand: `${t.settings.aiAgentCommand} --second` }
     t.ai.consent(a)
     t.ai.consent(b)
-    return { ...t, a, b }
+    // Not a spread: that would read the `settings` getter once and freeze it.
+    return Object.assign(t, { a, b })
   }
 
   it("a run uses the area's model: the session switches before the prompt, and the agent's list is kept", async () => {
@@ -769,5 +770,34 @@ describe('prompts the user can read and edit', () => {
     const res = await t.ai.run('p3', 'x', { kind: 'explain-commit', hash: t.r.git('rev-parse', 'HEAD').trim() }, { keepThread: true })
     const thread = await t.ai.openThread('x', { kind: 'explain', hash: '' }, res.threadId)
     expect(thread.turns[0]!.sent!.startsWith('[System prompt]\nYou explain code changes to a teammate.\n\n[Message]\nExplain what this commit does')).toBe(true)
+  })
+})
+
+describe('replaying a conversation that began over the API', () => {
+  it('every later agent session gets the system prompt the API kept apart, not only the first', async () => {
+    const log = join(tempDir(), 'prompts.log')
+    process.env.FAKE_AGENT_LOG = log
+    cleanup.push(() => void delete process.env.FAKE_AGENT_LOG)
+    const api = await fakeAnthropic(['It adds the widget registry.'])
+    cleanup.push(() => api.close())
+    const t = await setup({ aiProvider: 'anthropic' }, api)
+    t.ai.setApiKey('sk-ant-test')
+    t.ai.consent()
+    const a: AiTarget = { provider: 'agent', agent: 'custom', agentCommand: t.settings.aiAgentCommand }
+    const b: AiTarget = { ...a, agentCommand: `${a.agentCommand} --second` }
+    t.ai.consent(a)
+    t.ai.consent(b)
+    const res = await t.ai.run('e1', 'x', { kind: 'explain-commit', hash: t.r.git('rev-parse', 'HEAD').trim() }, { keepThread: true })
+    expect(api.requests[0]!.system).toBe('You explain code changes to a teammate.')
+    const thread = await t.ai.openThread('x', { kind: 'explain', hash: '' }, res.threadId)
+    // To agent a, then on to agent b: two fresh sessions, each told the conversation so far.
+    await ended(t.events, await t.ai.sendThread(thread.id, 'one', { target: a }))
+    await ended(t.events, await t.ai.sendThread(thread.id, 'two', { target: b }))
+    const sent = readFileSync(log, 'utf8').split('\n---\n').filter(Boolean)
+    expect(sent).toHaveLength(2)
+    for (const s of sent) {
+      expect(s.startsWith('This conversation was interrupted')).toBe(true)
+      expect(s).toContain('You explain code changes to a teammate.\n\nExplain what this commit does')
+    }
   })
 })

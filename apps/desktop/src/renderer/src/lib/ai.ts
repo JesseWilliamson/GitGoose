@@ -1,7 +1,7 @@
 import { AI_AUTH_REQUIRED, defaultTarget, effectivePrompt, type AgentAuthMethod, type AiArea, type AiPermissionRequest, type AiResult, type AiTarget, type AiTask, type RecomposeProposal, type ThreadAnchor } from '@gitgoose/shared'
 import { create } from 'zustand'
 import { api, toUiError } from './api'
-import { attention, choose, saveSettings, useStore } from './store'
+import { attention, choose, setSettingEntry, useStore } from './store'
 
 /**
  * Renderer side of the AI features. `startAi` does the asking (set up? agreed? logged in?) and
@@ -95,10 +95,8 @@ export function areaTarget(area: AiArea): AiTarget | null {
 }
 
 /** Remember an area's pick; null goes back to following Settings → AI. */
-export async function setAreaTarget(area: AiArea, target: AiTarget | null): Promise<void> {
-  const all = useStore.getState().settings?.aiAreaTargets ?? {}
-  const { [area]: _old, ...rest } = all
-  await saveSettings({ aiAreaTargets: target ? { ...rest, [area]: target } : rest })
+export function setAreaTarget(area: AiArea, target: AiTarget | null): Promise<void> {
+  return setSettingEntry('aiAreaTargets', area, target)
 }
 
 function openSettings(): void {

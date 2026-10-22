@@ -7,7 +7,7 @@ import { ChevronRight, FileText, Lock, RotateCcw } from 'lucide-react'
 import { Popover } from 'radix-ui'
 import { useEffect, useRef, useState } from 'react'
 import { api, toUiError } from '../lib/api'
-import { saveSettings, useStore } from '../lib/store'
+import { setSettingEntry, useStore } from '../lib/store'
 import { Button, Spinner } from './ui'
 
 /**
@@ -231,10 +231,8 @@ function useDebouncedSave<T>(save: (v: T) => void | Promise<void>): (v: T, now?:
 }
 
 /** Remember (or with null, forget) an area's words for one prompt kind. */
-export async function setPromptEdit(kind: PromptKind, text: PromptText | null): Promise<void> {
-  const all = useStore.getState().settings?.aiPromptEdits ?? {}
-  const { [kind]: _old, ...rest } = all
-  await saveSettings({ aiPromptEdits: text ? { ...rest, [kind]: text } : rest })
+export function setPromptEdit(kind: PromptKind, text: PromptText | null): Promise<void> {
+  return setSettingEntry('aiPromptEdits', kind, text)
 }
 
 /** Settings → AI → Prompts: the defaults every area starts from. */
@@ -279,10 +277,7 @@ function SettingsPrompt({ kind }: { kind: PromptKind }) {
   const def = DEFAULT_PROMPTS[kind]
   const stored = settings.aiPrompts[kind]
   const [draft, setDraft] = useState<PromptText>(stored ?? { system: def.system, instructions: def.instructions })
-  const save = useDebouncedSave((text: PromptText | null) => {
-    const { [kind]: _old, ...rest } = useStore.getState().settings?.aiPrompts ?? {}
-    return saveSettings({ aiPrompts: text ? { ...rest, [kind]: text } : rest })
-  })
+  const save = useDebouncedSave((text: PromptText | null) => setSettingEntry('aiPrompts', kind, text))
   const same = (t: PromptText) => t.system === def.system && t.instructions === def.instructions
   return (
     <PromptEditor kind={kind} value={draft} source={same(draft) ? 'built-in' : 'settings'}

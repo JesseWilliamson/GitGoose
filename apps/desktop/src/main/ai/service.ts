@@ -115,6 +115,12 @@ interface ThreadRec {
   primed: boolean
   /** What was actually exchanged, oldest first (the first message carries the context). null: not rebuilt yet. */
   history: { user: string; agent: string }[] | null
+  /**
+   * The history's first message went to the API, which takes the system prompt apart from the
+   * messages, so the message itself lacks it. Any agent session told this history later (after
+   * a move, or after that agent restarts) needs the system prompt put back in front.
+   */
+  systemApart: boolean
   /** The API mode's system prompt. */
   system: string
   /** What the feature saw, for checking artifacts with the feature's own verifier. */
@@ -551,7 +557,7 @@ export class AiService {
     const rec: ThreadRec = {
       thread, repoId, path: repo?.path ?? null, cwd: repo?.path ?? tmpdir(), keep, sessionId: null, agentLine: null, target: saved?.target ?? null, primed: false,
       // A thread from disk is told its history again from its transcript, when it needs a session.
-      history: saved ? null : [], system: '', built: null, task: null, active: null, starting: false, open: false, idle: null,
+      history: saved ? null : [], systemApart: false, system: '', built: null, task: null, active: null, starting: false, open: false, idle: null,
     }
     this.threads.set(thread.id, rec)
     return rec
@@ -564,8 +570,6 @@ export class AiService {
    * session is told the conversation so far. The API keeps no session, so it gets everything.
    */
   private async outgoing(rec: ThreadRec, target: AiTarget, message: string, opening?: string, redact = false): Promise<Outgoing> {
-    // The API keeps the system prompt apart from the messages; an agent gets it in the text.
-    const fromApi = rec.target?.provider === 'anthropic' && target.provider === 'agent'
     this.moveTo(rec, target)
     const anthropic = target.provider === 'anthropic'
     const history = await this.historyOf(rec)
@@ -578,6 +582,8 @@ export class AiService {
       rec.system = guarded.system
       const text = guarded.text
       const messages = [...history.flatMap((h) => [{ role: 'user' as const, content: h.user }, { role: 'assistant' as const, content: h.agent }]), { role: 'user' as const, content: text }]
+      // This turn opens the conversation, without the system prompt in its text.
+      if (!history.length) rec.systemApart = true
       return { text, logical: text, messages }
     }
     const line = targetCommandLine(target)
@@ -609,11 +615,13 @@ export class AiService {
       return { text, logical: text }
     }
     if (!history.length) {
+      // An agent's opening carries the system prompt in its text.
+      rec.systemApart = false
       const text = guardTurn(await first(), redact)
       return { text, logical: text }
     }
-    // Moving here from the API: its system prompt was never in the messages, so it goes first.
-    const told = fromApi && rec.system && history[0] ? [{ ...history[0], user: `${rec.system}\n\n${history[0].user}` }, ...history.slice(1)] : history
+    // A history that began with the API lacks its system prompt: it goes first, in every agent session told it.
+    const told = rec.systemApart && rec.system && history[0] ? [{ ...history[0], user: `${rec.system}\n\n${history[0].user}` }, ...history.slice(1)] : history
     return { text: guardTurn(replayMessage(told, message), redact), logical: guardTurn(message, redact) }
   }
 
@@ -689,6 +697,8 @@ export class AiService {
       // As the opening was: an agent's first message carries the system prompt, the API's does not.
       const context = anchor.kind === 'task' ? '' : await anchorContext(this.deps.repo(rec.repoId), anchor, { words: this.words() }, rec.target?.provider === 'anthropic').catch(() => '')
       past[0] = { ...past[0]!, user: [context, artifactProtocol(anchor, false), past[0]!.user].filter(Boolean).join('\n\n') }
+      // Rebuilt the way the API was told it, without the system prompt.
+      rec.systemApart = rec.target?.provider === 'anthropic'
     }
     rec.history = past
     return past

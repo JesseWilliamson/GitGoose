@@ -6,7 +6,7 @@ import clsx from 'clsx'
 import { useEffect, useRef, useState } from 'react'
 import { setAreaTarget } from '../lib/ai'
 import { api, toUiError } from '../lib/api'
-import { reportError, saveSettings, useStore } from '../lib/store'
+import { reportError, saveSettings, setSettingEntry, useStore } from '../lib/store'
 
 /**
  * Who answers, and with which model: two small selects. In an AI area (`area`) it edits that
@@ -39,8 +39,7 @@ export function ModelPicker({ area, defaults, className, onPicked }: {
     if (defaults) {
       // Settings → AI: the API's model setting, or this agent's default (blank: its own).
       if (target.provider === 'anthropic') return void saveSettings({ anthropicModel: model || 'claude-opus-5-5' })
-      const { [targetKey(target)]: _old, ...rest } = settings.aiAgentModel
-      return void saveSettings({ aiAgentModel: model ? { ...rest, [targetKey(target)]: model } : rest })
+      return void setSettingEntry('aiAgentModel', targetKey(target), model || null)
     }
     const { model: _m, ...who } = target
     void setAreaTarget(area!, model ? { ...who, model } : who).then(onPicked)
