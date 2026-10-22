@@ -1,4 +1,4 @@
-import { makeFixture } from '@gitgoose/fixtures'
+import { FixtureRepo, makeFixture, makeLargeRepo } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import { basename, delimiter } from 'node:path'
 import { launch } from './app'
@@ -109,5 +109,59 @@ test('back and forward step through commits, diffs, views and tabs', async () =>
   })
   await expect(repo).toHaveText(basename(a.dir))
   await expect(reflog).toBeVisible()
+  await app.close()
+})
+
+test('after a rewrite, back shows the rewritten commit and its diff, not the stale copy', async () => {
+  const r = makeFixture('linear')
+  const before = r.head()
+  const { app, page } = await launch(r.dir)
+  await row(page, before).click()
+  await page.getByTestId('commit-file').first().click()
+  await expect(page.getByTestId('file-view')).toContainText(`in ${before.slice(0, 7)}`)
+  await page.getByTestId('open-reflog').click()
+  await expect(page.getByTestId('reflog')).toBeVisible()
+
+  // Amended outside the app: same author date and subject, new hash.
+  r.git('commit', '-q', '--amend', '--no-edit', '--allow-empty')
+  const after = r.head()
+  expect(after).not.toBe(before)
+  // The app has noticed once the reflog lists it (the log is walked again with it).
+  await expect(page.locator(`[data-testid="reflog-row"][data-hash="${after}"]`).first()).toBeVisible()
+
+  await back(page)
+  await expect(page.getByTestId('file-view')).toContainText(`in ${after.slice(0, 7)}`)
+  await back(page)
+  await expect(row(page, after)).toHaveAttribute('data-selected', 'true')
+  await app.close()
+})
+
+test('back to a commit the refreshed log has not loaded yet loads it and shows it selected', async () => {
+  // More than one page of history: a refresh reloads only as far as the first 3,000 commits.
+  const dir = makeLargeRepo(4000)
+  const r = new FixtureRepo(dir)
+  const root = r.git('rev-list', '--max-parents=0', 'HEAD').trim()
+  const { app, page } = await launch(dir)
+  const count = page.getByTestId('commit-count')
+  await expect(count).toContainText('+')
+  // Down to the oldest commit, loading every page on the way.
+  await page.getByTestId('commit-row').first().click()
+  for (let i = 0; i < 20 && !(await row(page, root).isVisible()); i++) {
+    await page.keyboard.press('End')
+    await page.waitForTimeout(200)
+  }
+  await row(page, root).click()
+  await expect(row(page, root)).toHaveAttribute('data-selected', 'true')
+  await expect(count).not.toContainText('+')
+  await page.getByTestId('open-reflog').click()
+  await expect(page.getByTestId('reflog')).toBeVisible()
+
+  // Something outside the app changes the refs: the log is walked again, first page only.
+  r.git('branch', 'elsewhere')
+  await expect(count).toHaveText(/^3,000\+ commits$/)
+
+  await back(page)
+  await expect(page.getByTestId('graph-scroll')).toBeVisible()
+  await expect(row(page, root)).toHaveAttribute('data-selected', 'true')
   await app.close()
 })

@@ -130,3 +130,44 @@ export function equal(a: unknown, b: unknown): boolean {
   if (ka.length !== kb.length) return false
   return ka.every((k) => equal((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]))
 }
+
+/**
+ * Where a commit went in a rewrite: its new hash, null when it is gone (dropped, or folded into
+ * another), or the same hash when the rewrite did not move it or it is not a commit the log had.
+ */
+export type FollowHash = (hash: string) => string | null
+
+/**
+ * A location after a rebase or reorder: every commit it names follows to its new hash, so the
+ * selection and the diff on screen still agree. The selection is followed by `followSelected`
+ * (the store's rule, which falls back to HEAD); a file diff of a commit that is gone gives way to
+ * the graph; a revision that is gone in a comparison or a line stays as it was (the object is still
+ * there, so it still shows). Unchanged parts keep their identity, so an unchanged location is equal.
+ */
+export function followLocation(loc: NavLocation, follow: FollowHash, followSelected: (sel: Selection) => Selection): NavLocation {
+  const keep = (h: string) => follow(h) ?? h
+  const sel = loc.selected
+  let selected = followSelected(sel)
+  if (sel.kind === 'compare') {
+    const from = keep(sel.from)
+    const to = sel.to === null ? null : keep(sel.to)
+    if (from !== sel.from || to !== sel.to) selected = { ...sel, from, to }
+  }
+  let center = loc.center
+  if (center.kind === 'file') {
+    const t = center.target
+    if (t.kind === 'commit') {
+      const hash = follow(t.hash)
+      if (hash === null) center = { kind: 'graph' }
+      else if (hash !== t.hash) center = { ...center, target: { ...t, hash } }
+    } else if (t.kind === 'range') {
+      const from = keep(t.from)
+      const to = t.to === null ? null : keep(t.to)
+      if (from !== t.from || to !== t.to) center = { ...center, target: { ...t, from, to } }
+    }
+  }
+  let line = loc.line
+  if (line && keep(line.hash) !== line.hash) line = { hash: keep(line.hash) }
+  if (selected === loc.selected && center === loc.center && line === loc.line) return loc
+  return { ...loc, selected, center, line }
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { COALESCE_MS, equal, NavHistory, type NavLocation } from './nav'
+import { COALESCE_MS, equal, followLocation, NavHistory, type FollowHash, type NavLocation } from './nav'
 
 const at = (hash: string, repoId = 'a', center: NavLocation['center'] = { kind: 'graph' }): NavLocation =>
   ({ repoId, selected: { kind: 'commit', hash }, center, line: null })
@@ -112,6 +112,41 @@ describe('NavHistory', () => {
     visit(h, at('old'), reflog('x'))
     h.map((loc) => (loc.selected.kind === 'commit' && loc.selected.hash === 'old' ? { ...loc, selected: { kind: 'commit', hash: 'new' } } : loc))
     expect(h.back()).toEqual(at('new'))
+  })
+})
+
+describe('followLocation', () => {
+  // A rebase: old1 became new1, old2 was dropped; everything else stayed.
+  const follow: FollowHash = (h) => (h === 'old1' ? 'new1' : h === 'old2' ? null : h)
+  // The store's rule for the selection, reduced: a moved commit follows, a dropped one goes to HEAD.
+  const followSelected = (sel: NavLocation['selected']): NavLocation['selected'] =>
+    sel.kind === 'commit' && follow(sel.hash) !== sel.hash ? { kind: 'commit', hash: follow(sel.hash) ?? 'head' } : sel
+
+  it('moves a file diff to the rewritten commit along with the selection', () => {
+    const moved = followLocation(file('old1', 'x.ts'), follow, followSelected)
+    expect(moved).toEqual(file('new1', 'x.ts'))
+  })
+
+  it('closes a file diff of a commit that is gone, as the selection goes to HEAD', () => {
+    expect(followLocation(file('old2', 'x.ts'), follow, followSelected)).toEqual(at('head'))
+  })
+
+  it('follows both ends of a comparison and of a range diff, and the line', () => {
+    const loc: NavLocation = {
+      repoId: 'a',
+      selected: { kind: 'compare', from: 'old1', to: null, fromLabel: 'old1', toLabel: 'Working tree' },
+      center: { kind: 'file', target: { kind: 'range', from: 'keep', to: 'old1', path: 'x.ts' }, mode: 'diff' },
+      line: { hash: 'old1' },
+    }
+    const moved = followLocation(loc, follow, followSelected)
+    expect(moved.selected).toMatchObject({ from: 'new1', to: null })
+    expect(moved.center).toMatchObject({ target: { from: 'keep', to: 'new1' } })
+    expect(moved.line).toEqual({ hash: 'new1' })
+  })
+
+  it('returns the same object when nothing moved', () => {
+    const loc = file('keep', 'x.ts')
+    expect(followLocation(loc, follow, followSelected)).toBe(loc)
   })
 })
 

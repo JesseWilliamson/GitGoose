@@ -1,5 +1,5 @@
 import { NavHistory, type NavLocation } from './nav'
-import { followSelection, getLog, onLogSwap, selectedHashes, useStore, type RepoView, type Selection } from './store'
+import { ensureLoaded, getLog, onLogSwap, selectedHashes, useStore, type RepoView, type Selection } from './store'
 
 /**
  * Back and forward wired to the store. Every change of the active tab, or of its selection,
@@ -37,31 +37,32 @@ export function installNavigation(): void {
     if (s.active === prev.active && was && was.selected === v.selected && was.center === v.center && was.line === v.line) return
     history.record(locationOf(v), performance.now())
   })
-  // A rebase or reorder gives commits new hashes: entries follow them as the selection does, so
-  // going back finds the commit the user moved, not its stale copy. Commits the old log never had
-  // (a lost commit picked in the reflog) are left as they are.
-  onLogSwap((id, old, log) => {
-    const head = useStore.getState().repos[id]?.snapshot.head.hash
-    const follow = (sel: Selection) =>
-      selectedHashes(sel).every((h) => old.index.has(h) || log.index.has(h)) ? followSelection(sel, old, log, head) : sel
-    history.map((loc) => (loc.repoId === id ? { ...loc, selected: follow(loc.selected) } : loc))
-  })
+  // A rebase or reorder gives commits new hashes: entries follow them exactly as the view on
+  // screen does (selection, file diff, line), so going back finds the commit the user moved, not
+  // its stale copy, and never pairs the new commit with the old one's diff.
+  onLogSwap((id, follow) => history.map((loc) => (loc.repoId === id ? follow(loc) : loc)))
 }
 
-/**
- * A recorded selection, or HEAD when its commit is no longer in the history (a rewrite the
- * entry could not follow). Only judged once the whole log is loaded: until then a commit not yet
- * paged in is not missing. The reflog lists commits the graph never has, and a stash is not in
- * the graph when stashes are hidden; those stay as they are.
- */
-function stillThere(v: RepoView, loc: NavLocation): Selection {
-  const hashes = selectedHashes(loc.selected)
+/** The graph is on screen and the selection names commits it has not loaded (yet, or any more). */
+function unloaded(v: RepoView, loc: NavLocation): string[] {
+  if (loc.center.kind !== 'graph') return []
   const log = getLog(v.id)
-  if (!hashes.length || !log.done || loc.center.kind === 'reflog') return loc.selected
-  const gone = hashes.some((h) => !log.index.has(h) && !v.stashes.some((s) => s.hash === h))
-  if (!gone) return loc.selected
-  const head = v.snapshot.head.hash
-  return head ? { kind: 'commit', hash: head } : { kind: 'wip' }
+  // A stash is not in the graph when stashes are hidden, and never will be: nothing to load.
+  return selectedHashes(loc.selected).filter((h) => !log.index.has(h) && !v.stashes.some((s) => s.hash === h))
+}
+
+function headOf(v: RepoView): Selection {
+  return v.snapshot.head.hash ? { kind: 'commit', hash: v.snapshot.head.hash } : { kind: 'wip' }
+}
+
+/** Change the store without recording the change as a step. */
+function quietly(change: () => void): void {
+  navigating = true
+  try {
+    change()
+  } finally {
+    navigating = false
+  }
 }
 
 /** Go back (-1) or forward (1). */
@@ -76,17 +77,26 @@ function go(step: -1 | 1): void {
   }
   const loc = step < 0 ? history.back(live) : history.forward(live)
   if (!loc) return
-  navigating = true
-  try {
-    // One store change for tab and view, so the screen never shows the new tab with the old view.
-    useStore.setState((s) => {
-      const v = s.repos[loc.repoId]
-      if (!v) return s
-      return { active: loc.repoId, repos: { ...s.repos, [loc.repoId]: { ...v, selected: stillThere(v, loc), center: loc.center, line: loc.line } } }
-    })
-  } finally {
-    navigating = false
-  }
+  const v = s.repos[loc.repoId]
+  if (!v) return
+  // A commit that is not in the loaded log: once the whole log is in, it is gone (a rewrite the
+  // entry could not follow) and HEAD stands in. Until then it may just not be paged in yet, as
+  // after a refresh that reloaded only the first page: load up to it so the graph can show and
+  // scroll to it, and judge it then.
+  const missing = unloaded(v, loc)
+  const done = getLog(v.id).done
+  const selected = missing.length && done ? headOf(v) : loc.selected
+  // One store change for tab and view, so the screen never shows the new tab with the old view.
+  quietly(() => useStore.setState((s) => ({ active: loc.repoId, repos: { ...s.repos, [loc.repoId]: { ...v, selected, center: loc.center, line: loc.line } } })))
+  if (missing.length && !done) void loadSelection(loc.repoId, selected, missing)
+}
+
+async function loadSelection(id: string, selected: Selection, hashes: string[]): Promise<void> {
+  for (const h of hashes) await ensureLoaded(id, h)
+  const v = useStore.getState().repos[id]
+  // The user moved on meanwhile, or everything was found: leave it.
+  if (!v || v.selected !== selected || !unloaded(v, { repoId: id, selected, center: v.center, line: v.line }).length) return
+  quietly(() => useStore.setState((s) => ({ repos: { ...s.repos, [id]: { ...v, selected: headOf(v) } } })))
 }
 
 /**
