@@ -252,10 +252,8 @@ export interface Worktree {
   prunable?: string
 }
 
-/** History's view of the uncommitted change: forgotten companions, and whose lines it changes. */
+/** History's view of the uncommitted change: whose lines it changes. */
 export interface ChangeInsights {
-  /** Files that usually change with a changed file but are not in this change. */
-  coChange: { path: string; with: string; together: number; total: number }[]
   /** Authors of the lines being changed or removed, most lines first. */
   owners: { name: string; lines: number }[]
 }
