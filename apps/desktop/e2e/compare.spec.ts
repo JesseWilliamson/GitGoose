@@ -58,8 +58,10 @@ test('compare a commit with the working tree; restore a file to that version, un
   await row(page, A).click()
   await page.getByTestId('commit-file').filter({ hasText: 'calc.ts' }).click({ button: 'right' })
   await page.getByRole('menuitem', { name: 'Restore the working copy to this version' }).click()
-  await expect.poll(() => readFileSync(join(r.dir, 'calc.ts'), 'utf8')).toBe('export const total = price * count\nexport const tax = 0.2\n')
+  // git rewrites the file by removing it first; a read that lands in between sees no file.
+  const calc = () => { try { return readFileSync(join(r.dir, 'calc.ts'), 'utf8') } catch { return null } }
+  await expect.poll(calc).toBe('export const total = price * count\nexport const tax = 0.2\n')
   await page.getByTestId('toolbar').getByRole('button', { name: 'Undo' }).click()
-  await expect.poll(() => readFileSync(join(r.dir, 'calc.ts'), 'utf8')).toBe('local\n')
+  await expect.poll(calc).toBe('local\n')
   await app.close()
 })

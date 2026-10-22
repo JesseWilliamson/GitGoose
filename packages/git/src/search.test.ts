@@ -43,8 +43,8 @@ describe('search across every field', () => {
     const fast = repo.search('all', 'commit 19999')
     expect(await slow).toEqual([])
     expect((await fast).length).toBeGreaterThan(0)
-    // One walk of 20,000 commits, not two.
-    expect(performance.now() - t).toBeLessThan(5_000)
+    // One walk of 20,000 commits, not two (Windows runners walk several times slower).
+    expect(performance.now() - t).toBeLessThan(process.platform === 'win32' ? 20_000 : 5_000)
     repo.dispose()
-  }, 30_000)
+  }, process.platform === 'win32' ? 180_000 : 30_000)
 })

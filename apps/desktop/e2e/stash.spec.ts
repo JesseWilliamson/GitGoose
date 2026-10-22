@@ -2,7 +2,7 @@ import { initRepo } from '@gitgoose/fixtures'
 import { expect, test } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { launch } from './app'
+import { launch, readOrNull } from './app'
 
 function setup() {
   const r = initRepo()
@@ -37,7 +37,7 @@ test('take one file out of a stash; turn a stash into a branch', async () => {
   await page.getByTestId('stash-item').click()
   await page.getByTestId('commit-file').filter({ hasText: 'a.txt' }).click({ button: 'right' })
   await item(page, 'Take this file from the stash').click()
-  await expect.poll(() => readFileSync(join(r.dir, 'a.txt'), 'utf8')).toBe('a2\n')
+  await expect.poll(() => readOrNull(join(r.dir, 'a.txt'))).toBe('a2\n')
   expect(readFileSync(join(r.dir, 'b.txt'), 'utf8')).toBe('b\n')
   await page.getByTestId('toast-action').filter({ hasText: 'Undo' }).last().click()
   await expect.poll(() => r.git('status', '--porcelain')).toBe('')
