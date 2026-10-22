@@ -120,7 +120,7 @@ export function RecomposeDialog() {
         ) : (
           <>
             <div className="flex items-center gap-2 text-muted"><Spinner /> Asking the AI how to split these changes into commits…</div>
-            <p className="mt-2 text-xs text-faint">You can close this and carry on: the plan waits in the status bar until you open it.</p>
+            <p className="mt-2 text-xs text-faint">You can close this; the plan waits in the status bar.</p>
             <div className="mt-4 flex justify-end gap-2">
               <Button onClick={discard} data-testid="recompose-stop">Stop</Button>
               <Button variant="primary" onClick={hide} data-testid="recompose-hide">Close</Button>
@@ -583,7 +583,7 @@ function RecomposeChat({ repoId, hashes, threadId }: { repoId: string; hashes: s
     // Keys typed here are the chat's: Ctrl+Z in its box must not step the plan's history.
     <div className="flex w-80 shrink-0 flex-col border-l border-line" data-testid="recompose-chat" onKeyDown={(e) => e.stopPropagation()}>
       {thread ? <Thread thread={thread} repoId={repoId} className="min-h-0 flex-1" placeholder="Put the tests in their own commit…"
-        hint="Ask for a different split, order or messages. A revised plan comes back as a card you can apply (and undo)." /> : <div className="flex flex-1 items-center justify-center"><Spinner /></div>}
+        hint="A revised plan comes back as a card you can apply and undo." /> : <div className="flex flex-1 items-center justify-center"><Spinner /></div>}
     </div>
   )
 }

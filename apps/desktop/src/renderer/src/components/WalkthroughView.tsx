@@ -112,7 +112,7 @@ export function WalkthroughView({ view }: { view: RepoView }) {
       {chat && r && !w.requestId && (
         <ThreadRail repoId={view.id} kind="walkthrough" anchor={{ kind: 'walkthrough', scope: w.scope }} threadId={w.threadId}
           onThread={(id) => updateRepo(view.id, (v) => (v.walkthrough ? { walkthrough: { ...v.walkthrough, threadId: id } } : {}))}
-          hint="Ask about any piece, or ask for the walkthrough to be regrouped or redrawn; a revised one comes back as a card you can apply." />
+          hint="A revised walkthrough comes back as a card you can apply." />
       )}
       </div>
     </div>

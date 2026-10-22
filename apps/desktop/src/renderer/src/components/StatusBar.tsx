@@ -16,7 +16,7 @@ export function StatusBar({ view }: { view: RepoView }) {
       {head?.upstream && <span>{head.upstream.replace('refs/remotes/', '')} ↑{head.ahead ?? 0} ↓{head.behind ?? 0}</span>}
       {snap.operation && <span className="font-semibold text-warn">{sentence(opName(snap.operation))} in progress</span>}
       {view.codegraph.state === 'indexing' && view.codegraph.total > 0 && (
-        <span className="flex items-center gap-1" data-testid="codegraph-status" title="Parsing the repository for Peek and Impact (ADR-008)">
+        <span className="flex items-center gap-1" data-testid="codegraph-status" title="Parsing the repository for Peek and Impact">
           <Loader2 size={11} className="animate-spin" /> Indexing code {view.codegraph.done.toLocaleString()} / {view.codegraph.total.toLocaleString()}
         </span>
       )}

@@ -638,7 +638,7 @@ function MultiPanel({ view, hashes }: { view: RepoView; hashes: string[] }) {
       {list && list.length > 0 && (
         <div className="px-3 pb-1 text-xs text-muted" data-testid="multi-summary">
           {[...counts].map(([kind, n]) => `${n} ${kind}`).join(' · ')}
-          {base === undefined && <div className="text-faint">Not consecutive, so there is no single diff: a file shows the newest selected commit's change.</div>}
+          {base === undefined && <div className="text-faint">Not consecutive: each file shows the newest selected commit's change.</div>}
         </div>
       )}
       {list && list.length > 1 && <FileListTools filter={fileFilter} onFilter={setFileFilter} />}
