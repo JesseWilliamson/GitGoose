@@ -2,9 +2,9 @@
  * Keyboard shortcuts. The native menu displays shortcuts but does not register them (see
  * src/main/menu.ts), so this is the single place a key press is handled.
  *
- * A combination is written "mod+shift+key", where mod is Cmd on macOS and Ctrl elsewhere.
- * COMMANDS holds the defaults; the `keybindings` setting maps a command id to a replacement
- * combination ("" means no shortcut).
+ * A combination is written "mod+shift+key", where mod is Cmd on macOS and Ctrl elsewhere, or
+ * "alt+key" without mod (Alt+Left goes back, as in a browser). COMMANDS holds the defaults; the
+ * `keybindings` setting maps a command id to a replacement combination ("" means no shortcut).
  */
 
 export interface KeyCommand {
@@ -12,6 +12,8 @@ export interface KeyCommand {
   label: string
   defaults: string[]
 }
+
+const mac = typeof window !== 'undefined' && window.gitgoose?.platform === 'darwin'
 
 export const COMMANDS: KeyCommand[] = [
   { id: 'search', label: 'Search everything', defaults: ['mod+k', 'mod+f'] },
@@ -44,14 +46,20 @@ export const COMMANDS: KeyCommand[] = [
   { id: 'ws-pulls', label: 'Workspace: Pull Requests', defaults: ['mod+alt+4'] },
   { id: 'ws-reflog', label: 'Workspace: Reflog', defaults: ['mod+alt+5'] },
   { id: 'select-head-branch', label: 'Go to the current branch in the sidebar', defaults: ['mod+alt+0'] },
+  // As in a browser. On macOS also Cmd+[ and Cmd+] (Finder, Safari, Xcode).
+  { id: 'back', label: 'Back to where you were', defaults: mac ? ['alt+arrowleft', 'mod+['] : ['alt+arrowleft'] },
+  { id: 'forward', label: 'Forward again', defaults: mac ? ['alt+arrowright', 'mod+]'] : ['alt+arrowright'] },
 ]
 
-const mac = typeof window !== 'undefined' && window.gitgoose?.platform === 'darwin'
-
-/** The combination a key event represents, or null for keys without a modifier. */
-export function comboOf(e: KeyboardEvent): string | null {
-  const mod = mac ? e.metaKey : e.ctrlKey
-  if (!mod) return null
+/**
+ * The combination a key event represents, or null for keys without mod or Alt (Shift alone makes
+ * no combination). Alt without mod gives "alt+…". The other modifier (Ctrl on macOS, the
+ * Windows/Cmd key elsewhere) is never part of a combination: with Alt alone it gives null.
+ */
+export function comboOf(e: Pick<KeyboardEvent, 'key' | 'code' | 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey'>, isMac = mac): string | null {
+  const mod = isMac ? e.metaKey : e.ctrlKey
+  const other = isMac ? e.ctrlKey : e.metaKey
+  if (!mod && (!e.altKey || other)) return null
   let key = e.key.toLowerCase()
   if (['control', 'meta', 'shift', 'alt'].includes(key)) return null
   // A digit by its key, not its character: Alt+1 types "¡" on a Mac and Shift+1 "!".
@@ -63,7 +71,7 @@ export function comboOf(e: KeyboardEvent): string | null {
     key = '='
     shift = false
   }
-  return `mod+${e.altKey ? 'alt+' : ''}${shift ? 'shift+' : ''}${key}`
+  return `${mod ? 'mod+' : ''}${e.altKey ? 'alt+' : ''}${shift ? 'shift+' : ''}${key}`
 }
 
 /** The effective combinations for each command. */
