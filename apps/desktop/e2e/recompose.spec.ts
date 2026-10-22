@@ -213,14 +213,20 @@ async function drag(page: Page, from: ReturnType<Page['locator']>, to: ReturnTyp
   let target = await where()
   await page.mouse.move(target.x, target.y, { steps: 10 })
   // The lift itself changes the layout (a placeholder, a hint under the column), which can move
-  // the target after the pointer got there; on a slow machine that lands after the last move.
-  // Follow the target until it stays put.
-  for (let i = 0; i < 5; i++) {
-    await page.waitForTimeout(100)
+  // the target after the pointer got there; on a slow machine that lands well after the last
+  // move, and the page only learns where the pointer is from a move. Follow the target until it
+  // has stayed put for two checks in a row, then move once more so the page sees the pointer
+  // over the settled target.
+  let still = 0
+  for (let i = 0; i < 12 && still < 2; i++) {
+    await page.waitForTimeout(150)
     const now = await where()
-    if (Math.abs(now.x - target.x) < 1 && Math.abs(now.y - target.y) < 1) break
-    target = now
-    await page.mouse.move(target.x, target.y, { steps: 3 })
+    if (Math.abs(now.x - target.x) < 1 && Math.abs(now.y - target.y) < 1) still++
+    else {
+      still = 0
+      target = now
+    }
+    await page.mouse.move(target.x + (i % 2), target.y, { steps: 2 })
   }
   return { drop: () => page.mouse.up() }
 }
