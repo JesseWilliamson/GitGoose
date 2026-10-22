@@ -11,7 +11,9 @@ describe.skipIf(process.platform === 'win32' && !!process.env.CI)('development r
   it('has the promised shape', () => {
     const t = Date.now()
     const { dir, authors } = makeDevRepo({ commits: 1500 })
-    expect(Date.now() - t).toBeLessThan(process.platform === 'win32' ? 180_000 : 20_000)
+    // A guard against the generator becoming pathologically slow, not a benchmark: shared CI
+    // runners vary several times over (a macOS run took 20.6 s where most take 8 s).
+    expect(Date.now() - t).toBeLessThan(process.platform === 'win32' ? 180_000 : 60_000)
     expect(Number(git(dir, 'rev-list', '--all', '--count'))).toBeGreaterThan(1450)
     expect(Number(git(dir, 'rev-list', '--all', '--merges', '--count'))).toBeGreaterThan(50)
     expect(git(dir, 'tag').trim().split('\n').length).toBeGreaterThanOrEqual(30)
