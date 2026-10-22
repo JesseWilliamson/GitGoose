@@ -1,6 +1,9 @@
 import { initRepo, makeFixture } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
-import { launch } from './app'
+import { launch, useClipboardLock } from './app'
+
+// These tests read and write the system clipboard, which every running test shares.
+useClipboardLock()
 
 /**   main:  A - B        topic (from A):  X - Y - Z   */
 function setup() {
@@ -85,7 +88,10 @@ test('right-click on a selection squashes the commits into one, undoably', async
   await row(page, B).click({ modifiers: ['Shift'] })
   await row(page, B).click({ button: 'right' })
   await page.getByRole('menuitem', { name: 'Squash 3 commits into one' }).click()
-  await expect.poll(() => r.git('log', '--format=%s', '-2').trim().split('\n')[1]).toBe('A')
+  // The squash is a rebase that folds the commits one at a time, so wait for the end state
+  // (two commits, the top one carrying D) rather than for a state true halfway through.
+  await expect.poll(() => `${r.git('rev-list', '--count', 'HEAD').trim()} ${r.git('log', '--format=%B', '-1').includes('D')}`).toBe('2 true')
+  expect(r.git('log', '--format=%s', '-2').trim().split('\n')[1]).toBe('A')
   // The newer commits folded into the oldest; every message survives, oldest first.
   const message = r.git('log', '--format=%B', '-1')
   expect(message.indexOf('B')).toBeLessThan(message.indexOf('C'))

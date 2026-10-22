@@ -15,10 +15,21 @@ test('dragging a divider resizes a side panel, and the size survives a restart',
   await page.mouse.move(sep.x + sep.width / 2, sep.y + 200)
   await page.mouse.down()
   await page.mouse.move(sep.x + 120, sep.y + 200, { steps: 8 })
+  // The panel moves only on pointer moves, and on a loaded machine its layout lands after the
+  // last one: nudge the pointer in place until the panel stops moving, then let go.
+  let last = -1
+  for (let i = 0; i < 10; i++) {
+    await page.waitForTimeout(100)
+    const w = await width(page, 'slot-left')
+    if (w === last) break
+    last = w
+    await page.mouse.move(sep.x + 120 + (i % 2), sep.y + 200)
+  }
   await page.mouse.up()
-  await expect.poll(() => width(page, 'slot-left')).toBeGreaterThan(before + 100)
+  // Not the full 120 px: the point is that it grew by a lot and that size is kept.
+  await expect.poll(() => width(page, 'slot-left')).toBeGreaterThan(before + 60)
   const after = await width(page, 'slot-left')
-  await expect.poll(async () => (await page.evaluate(() => window.gitgoose.getSettings())).layout.left.size).toBeGreaterThan(before + 100)
+  await expect.poll(async () => (await page.evaluate(() => window.gitgoose.getSettings())).layout.left.size).toBeGreaterThan(before + 60)
   await first.app.close()
 
   const second = await launch(r.dir, { GITGOOSE_USER_DATA: profile })

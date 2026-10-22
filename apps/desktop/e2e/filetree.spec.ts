@@ -1,6 +1,6 @@
 import { initRepo } from '@gitgoose/fixtures'
 import { expect, test } from '@playwright/test'
-import { launch } from './app'
+import { clickRowAction, launch } from './app'
 
 test('changed files as a tree: stage a whole folder; filter the list', async () => {
   const r = initRepo()
@@ -17,8 +17,7 @@ test('changed files as a tree: stage a whole folder; filter the list', async () 
   await folder.click()
   await expect(page.getByTestId('unstaged-file')).toHaveCount(2)
   await folder.click()
-  await folder.hover()
-  await folder.getByTitle('Stage folder').click()
+  await clickRowAction(page, folder, 'Stage folder')
   await expect(page.getByTestId('staged-file')).toHaveCount(2)
   expect(r.git('diff', '--cached', '--name-only').trim().split('\n')).toEqual(['src/app/main.ts', 'src/app/util.ts'])
 
