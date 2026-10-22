@@ -1,4 +1,3 @@
-import Anthropic from '@anthropic-ai/sdk'
 
 /**
  * The fallback for people with no ACP agent: the Anthropic Messages API with their own key.
@@ -22,6 +21,9 @@ export interface ChatOptions {
 }
 
 export async function anthropicChat(o: ChatOptions): Promise<string> {
+  // Loaded on first use: the SDK takes 100-200 ms to load, which every launch would otherwise
+  // pay before the window opens, for a fallback few people use.
+  const { default: Anthropic } = await import('@anthropic-ai/sdk')
   const client = new Anthropic({ apiKey: o.apiKey, baseURL: o.baseURL, maxRetries: 1, fetch: o.fetch })
   const stream = client.messages.stream(
     { model: o.model, max_tokens: o.maxTokens ?? 8192, system: o.system, messages: o.messages },

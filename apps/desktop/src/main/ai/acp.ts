@@ -1,10 +1,17 @@
-import * as acp from '@agentclientprotocol/sdk'
+import type * as acp from '@agentclientprotocol/sdk'
 import { realPathOf } from '@gitgoose/git'
 import { AI_AUTH_REQUIRED, type AgentAuthMethod, type AgentInfo, type AiToolCall, type AiToolContent, type AiUpdate } from '@gitgoose/shared'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { isAbsolute, relative, resolve } from 'node:path'
 import { Readable, Writable } from 'node:stream'
+
+/**
+ * The ACP SDK (and zod under it) takes 100-200 ms to load. Most launches never start an agent,
+ * so it is loaded with the agent instead of with the app: `spawn` sets this before anything
+ * that uses it can run. Types come from the `import type` above, which costs nothing at runtime.
+ */
+let sdk: typeof acp
 
 /**
  * GitGoose as an Agent Client Protocol *client*: the same role Zed or JetBrains play. We start
@@ -130,6 +137,7 @@ export class AcpAgent {
   private async spawn(): Promise<Running> {
     const { command, args, env } = this.launch()
     if (!command) throw new Error('No agent command is configured (Settings → AI).')
+    sdk ??= await import('@agentclientprotocol/sdk')
     this.starts++
     this.stderr = ''
     const child = spawn(command, args, {
@@ -147,12 +155,12 @@ export class AcpAgent {
     })
     await spawned
 
-    const stream = acp.ndJsonStream(Writable.toWeb(child.stdin!) as WritableStream<Uint8Array>, Readable.toWeb(child.stdout!) as ReadableStream<Uint8Array>)
-    const conn = acp.client({ name: 'gitgoose' })
-      .onNotification(acp.methods.client.session.update, (ctx) => this.onUpdate(ctx.params))
-      .onRequest(acp.methods.client.session.requestPermission, (ctx) => this.onPermission(ctx.params))
-      .onRequest(acp.methods.client.fs.readTextFile, (ctx) => this.onRead(ctx.params))
-      .onRequest(acp.methods.client.fs.writeTextFile, (ctx) => this.onWrite(ctx.params))
+    const stream = sdk.ndJsonStream(Writable.toWeb(child.stdin!) as WritableStream<Uint8Array>, Readable.toWeb(child.stdout!) as ReadableStream<Uint8Array>)
+    const conn = sdk.client({ name: 'gitgoose' })
+      .onNotification(sdk.methods.client.session.update, (ctx) => this.onUpdate(ctx.params))
+      .onRequest(sdk.methods.client.session.requestPermission, (ctx) => this.onPermission(ctx.params))
+      .onRequest(sdk.methods.client.fs.readTextFile, (ctx) => this.onRead(ctx.params))
+      .onRequest(sdk.methods.client.fs.writeTextFile, (ctx) => this.onWrite(ctx.params))
       .connect(stream)
 
     // The process dying (or closing its stdout) ends everything: forget its sessions; the next
@@ -169,8 +177,8 @@ export class AcpAgent {
 
     let init: acp.InitializeResponse
     try {
-      init = await withTimeout(conn.agent.request(acp.methods.agent.initialize, {
-        protocolVersion: acp.PROTOCOL_VERSION,
+      init = await withTimeout(conn.agent.request(sdk.methods.agent.initialize, {
+        protocolVersion: sdk.PROTOCOL_VERSION,
         clientCapabilities: {
           fs: { readTextFile: true, writeTextFile: true },
           // No shell for the agent from a git client.
@@ -209,7 +217,7 @@ export class AcpAgent {
   }
 
   private authError(e: unknown, init: acp.InitializeResponse): unknown {
-    if (e instanceof acp.RequestError && e.code === AUTH_REQUIRED) return new AgentAuthError(toInfo(init, this.launch()).authMethods)
+    if (e instanceof sdk.RequestError && e.code === AUTH_REQUIRED) return new AgentAuthError(toInfo(init, this.launch()).authMethods)
     return e
   }
 
@@ -218,7 +226,7 @@ export class AcpAgent {
     const { conn, init } = await this.start()
     let sessionId: string
     try {
-      sessionId = (await conn.agent.request(acp.methods.agent.session.new, { cwd, mcpServers: [] })).sessionId
+      sessionId = (await conn.agent.request(sdk.methods.agent.session.new, { cwd, mcpServers: [] })).sessionId
     } catch (e) {
       throw this.authError(e, init)
     }
@@ -246,7 +254,7 @@ export class AcpAgent {
     const entry = { ...newSession(cwd), loading: true }
     this.bySession.set(sessionId, entry)
     try {
-      await conn.agent.request(acp.methods.agent.session.load, { sessionId, cwd, mcpServers: [] })
+      await conn.agent.request(sdk.methods.agent.session.load, { sessionId, cwd, mcpServers: [] })
     } catch (e) {
       this.bySession.delete(sessionId)
       throw this.authError(e, init)
@@ -266,11 +274,11 @@ export class AcpAgent {
     if (entry.hooks) throw new Error('This conversation is still answering. Wait for it, or stop it first.')
     entry.hooks = hooks
     entry.text = ''
-    const cancel = () => void conn.agent.notify(acp.methods.agent.session.cancel, { sessionId }).catch(() => {})
+    const cancel = () => void conn.agent.notify(sdk.methods.agent.session.cancel, { sessionId }).catch(() => {})
     signal?.addEventListener('abort', cancel, { once: true })
     try {
       const blocks = typeof prompt === 'string' ? [{ type: 'text' as const, text: prompt }] : prompt
-      const res = await conn.agent.request(acp.methods.agent.session.prompt, { sessionId, prompt: blocks })
+      const res = await conn.agent.request(sdk.methods.agent.session.prompt, { sessionId, prompt: blocks })
       return { text: entry.text, stopReason: res.stopReason }
     } catch (e) {
       if (conn.signal.aborted) throw new Error(this.died())
@@ -287,7 +295,7 @@ export class AcpAgent {
     const running = this.current
     // An unstable capability: only agents that advertise it get the request.
     const caps = running?.init.agentCapabilities?.sessionCapabilities as Record<string, unknown> | undefined
-    if (running && caps?.close && !running.conn.signal.aborted) void running.conn.agent.request(acp.methods.agent.session.close, { sessionId }).catch(() => {})
+    if (running && caps?.close && !running.conn.signal.aborted) void running.conn.agent.request(sdk.methods.agent.session.close, { sessionId }).catch(() => {})
   }
 
   /** Answer later questions like this one in this session without asking ("Allow for this session"). */
@@ -308,7 +316,7 @@ export class AcpAgent {
   /** Log in with a method the agent handles itself (not terminal methods: the user runs those). */
   async authenticate(methodId: string): Promise<void> {
     const { conn } = await this.start()
-    await conn.agent.request(acp.methods.agent.authenticate, { methodId })
+    await conn.agent.request(sdk.methods.agent.authenticate, { methodId })
   }
 
   stop(): void {
@@ -386,10 +394,10 @@ export class AcpAgent {
   private async onRead(p: acp.ReadTextFileRequest): Promise<acp.ReadTextFileResponse> {
     const entry = this.bySession.get(p.sessionId)
     if (!entry || !(await allInside(entry.cwd, [p.path]))) {
-      throw acp.RequestError.invalidParams(undefined, 'GitGoose only lets the agent read files inside the open repository.')
+      throw sdk.RequestError.invalidParams(undefined, 'GitGoose only lets the agent read files inside the open repository.')
     }
     let content = await readFile(p.path, 'utf8').catch(() => {
-      throw acp.RequestError.resourceNotFound(p.path)
+      throw sdk.RequestError.resourceNotFound(p.path)
     })
     if (p.line || p.limit) {
       const lines = content.split('\n')
@@ -402,7 +410,7 @@ export class AcpAgent {
   private async onWrite(p: acp.WriteTextFileRequest): Promise<acp.WriteTextFileResponse> {
     const hooks = this.bySession.get(p.sessionId)?.hooks
     if (!hooks?.writable || resolve(p.path) !== resolve(hooks.writable) || !hooks.onWrite) {
-      throw acp.RequestError.invalidParams(undefined, 'GitGoose did not allow the agent to write this file.')
+      throw sdk.RequestError.invalidParams(undefined, 'GitGoose did not allow the agent to write this file.')
     }
     hooks.onWrite(resolve(p.path), p.content)
     return {}
