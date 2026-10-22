@@ -106,12 +106,13 @@ function WipPanel({ view }: { view: RepoView }) {
   const [filter, setFilter] = useState('')
   // Several files selected with Shift- and Ctrl/Cmd-click, in one section at a time (a file can
   // be in both, partly staged, and an action on the selection must mean one thing).
-  const [picked, setPicked] = useState<{ section: 'unstaged' | 'staged' } & FileSelection>({ section: 'unstaged', ...NO_FILES })
-  const sel = { ...picked, ...pruneFiles(picked, (picked.section === 'unstaged' ? unstaged : staged).map((e) => e.path)) }
+  const [picked, setPicked] = useState<{ repoId: string; section: 'unstaged' | 'staged' } & FileSelection>({ repoId: id, section: 'unstaged', ...NO_FILES })
+  const active = picked.repoId === id ? picked : { repoId: id, section: 'unstaged' as const, ...NO_FILES }
+  const sel = { ...active, ...pruneFiles(active, (active.section === 'unstaged' ? unstaged : staged).map((e) => e.path)) }
   const onFileClick = (section: 'unstaged' | 'staged', order: string[], path: string, t: DiffTarget, e: React.MouseEvent) => {
     const mods = { range: e.shiftKey, toggle: isMac ? e.metaKey : e.ctrlKey }
     const next = clickFile(sel.section === section ? sel : NO_FILES, order, path, mods)
-    setPicked({ section, ...next })
+    setPicked({ repoId: id, section, ...next })
     // The diff follows the click, unless the click took the file out of the selection.
     if (next.paths.includes(path)) openFile(view, t)
   }
