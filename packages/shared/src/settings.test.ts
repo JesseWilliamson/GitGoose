@@ -42,13 +42,15 @@ describe('settings schema', () => {
     expect(migrateSettings({ settingsVersion: 4, aiThreads: { '/r': [] } }).aiThreads).toEqual({ '/r': [] })
   })
 
-  it('migrates a v4 file: the sign-in switch is dropped, Gravatar becomes GitHub, a chosen Initials stays', () => {
+  it('migrates a v4 file: the sign-in switch is dropped and avatars start over at GitHub', () => {
     const s = migrateSettings({ settingsVersion: 4, githubHttps: true, avatars: 'gravatar', theme: 'dark' })
     expect(s.settingsVersion).toBe(5)
     expect('githubHttps' in s).toBe(false)
     expect(s.avatars).toBe('github')
     expect(s.theme).toBe('dark')
-    expect(migrateSettings({ settingsVersion: 4, avatars: 'initials' }).avatars).toBe('initials')
+    // v4's default was 'initials', so a stored 'initials' says nothing; a v5 choice of it is kept.
+    expect(migrateSettings({ settingsVersion: 4, avatars: 'initials' }).avatars).toBe('github')
+    expect(migrateSettings({ settingsVersion: 5, avatars: 'initials' }).avatars).toBe('initials')
     // A window still running the old renderer cannot set either one back.
     expect(validatePatch({ githubHttps: true, avatars: 'gravatar' })).toEqual({ avatars: 'github' })
   })

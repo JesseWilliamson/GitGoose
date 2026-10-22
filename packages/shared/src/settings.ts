@@ -309,11 +309,11 @@ export function migrateSettings(stored: Record<string, unknown>): Settings {
     delete s.askThreads
   }
   if (version < 5) {
-    // v4 had GitHub sign-in (the githubHttps switch) and Gravatar avatars; both are gone. A
-    // Gravatar choice becomes the default (GitHub). A stored 'initials' is kept: it may have been
-    // chosen to keep the app off the network, and v4 cannot tell a choice from the old default.
+    // v4 had GitHub sign-in (the githubHttps switch) and Gravatar avatars; both are gone. Every
+    // v4 file starts over at the new default (GitHub): 'initials' was v4's default and the file
+    // cannot tell a choice from it, and a Gravatar choice has no equivalent any more.
     delete s.githubHttps
-    if (s.avatars === 'gravatar') delete s.avatars
+    delete s.avatars
   }
   s.settingsVersion = 5
   const out = defaultSettings() as Record<string, unknown>
