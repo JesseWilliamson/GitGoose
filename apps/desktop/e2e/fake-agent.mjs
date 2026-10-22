@@ -16,6 +16,9 @@
 //   anything else               "Turn 1. You said: <last line>."
 // FAKE_AGENT_AUTH=1    session/new fails with auth_required until `authenticate` is called
 // FAKE_AGENT_LOG=file  appends every prompt it receives (tests check what was sent)
+// FAKE_AGENT_GATE=file an answer waits while that file is missing (until the turn is cancelled),
+//                      so a test can do other things while the AI is still working: create the
+//                      file to let answers through, delete it to hold the next ones
 // FAKE_AGENT_LOAD=1    advertises loadSession; with FAKE_AGENT_STATE=file the sessions survive a
 //                      restart (session/load replays their history as session/update)
 import * as acp from '@agentclientprotocol/sdk'
@@ -60,6 +63,9 @@ async function prompt(params, cx) {
   const session = sessions.get(params.sessionId)
   session.reply = ''
   session.cancelled = false
+  const gate = process.env.FAKE_AGENT_GATE
+  while (gate && !existsSync(gate) && !session.cancelled) await new Promise((r) => setTimeout(r, 25))
+  if (session.cancelled) return { stopReason: 'cancelled' }
   const res = await answer(params.sessionId, session, text, cx)
   session.history.push({ user: text, agent: session.reply })
   save()

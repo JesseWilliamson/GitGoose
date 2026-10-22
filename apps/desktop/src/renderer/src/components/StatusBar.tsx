@@ -1,6 +1,7 @@
 import { GitBranch, Loader2 } from 'lucide-react'
 import { opName, sentence } from '../lib/format'
 import { getLog, type RepoView } from '../lib/store'
+import { AiJobsChip } from './AiJobsChip'
 
 export function StatusBar({ view }: { view: RepoView }) {
   const snap = view.snapshot
@@ -20,6 +21,7 @@ export function StatusBar({ view }: { view: RepoView }) {
         </span>
       )}
       <span className="flex-1" />
+      <AiJobsChip />
       <span data-testid="commit-count">{log.commits.length.toLocaleString()}{log.done ? '' : '+'} {log.commits.length === 1 && log.done ? 'commit' : 'commits'}</span>
       <span className="max-w-96 truncate" title={snap.path}>{snap.path}</span>
     </div>

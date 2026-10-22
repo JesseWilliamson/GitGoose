@@ -182,6 +182,9 @@ test('double-clicking a commit where several branches point asks which one to ch
   await expect(page.getByRole('menu')).toHaveCount(0)
   await page.getByTestId('toast-action').filter({ hasText: 'Undo' }).last().click()
   await expect.poll(branch).toBe('main')
+  // release points at wip's commit: until the app has seen the undo, that row is still HEAD's
+  // own and a double-click there rightly does nothing. Wait for the app, not only for git.
+  await expect(page.getByTestId('status-bar').locator('span').first()).toHaveText('main')
 
   await page.locator(`[data-testid="commit-row"][data-hash="${wip}"]`).getByText('F', { exact: true }).dblclick()
   const menu = page.getByRole('menu')

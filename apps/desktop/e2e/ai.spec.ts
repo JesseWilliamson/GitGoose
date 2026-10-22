@@ -64,7 +64,9 @@ test('explains a failure from the attention bar', async () => {
   await expect(page.getByTestId('attention-row')).toHaveCount(1)
   await page.getByTestId('attention-explain').click()
   await page.getByTestId('ai-permission-deny').click()
-  await expect(page.getByTestId('ai-output-text')).toContainText('This change explains itself.')
+  // Not a modal: a conversation in the AI panel (see aijobs.spec.ts for leaving it meanwhile).
+  await expect(page.getByTestId('ai-chat-panel').getByTestId('thread-agent')).toContainText('This change explains itself.')
+  await expect(page.getByTestId('ai-output')).toHaveCount(0)
   expect(readFileSync(log, 'utf8')).toContain('policy: pushes to main need review')
   await app.close()
 })
@@ -80,8 +82,11 @@ test('resolving a conflict with the agent: denied leaves the file alone; allowed
   await page.getByTestId('ai-resolve').click()
   await expect(page.getByTestId('ai-permission')).toContainText('story.txt')
   await page.getByTestId('ai-permission-deny').click()
-  await expect(page.getByTestId('ai-output-text')).toHaveText('Left the file as it was.')
-  await page.getByTestId('ai-output').getByRole('button', { name: 'Close' }).click()
+  // No proposal: the agent's note is a conversation in the AI panel, kept with the repository.
+  const panel = page.getByTestId('ai-chat-panel')
+  await expect(panel.getByTestId('thread-feature')).toHaveText('Resolve the conflict in story.txt')
+  await expect(panel.getByTestId('thread-agent')).toHaveText('Left the file as it was.')
+  await panel.getByRole('button', { name: 'Close the AI panel' }).click()
   expect(readFileSync(join(r.dir, 'story.txt'), 'utf8')).toBe(before)
 
   await page.getByTestId('ai-resolve').click()
