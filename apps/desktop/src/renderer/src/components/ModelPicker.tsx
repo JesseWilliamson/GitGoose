@@ -3,7 +3,7 @@ import {
   type AgentPreset, type AiArea, type AiModel, type AiModelList, type AiTarget,
 } from '@gitgoose/shared'
 import clsx from 'clsx'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { setAreaTarget } from '../lib/ai'
 import { api, toUiError } from '../lib/api'
 import { reportError, saveSettings, useStore } from '../lib/store'
@@ -105,35 +105,50 @@ const apiLists = new Map<string, AiModelList>()
 function useModels(target: AiTarget | null): { list: AiModelList | null; loading: boolean; error: string | null; load: () => Promise<void> } {
   const key = target ? targetKey(target) : ''
   const cache = useStore((s) => (target?.provider === 'agent' ? s.settings?.aiAgentModels[key] : undefined))
-  const [list, setList] = useState<AiModelList | null>(null)
-  const [loading, setLoading] = useState(false)
+  // "Who answers" can change while a fetch is pending, and the old target's list must never stand
+  // in for the new one's, so associate results with their target key and discard stale completions.
+  const [held, setHeld] = useState<{ key: string; list: AiModelList | null }>({ key: '', list: null })
+  const [loadingKey, setLoadingKey] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // The key on screen now, read by `load` when its request settles to discard stale completions.
+  const current = useRef(key)
 
   useEffect(() => {
+    current.current = key
     setError(null)
-    if (!target) return setList(null)
+    if (!target) return setHeld({ key, list: null })
     // Nothing here starts an agent or calls the network: agents read the cache, the API waits for "Load models…".
-    if (target.provider === 'anthropic') return setList(apiLists.get(key) ?? null)
-    void api.aiModels(target).then(setList, () => setList(null))
+    if (target.provider === 'anthropic') return setHeld({ key, list: apiLists.get(key) ?? null })
+    let stale = false
+    void api.aiModels(target).then(
+      (next) => !stale && setHeld({ key, list: next }),
+      () => !stale && setHeld({ key, list: null }),
+    )
+    // A newer run (another target, or a fresher cache entry) supersedes this fetch.
+    return () => { stale = true }
     // The cache entry changes when any session reports new models.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, cache?.at])
 
   const load = async () => {
     if (!target) return
-    setLoading(true)
+    const forKey = key
+    setLoadingKey(forKey)
     setError(null)
     try {
       const next = target.provider === 'anthropic' ? await api.aiModels(target) : await api.aiLoadModels(target)
-      if (target.provider === 'anthropic' && next.known) apiLists.set(key, next)
-      setList(next)
+      // The API's list is cached by its own key, so it serves that target later even if stale now.
+      if (target.provider === 'anthropic' && next.known) apiLists.set(forKey, next)
+      if (current.current !== forKey) return
+      setHeld({ key: forKey, list: next })
       if (next.error) setError(next.error)
     } catch (e) {
+      if (current.current !== forKey) return
       setError(toUiError(e).message)
       reportError('Could not list the models', e)
     } finally {
-      setLoading(false)
+      setLoadingKey((k) => (k === forKey ? null : k))
     }
   }
-  return { list, loading, error, load }
+  return { list: held.key === key ? held.list : null, loading: loadingKey === key, error, load }
 }
