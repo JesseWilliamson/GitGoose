@@ -11,21 +11,25 @@ test('dragging a divider resizes a side panel, and the size survives a restart',
   const page = first.page
   await expect(page.getByTestId('slot-left')).toBeVisible()
   const before = await width(page, 'slot-left')
-  const sep = (await page.getByTestId('sep-left').boundingBox())!
-  await page.mouse.move(sep.x + sep.width / 2, sep.y + 200)
-  await page.mouse.down()
-  await page.mouse.move(sep.x + 120, sep.y + 200, { steps: 8 })
-  // The panel moves only on pointer moves, and on a loaded machine its layout lands after the
-  // last one: nudge the pointer in place until the panel stops moving, then let go.
-  let last = -1
-  for (let i = 0; i < 10; i++) {
-    await page.waitForTimeout(100)
-    const w = await width(page, 'slot-left')
-    if (w === last) break
-    last = w
-    await page.mouse.move(sep.x + 120 + (i % 2), sep.y + 200)
+  // Drag the divider 120 px to the right. The panel moves only on pointer moves, and on a
+  // loaded machine it can miss the first ones (the drag is set up by a render that lands late),
+  // so the drag nudges the pointer in place until the panel stops moving, then lets go, and
+  // takes hold again from where the divider now is when the panel did not come along.
+  for (let attempt = 0; attempt < 4 && (await width(page, 'slot-left')) <= before + 60; attempt++) {
+    const sep = (await page.getByTestId('sep-left').boundingBox())!
+    await page.mouse.move(sep.x + sep.width / 2, sep.y + 200)
+    await page.mouse.down()
+    await page.mouse.move(sep.x + 120, sep.y + 200, { steps: 8 })
+    let last = -1
+    for (let i = 0; i < 10; i++) {
+      await page.waitForTimeout(100)
+      const w = await width(page, 'slot-left')
+      if (w === last) break
+      last = w
+      await page.mouse.move(sep.x + 120 + (i % 2), sep.y + 200)
+    }
+    await page.mouse.up()
   }
-  await page.mouse.up()
   // Not the full 120 px: the point is that it grew by a lot and that size is kept.
   await expect.poll(() => width(page, 'slot-left')).toBeGreaterThan(before + 60)
   const after = await width(page, 'slot-left')
