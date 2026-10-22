@@ -1,4 +1,4 @@
-import { _electron as electron, test, type ElectronApplication, type Page } from '@playwright/test'
+import { _electron as electron, expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { tempDir } from '@gitgoose/fixtures'
 import { mkdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -32,7 +32,7 @@ export async function launch(repo?: string, env: Record<string, string> = {}, op
   const args = [join(import.meta.dirname, '..', 'out', 'main', 'index.js')]
   // Containers usually run as root, where Chromium refuses to start without this.
   if (process.platform === 'linux') args.unshift('--no-sandbox')
-  const app = await electron.launch({
+  const start = () => electron.launch({
     args,
     env: {
       ...process.env,
@@ -42,6 +42,9 @@ export async function launch(repo?: string, env: Record<string, string> = {}, op
       ...env,
     } as Record<string, string>,
   })
+  // With tests running side by side, a launch now and then dies before the window exists
+  // ("Missing X server or $DISPLAY" under a loaded Xvfb). One more try is all it needs.
+  const app = await start().catch(() => start())
   const page = await app.firstWindow()
   page.on('pageerror', (e) => console.error('[renderer]', e.message))
   if (!opts.keepSize) {
@@ -71,4 +74,37 @@ export function useClipboardLock(): void {
     }
   })
   test.afterEach(() => rmSync(lock, { recursive: true, force: true }))
+}
+
+/**
+ * Drag `from` onto `to` with the mouse. Chromium starts a native drag only when the pointer
+ * moves soon after the button goes down; on a loaded machine that first move can land before
+ * the page is ready and no drag begins (Playwright's own dragTo then drops nothing, silently).
+ * The app shows its drag badge as soon as a drag is over a target, so that is the proof the
+ * drag started: without it, let go and try again. `at` is where on the target to drop, as a
+ * fraction of its height (0.5: the middle; a row's thirds mean above, onto, below).
+ */
+export async function dragTo(page: Page, from: Locator, to: Locator, opts: { at?: number } = {}): Promise<void> {
+  const badge = page.getByTestId('drag-badge')
+  await from.scrollIntoViewIfNeeded()
+  await to.scrollIntoViewIfNeeded()
+  const box = (await to.boundingBox())!
+  const x = box.x + box.width / 2
+  const y = box.y + box.height * (opts.at ?? 0.5)
+  for (let attempt = 0; ; attempt++) {
+    await from.hover()
+    await page.mouse.down()
+    await page.mouse.move(x, y, { steps: 6 })
+    await page.mouse.move(x + 1, y)
+    if (attempt === 2) break
+    try {
+      await expect(badge).toBeVisible({ timeout: 1500 })
+      break
+    } catch {
+      await page.mouse.up()
+      await expect(badge).toBeHidden()
+    }
+  }
+  await page.mouse.up()
+  await expect(badge).toBeHidden()
 }

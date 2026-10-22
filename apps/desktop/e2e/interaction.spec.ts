@@ -1,10 +1,10 @@
 import { makeFixture } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import { createServer } from 'node:http'
-import { launch } from './app'
+import { dragTo, launch } from './app'
 
 async function dragRef(page: Page, from: string, to: string) {
-  await page.locator(`[data-testid="ref-pill"][data-ref="${from}"]`).dragTo(page.locator(`[data-testid="ref-pill"][data-ref="${to}"]`))
+  await dragTo(page, page.locator(`[data-testid="ref-pill"][data-ref="${from}"]`), page.locator(`[data-testid="ref-pill"][data-ref="${to}"]`))
 }
 
 test('drags a branch onto the checked-out branch to merge it (no chooser: the drop is the merge)', async () => {
