@@ -160,6 +160,70 @@ test('two conflicted files: a proposal put aside is still there after asking abo
   await app.close()
 })
 
+test('two conflict proposals arriving together: the one on screen is replaced, and kept on the list', async () => {
+  const r = initRepo()
+  r.commit('base', { 'a.txt': 'one\ntwo\nthree\n', 'b.txt': 'uno\ndos\ntres\n' })
+  r.checkout('-b', 'other')
+  r.commit('theirs', { 'a.txt': 'one\nTWO (theirs)\nthree\n', 'b.txt': 'uno\nDOS (theirs)\ntres\n' })
+  r.checkout('main')
+  r.commit('ours', { 'a.txt': 'one\nTwo (ours)\nthree\n', 'b.txt': 'uno\nDos (ours)\ntres\n' })
+  r.tryGit('merge', 'other')
+  const gate = join(tempDir(), 'gate')
+  const { app, page } = await launch(r.dir, { FAKE_AGENT_GATE: gate })
+  await set(page, AGENT)
+  await expect(page.getByTestId('conflict-file')).toHaveCount(2)
+  // Ask about both files; the agent holds both answers.
+  await page.getByTestId('conflict-file').filter({ hasText: 'a.txt' }).click()
+  await page.getByTestId('ai-resolve').click()
+  await page.getByTestId('conflict-file').filter({ hasText: 'b.txt' }).click()
+  await page.getByTestId('ai-resolve').click()
+  await expect(page.getByTestId('ai-jobs')).toContainText('(+1)')
+  writeFileSync(gate, '')
+  await page.getByTestId('ai-permission-allow_once').click()
+  await page.getByTestId('ai-permission-allow_once').click()
+
+  // Whichever came second is in the dialog; the first is waiting on the list, not gone.
+  const A = 'one\nTwo (ours)\nTWO (theirs)\nthree\n'
+  const B = 'uno\nDos (ours)\nDOS (theirs)\ntres\n'
+  const content = page.getByTestId('ai-proposal-content')
+  await expect(content).toHaveText(/TWO \(theirs\)|DOS \(theirs\)/)
+  await expect(page.getByTestId('ai-jobs')).toHaveText(/1 answer ready/)
+  const first = (await content.textContent()) === A ? B : A
+  await page.getByTestId('ai-proposal-discard').click()
+  await page.getByTestId('ai-jobs').click()
+  await page.getByTestId('ai-job-open').click()
+  await expect(content).toHaveText(first)
+  await app.close()
+})
+
+test('stopping one commit explanation keeps every other commit\'s', async () => {
+  const r = initRepo()
+  const A = r.commit('feat: the widgets', { 'w.txt': 'w\n' })
+  const B = r.commit('chore: a long story FAKE:slow', { 's.txt': 's\n' })
+  const { app, page } = await launch(r.dir)
+  await set(page, AGENT)
+  const row = (hash: string) => page.locator(`[data-testid="commit-row"][data-hash="${hash}"]`)
+  const text = page.getByTestId('ai-explanation-text')
+  await row(A).click()
+  await page.getByTestId('ai-explain-commit').click()
+  await page.getByTestId('ai-permission-deny').click()
+  await expect(text).toHaveText(EXPLAINED)
+  // B's explanation streams on (the fake agent writes slowly until stopped).
+  await row(B).click()
+  await page.getByTestId('ai-explain-commit').click()
+  await expect(text).toContainText('chunk 1')
+
+  // Stop it from the status bar while looking at A: A's explanation stays, and so does what B had.
+  await row(A).click()
+  await page.getByTestId('ai-jobs').click()
+  await page.getByTestId('ai-job-stop').click()
+  await expect(page.getByTestId('ai-jobs')).toHaveCount(0)
+  await expect(text).toHaveText(EXPLAINED)
+  await row(B).click()
+  await expect(text).toContainText('chunk 0')
+  await app.close()
+})
+
 test('a commit keeps its explanation: after selecting another commit while it is written, and after a restart', async () => {
   const r = makeFixture('linear')
   const gate = join(tempDir(), 'gate')

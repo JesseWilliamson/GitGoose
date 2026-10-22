@@ -320,8 +320,10 @@ function proposalShown(p: Proposal): boolean {
 export function showProposal(p: Proposal): void {
   const cur = useAi.getState().proposal
   if (cur && !cur.hidden && !sameProposal(cur, p)) parkProposal(cur)
-  showRepo(p.repoId)
+  // The new proposal first: showRepo changes the store, which sweeps jobs whose answer is on
+  // screen, and the one just parked must not count as on screen any more.
   useAi.setState({ proposal: { ...p, hidden: false } })
+  showRepo(p.repoId)
 }
 
 /** Put a proposal aside (its dialog closed, or another took its place): its job holds it until opened. */

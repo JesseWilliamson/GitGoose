@@ -147,6 +147,38 @@ test('explain grows a follow-up: the same session, so the agent knows the commit
   await app.close()
 })
 
+test('deleting a review conversation from the AI panel: the review chat lets go and starts a new one that works', async () => {
+  const r = initRepo()
+  r.commit('root', { 'src/calc.ts': 'export function total(a: number, b: number) {\n  return a + b\n}\n' })
+  r.write('src/calc.ts', 'export function total(a: number, b: number) {\n  return a - b\n}\n')
+  const { app, page } = await launch(r.dir)
+  await set(page, { ...AGENT, reviewProfile: 'assertive' })
+  await page.getByTestId('review-menu').click()
+  await page.getByRole('menuitem', { name: 'Review all uncommitted changes' }).click()
+  await expect(page.getByTestId('finding')).toHaveCount(1)
+  await page.getByTestId('review-chat-toggle').click()
+  const rail = page.getByTestId('review-chat')
+  await expect(rail.getByTestId('thread-feature')).toContainText('Review: Uncommitted changes')
+
+  // The same conversation, from the AI panel's history, deleted there.
+  await page.keyboard.press('ControlOrMeta+Shift+A')
+  const panel = page.getByTestId('ai-chat-panel')
+  await page.getByTestId('ai-chat-history').click()
+  await page.getByTestId('ai-chat-history-item').filter({ hasText: 'Review: Uncommitted changes' }).click()
+  await expect(panel.getByTestId('thread-feature')).toContainText('Review: Uncommitted changes')
+  await page.getByTestId('ai-chat-history').click()
+  await page.getByRole('menuitem', { name: 'Delete this conversation' }).click()
+  await panel.getByRole('button', { name: 'Close the AI panel' }).click()
+
+  // The rail holds a new conversation about the same review, and it answers.
+  await expect(rail.getByTestId('thread-feature')).toHaveCount(0)
+  await rail.getByTestId('thread-input').fill('Still there?')
+  await rail.getByTestId('thread-input').press('Enter')
+  await expect(rail.getByTestId('thread-agent')).toHaveText('Turn 1. You said: Still there?.')
+  await expect(rail.getByTestId('thread-error')).toHaveCount(0)
+  await app.close()
+})
+
 test('review chat: revised findings are checked against the change; Apply adds them marked "from chat"', async () => {
   const r = initRepo()
   r.commit('root', { 'src/calc.ts': 'export function total(a: number, b: number) {\n  return a + b\n}\n' })

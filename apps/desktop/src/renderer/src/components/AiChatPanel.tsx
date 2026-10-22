@@ -3,10 +3,9 @@ import { History, MessagesSquare, Plus, Trash2, X } from 'lucide-react'
 import { DropdownMenu } from 'radix-ui'
 import { useState } from 'react'
 import { api } from '../lib/api'
-import { forgetExplanationThread } from '../lib/explain'
 import { modName } from '../lib/keys'
-import { updateRepo, type RepoView } from '../lib/store'
-import { newChat, toggleChat, useThread } from '../lib/thread'
+import { reportError, updateRepo, type RepoView } from '../lib/store'
+import { deleteThread, newChat, toggleChat, useThread } from '../lib/thread'
 import { Thread } from './Thread'
 import { DM, Spinner } from './ui'
 
@@ -60,12 +59,9 @@ export function AiChatPanel({ view }: { view: RepoView }) {
               <>
                 <DM.Separator />
                 <DM.Item onSelect={() => {
-                  const id = thread.id
-                  // Other views list kept threads too: a commit's questions, the Ask under a diff, an explanation.
-                  void api.aiThreadDelete(view.id, id).then(() => api.askThreads(view.id)).then((askThreads) => updateRepo(view.id, { askThreads }), () => {})
-                  updateRepo(view.id, (v) => (v.ask?.threadId === id ? { ask: null } : {}))
-                  forgetExplanationThread(view.id, id)
                   newChat(view.id)
+                  // Every view that shows it lets go too (a review's rail, an explanation, Ask, …).
+                  void deleteThread(view.id, thread.id).catch((e) => reportError('Could not delete the conversation', e))
                 }}><Trash2 size={12} /> Delete this conversation</DM.Item>
               </>
             )}

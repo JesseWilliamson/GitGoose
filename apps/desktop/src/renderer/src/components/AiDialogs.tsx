@@ -252,8 +252,11 @@ function FixView({ fix }: { fix: NonNullable<ReturnType<typeof useAi.getState>['
 
 function ProposalDialog() {
   const p = useAi((s) => s.proposal)
+  // A question from another request (two files asked about at once) comes first: a proposal
+  // dialog opened on top of it would cover it, and the agent would wait for an answer nobody can give.
+  const asking = useAi((s) => s.permissions.length > 0)
   const repoOpen = useStore((s) => (p ? !!s.repos[p.repoId] : false))
-  if (!p || p.hidden) return null
+  if (!p || p.hidden || asking) return null
   const markers = countConflicts(p.content)
   const close = () => {
     useAi.setState({ proposal: null })

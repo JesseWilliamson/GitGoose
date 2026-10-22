@@ -70,9 +70,10 @@ export function explainCommit(repoId: string, hash: string): void {
     }
     // Stopped: keep what had streamed; with nothing, as if never asked (an older explanation may show).
     dropJob(run.requestId)
+    // Replace mode (the only way to remove a key): every other commit's entry is carried over.
     useExplains.setState((s) => {
       const e = s[k]
-      if (e?.text) return { [k]: { ...e, requestId: null } }
+      if (e?.text) return { ...s, [k]: { ...e, requestId: null } }
       const { [k]: _gone, ...rest } = s
       return rest
     }, true)
