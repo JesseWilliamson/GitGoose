@@ -41,6 +41,28 @@ test('stages selected lines from the diff view', async () => {
   await app.close()
 })
 
+test('shift-click selects a run of files, ctrl-click adds one; staging from one of them stages them all', async () => {
+  const r = makeFixture('linear')
+  for (const f of ['a.txt', 'b.txt', 'c.txt', 'd.txt', 'e.txt']) r.write(f, `${f}\n`)
+  const { app, page } = await launch(r.dir)
+  await page.getByTestId('wip-row').click()
+  const file = (name: string) => page.locator(`[data-testid="unstaged-file"][data-path="${name}"]`)
+  const selected = page.locator('[data-testid="unstaged-file"][data-selected]')
+  await expect(page.getByTestId('unstaged-file')).toHaveCount(5)
+  await file('b.txt').click()
+  await file('d.txt').click({ modifiers: ['Shift'] })
+  await expect(selected).toHaveCount(3)
+  await file('a.txt').click({ modifiers: ['ControlOrMeta'] })
+  await expect(selected).toHaveCount(4)
+  // Every action on a selected row takes the whole selection.
+  await file('c.txt').click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Stage 4 files' }).click()
+  await expect(page.getByTestId('staged-file')).toHaveCount(4)
+  await expect(page.getByTestId('unstaged-file')).toHaveCount(1)
+  expect(r.git('diff', '--cached', '--name-only').trim().split('\n')).toEqual(['a.txt', 'b.txt', 'c.txt', 'd.txt'])
+  await app.close()
+})
+
 test('discards a file and brings it back with Ctrl+Z', async () => {
   const r = makeFixture('linear')
   r.write('file.txt', 'precious edit\n')
@@ -48,7 +70,7 @@ test('discards a file and brings it back with Ctrl+Z', async () => {
   await page.getByTestId('wip-row').click()
   const row = page.getByTestId('unstaged-file').first()
   await row.hover()
-  await row.getByTitle('Discard changes (undoable)').click()
+  await row.getByTitle('Discard changes').click()
   await expect(page.getByTestId('wip-row')).toHaveCount(0)
   await page.getByTestId('graph-scroll').focus()
   await page.keyboard.press('ControlOrMeta+z')

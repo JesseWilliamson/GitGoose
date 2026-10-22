@@ -19,10 +19,13 @@ import { startWalkthrough } from '../lib/walkthrough'
 import { showImpact } from '../lib/impact'
 import { chainBase, ensureLoaded, getLog, reportError, selectCommit, setting, toast, updateRepo, useSetting, useStore, type FileMode, type RepoView } from '../lib/store'
 import { Avatar } from './Avatar'
+import { actOn, clickFile, NO_FILES, pruneFiles, type FileSelection } from '../lib/fileSelection'
 import { ChangeHints } from './ChangeHints'
 import { FileListTools, FileListView, FileRow, statusKind } from './FileList'
 import { modName } from '../lib/keys'
 import { Button, CM, DM, SectionHeader, Spinner } from './ui'
+
+const isMac = window.gitgoose?.platform === 'darwin'
 
 export function DetailPanel({ view }: { view: RepoView }) {
   return (
@@ -101,6 +104,20 @@ function WipPanel({ view }: { view: RepoView }) {
   const discard = (paths: string[]) => discardFiles(id, paths)
 
   const [filter, setFilter] = useState('')
+  // Several files selected with Shift- and Ctrl/Cmd-click, in one section at a time (a file can
+  // be in both, partly staged, and an action on the selection must mean one thing).
+  const [picked, setPicked] = useState<{ repoId: string; section: 'unstaged' | 'staged' } & FileSelection>({ repoId: id, section: 'unstaged', ...NO_FILES })
+  const active = picked.repoId === id ? picked : { repoId: id, section: 'unstaged' as const, ...NO_FILES }
+  const sel = { ...active, ...pruneFiles(active, (active.section === 'unstaged' ? unstaged : staged).map((e) => e.path)) }
+  const onFileClick = (section: 'unstaged' | 'staged', order: string[], path: string, t: DiffTarget, e: React.MouseEvent) => {
+    const mods = { range: e.shiftKey, toggle: isMac ? e.metaKey : e.ctrlKey }
+    const next = clickFile(sel.section === section ? sel : NO_FILES, order, path, mods)
+    setPicked({ repoId: id, section, ...next })
+    // The diff follows the click, unless the click took the file out of the selection.
+    if (next.paths.includes(path)) openFile(view, t)
+  }
+  const isSelected = (section: 'unstaged' | 'staged', path: string, t: DiffTarget) =>
+    sel.section === section && sel.paths.length > 0 ? sel.paths.includes(path) : isOpen(view, t)
   const unstagedTarget = (e: StatusEntry): DiffTarget => (e.kind === 'untracked' ? { kind: 'untracked', path: e.path } : { kind: 'unstaged', path: e.path })
 
   return (
@@ -155,33 +172,36 @@ function WipPanel({ view }: { view: RepoView }) {
         <div className="flex min-h-0 flex-1 flex-col" data-testid="unstaged">
           <SectionHeader right={unstaged.length > 0 && (
             <span className="flex gap-1 normal-case">
-              <Button size="sm" variant="ghost" onClick={() => void discard(unstaged.map((e) => e.path))} title="Discard all unstaged changes (undoable)">Discard all</Button>
+              <Button size="sm" variant="ghost" onClick={() => void discard(unstaged.map((e) => e.path))} title="Discard all unstaged changes">Discard all</Button>
               <Button size="sm" onClick={() => void stage(unstaged.map((e) => e.path))} data-testid="stage-all">Stage all</Button>
             </span>
           )}>Unstaged ({unstaged.length})</SectionHeader>
           <div className="min-h-0 flex-1 overflow-y-auto">
             <FileListView items={unstaged} pathOf={(e) => e.path} filter={filter} testId="unstaged"
               folderActions={(paths) => <>
-                <IconAction title="Discard changes in this folder (undoable)" onClick={() => void discard(paths)}><Undo2 size={12} /></IconAction>
+                <IconAction title="Discard changes in this folder" onClick={() => void discard(paths)}><Undo2 size={12} /></IconAction>
                 <IconAction title="Stage folder" onClick={() => void stage(paths)}><Plus size={12} /></IconAction>
               </>}
-              renderFile={(e, layout) => {
+              renderFile={(e, { order, ...layout }) => {
               const t = unstagedTarget(e)
+              // On a row that is part of a selection of several files, every action takes them all.
+              const paths = sel.section === 'unstaged' ? actOn(sel, e.path) : [e.path]
+              const n = paths.length > 1 ? ` ${paths.length} files` : ''
               return (
                 <FileRow key={e.path} {...layout} path={e.path} kind={statusKind(e.worktree === '.' ? e.index : e.worktree)} testId="unstaged-file"
-                  drag={{ kind: 'files', rev: 'worktree', paths: [e.path] }}
-                  selected={isOpen(view, t)} onClick={() => openFile(view, t)}
+                  drag={{ kind: 'files', rev: 'worktree', paths }}
+                  selected={isSelected('unstaged', e.path, t)} onClick={(ev) => onFileClick('unstaged', order, e.path, t, ev)}
                   menu={<FileMenu view={view} target={t}>
-                    <CM.Item onSelect={() => void stage([e.path])}>Stage</CM.Item>
-                    <CM.Item onSelect={() => void stashWith(id, { paths: [e.path] })}>Stash this file</CM.Item>
-                    <CM.Item onSelect={() => void discard([e.path])}>{e.kind === 'untracked' ? 'Delete (undoable)' : 'Discard changes (undoable)'}</CM.Item>
+                    <CM.Item onSelect={() => void stage(paths)}>Stage{n}</CM.Item>
+                    <CM.Item onSelect={() => void stashWith(id, { paths })}>{n ? `Stash${n}` : 'Stash this file'}</CM.Item>
+                    <CM.Item onSelect={() => void discard(paths)}>{n ? `Discard changes in${n}` : e.kind === 'untracked' ? 'Delete' : 'Discard changes'}</CM.Item>
                     {e.kind === 'untracked' && (
                       <CM.Item onSelect={() => void run(id, `Ignore ${e.path}`, () => api.ignorePaths(id, [e.path]))}>Add to .gitignore</CM.Item>
                     )}
                   </FileMenu>}
                   actions={<>
-                    <IconAction title="Discard changes (undoable)" onClick={() => void discard([e.path])}><Undo2 size={12} /></IconAction>
-                    <IconAction title="Stage file" onClick={() => void stage([e.path])}><Plus size={12} /></IconAction>
+                    <IconAction title={n ? `Discard changes in${n}` : 'Discard changes'} onClick={() => void discard(paths)}><Undo2 size={12} /></IconAction>
+                    <IconAction title={n ? `Stage${n}` : 'Stage file'} onClick={() => void stage(paths)}><Plus size={12} /></IconAction>
                   </>} />
               )
             }} />
@@ -195,17 +215,19 @@ function WipPanel({ view }: { view: RepoView }) {
           <div className="min-h-0 flex-1 overflow-y-auto">
             <FileListView items={staged} pathOf={(e) => e.path} filter={filter} testId="staged"
               folderActions={(paths) => <IconAction title="Unstage folder" onClick={() => void unstage(paths)}><Minus size={12} /></IconAction>}
-              renderFile={(e, layout) => {
+              renderFile={(e, { order, ...layout }) => {
               const t: DiffTarget = { kind: 'staged', path: e.path }
+              const paths = sel.section === 'staged' ? actOn(sel, e.path) : [e.path]
+              const n = paths.length > 1 ? ` ${paths.length} files` : ''
               return (
                 <FileRow key={e.path} {...layout} path={e.path} oldPath={e.origPath} kind={statusKind(e.index)} testId="staged-file"
-                  drag={{ kind: 'files', rev: 'worktree', paths: [e.path] }}
-                  selected={isOpen(view, t)} onClick={() => openFile(view, t)}
+                  drag={{ kind: 'files', rev: 'worktree', paths }}
+                  selected={isSelected('staged', e.path, t)} onClick={(ev) => onFileClick('staged', order, e.path, t, ev)}
                   menu={<FileMenu view={view} target={t}>
-                    <CM.Item onSelect={() => void unstage([e.path])}>Unstage</CM.Item>
-                    <CM.Item onSelect={() => void stashWith(id, { paths: [e.path] })}>Stash this file</CM.Item>
+                    <CM.Item onSelect={() => void unstage(paths)}>Unstage{n}</CM.Item>
+                    <CM.Item onSelect={() => void stashWith(id, { paths })}>{n ? `Stash${n}` : 'Stash this file'}</CM.Item>
                   </FileMenu>}
-                  actions={<IconAction title="Unstage file" onClick={() => void unstage([e.path])}><Minus size={12} /></IconAction>} />
+                  actions={<IconAction title={n ? `Unstage${n}` : 'Unstage file'} onClick={() => void unstage(paths)}><Minus size={12} /></IconAction>} />
               )
             }} />
             {staged.length === 0 && <div className="px-3 py-2 text-xs text-faint">Stage files or lines to commit them</div>}
