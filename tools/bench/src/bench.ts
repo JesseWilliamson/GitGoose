@@ -98,8 +98,7 @@ async function main() {
   } else {
     const launchArgs = [main]
     if (process.platform === 'linux') launchArgs.unshift('--no-sandbox')
-    const t0 = performance.now()
-    const app = await electron.launch({
+    const start = () => electron.launch({
       args: launchArgs,
       env: {
         ...process.env,
@@ -111,6 +110,14 @@ async function main() {
         GITGOOSE_AVATAR_GITHUB_BASE: 'http://127.0.0.1:9',
       } as Record<string, string>,
     })
+    // One throwaway launch first: on a fresh CI machine the first start also reads Electron's
+    // 230 MB binary from a cold disk, which is not what a user's second start of the day costs
+    // (CI measured 1.5 s one run and 3.5 s the next, with nothing changed).
+    const warm = await start()
+    await (await warm.firstWindow()).getByTestId('commit-row').first().waitFor()
+    await warm.close()
+    const t0 = performance.now()
+    const app = await start()
     const page = await app.firstWindow()
     await page.getByTestId('commit-row').first().waitFor()
     appFirstPaintMs = performance.now() - t0
