@@ -18,6 +18,9 @@ import { applyZoom, getSettings, onSettingsChanged, setSettings } from './settin
 import { scheduleUpdateCheck } from './updater'
 import { loadWindowState, trackWindowState } from './windowState'
 
+// Startup timeline (read by tools/bench): every import above has been evaluated by now.
+performance.mark('gitgoose:main-loaded')
+
 // Tests and the benchmark point the app at a throwaway profile.
 if (process.env.GITGOOSE_USER_DATA) app.setPath('userData', process.env.GITGOOSE_USER_DATA)
 
@@ -119,6 +122,8 @@ const codegraph = new CodeGraphService({
   gitOpts,
   enabled: () => getSettings().codeGraph,
   emit: (repoId, status) => broadcast({ type: 'codegraph', repoId, status }),
+  // Like the commit-graph upkeep (repos.ts): after the first screen is up.
+  startDelay: 1500,
 })
 
 const repos = new RepoManager(
@@ -165,6 +170,7 @@ function createWindow(): BrowserWindow {
     void win.webContents.setVisualZoomLevelLimits(1, 1)
   })
   win.once('ready-to-show', () => {
+    performance.mark('gitgoose:ready-to-show')
     if (saved?.maximized) win.maximize()
     win.show()
   })
@@ -222,12 +228,16 @@ onSettingsChanged((settings, changed) => {
   broadcast({ type: 'settings', settings })
 })
 
-app.whenReady().then(async () => {
-  try {
-    Object.assign(gitEnv, await askpass.start())
-  } catch {
+app.whenReady().then(() => {
+  performance.mark('gitgoose:ready')
+  // The credential prompt server starts alongside the window rather than before it. Only
+  // commands that talk to a remote can prompt, and IPC waits for it (registerIpc below), so no
+  // request from the window can run git without it.
+  const askpassReady = askpass.start().then(
+    (env) => void Object.assign(gitEnv, env),
     // Without askpass, git falls back to the user's credential helpers.
-  }
+    () => {},
+  )
   // `gitgoose repo1 repo2` or GITGOOSE_OPEN=repo1:repo2 (; on Windows) opens those repositories
   // as tabs instead of restoring the last session. Used from a shell, by tests and by the benchmark.
   const paths = process.env.GITGOOSE_OPEN
@@ -248,9 +258,12 @@ app.whenReady().then(async () => {
     if (!img) return new Response(null, { status: 404 })
     return new Response(new Uint8Array(img.body), { headers: { 'content-type': img.type, 'cache-control': 'max-age=3600' } })
   })
-  registerIpc(createHandlers(repos, prompts, gitOpts, github, ai, codegraph), repos)
+  registerIpc(createHandlers(repos, prompts, gitOpts, github, ai, codegraph), repos, askpassReady)
   installMenu()
+  performance.mark('gitgoose:create-window')
   createWindow()
+  // The window will ask for these tabs as soon as it has loaded: open them while it loads.
+  for (const path of getSettings().openRepos) repos.preopen(path)
   scheduleUpdateCheck()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

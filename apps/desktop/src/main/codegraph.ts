@@ -19,6 +19,8 @@ interface Tracked {
   latest: Map<string, Promise<string | undefined>>
   reader: GraphStore | null
   timer: NodeJS.Timeout | null
+  /** The indexer has been told to open this repository's database. */
+  started: boolean
 }
 
 export interface CodeGraphOptions {
@@ -31,6 +33,13 @@ export interface CodeGraphOptions {
   gitOpts: () => { gitPath: string; env: Record<string, string> }
   enabled: () => boolean
   emit: (repoId: string, status: CodeGraphStatus) => void
+  /**
+   * How long after a repository opens its first index starts (ms). Starting the indexer process
+   * and parsing compete for the CPU with the window loading and the first page of the log, so
+   * the app waits until those are likely done. Anything that needs the graph sooner (`ensure`)
+   * starts it at once.
+   */
+  startDelay?: number
 }
 
 /**
@@ -54,18 +63,17 @@ export class CodeGraphService {
     return this.tracked.get(repoId)?.status ?? { state: this.opts.enabled() ? 'indexing' : 'off', done: 0, total: 0 }
   }
 
-  /** Start tracking a repository: open its database in the indexer and index it. */
-  open(repo: Repo): void {
+  /** Start tracking a repository: open its database in the indexer and index it, `delay` ms from now. */
+  open(repo: Repo, delay = this.opts.startDelay ?? 0): void {
     if (!this.opts.enabled()) {
       this.opts.emit(repo.id, { state: 'off', done: 0, total: 0 })
       return
     }
     mkdirSync(this.opts.dir, { recursive: true })
     const dbFile = join(this.opts.dir, `${createHash('sha1').update(repo.commonDir).digest('hex').slice(0, 16)}.sqlite`)
-    const t: Tracked = { repo, dbFile, status: { state: 'indexing', done: 0, total: 0 }, trees: new Set(), inFlight: new Map(), latest: new Map(), reader: null, timer: null }
+    const t: Tracked = { repo, dbFile, status: { state: 'indexing', done: 0, total: 0 }, trees: new Set(), inFlight: new Map(), latest: new Map(), reader: null, timer: null, started: false }
     this.tracked.set(repo.id, t)
-    this.send({ type: 'open', repoId: repo.id, path: repo.path, dbFile, grammarDir: this.opts.grammarDir, ...this.opts.gitOpts() })
-    this.scheduleAll(repo.id, 0)
+    this.scheduleAll(repo.id, delay)
   }
 
   close(repoId: string): void {
@@ -76,7 +84,7 @@ export class CodeGraphService {
     t.repo.attachGraph(null)
     t.reader?.close()
     for (const p of t.inFlight.values()) p.reject(new Error('Repository closed'))
-    this.send({ type: 'close', repoId })
+    if (t.started) this.send({ type: 'close', repoId })
     if (this.tracked.size === 0) this.stopChild()
   }
 
@@ -105,7 +113,7 @@ export class CodeGraphService {
     rmSync(t.dbFile, { force: true })
     rmSync(`${t.dbFile}-wal`, { force: true })
     rmSync(`${t.dbFile}-shm`, { force: true })
-    this.open(repo)
+    this.open(repo, 0)
   }
 
   /**
@@ -145,6 +153,7 @@ export class CodeGraphService {
     const running = t.latest.get(name)
     if (running) return running
     const id = this.nextId++
+    this.start(t)
     const p = new Promise<string | undefined>((resolve, reject) => {
       t.inFlight.set(id, { what: name, resolve, reject })
       this.send({ type: 'sync', id, repoId, what, rev })
@@ -154,6 +163,13 @@ export class CodeGraphService {
     })
     t.latest.set(name, p)
     return p
+  }
+
+  /** Have the indexer open the repository's database, before its first sync. */
+  private start(t: Tracked): void {
+    if (t.started) return
+    t.started = true
+    this.send({ type: 'open', repoId: t.repo.id, path: t.repo.path, dbFile: t.dbFile, grammarDir: this.opts.grammarDir, ...this.opts.gitOpts() })
   }
 
   private update(t: Tracked, patch: Partial<CodeGraphStatus>): void {
@@ -214,7 +230,7 @@ export class CodeGraphService {
         return
       }
       // Repositories still open must be reopened in the new process before their next sync.
-      for (const t of this.tracked.values()) this.send({ type: 'open', repoId: t.repo.id, path: t.repo.path, dbFile: t.dbFile, grammarDir: this.opts.grammarDir, ...this.opts.gitOpts() })
+      for (const t of this.tracked.values()) t.started = false
     })
     this.child = child
     return child

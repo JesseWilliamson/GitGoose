@@ -59,6 +59,37 @@ describe('RepoManager', () => {
     await vi.waitFor(() => expect(emitted).toHaveLength(2), { timeout: 5000 })
   })
 
+  describe('a tab restored at startup', () => {
+    async function preopened() {
+      const r = makeFixture('linear')
+      // The path as git reports it (symlinks resolved), which is how open tabs are saved.
+      const probe = await Repo.open(r.dir, { env: r.env() as Record<string, string> })
+      const path = probe.path
+      probe.dispose()
+      manager = new RepoManager(() => ({ gitPath: 'git', env: r.env() as Record<string, string> }), () => {}, () => {}, () => {})
+      manager.preopen(path)
+      return { path, m: manager }
+    }
+
+    it('is opened once, however many times it is asked for while it opens', async () => {
+      const { path, m } = await preopened()
+      const [a, b] = await Promise.all([m.openPath(path), m.openPath(path)])
+      expect(a.id).toBe(b.id)
+      expect(m.all()).toHaveLength(1)
+    })
+
+    it('hands the window the snapshot read ahead, then reads fresh ones as before', async () => {
+      const { path, m } = await preopened()
+      while (!m.all()[0]?.lastSnapshot) await wait(10)
+      const repo = m.all()[0]!
+      const read = vi.spyOn(repo, 'snapshot')
+      expect(await m.openPath(path)).toBe(repo.lastSnapshot)
+      expect(read).not.toHaveBeenCalled()
+      await m.openPath(path)
+      expect(read).toHaveBeenCalledTimes(1)
+    })
+  })
+
   it('still refreshes after a write that throws, and lets the error through', async () => {
     const { r, repo, emitted, m } = await setup()
     await expect(m.during(repo.id, async () => {
