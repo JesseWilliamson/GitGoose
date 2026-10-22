@@ -8,7 +8,8 @@ Jesse's GitKraken requests after PLAN-2. Code: `packages/git/src/search.ts`, `re
 ## Search
 
 Ctrl/Cmd+K or Ctrl/Cmd+F (or the box in the middle of the toolbar) opens the omni search. The
-Commits group matches message, author name and email, SHA prefix, and branch and tag names
+Commits group matches message, author name and email, any part of the SHA (two characters
+match a prefix; four or more anywhere in the hash, up to all of it), and branch and tag names
 (`Repo.searchCommits`); choosing a commit selects it in the graph, paging the log until it is
 loaded. There is no second search bar over the graph: one place to search, one set of results.
 (The main process still has `Repo.search`, the grey-out search over the whole log, for a later
@@ -58,14 +59,15 @@ For a run of non-merge commits on the current branch with only non-merge commits
    without hunks (binary, mode change). The AI gets the original messages and the numbered
    units and answers with JSON: commits, oldest first, each with a message and unit ids.
 2. The answer is repaired (unknown ids dropped, duplicates kept once, forgotten units added to
-   the last commit and reported) and shown for review: commits on the left, the selected one's
+   the last commit and reported) and shown for review: commits on the left, newest at the top
+   and oldest at the bottom as in the graph (up moves a commit later), the selected one's
    hunks on the right. Drag a commit to reorder it (the list makes room live, the slot it left
-   stays empty until it lands); drag a hunk onto a commit to move it there, or into the open
-   space below the commits to start a new one — while a hunk is in the air the hunks column dims
+   stays empty until it lands); drag a hunk onto a commit to move it there, or into the space
+   above the newest commit to start a new one — while a hunk is in the air the hunks column dims
    so the commits are the only target. Shift/Ctrl-click several commits and right-click to
    squash them (messages kept, oldest first). Edit messages, preview a unit. Every edit is one
    undo step (Ctrl+Z / Ctrl+Shift+Z inside the dialog; typing in a message or one drag counts
-   once), and "Reset to proposal" is itself undoable. Esc ends what is in progress (leaves the message
+   once), and "Reset to proposal" can itself be undone. Esc ends what is in progress (leaves the message
    field, cancels a drag) and only closes the dialog from rest. Nothing has changed yet. A warning names remote branches that already have the commits.
    The same right-click squash works on a selection in the main graph (`squashOnto`: the newer
    commits fold into the oldest).

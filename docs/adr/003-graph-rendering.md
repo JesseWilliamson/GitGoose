@@ -122,14 +122,12 @@ checkout must not reshuffle the graph) and add one exception, driven by git:
   - *Rule A.* A tip (no lane waits for it) in `overTrunk` arriving while lane 0 is held takes lane
     0 and the hold ends. Its first-parent chain brings the line down to the trunk tip in lane 0.
     A second such tip finds lane 0 taken and curves in as before.
-  - *Rule B.* A tip in `overHead` arriving while HEAD's lane is still pending takes that column;
-    the pending (dashed) line steps aside to the first free column on its right, with a `pass`
-    edge on that row whose `to` differs from its `from`. That is the only diagonal pass the layout
-    emits; `edgePath` draws it as an S-curve that clears the node.
+  - *Rule B* (removed, see "The dashed line to HEAD is straight" below) used to give a tip in
+    `overHead` HEAD's column and move the dashed line aside.
   - When HEAD itself is in `overTrunk` (topic checked out, on top of main), HEAD's lane is lane 0
     from the top, as when HEAD is a trunk tip: one straight line from the WIP row to the trunk.
-  - When HEAD is a trunk tip, rules A and B pick the same tip: lane 0 for the branch, and the
-    dashed line steps to lane 1 and curves into HEAD.
+    The same when a trunk tip is in `overHead` (HEAD is an older commit on main's line, or local
+    main is behind origin/main).
 - Without hints (older git, no trunk, no HEAD commit) the layout is exactly what it was.
 
 The trunk tip is the trunk ref that contains the others (origin/main one ahead of main: origin/main).
@@ -148,3 +146,16 @@ are checked).
 
 Both lists are verified with the first-parent check, so a hint always means "this is one line".
 (Whether rule B strictly needs it is the question in `docs/learn/07-straight-lanes.md`.)
+
+## The dashed line to HEAD is straight (amended after use)
+
+Rule B made the dashed line from the "uncommitted changes" row bend: it left the WIP node's column
+on the first rows and curved back into HEAD further down. Jesse asked for it to go straight up from
+HEAD, as GitKraken draws it. Rule B is gone: HEAD's lane is HEAD's column from the top of the graph
+to HEAD's node and no `pass` edge ever changes column, so `edgePath` has no S-curve any more.
+
+The price is the picture rule B was added for: a branch sitting on top of HEAD now has a column of
+its own and joins HEAD at HEAD's node, from beside it. When HEAD is an older commit on the trunk's
+line, HEAD holds lane 0 and the newer trunk commits run beside it. Without git's hints (older git)
+the one remaining bend is HEAD's own node, when another line reaches it first: the dashed line then
+turns into the node in its last half row.

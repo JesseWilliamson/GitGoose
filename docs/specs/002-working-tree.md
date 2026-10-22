@@ -8,7 +8,12 @@
 - Hover a file for Stage / Unstage / Discard. Stage all / Unstage all / Discard all.
 - Clicking a file opens its diff in the centre. Stage or discard a hunk with its buttons; click
   lines (shift-click for a range) and use Stage lines / Unstage lines / Discard lines.
-- Diff, History and Blame tabs for the open file. Esc returns to the graph.
+- Diff, History and Blame tabs for the open file. Esc returns to the graph. Blame is a heatmap:
+  each commit's lines get one colour, from hot (the newest change still in the file) to cool
+  (the oldest), ranked so the colours spread evenly; each block starts with the author's avatar.
+- In the Unstaged and Staged lists, Shift-click selects the run of files from the last one
+  clicked, Ctrl/Cmd-click adds or removes one. On a selected file, the hover buttons, the
+  right-click menu and dragging act on the whole selection ("Stage 4 files").
 - Commit with summary + description (Ctrl/Cmd+Enter). Amend prefills the last message.
 - Changes made by other tools appear within ~100 ms (file watcher), and on window focus.
 

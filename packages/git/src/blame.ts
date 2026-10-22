@@ -9,13 +9,13 @@ import type { BlameLine } from '@gitgoose/shared'
  * itself comes last, prefixed by a TAB.
  */
 export function parseBlame(output: string): BlameLine[] {
-  const info = new Map<string, { author: string; date: number; summary: string }>()
+  const info = new Map<string, { author: string; email: string; date: number; summary: string }>()
   const result: BlameLine[] = []
   let current: { hash: string; lineNo: number } | null = null
   for (const line of output.split('\n')) {
     if (line.startsWith('\t')) {
       if (current) {
-        const meta = info.get(current.hash) ?? { author: '', date: 0, summary: '' }
+        const meta = info.get(current.hash) ?? { author: '', email: '', date: 0, summary: '' }
         result.push({ hash: current.hash, lineNo: current.lineNo, text: line.slice(1), ...meta })
       }
       current = null
@@ -24,7 +24,7 @@ export function parseBlame(output: string): BlameLine[] {
     const header = /^([0-9a-f]{40,64}) \d+ (\d+)/.exec(line)
     if (header) {
       current = { hash: header[1]!, lineNo: Number(header[2]) }
-      if (!info.has(current.hash)) info.set(current.hash, { author: '', date: 0, summary: '' })
+      if (!info.has(current.hash)) info.set(current.hash, { author: '', email: '', date: 0, summary: '' })
       continue
     }
     if (!current) continue
@@ -33,6 +33,8 @@ export function parseBlame(output: string): BlameLine[] {
     const key = sp < 0 ? line : line.slice(0, sp)
     const value = sp < 0 ? '' : line.slice(sp + 1)
     if (key === 'author') meta.author = value
+    // "<ada@example.com>": the angle brackets are git's, not part of the address.
+    else if (key === 'author-mail') meta.email = value.replace(/^<|>$/g, '')
     else if (key === 'author-time') meta.date = Number(value)
     else if (key === 'summary') meta.summary = value
   }
