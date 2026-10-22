@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { githubPromptKind, parseGitHubRemote, pickGitHubRemote } from './github'
+import { parseGitHubRemote, pickGitHubRemote } from './github'
 
 describe('parseGitHubRemote', () => {
   it('reads the URL forms git accepts', () => {
@@ -37,17 +37,5 @@ describe('pickGitHubRemote', () => {
     expect(pickGitHubRemote([fork, origin])).toEqual({ owner: 'acme', repo: 'widgets', remote: 'origin' })
     expect(pickGitHubRemote([gitlab, fork])).toEqual({ owner: 'me', repo: 'widgets', remote: 'fork' })
     expect(pickGitHubRemote([gitlab])).toBeNull()
-  })
-})
-
-describe('githubPromptKind', () => {
-  it('recognises git prompts for github.com only', () => {
-    expect(githubPromptKind("Username for 'https://github.com': ")).toBe('username')
-    expect(githubPromptKind("Password for 'https://octocat@github.com': ")).toBe('password')
-    expect(githubPromptKind("Password for 'https://github.com.evil.example': ")).toBeNull()
-    expect(githubPromptKind("Password for 'http://github.com': ")).toBeNull()
-    expect(githubPromptKind("Password for 'https://gitlab.com': ")).toBeNull()
-    expect(githubPromptKind("Enter passphrase for key '/home/me/.ssh/id_ed25519': ")).toBeNull()
-    expect(githubPromptKind("Password for 'https://x@github.com@evil.example': ")).toBeNull()
   })
 })

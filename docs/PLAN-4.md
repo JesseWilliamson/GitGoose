@@ -615,7 +615,7 @@ dependencies, architecture impact, behaviour, uncertainties and merge readiness;
 layer-scoped diff with Files / Diagrams tabs; right: Summaries / Comments or Chat); active summary
 sync; keyboard J/K/L/H/Z/[/]/U/C; mark files viewed; a pending review submitted to GitHub; snapshots
 with out-of-date warnings; Code Peek; semantic diff grouping. GitGoose already has review findings,
-walkthrough, reading order, impact, Code Peek, ask-about-lines and GitHub sign-in: Change Stack is
+walkthrough, reading order, impact, Code Peek, ask-about-lines and (until 2026-10-22, see spec 005) GitHub sign-in: Change Stack is
 the view that puts them in CodeRabbit's shape and adds cohorts, layers, readiness and the review
 draft.
 
@@ -637,7 +637,7 @@ branch since its fork point (a PR, when the branch has one). Opened from the Rev
 | Active summary sync | the right rail highlights the layer summary of the hunk in the centre of the diff |
 | Keyboard J/K, L/H, Z, [ ], U, C, F/D, Esc, ⌘Enter | the same |
 | Mark files viewed | per snapshot, stored per repository |
-| Comments → pending review → Approve / Comment / Request changes | a local draft (range comments + chosen findings); on a GitHub PR, submit as a GitHub review through the existing sign-in (network: confirm, show exactly what is sent); otherwise copy as markdown |
+| Comments → pending review → Approve / Comment / Request changes | a local draft (range comments + chosen findings); on a GitHub PR, submit as a GitHub review through the existing sign-in (removed 2026-10-22: this needs another way) (network: confirm, show exactly what is sent); otherwise copy as markdown |
 | Snapshots, out-of-date warning | each run keyed by the change's head and base; the view warns when either moved, "Refresh" re-runs incrementally (phase 36 machinery); findings compared remaining / addressed |
 | Chat | the phase 5 thread with a `changestack` anchor: it knows the layers and hunk ids and can revise layers (```json:layers artifact) |
 | Code Peek, semantic grouping | existing Peek; hunks grouped by enclosing definition from the code graph (already computed for numbered diffs) |

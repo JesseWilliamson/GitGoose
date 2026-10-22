@@ -18,7 +18,7 @@ import { formatDate, relativeTime, shortHash, splitPath } from '../lib/format'
 import { pairs, segments, splitRows, wordDiff, type Ranges } from '../lib/diffLayout'
 import { tokenize, type Tokens } from '../lib/highlight'
 import { heatByCommit, heatColor } from '../lib/heat'
-import { avatarSrc, useAvatarVariant } from '../lib/avatar'
+import { avatarSrc } from '../lib/avatar'
 import { codeLineHeight, ensureLoaded, reportError, saveSettings, updateRepo, useSetting, type FileMode, type RepoView } from '../lib/store'
 import { Button, DM, Spinner } from './ui'
 import { modName } from '../lib/keys'
@@ -508,7 +508,6 @@ function BlamePane({ view, path, rev }: { view: RepoView; path: string; rev?: st
   useEffect(() => virt.measure(), [lineH, virt])
   const heats = useMemo(() => heatByCommit(lines ?? []), [lines])
   const avatars = useSetting('avatars')
-  const avatarVariant = useAvatarVariant()
   if (!lines) return <div className="flex flex-1 items-center justify-center text-faint"><Spinner /></div>
   return (
     <div ref={scrollRef} className="selectable min-h-0 flex-1 overflow-auto" style={CODE_STYLE} data-testid="blame">
@@ -530,7 +529,7 @@ function BlamePane({ view, path, rev }: { view: RepoView; path: string; rev?: st
                   <button className="flex min-w-0 flex-1 items-center gap-2 text-left hover:text-accent" title={`${l.summary}\n${l.author} <${l.email}>`}
                     onClick={() => { updateRepo(view.id, { selected: { kind: 'commit', hash: l.hash } }); void ensureLoaded(view.id, l.hash) }}>
                     <span data-testid="blame-avatar" className="flex shrink-0">
-                      <Avatar name={l.author} email={l.email} src={avatarSrc(l.email, avatars, avatarVariant)} size={Math.min(16, lineH - 2)} />
+                      <Avatar name={l.author} email={l.email} src={avatarSrc(l.email, avatars)} size={Math.min(16, lineH - 2)} />
                     </span>
                     <span className="font-mono text-faint">{shortHash(l.hash)}</span>
                     <span className="min-w-0 flex-1 truncate">{l.summary}</span>
