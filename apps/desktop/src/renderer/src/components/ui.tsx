@@ -70,11 +70,17 @@ export function WithTooltip({ text, children, side, delay }: { text?: string; ch
 }
 
 /**
- * An icon-only toolbar button. The label is its accessible name and (unless a richer title is
- * given) its tooltip, so screen readers and tests still see "Push", not an arrow.
+ * The one toolbar button: 28 px tall (h-row-lg), a 16 px icon, optionally a count beside the icon
+ * (commits to pull or push) and optionally text after it (the Undo chip). The label is its
+ * accessible name and (unless a richer title is given) its tooltip, so screen readers and tests
+ * still see "Push", not an arrow.
  */
-export function ToolbarButton({ icon, label, onClick, disabled, title, badge, className }: {
-  icon: ReactNode; label: string; onClick?: () => void; disabled?: boolean; title?: string; badge?: ReactNode; className?: string
+export function ToolbarButton({ icon, label, onClick, disabled, title, count, children, className }: {
+  icon: ReactNode; label: string; onClick?: () => void; disabled?: boolean; title?: string
+  /** A number shown beside the icon when it is more than zero. */
+  count?: number
+  /** Text after the icon (and the count). */
+  children?: ReactNode; className?: string
 }) {
   return (
     <WithTooltip text={title ?? label} side="bottom">
@@ -82,10 +88,11 @@ export function ToolbarButton({ icon, label, onClick, disabled, title, badge, cl
         onClick={onClick}
         disabled={disabled}
         aria-label={label}
-        className={cn('no-drag relative flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-40', className)}
+        className={cn('no-drag flex h-row-lg min-w-row-lg shrink-0 items-center justify-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-40', className)}
       >
         {icon}
-        {badge}
+        {!!count && count > 0 && <span className="font-medium text-primary tabular-nums" data-testid="toolbar-count">{count}</span>}
+        {children}
       </button>
     </WithTooltip>
   )

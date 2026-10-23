@@ -4,7 +4,8 @@ import { DropdownMenu } from 'radix-ui'
 import { fetchAll, newBranch, pull, push, redo, stash, undo } from '../lib/actions'
 import { runCommand, useSetting, useStore, type RepoView } from '../lib/store'
 import { modName, shortcutOf } from '../lib/keys'
-import { DM, Spinner, ToolbarButton } from './ui'
+import { Input } from '@/components/ui/input'
+import { DM, Kbd, Spinner, ToolbarButton } from './ui'
 import { whyNotFetchAll, whyNotForcePush, whyNotPull, whyNotPush } from '../lib/menuRules'
 
 /**
@@ -28,8 +29,8 @@ export function Toolbar({ view }: { view: RepoView }) {
         <DropdownMenu.Root>
           <div className="no-drag flex items-stretch">
             <ToolbarButton icon={<ArrowDown size={16} />} label="Pull" title={`Pull (${pullMode === 'ff-only' ? 'fast-forward only' : pullMode})`} onClick={() => void pull(id)} disabled={!!view.busy}
-              badge={(head?.behind ?? 0) > 0 ? <Badge>{head!.behind}</Badge> : null} />
-            <DropdownMenu.Trigger className="-ml-1 rounded-md px-0.5 text-hint hover:bg-accent hover:text-foreground" aria-label="Pull options"><ChevronDown size={11} /></DropdownMenu.Trigger>
+              count={head?.behind} />
+            <DropdownMenu.Trigger className="-ml-1 h-row-lg rounded-md px-0.5 text-hint hover:bg-accent hover:text-foreground" aria-label="Pull options"><ChevronDown size={12} /></DropdownMenu.Trigger>
           </div>
           <DM.Content>
             <DM.Item reason={pullWhy} onSelect={() => void pull(id, 'merge')}>Pull (merge)</DM.Item>
@@ -41,8 +42,8 @@ export function Toolbar({ view }: { view: RepoView }) {
         <DropdownMenu.Root>
           <div className="no-drag flex items-stretch">
             <ToolbarButton icon={<ArrowUp size={16} />} label="Push" onClick={() => push(id)} disabled={!!view.busy || !snap.head.branch}
-              badge={(head?.ahead ?? 0) > 0 ? <Badge>{head!.ahead}</Badge> : null} />
-            <DropdownMenu.Trigger className="-ml-1 rounded-md px-0.5 text-hint hover:bg-accent hover:text-foreground" aria-label="Push options"><ChevronDown size={11} /></DropdownMenu.Trigger>
+              count={head?.ahead} />
+            <DropdownMenu.Trigger className="-ml-1 h-row-lg rounded-md px-0.5 text-hint hover:bg-accent hover:text-foreground" aria-label="Push options"><ChevronDown size={12} /></DropdownMenu.Trigger>
           </div>
           <DM.Content>
             <DM.Item reason={whyNotPush(head)} onSelect={() => push(id)}>Push</DM.Item>
@@ -55,15 +56,17 @@ export function Toolbar({ view }: { view: RepoView }) {
         <ToolbarButton icon={<Archive size={16} />} label="Stash" title="Stash changes" onClick={() => stash(id)} disabled={!!view.busy} />
       </div>
 
-      {/* Like VS Code's command centre: a box that looks like a search field, with its shortcut.
-          The shortcut is spelled out per platform (not the ⌘ glyph everywhere). */}
-      <button onClick={() => runCommand('search')} data-testid="omni-open"
-        title={`Search everything (${shortcutOf('search', keys)}); commands only: ${shortcutOf('palette', keys)}`}
-        className="no-drag mx-3 flex h-7 w-[26rem] min-w-0 items-center gap-2 rounded-md border border-border bg-background px-2.5 text-xs text-hint hover:border-primary/60 hover:text-muted-foreground">
-        <Search size={13} className="shrink-0" />
-        <span className="min-w-0 flex-1 truncate text-left">Search…</span>
-        <kbd className="shrink-0 rounded border border-border px-1 text-2xs">{shortcutOf('search', keys)}</kbd>
-      </button>
+      {/* A real input (shadcn's) with a search icon and the shortcut, 20 rem wide. It is read-only: clicking it,
+          or pressing Enter on it, opens the search (a dialog with its own field), so it never holds text.
+          The shortcut is spelled out per platform (not the cmd glyph everywhere). */}
+      <div className="no-drag relative mx-3 w-80 min-w-0" title={`Search everything (${shortcutOf('search', keys)}); commands only: ${shortcutOf('palette', keys)}`}>
+        <Search size={16} className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-hint" />
+        <Input readOnly value="" placeholder="Search…" aria-label="Search" aria-keyshortcuts={shortcutOf('search', keys)} data-testid="omni-open"
+          onClick={() => runCommand('search')}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); runCommand('search') } }}
+          className="h-row-lg cursor-pointer bg-background pr-16 pl-8 text-xs shadow-none placeholder:text-hint md:text-xs dark:bg-background" />
+        <span className="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2"><Kbd>{shortcutOf('search', keys)}</Kbd></span>
+      </div>
 
       <div className="flex min-w-0 items-center justify-end gap-0.5">
         {(view.busy || view.progress) && (
@@ -90,15 +93,13 @@ function UndoChip({ view }: { view: RepoView }) {
   const next = view.redo[0]
   return (
     <div className="no-drag flex min-w-0 items-center" data-testid="undo-chip">
-      <button onClick={() => void undo(view.id)} disabled={!last || !!view.busy} aria-label="Undo"
-        title={last ? `Undo: ${last.label} (${modName()}+Z)` : 'Nothing to undo'}
-        className="flex h-7 min-w-0 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 disabled:pointer-events-none">
-        <Undo2 size={15} className="shrink-0" />
+      <ToolbarButton icon={<Undo2 size={16} />} label="Undo" onClick={() => void undo(view.id)} disabled={!last || !!view.busy}
+        title={last ? `Undo: ${last.label} (${modName()}+Z)` : 'Nothing to undo'} className="min-w-0 px-2">
         <span className="shrink-0 font-medium">Undo</span>
         {last && <span className="min-w-0 truncate text-hint" data-testid="undo-label">{last.label}</span>}
-      </button>
-      <ToolbarButton icon={<Redo2 size={15} />} label="Redo" onClick={() => void redo(view.id)} disabled={!next || !!view.busy}
-        title={next ? `Redo: ${next.label} (${shortcutOf('redo')})` : 'Nothing to redo'} className="size-7" />
+      </ToolbarButton>
+      <ToolbarButton icon={<Redo2 size={16} />} label="Redo" onClick={() => void redo(view.id)} disabled={!next || !!view.busy}
+        title={next ? `Redo: ${next.label} (${shortcutOf('redo')})` : 'Nothing to redo'} />
     </div>
   )
 }
@@ -121,8 +122,4 @@ function Location({ view }: { view: RepoView }) {
       <span className={clsx('max-w-48 truncate font-semibold text-foreground', !head.branch && !!head.hash && 'font-mono')} title={head.hash} data-testid="location-head">{value}</span>
     </div>
   )
-}
-
-function Badge({ children }: { children: React.ReactNode }) {
-  return <span className="absolute -top-0.5 right-0 rounded-full bg-primary px-1 text-2xs leading-[14px] font-bold text-primary-foreground">{children}</span>
 }
