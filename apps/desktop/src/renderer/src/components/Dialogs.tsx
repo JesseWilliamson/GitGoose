@@ -107,7 +107,7 @@ function CleanupDialog({ repoId, close }: { repoId: string; close: () => void })
       <p className="mb-3 text-sm text-muted-foreground">
         Merged branches are already part of {view?.snapshot.head.branch ?? 'HEAD'}. Stale ones have had no commits for {STALE_DAYS} days. Undo brings deleted branches back.
       </p>
-      {candidates.length === 0 && <p className="mb-3 text-sm text-muted-foreground/70">Nothing to clean up.</p>}
+      {candidates.length === 0 && <p className="mb-3 text-sm text-hint">Nothing to clean up.</p>}
       <div className="mb-3 max-h-72 overflow-y-auto rounded-md border border-border" data-testid="cleanup-list">
         {candidates.map((c) => (
           <label key={c.name} className="flex h-7 items-center gap-2 px-2 text-sm hover:bg-accent">
@@ -115,7 +115,7 @@ function CleanupDialog({ repoId, close }: { repoId: string; close: () => void })
             <span className="min-w-0 flex-1 truncate">{c.name}</span>
             {c.merged && <span className="text-2xs text-add">merged</span>}
             {c.stale && <span className="text-2xs text-warn">stale</span>}
-            {c.date !== undefined && <span className="w-20 text-right text-2xs text-muted-foreground/70">{relativeTime(c.date)}</span>}
+            {c.date !== undefined && <span className="w-20 text-right text-2xs text-hint">{relativeTime(c.date)}</span>}
           </label>
         ))}
       </div>
@@ -255,11 +255,11 @@ function LearningsDialog({ repoId, close }: { repoId: string; close: () => void 
   return (
     <Modal open onClose={close} title="Review learnings" width={560}>
       <p className="mb-3 text-sm text-muted-foreground">Sent with every review of this repository. They come from "Don't flag again" on findings.</p>
-      {list?.length === 0 && <p className="mb-3 text-sm text-muted-foreground/70">None yet.</p>}
+      {list?.length === 0 && <p className="mb-3 text-sm text-hint">None yet.</p>}
       <div className="mb-3 max-h-72 overflow-y-auto" data-testid="learnings">
         {list?.map((l, i) => (
           <div key={i} className="flex items-center gap-2 border-b border-border/60 py-1.5 text-sm">
-            <span className="min-w-0 flex-1">{l.text}{l.path && <span className="ml-2 font-mono text-2xs text-muted-foreground/70">{l.path}</span>}</span>
+            <span className="min-w-0 flex-1">{l.text}{l.path && <span className="ml-2 font-mono text-2xs text-hint">{l.path}</span>}</span>
             <Button size="sm" variant="ghost" onClick={() => void remove(i)}>Remove</Button>
           </div>
         ))}
@@ -291,11 +291,11 @@ function PushChecksDialog({ d, close }: { d: Extract<NonNullable<ReturnType<type
             <div className="flex items-center gap-2">
               <span className={clsx('w-4 text-center font-bold', VERDICT[r.verdict].className)} aria-label={VERDICT[r.verdict].label}>{VERDICT[r.verdict].icon}</span>
               <span className="min-w-0 flex-1 font-semibold">{r.name}</span>
-              <span className="text-2xs text-muted-foreground/70">{SOURCE[r.source]}</span>
+              <span className="text-2xs text-hint">{SOURCE[r.source]}</span>
               <span className={clsx('rounded px-1 text-2xs uppercase', r.mode === 'block' ? 'bg-destructive/15 text-destructive' : 'bg-accent text-muted-foreground')}>{r.mode === 'block' ? 'blocks' : 'warns'}</span>
             </div>
             <p className="selectable mt-1 pl-6 text-muted-foreground">{r.reason}</p>
-            {r.evidence.length > 0 && <p className="selectable mt-0.5 pl-6 font-mono text-2xs text-muted-foreground/70">{r.evidence.map((e) => `${e.path}:${e.line}`).join('  ')}</p>}
+            {r.evidence.length > 0 && <p className="selectable mt-0.5 pl-6 font-mono text-2xs text-hint">{r.evidence.map((e) => `${e.path}:${e.line}`).join('  ')}</p>}
           </div>
         ))}
       </div>
@@ -335,15 +335,15 @@ function PushRulesDialog({ repoId, close }: { repoId: string; close: () => void 
       </p>
       {repo.length > 0 && (
         <div className="mb-3">
-          <div className="mb-1 text-xs text-muted-foreground/70">From .coderabbit.yaml (edit the file to change these)</div>
+          <div className="mb-1 text-xs text-hint">From .coderabbit.yaml (edit the file to change these)</div>
           {repo.map((c, i) => (
             <div key={i} className="mb-1 rounded border border-border/60 px-2 py-1 text-xs"><span className="font-semibold">{c.name}</span> · {c.mode === 'block' ? 'blocks' : 'warns'}<div className="text-muted-foreground">{c.instructions}</div></div>
           ))}
         </div>
       )}
-      <div className="mb-1 text-xs text-muted-foreground/70">Yours, for this repository</div>
+      <div className="mb-1 text-xs text-hint">Yours, for this repository</div>
       <div className="mb-3 max-h-72 space-y-2 overflow-y-auto" data-testid="push-rules">
-        {mine?.length === 0 && <p className="text-sm text-muted-foreground/70">None yet.</p>}
+        {mine?.length === 0 && <p className="text-sm text-hint">None yet.</p>}
         {mine?.map((c, i) => (
           <div key={i} className="rounded-md border border-border p-2">
             <div className="mb-1 flex gap-2">
@@ -386,8 +386,8 @@ function LfsLocksDialog({ repoId, close }: { repoId: string; close: () => void }
   return (
     <Modal open onClose={close} title="Git LFS locks" width={560}>
       {error ? <p className="mb-3 text-sm text-destructive">{error}</p>
-        : locks === null ? <p className="mb-3 text-sm text-muted-foreground/70">Asking the server…</p>
-        : locks.length === 0 ? <p className="mb-3 text-sm text-muted-foreground/70">No files are locked.</p>
+        : locks === null ? <p className="mb-3 text-sm text-hint">Asking the server…</p>
+        : locks.length === 0 ? <p className="mb-3 text-sm text-hint">No files are locked.</p>
         : (
           <div className="mb-3 max-h-72 overflow-y-auto rounded-md border border-border" data-testid="lfs-locks">
             {locks.map((l) => (
@@ -429,10 +429,10 @@ function PickDialog({ d, close }: { d: Extract<NonNullable<ReturnType<typeof use
           <div key={i.value} role="option" aria-selected={n === at} onMouseEnter={() => setAt(n)} onClick={() => pick(i.value)} data-testid="pick-item"
             className={clsx('flex h-8 cursor-default items-center gap-2 rounded px-2 text-sm', n === at && 'bg-primary text-primary-foreground')}>
             <span className="truncate">{i.label}</span>
-            {i.detail && <span className={clsx('truncate text-xs', n === at ? 'text-primary-foreground/80' : 'text-muted-foreground/70')}>{i.detail}</span>}
+            {i.detail && <span className={clsx('truncate text-xs', n === at ? 'text-primary-foreground/80' : 'text-hint')}>{i.detail}</span>}
           </div>
         ))}
-        {shown.length === 0 && <div className="px-2 py-2 text-xs text-muted-foreground/70">Nothing matches</div>}
+        {shown.length === 0 && <div className="px-2 py-2 text-xs text-hint">Nothing matches</div>}
       </div>
     </Modal>
   )

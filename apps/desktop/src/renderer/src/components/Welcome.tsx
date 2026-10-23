@@ -23,7 +23,7 @@ export function Welcome() {
             {recent.slice(0, 8).map((p) => (
               <button key={p} onClick={() => reopen(p)} className="flex w-full flex-col rounded-md px-2 py-1.5 text-left hover:bg-accent">
                 <span className="text-sm">{p.split(/[\\/]/).pop()}</span>
-                <span className="truncate text-xs text-muted-foreground/70">{p}</span>
+                <span className="truncate text-xs text-hint">{p}</span>
               </button>
             ))}
           </div>

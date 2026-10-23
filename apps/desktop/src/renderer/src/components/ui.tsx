@@ -134,7 +134,7 @@ export const CM = {
     </Reason>
   ),
   Separator: () => <ContextMenuSeparator />,
-  Label: ({ children }: { children: ReactNode }) => <ContextMenuLabel className="truncate py-1 text-2xs font-normal text-muted-foreground/70">{children}</ContextMenuLabel>,
+  Label: ({ children }: { children: ReactNode }) => <ContextMenuLabel className="truncate py-1 text-2xs font-normal text-hint">{children}</ContextMenuLabel>,
   /** `reason` greys the whole submenu out (its trigger), for when none of its items could run. */
   Sub: ({ label, children, reason }: { label: string; children: ReactNode; reason?: string }) => (
     <ContextMenuSub>
@@ -164,7 +164,7 @@ export const DM = {
     </DropdownMenuCheckboxItem>
   ),
   Separator: () => <DropdownMenuSeparator />,
-  Label: ({ children }: { children: ReactNode }) => <DropdownMenuLabel className="py-1 text-2xs font-normal text-muted-foreground/70">{children}</DropdownMenuLabel>,
+  Label: ({ children }: { children: ReactNode }) => <DropdownMenuLabel className="py-1 text-2xs font-normal text-hint">{children}</DropdownMenuLabel>,
   Sub: ({ label, children }: { label: string; children: ReactNode }) => (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger className={itemText}>{label}</DropdownMenuSubTrigger>

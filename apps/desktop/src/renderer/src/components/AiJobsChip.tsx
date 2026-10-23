@@ -50,7 +50,7 @@ function JobRow({ job, close }: { job: AiJob; close: () => void }) {
       </span>
       <div className="min-w-0 flex-1">
         <div className="truncate">{job.title}</div>
-        <div className="truncate text-2xs text-muted-foreground/70" title={job.error}>
+        <div className="truncate text-2xs text-hint" title={job.error}>
           {job.status === 'running' ? 'Working on it…' : job.status === 'error' ? job.error ?? 'Failed' : 'Ready'}
           {repoName ? ` · ${repoName}` : ''}
         </div>

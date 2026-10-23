@@ -78,13 +78,13 @@ export function WalkthroughView({ view }: { view: RepoView }) {
             <div className="max-w-4xl" data-testid="reading-order">
               {layers.map(([layer, hs]) => (
                 <div key={layer} className="mb-3">
-                  <div className="mb-1 text-xs font-medium text-muted-foreground/70">{LAYER[layer]}</div>
+                  <div className="mb-1 text-xs font-medium text-hint">{LAYER[layer]}</div>
                   {hs.map((h) => <HunkRow key={h.id} h={h} onOpen={() => open(h.path)} />)}
                 </div>
               ))}
               {trivial.length > 0 && (
                 <div className="mb-3">
-                  <button className="text-xs text-muted-foreground/70 hover:text-foreground" onClick={() => setShowTrivial(!showTrivial)} data-testid="trivial-toggle">
+                  <button className="text-xs text-hint hover:text-foreground" onClick={() => setShowTrivial(!showTrivial)} data-testid="trivial-toggle">
                     {trivial.length} small change{trivial.length === 1 ? '' : 's'} (imports, comments, formatting) {showTrivial ? '▾' : '▸'}
                   </button>
                   {showTrivial && trivial.map((h) => <HunkRow key={h.id} h={h} onOpen={() => open(h.path)} />)}
@@ -99,15 +99,15 @@ export function WalkthroughView({ view }: { view: RepoView }) {
                   {r.history.map((c) => (
                     <button key={c.hash} onClick={() => { updateRepo(view.id, { selected: { kind: 'commit', hash: c.hash }, center: { kind: 'graph' } }); void ensureLoaded(view.id, c.hash) }}
                       className="flex w-full items-center gap-3 rounded px-1 py-0.5 text-left hover:bg-accent">
-                      <span className="font-mono text-2xs text-muted-foreground/70">{c.hash.slice(0, 7)}</span>
+                      <span className="font-mono text-2xs text-hint">{c.hash.slice(0, 7)}</span>
                       <span className="min-w-0 flex-1 truncate">{c.subject}</span>
-                      <span className="text-xs text-muted-foreground/70">{c.author}, {relativeTime(c.date)}</span>
+                      <span className="text-xs text-hint">{c.author}, {relativeTime(c.date)}</span>
                     </button>
                   ))}
                 </div>
               </>
             )}
-            {r.skipped.length > 0 && <p className="mt-4 text-xs text-muted-foreground/70">Not included (over the size limit): {r.skipped.join(', ')}.</p>}
+            {r.skipped.length > 0 && <p className="mt-4 text-xs text-hint">Not included (over the size limit): {r.skipped.join(', ')}.</p>}
           </>
         )}
       </div>

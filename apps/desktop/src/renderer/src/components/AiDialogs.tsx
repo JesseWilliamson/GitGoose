@@ -42,7 +42,7 @@ function ConsentDialog() {
           To do this, GitGoose sends {c.what} to <b className="text-foreground">{c.label}</b>.
           {c.label === 'Anthropic API' ? ' It goes to Anthropic with your API key.' : ' The agent runs on this computer with its own login, and may send it to its provider.'}
         </p>
-        <p className="mt-2 text-xs text-muted-foreground/70">You are asked once for each agent or provider. Settings → AI turns AI features off.</p>
+        <p className="mt-2 text-xs text-hint">You are asked once for each agent or provider. Settings → AI turns AI features off.</p>
         <div className="mt-4 flex justify-end gap-2">
           <Button onClick={() => answer(false)}>Cancel</Button>
           <Button variant="primary" autoFocus onClick={() => answer(true)} data-testid="ai-consent-ok">Continue</Button>
@@ -152,7 +152,7 @@ function OutputDialog() {
         </div>
         {o.error && <div className="mt-2 text-xs text-destructive" data-testid="ai-output-error">{o.error}</div>}
         <div className="mt-4 flex items-center justify-between gap-2">
-          <span className="flex items-center gap-1 text-2xs text-muted-foreground/70"><Sparkles size={11} /> AI-written; check it before acting on it.</span>
+          <span className="flex items-center gap-1 text-2xs text-hint"><Sparkles size={11} /> AI-written; check it before acting on it.</span>
           <div className="flex items-center gap-2">
             <AiTargetButton area="error" />
             {o.requestId && <Button onClick={() => cancelAi(o.requestId!)}>Stop</Button>}
@@ -224,23 +224,23 @@ function FixView({ fix }: { fix: NonNullable<ReturnType<typeof useAi.getState>['
         {fix.requestId && (
           <>
             <p className="flex items-center gap-2 text-muted-foreground"><Spinner /> Asking for a fix to {fix.path}…</p>
-            <p className="mt-2 text-xs text-muted-foreground/70">You can close this; the fix waits in the status bar.</p>
+            <p className="mt-2 text-xs text-hint">You can close this; the fix waits in the status bar.</p>
           </>
         )}
         {fix.error && <p className="text-destructive">{fix.error}</p>}
         {fix.note && <p className="mb-2 text-muted-foreground">{fix.note}</p>}
         {fix.after !== null && (
           <>
-            {rows.length === 0 ? <p className="text-muted-foreground/70">The proposal is the same as the file: nothing to change.</p> : (
+            {rows.length === 0 ? <p className="text-hint">The proposal is the same as the file: nothing to change.</p> : (
               <pre className="selectable max-h-[55vh] overflow-auto rounded border border-border bg-background py-1 font-mono text-xs" data-testid="ai-fix-diff">
                 {rows.map((r, i) => r.kind === 'skip'
-                  ? <div key={i} className="px-2 text-muted-foreground/70">⋯ {r.count} unchanged line{r.count === 1 ? '' : 's'}</div>
+                  ? <div key={i} className="px-2 text-hint">⋯ {r.count} unchanged line{r.count === 1 ? '' : 's'}</div>
                   : <div key={i} className={clsx('px-2', r.kind === '+' && 'bg-add-bg', r.kind === '-' && 'bg-del-bg')}>{r.kind} {r.text}</div>)}
               </pre>
             )}
             {stale
               ? <p className="mt-2 flex items-start gap-1 text-xs text-destructive" data-testid="ai-fix-stale"><CircleAlert size={12} className="mt-px shrink-0" /> {fix.path} has changed since this fix was asked for, so Use is off: it would overwrite those changes. Discard it and ask for a new fix.</p>
-              : <p className="mt-2 text-xs text-muted-foreground/70">Nothing has been written. Use writes {fix.path}; it is refused if the file changes meanwhile.</p>}
+              : <p className="mt-2 text-xs text-hint">Nothing has been written. Use writes {fix.path}; it is refused if the file changes meanwhile.</p>}
           </>
         )}
         <div className="mt-4 flex justify-end gap-2">
@@ -305,7 +305,7 @@ function ProposalView({ p }: { p: NonNullable<ReturnType<typeof useAi.getState>[
             {stillConflicted ? `${p.path} has changed since this resolution was proposed` : `${p.path} is no longer in conflict`}, so Use is off: it would overwrite that. Discard it, and ask again if you still want help.
           </p>
         ) : (
-          <p className="mt-2 text-xs text-muted-foreground/70">
+          <p className="mt-2 text-xs text-hint">
             Nothing has been written yet. Use it to write this file and mark it resolved, or discard it and keep resolving by hand.
           </p>
         )}

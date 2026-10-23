@@ -29,7 +29,7 @@ export function Toolbar({ view }: { view: RepoView }) {
           <div className="no-drag flex items-stretch">
             <ToolbarButton icon={<ArrowDown size={16} />} label="Pull" title={`Pull (${pullMode === 'ff-only' ? 'fast-forward only' : pullMode})`} onClick={() => void pull(id)} disabled={!!view.busy}
               badge={(head?.behind ?? 0) > 0 ? <Badge>{head!.behind}</Badge> : null} />
-            <DropdownMenu.Trigger className="-ml-1 rounded-md px-0.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground" aria-label="Pull options"><ChevronDown size={11} /></DropdownMenu.Trigger>
+            <DropdownMenu.Trigger className="-ml-1 rounded-md px-0.5 text-hint hover:bg-accent hover:text-foreground" aria-label="Pull options"><ChevronDown size={11} /></DropdownMenu.Trigger>
           </div>
           <DM.Content>
             <DM.Item reason={pullWhy} onSelect={() => void pull(id, 'merge')}>Pull (merge)</DM.Item>
@@ -42,7 +42,7 @@ export function Toolbar({ view }: { view: RepoView }) {
           <div className="no-drag flex items-stretch">
             <ToolbarButton icon={<ArrowUp size={16} />} label="Push" onClick={() => push(id)} disabled={!!view.busy || !snap.head.branch}
               badge={(head?.ahead ?? 0) > 0 ? <Badge>{head!.ahead}</Badge> : null} />
-            <DropdownMenu.Trigger className="-ml-1 rounded-md px-0.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground" aria-label="Push options"><ChevronDown size={11} /></DropdownMenu.Trigger>
+            <DropdownMenu.Trigger className="-ml-1 rounded-md px-0.5 text-hint hover:bg-accent hover:text-foreground" aria-label="Push options"><ChevronDown size={11} /></DropdownMenu.Trigger>
           </div>
           <DM.Content>
             <DM.Item reason={whyNotPush(head)} onSelect={() => push(id)}>Push</DM.Item>
@@ -59,7 +59,7 @@ export function Toolbar({ view }: { view: RepoView }) {
           The shortcut is spelled out per platform (not the ⌘ glyph everywhere). */}
       <button onClick={() => runCommand('search')} data-testid="omni-open"
         title={`Search everything (${shortcutOf('search', keys)}); commands only: ${shortcutOf('palette', keys)}`}
-        className="no-drag mx-3 flex h-7 w-[26rem] min-w-0 items-center gap-2 rounded-md border border-border bg-background px-2.5 text-xs text-muted-foreground/70 hover:border-primary/60 hover:text-muted-foreground">
+        className="no-drag mx-3 flex h-7 w-[26rem] min-w-0 items-center gap-2 rounded-md border border-border bg-background px-2.5 text-xs text-hint hover:border-primary/60 hover:text-muted-foreground">
         <Search size={13} className="shrink-0" />
         <span className="min-w-0 flex-1 truncate text-left">Search…</span>
         <kbd className="shrink-0 rounded border border-border px-1 text-2xs">{shortcutOf('search', keys)}</kbd>
@@ -95,7 +95,7 @@ function UndoChip({ view }: { view: RepoView }) {
         className="flex h-7 min-w-0 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 disabled:pointer-events-none">
         <Undo2 size={15} className="shrink-0" />
         <span className="shrink-0 font-medium">Undo</span>
-        {last && <span className="min-w-0 truncate text-muted-foreground/70" data-testid="undo-label">{last.label}</span>}
+        {last && <span className="min-w-0 truncate text-hint" data-testid="undo-label">{last.label}</span>}
       </button>
       <ToolbarButton icon={<Redo2 size={15} />} label="Redo" onClick={() => void redo(view.id)} disabled={!next || !!view.busy}
         title={next ? `Redo: ${next.label} (${shortcutOf('redo')})` : 'Nothing to redo'} className="size-7" />
@@ -117,7 +117,7 @@ function Location({ view }: { view: RepoView }) {
   return (
     <div className="flex min-w-0 shrink items-center gap-1 px-1 text-sm" data-testid="location">
       <span className="max-w-40 truncate text-muted-foreground" title={path} data-testid="location-repo">{name}</span>
-      <ChevronRight size={14} className="shrink-0 text-muted-foreground/70" />
+      <ChevronRight size={14} className="shrink-0 text-hint" />
       <span className={clsx('max-w-48 truncate font-semibold text-foreground', !head.branch && !!head.hash && 'font-mono')} title={head.hash} data-testid="location-head">{value}</span>
     </div>
   )

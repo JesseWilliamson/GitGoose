@@ -32,7 +32,7 @@ export function AiTargetButton({ area, className, agentsOnly, onPicked }: {
         <button data-testid={`ai-target-${area}`} title={`Answers with ${label}: change who answers, or edit the prompt`}
           className={cn('inline-flex h-row min-w-0 shrink items-center gap-1 rounded-md px-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground', className)}>
           <span className="min-w-0 truncate">{label}</span>
-          <ChevronDown size={10} className="shrink-0 text-muted-foreground/70" />
+          <ChevronDown size={10} className="shrink-0 text-hint" />
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-72 space-y-2 p-3" data-testid={`ai-target-panel-${area}`}

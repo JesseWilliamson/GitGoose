@@ -58,19 +58,19 @@ export function ImpactView({ view }: { view: RepoView }) {
         {r && (
           <>
             <h3 className="mb-2 text-xs font-semibold text-muted-foreground uppercase">Definitions touched</h3>
-            {!r.symbols.length && <p className="text-muted-foreground/70">None found (no known language, or only top-level code changed).</p>}
+            {!r.symbols.length && <p className="text-hint">None found (no known language, or only top-level code changed).</p>}
             <div className="mb-5 flex max-w-4xl flex-wrap gap-2" data-testid="impact-symbols">
               {r.symbols.map((s) => (
                 <button key={`${s.path}:${s.name}:${s.change}`} onClick={() => open(s.path, s.line)} className="flex items-center gap-1.5 rounded border border-border bg-card px-2 py-1 hover:border-primary">
                   <span className={clsx('rounded px-1 text-2xs font-medium', CHANGE_STYLE[s.change])}>{s.change}</span>
                   <span className="font-mono text-xs">{s.name}</span>
-                  <span className="text-2xs text-muted-foreground/70">{s.kind}</span>
+                  <span className="text-2xs text-hint">{s.kind}</span>
                 </button>
               ))}
             </div>
 
             <h3 className="mb-2 text-xs font-semibold text-muted-foreground uppercase">Used elsewhere</h3>
-            {!r.callers.length && <p className="mb-5 text-muted-foreground/70">No uses outside the change.</p>}
+            {!r.callers.length && <p className="mb-5 text-hint">No uses outside the change.</p>}
             <div className="mb-5 max-w-5xl" data-testid="impact-callers">
               {[...bySymbol].map(([symbol, list]) => (
                 <div key={symbol} className="mb-3">
@@ -80,7 +80,7 @@ export function ImpactView({ view }: { view: RepoView }) {
                       <button onClick={() => open(c.path, c.line)} className="flex w-full items-center gap-3 py-0.5 text-left hover:text-primary">
                         <span className="w-64 shrink-0 truncate font-mono text-xs text-muted-foreground">{c.path}:{c.line}</span>
                         <span className="min-w-0 flex-1 truncate font-mono text-xs">{c.text}</span>
-                        {c.within && <span className="shrink-0 text-2xs text-muted-foreground/70">{c.within}</span>}
+                        {c.within && <span className="shrink-0 text-2xs text-hint">{c.within}</span>}
                         {c.test && <span className="shrink-0 rounded bg-accent px-1 text-2xs text-muted-foreground">test</span>}
                       </button>
                       {risk.has(c.id) && <p className="pb-1 pl-1 text-xs text-destructive">⚠ {risk.get(c.id)}</p>}
@@ -92,7 +92,7 @@ export function ImpactView({ view }: { view: RepoView }) {
 
             <h3 className="mb-2 text-xs font-semibold text-muted-foreground uppercase">Tests</h3>
             <div className="mb-5" data-testid="impact-tests">
-              {r.tests.length ? r.tests.map((t) => <div key={t} className="font-mono text-xs">{t}</div>) : <p className="text-muted-foreground/70">No tests found for this code.</p>}
+              {r.tests.length ? r.tests.map((t) => <div key={t} className="font-mono text-xs">{t}</div>) : <p className="text-hint">No tests found for this code.</p>}
             </div>
           </>
         )}

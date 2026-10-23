@@ -60,7 +60,9 @@
  *   primary / primary-foreground  the one blue: the primary action, the focus ring, a selected tab's underline
  *   secondary                     a quiet button's surface
  *   muted                         a subdued surface inside a surface (tab lists, code boxes)
- *   muted-foreground              secondary text; at /70 it is the hint colour (there is no third grey)
+ *   muted-foreground              secondary text
+ *   hint                          the quiet grey for hints, counts, dates, placeholders: text-hint. At least 4.5 : 1 on the page, card and popover
+ *                                 (WCAG AA for small text) in both themes, tested in hint.test.ts
  *   accent / accent-foreground    the hover and keyboard-highlight surface (menu items, list rows, ghost buttons)
  *   destructive                   danger: delete, errors, the removed side of a diff
  *   border / input / ring         every line, every field outline, the focus ring
@@ -82,6 +84,7 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-hint: var(--hint);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
@@ -114,6 +117,7 @@
   --secondary-foreground: var(--gs-fg);
   --muted: var(--gs-panel);
   --muted-foreground: var(--gs-muted);
+  --hint: var(--gs-faint);
   --accent: var(--gs-hover);
   --accent-foreground: var(--gs-fg);
   --destructive: var(--gs-del);
@@ -128,6 +132,16 @@
   }
 }
 
+/*
+ * `text-muted-foreground/70` used to be the hint grey: the muted colour at 70% opacity, which on
+ * the card is 4.0 : 1 in dark and 3.1 : 1 in light. The hint is now its own token (`text-hint`,
+ * above), and this rule makes any leftover use of the old spelling resolve to it, so a hint is
+ * never quieter than the token says. New code writes `text-hint`.
+ */
+.text-muted-foreground\/70 {
+  color: var(--hint);
+}
+
 :root,
 :root[data-theme='dark'] {
   --gs-bg: #171719;
@@ -137,7 +151,7 @@
   --gs-line: #343438;
   --gs-fg: #e7e7e9;
   --gs-muted: #a3a3a8;
-  --gs-faint: #707075;
+  --gs-faint: #909096;
   --gs-accent: #4c8dff;
   --gs-accent-fg: #ffffff;
   --gs-add: #5fd18b;
@@ -171,7 +185,7 @@
   --gs-line: #e0e0e2;
   --gs-fg: #1f2023;
   --gs-muted: #5e5f64;
-  --gs-faint: #8e8f94;
+  --gs-faint: #6b6c72;
   --gs-accent: #2f6fe4;
   --gs-accent-fg: #ffffff;
   --gs-add: #1a7f37;
