@@ -7,7 +7,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { copy, discard as discardFiles, lfsLock, lfsPatternFor, lfsTrack, openDiffTool, openInEditor, pop, restoreFileFrom, run, snapshot, stashApply, stashDrop, stashToBranch, stashWith, stashWithMessage } from '../lib/actions'
 import { cancelAi, startAi, useAi, useAiEnabled } from '../lib/ai'
 import { api } from '../lib/api'
-import { dateTime, opName, sentence, shortHash, stashLabel } from '../lib/format'
+import { dateTime, opName, relativeTime, sentence, shortHash, stashLabel } from '../lib/format'
 import { avatarSrc } from '../lib/avatar'
 import { addTrailer, isUntouched, splitTemplate } from '../lib/commitMessage'
 import { startReview } from '../lib/review'
@@ -797,8 +797,9 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
         <div className="mt-3 flex items-center gap-2">
           <Avatar name={d.authorName} email={d.authorEmail} src={avatarSrc(d.authorEmail, avatarSource)} size={28} />
           <div className="min-w-0 text-xs">
-            <div className="truncate"><b>{d.authorName}</b> <span className="text-muted-foreground/70">&lt;{d.authorEmail}&gt;</span></div>
-            <div className="text-muted-foreground">authored {dateTime(d.authorDate)}</div>
+            {/* Name and date are the content; the address is for the person who needs it, on hover. */}
+            <div className="truncate" data-testid="details-author"><b title={`${d.authorName} <${d.authorEmail}>`}>{d.authorName}</b></div>
+            <div className="text-muted-foreground" title={dateTime(d.authorDate)} data-testid="details-date">{relativeTime(d.authorDate)}</div>
             {(d.committerEmail !== d.authorEmail || d.commitDate !== d.authorDate) && (
               <div className="text-muted-foreground/70">committed by {d.committerName}, {dateTime(d.commitDate)}</div>
             )}
