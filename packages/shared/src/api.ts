@@ -83,6 +83,15 @@ export interface GitGooseApi {
   getSettings(): Promise<Settings>
   setSettings(patch: Partial<Settings>): Promise<Settings>
   pickDirectory(): Promise<string | null>
+  // Window chrome (the title bar is the tab bar, see TabBar.tsx)
+  windowMinimize(): Promise<void>
+  windowToggleMaximize(): Promise<void>
+  windowClose(): Promise<void>
+  windowIsMaximized(): Promise<boolean>
+  /** Windows: the native caption buttons' colours, so they match the theme. */
+  windowSetOverlay(colors: { color: string; symbolColor: string }): Promise<void>
+  /** Pop the application menu up at the pointer (Windows and Linux hide the menu bar). */
+  menuPopup(): Promise<void>
   openRepo(path: string): Promise<RepoSnapshot>
   closeRepo(repoId: string): Promise<void>
   initRepo(path: string): Promise<RepoSnapshot>
@@ -382,7 +391,7 @@ export type ApiMethod = keyof GitGooseApi
 
 /** The runtime list of method names. The type below fails to compile if it misses one. */
 export const API_METHODS = [
-  'getSettings', 'setSettings', 'pickDirectory', 'openRepo', 'closeRepo', 'initRepo', 'cloneRepo',
+  'getSettings', 'setSettings', 'pickDirectory', 'windowMinimize', 'windowToggleMaximize', 'windowClose', 'windowIsMaximized', 'windowSetOverlay', 'menuPopup', 'openRepo', 'closeRepo', 'initRepo', 'cloneRepo',
   'respondPrompt', 'openPath', 'openInEditor', 'openTerminal', 'revealPath', 'logError',
   'pullRequests', 'createPullRequest', 'checkoutPullRequest', 'openPullRequest',
   'aiStatus', 'aiConsent', 'aiModels', 'aiLoadModels', 'aiPromptPreview', 'aiRun', 'aiCancel', 'aiRespondPermission', 'aiAgentInfo', 'aiAuthenticate', 'aiSetApiKey',
@@ -415,6 +424,8 @@ export type GitGooseEvent =
   /** The code graph's state changed (indexing progress, ready, failed). */
   | { type: 'codegraph'; repoId: string; status: CodeGraphStatus }
   | { type: 'command'; name: string }
+  /** The window was maximised, restored or changed full-screen state. */
+  | { type: 'window-state'; maximized: boolean }
   /** Settings changed (from any window, or main): every window re-applies theme, fonts, scale. */
   | { type: 'settings'; settings: Settings }
   /** An AI request's reply so far. */

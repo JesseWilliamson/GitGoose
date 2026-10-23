@@ -3,7 +3,8 @@ import {
   API_METHODS, IPC_EVENT, IPC_INVOKE, askToThread, threadToAsk,
   type ApiMethod, type GitGooseApi, type GitGooseEvent, type IpcResult, type PushCheckPlan, type ReviewScope, type SerializedError,
 } from '@gitgoose/shared'
-import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { BrowserWindow, Menu, dialog, ipcMain, shell } from 'electron'
+import { TITLE_BAR_HEIGHT } from './windowState'
 import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
@@ -23,6 +24,11 @@ function scopeRev(scope: ReviewScope): string | null {
 
 export function broadcast(event: GitGooseEvent): void {
   for (const w of BrowserWindow.getAllWindows()) w.webContents.send(IPC_EVENT, event)
+}
+
+/** The window a title bar button belongs to. The focused one, else the first (no window manager under xvfb). */
+function chromeWindow(): BrowserWindow | undefined {
+  return BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
 }
 
 /** Methods that change the repository. Each runs with the watcher held back, then pushes one snapshot. */
@@ -54,6 +60,21 @@ export function createHandlers(
   return {
     getSettings: async () => getSettings(),
     setSettings: async (patch) => setSettings(patch),
+    windowMinimize: async () => chromeWindow()?.minimize(),
+    windowToggleMaximize: async () => {
+      const win = chromeWindow()
+      if (win) win.isMaximized() ? win.unmaximize() : win.maximize()
+    },
+    windowClose: async () => chromeWindow()?.close(),
+    windowIsMaximized: async () => chromeWindow()?.isMaximized() ?? false,
+    windowSetOverlay: async ({ color, symbolColor }) => {
+      // Only Windows has an overlay; elsewhere the call is a no-op.
+      if (process.platform === 'win32') chromeWindow()?.setTitleBarOverlay({ color, symbolColor, height: TITLE_BAR_HEIGHT })
+    },
+    menuPopup: async () => {
+      const win = chromeWindow()
+      if (win) Menu.getApplicationMenu()?.popup({ window: win })
+    },
     pickDirectory: async () => {
       const win = BrowserWindow.getFocusedWindow()
       const opts = { properties: ['openDirectory', 'createDirectory'] as ('openDirectory' | 'createDirectory')[] }
