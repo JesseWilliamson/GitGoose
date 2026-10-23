@@ -34,7 +34,7 @@ function ToastBody({ toast: t, onDismiss }: { toast: Toast; onDismiss: () => voi
         {t.action && (
           <Button size="sm" onClick={() => { onDismiss(); t.action!.run() }} data-testid="toast-action">{t.action.label}</Button>
         )}
-        <button onClick={onDismiss} className="text-muted-foreground/70 hover:text-foreground" title="Dismiss" aria-label="Dismiss">✕</button>
+        <button onClick={onDismiss} className="text-hint hover:text-foreground" title="Dismiss" aria-label="Dismiss">✕</button>
       </div>
     </div>
   )

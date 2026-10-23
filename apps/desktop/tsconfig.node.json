@@ -5,5 +5,5 @@
     // e2e tests run code in the page through page.evaluate(), which needs DOM and bridge types.
     "lib": ["ES2023", "DOM"]
   },
-  "include": ["electron.vite.config.ts", "src/main", "src/preload", "e2e", "playwright.config.ts", "src/renderer/src/lib/lineView.test.ts", "src/renderer/src/lib/store.test.ts"]
+  "include": ["electron.vite.config.ts", "src/main", "src/preload", "e2e", "playwright.config.ts", "src/renderer/src/lib/lineView.test.ts", "src/renderer/src/lib/store.test.ts", "src/renderer/src/lib/hint.test.ts"]
 }

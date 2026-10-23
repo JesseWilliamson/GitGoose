@@ -386,7 +386,7 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
           <button onClick={() => { onCursor(row.key); onToggle(row.key) }} className="flex h-full min-w-0 flex-1 items-center gap-1.5 font-medium hover:text-foreground">
             {row.open ? <ChevronDown size={12} className="shrink-0" /> : <ChevronRight size={12} className="shrink-0" />}
             <Cloud size={12} className="shrink-0" />
-            <span className={clsx('min-w-0 flex-1 truncate text-left', hidden && 'text-muted-foreground/70 line-through')}>{row.remote}</span>
+            <span className={clsx('min-w-0 flex-1 truncate text-left', hidden && 'text-hint line-through')}>{row.remote}</span>
             <Meta>{row.count}</Meta>
           </button>
         </div>
@@ -489,14 +489,14 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
       )
     case 'more-tags':
       return (
-        <div style={{ ...style, paddingLeft: pad(1) }} className="flex items-center text-xs text-muted-foreground/70" data-testid="more-tags" onContextMenu={noMenu}>
+        <div style={{ ...style, paddingLeft: pad(1) }} className="flex items-center text-xs text-hint" data-testid="more-tags" onContextMenu={noMenu}>
           {row.hidden.toLocaleString()} older {row.hidden === 1 ? 'tag' : 'tags'} ·&nbsp;
           <button className="font-medium text-primary hover:underline" onClick={() => void saveSettings({ sidebarTags: 'all' })}>Show all</button>
         </div>
       )
     case 'empty':
       return (
-        <div style={{ ...style, paddingLeft: pad(row.depth) }} className="flex items-center text-xs text-muted-foreground/70" data-testid="sidebar-empty" data-for={row.for} onContextMenu={noMenu}>
+        <div style={{ ...style, paddingLeft: pad(row.depth) }} className="flex items-center text-xs text-hint" data-testid="sidebar-empty" data-for={row.for} onContextMenu={noMenu}>
           {row.text}
         </div>
       )
@@ -555,7 +555,7 @@ function RefRow({ row, style, cursor, look, onClick, onDoubleClick }: {
       className={clsx('group flex cursor-default items-center gap-1.5 pr-3 text-sm', cursor ? 'bg-select' : 'hover:bg-accent', head && 'font-semibold')}
     >
       {head && <span className="-ml-4 w-3 text-2xs text-primary">✓</span>}
-      <span className={clsx('min-w-[4.5rem] flex-1 truncate', out && 'text-muted-foreground/70 line-through decoration-muted-foreground/50')} data-testid="ref-label">{row.label}</span>
+      <span className={clsx('min-w-[4.5rem] flex-1 truncate', out && 'text-hint line-through decoration-muted-foreground/50')} data-testid="ref-label">{row.label}</span>
       {/* The right column, the same one every row ends in: badges give way before the branch
           name does (they wrap onto a second line that is cut off, so a badge that does not fit
           disappears whole instead of showing as "sta"). On hover the eye takes their place. */}

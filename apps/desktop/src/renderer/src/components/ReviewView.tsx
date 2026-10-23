@@ -68,7 +68,7 @@ export function ReviewView({ view }: { view: RepoView }) {
           </div>
         )}
         {result && (
-          <p className="mx-4 mt-2 text-xs text-muted-foreground/70" data-testid="review-context">
+          <p className="mx-4 mt-2 text-xs text-hint" data-testid="review-context">
             {result.context.guidelines.length ? `Followed ${result.context.guidelines.join(', ')}` : 'No guideline files (CLAUDE.md, AGENTS.md, …) cover these files'}
             {result.context.pathInstructions.length ? ` · path instructions for ${result.context.pathInstructions.join(', ')}` : ''}
             {` · ${result.context.learnings} learning${result.context.learnings === 1 ? '' : 's'} · `}
@@ -92,7 +92,7 @@ export function ReviewView({ view }: { view: RepoView }) {
             ))}
           </p>
         )}
-        {result && !findings.length && !r.error && <p className="mx-4 mt-4 text-sm text-muted-foreground/70">Nothing to report{result.findings.length ? ' (all dismissed)' : ''}.</p>}
+        {result && !findings.length && !r.error && <p className="mx-4 mt-4 text-sm text-hint">Nothing to report{result.findings.length ? ' (all dismissed)' : ''}.</p>}
         {[...byFile].map(([path, list]) => (
           <section key={path} className="mx-4 mt-4">
             <h3 className="mb-2 font-mono text-xs text-muted-foreground">{path}</h3>
@@ -101,9 +101,9 @@ export function ReviewView({ view }: { view: RepoView }) {
                 className={clsx('mb-2 rounded-md border bg-card p-3', r.focus === f.id ? 'border-primary' : 'border-border')}>
                 <div className="flex items-center gap-2">
                   <span className={clsx('rounded px-1.5 text-2xs font-semibold uppercase', SEVERITY_STYLE[f.severity])}>{f.severity}</span>
-                  <span className="text-2xs text-muted-foreground/70">{f.type}</span>
+                  <span className="text-2xs text-hint">{f.type}</span>
                   {f.source && <span className="rounded border border-border px-1 text-2xs text-muted-foreground" data-testid="finding-source" title={f.source === 'scan' ? "Found by GitGoose's built-in secret scan, not the AI" : 'Reported by a linter, not the AI'}>{f.tool}</span>}
-                  {f.status && <span className={clsx('text-2xs', f.status === 'new' ? 'text-primary' : 'text-muted-foreground/70')} data-testid="finding-status">{f.status === 'new' ? 'new' : 'still open'}</span>}
+                  {f.status && <span className={clsx('text-2xs', f.status === 'new' ? 'text-primary' : 'text-hint')} data-testid="finding-status">{f.status === 'new' ? 'new' : 'still open'}</span>}
                   {f.fromChat && <span className="rounded bg-primary/15 px-1 text-2xs text-primary" data-testid="finding-from-chat" title="Applied from the chat beside the review">from chat</span>}
                   <span className="min-w-0 flex-1 truncate text-sm font-semibold">{f.title}</span>
                   <button className="font-mono text-2xs text-primary hover:underline" onClick={() => open(f)} title="Show in the diff">
@@ -129,7 +129,7 @@ export function ReviewView({ view }: { view: RepoView }) {
           </section>
         ))}
         {result && (result.dropped.length > 0 || result.skipped.length > 0) && (
-          <div className="mx-4 my-4 text-xs text-muted-foreground/70">
+          <div className="mx-4 my-4 text-xs text-hint">
             {result.skipped.length > 0 && <p>Not reviewed (over the size limit): {result.skipped.join(', ')}.</p>}
             {result.dropped.length > 0 && (
               <>

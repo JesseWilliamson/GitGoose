@@ -208,7 +208,7 @@ function WipPanel({ view }: { view: RepoView }) {
                   </>} />
               )
             }} />
-            {unstaged.length === 0 && <div className="px-3 py-1 text-xs text-muted-foreground/70">No unstaged changes</div>}
+            {unstaged.length === 0 && <div className="px-3 py-1 text-xs text-hint">No unstaged changes</div>}
         </FitSection>
         <FitSection testId="staged" headerClassName="border-t border-border" header={
           <SectionHeader right={staged.length > 0 && <Button size="sm" onClick={() => void unstage(staged.map((e) => e.path))}>Unstage all</Button>}>
@@ -232,7 +232,7 @@ function WipPanel({ view }: { view: RepoView }) {
                   actions={<IconAction title={n ? `Unstage${n}` : 'Unstage file'} onClick={() => void unstage(paths)}><Minus size={12} /></IconAction>} />
               )
             }} />
-            {staged.length === 0 && <div className="px-3 py-1 text-xs text-muted-foreground/70">Nothing staged</div>}
+            {staged.length === 0 && <div className="px-3 py-1 text-xs text-hint">Nothing staged</div>}
         </FitSection>
       </div>
       <ChangeHints view={view} />
@@ -434,7 +434,7 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
           data-testid="commit-summary"
           className="h-input w-full rounded-md border border-border bg-background px-2 pr-9 text-sm outline-none focus:border-primary"
         />
-        <span className={`absolute top-2 right-2 text-2xs ${summary.length > 72 ? 'text-warn' : 'text-muted-foreground/70'}`}>{summary.length}</span>
+        <span className={`absolute top-2 right-2 text-2xs ${summary.length > 72 ? 'text-warn' : 'text-hint'}`}>{summary.length}</span>
       </div>
       <textarea
         value={body}
@@ -514,7 +514,7 @@ function CommitQuestions({ view, hash }: { view: RepoView; hash: string }) {
       {threads.map((t) => (
         <button key={t.id} className="flex w-full items-baseline gap-2 rounded px-1 py-0.5 text-left text-xs hover:bg-accent"
           onClick={() => { updateRepo(view.id, { center: { kind: 'file', target: { kind: 'commit', hash, path: t.path }, mode: 'diff' } }); openAsk(view.id, t) }}>
-          <span className="shrink-0 font-mono text-2xs text-muted-foreground/70">{t.path.split('/').pop()}:{t.startLine}</span>
+          <span className="shrink-0 font-mono text-2xs text-hint">{t.path.split('/').pop()}:{t.startLine}</span>
           <span className="min-w-0 flex-1 truncate">{t.messages.find((m) => m.role === 'user')?.text}</span>
         </button>
       ))}
@@ -567,7 +567,7 @@ function ComparePanel({ view, sel }: { view: RepoView; sel: Extract<RepoView['se
         <div className="text-base font-semibold">Comparing</div>
         <div className="mt-1 flex items-center gap-2 font-mono text-xs">
           <span className="truncate rounded bg-accent px-1.5 py-0.5" title={sel.from}>{sel.fromLabel}</span>
-          <span className="text-muted-foreground/70">→</span>
+          <span className="text-hint">→</span>
           <span className="truncate rounded bg-accent px-1.5 py-0.5" title={sel.to ?? 'working tree'}>{sel.toLabel}</span>
         </div>
         <div className="mt-2 flex gap-2">
@@ -583,12 +583,12 @@ function ComparePanel({ view, sel }: { view: RepoView; sel: Extract<RepoView['se
       </SectionHeader>
       {files && files.length > 1 && <FileListTools filter={fileFilter} onFilter={setFileFilter} />}
       <div className="min-h-0 flex-1 overflow-y-auto pb-2">
-        {!files ? <div className="p-3"><Spinner /></div> : files.length === 0 ? <div className="p-3 text-sm text-muted-foreground/70">No differences.</div> : <FileListView items={files} pathOf={(f) => f.path} filter={fileFilter} testId="compare" renderFile={(f, layout) => {
+        {!files ? <div className="p-3"><Spinner /></div> : files.length === 0 ? <div className="p-3 text-sm text-hint">No differences.</div> : <FileListView items={files} pathOf={(f) => f.path} filter={fileFilter} testId="compare" renderFile={(f, layout) => {
           const t: DiffTarget = { kind: 'range', from: sel.from, to: sel.to, path: f.path, oldPath: f.oldPath }
           return (
             <FileRow key={f.path} {...layout} path={f.path} oldPath={f.oldPath} kind={f.change} selected={isOpen(view, t)} testId="compare-file"
               onClick={() => openFile(view, t)} menu={<FileMenu view={view} target={t} />}
-              stats={f.binary ? <span className="text-2xs text-muted-foreground/70">bin</span> : (
+              stats={f.binary ? <span className="text-2xs text-hint">bin</span> : (
                 <span className="shrink-0 font-mono text-2xs"><span className="text-add">+{f.additions}</span> <span className="text-destructive">−{f.deletions}</span></span>
               )} />
           )
@@ -672,7 +672,7 @@ function MultiPanel({ view, hashes }: { view: RepoView; hashes: string[] }) {
               <div className="truncate text-sm">{c.subject}</div>
               <div className="truncate text-2xs text-muted-foreground">{dateTime(c.authorDate)} by {c.authorName}</div>
             </div>
-            <span className="shrink-0 self-start font-mono text-xs text-muted-foreground/70">{shortHash(c.hash)}</span>
+            <span className="shrink-0 self-start font-mono text-xs text-hint">{shortHash(c.hash)}</span>
           </button>
         ))}
       </div>
@@ -682,20 +682,20 @@ function MultiPanel({ view, hashes }: { view: RepoView; hashes: string[] }) {
       {list && list.length > 0 && (
         <div className="px-3 pb-1 text-xs text-muted-foreground" data-testid="multi-summary">
           {[...counts].map(([kind, n]) => `${n} ${kind}`).join(' · ')}
-          {base === undefined && <div className="text-muted-foreground/70">Not consecutive: each file shows the newest selected commit's change.</div>}
+          {base === undefined && <div className="text-hint">Not consecutive: each file shows the newest selected commit's change.</div>}
         </div>
       )}
       {list && list.length > 1 && <FileListTools filter={fileFilter} onFilter={setFileFilter} />}
       <div className="min-h-0 flex-1 overflow-y-auto pb-2">
         {list === undefined ? <div className="p-3"><Spinner /></div>
-          : list === null ? <div className="p-3 text-sm text-muted-foreground/70">Too many commits that do not follow each other to gather their files.</div>
-          : list.length === 0 ? <div className="p-3 text-sm text-muted-foreground/70">No file changes.</div>
+          : list === null ? <div className="p-3 text-sm text-hint">Too many commits that do not follow each other to gather their files.</div>
+          : list.length === 0 ? <div className="p-3 text-sm text-hint">No file changes.</div>
           : <FileListView items={list} pathOf={(f) => f.path} filter={fileFilter} testId="multi" renderFile={(f, layout) => (
             <FileRow key={f.path} {...layout} path={f.path} oldPath={f.oldPath} kind={f.change} selected={isOpen(view, f.target)} testId="multi-file"
               onClick={() => openFile(view, f.target)} menu={<FileMenu view={view} target={f.target} />}
-              stats={f.binary ? <span className="text-2xs text-muted-foreground/70">bin</span> : (
+              stats={f.binary ? <span className="text-2xs text-hint">bin</span> : (
                 <span className="shrink-0 font-mono text-2xs">
-                  {f.commits > 1 && <span className="mr-1 text-muted-foreground/70" title={`Touched by ${f.commits} of the selected commits`}>×{f.commits}</span>}
+                  {f.commits > 1 && <span className="mr-1 text-hint" title={`Touched by ${f.commits} of the selected commits`}>×{f.commits}</span>}
                   <span className="text-add">+{f.additions}</span> <span className="text-destructive">−{f.deletions}</span>
                 </span>
               )} />
@@ -739,7 +739,7 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
     return () => clearTimeout(spinner)
   }, [hash, view.id])
 
-  if (!details) return <div className="flex flex-1 items-center justify-center text-muted-foreground/70"><Spinner /></div>
+  if (!details) return <div className="flex flex-1 items-center justify-center text-hint"><Spinner /></div>
   const d = details
   // The panel can show the previous commit while this one loads: only its own explanation.
   const shown = d.hash === hash ? explanation : null
@@ -780,7 +780,7 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
               </span>
             ) : (
               <div className="rounded-md border border-border bg-background/60 p-2 text-sm" data-testid="ai-explanation">
-                <div className="mb-1 flex items-center gap-1 text-2xs text-muted-foreground/70">
+                <div className="mb-1 flex items-center gap-1 text-2xs text-hint">
                   <Sparkles size={11} /> <span className="flex-1">AI explanation</span>
                   {shown.requestId && <Button size="sm" variant="ghost" onClick={explain}>Stop</Button>}
                   <button title="Close" className="rounded p-0.5 hover:bg-accent" onClick={() => closeExplanation(view.id, d.hash)}><X size={12} /></button>
@@ -801,7 +801,7 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
             <div className="truncate" data-testid="details-author"><b title={`${d.authorName} <${d.authorEmail}>`}>{d.authorName}</b></div>
             <div className="text-muted-foreground" title={dateTime(d.authorDate)} data-testid="details-date">{relativeTime(d.authorDate)}</div>
             {(d.committerEmail !== d.authorEmail || d.commitDate !== d.authorDate) && (
-              <div className="text-muted-foreground/70">committed by {d.committerName}, {dateTime(d.commitDate)}</div>
+              <div className="text-hint">committed by {d.committerName}, {dateTime(d.commitDate)}</div>
             )}
           </div>
         </div>
@@ -831,7 +831,7 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
               drag={{ kind: 'files', rev: d.hash, paths: [f.path], stash: !!stash }}
               onClick={() => openFile(view, t)}
               menu={<FileMenu view={view} target={t} />}
-              stats={f.binary ? <span className="text-2xs text-muted-foreground/70">bin</span> : (
+              stats={f.binary ? <span className="text-2xs text-hint">bin</span> : (
                 <span className="shrink-0 font-mono text-2xs"><span className="text-add">+{f.additions}</span> <span className="text-destructive">−{f.deletions}</span></span>
               )} />
           )

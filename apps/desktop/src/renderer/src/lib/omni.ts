@@ -136,3 +136,26 @@ export function rememberRecent(e: OmniEntry): void {
     // Storage full or unavailable: there is just no recent list.
   }
 }
+
+/**
+ * A file result as two parts: the name (what you are looking for, shown as the title) and its
+ * folder (shown after it, quietly). The fuzzy match ran over the whole path, so its ranges are
+ * cut at the last slash and shifted to the name.
+ */
+export function splitPath(path: string, ranges: [number, number][]): { name: string; dir: string; nameRanges: [number, number][]; dirRanges: [number, number][] } {
+  const cut = path.lastIndexOf('/') + 1
+  const part = (from: number, to: number): [number, number][] => ranges
+    .filter(([s, e]) => s < to && e > from)
+    .map(([s, e]) => [Math.max(s, from) - from, Math.min(e, to) - from])
+  return {
+    name: path.slice(cut),
+    dir: path.slice(0, cut),
+    nameRanges: part(cut, path.length),
+    dirRanges: part(0, cut),
+  }
+}
+
+/** A commit's second line: just what tells two commits with the same subject apart. */
+export function commitSub(shortHash: string, when: string): string {
+  return `${shortHash} · ${when}`
+}

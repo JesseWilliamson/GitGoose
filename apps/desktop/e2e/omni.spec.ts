@@ -22,7 +22,9 @@ test('one search for commits, files, settings and commands; results open where t
   // Nothing typed: suggestions and what is being changed.
   await page.getByTestId('omni-open').click()
   await expect(page.getByTestId('omni-results')).toContainText('Suggestions')
-  await expect(items.filter({ hasText: 'src/pricing/totals.ts' })).toHaveAttribute('data-kind', 'change')
+  await expect(items.filter({ hasText: 'totals.ts' })).toHaveAttribute('data-kind', 'change')
+  // The file's folder is its quiet second part, not part of the name.
+  await expect(items.filter({ hasText: 'totals.ts' }).getByTestId('omni-sub')).toHaveText('src/pricing/')
 
   // A commit, by its message (git searches; results join when they arrive).
   await input.fill('round totals')
@@ -95,5 +97,35 @@ test('a stash hidden from the graph opens without loading the whole history', as
   // Looking for the stash in the log would keep loading pages until all 8,000 commits are in.
   await page.waitForTimeout(1500)
   await expect(count).toContainText('+')
+  await app.close()
+})
+
+test('every result has the icon of its kind, and no row says "Repository"', async () => {
+  const { r } = setup()
+  const { app, page } = await launch(r.dir)
+  await expect(page.getByTestId('commit-row').first()).toBeVisible()
+  const items = page.getByTestId('omni-item')
+
+  // Suggestions are commands, and a command's group is no second line.
+  await page.getByTestId('omni-open').click()
+  await expect(items.first()).toBeVisible()
+  await expect(page.getByTestId('omni-results')).not.toContainText('Repository')
+  for (const item of await items.all()) await expect(item.getByTestId('omni-icon').locator('svg')).toHaveCount(1)
+
+  // A branch, a file and a commit are not drawn alike, and a row is 28 px.
+  const input = page.getByTestId('palette-input')
+  const iconOf = async (kind: string) => page.locator(`[data-testid="omni-item"][data-kind="${kind}"]`).first().getByTestId('omni-icon').innerHTML()
+  await input.fill('price')
+  await expect(page.locator('[data-testid="omni-item"][data-kind="file"]').first()).toBeVisible()
+  await expect(page.locator('[data-testid="omni-item"][data-kind="commit"]').first()).toBeVisible()
+  const icons = new Set([await iconOf('file'), await iconOf('commit'), await iconOf('change')])
+  expect(icons.size).toBe(3)
+  expect((await items.first().boundingBox())!.height).toBe(28)
+
+  // A commit says its short hash and date; the selected row is the accent surface.
+  await input.fill('round totals')
+  const commit = items.filter({ hasText: 'fix: round totals to cents' })
+  await expect(commit.getByTestId('omni-sub')).toHaveText(/^[0-9a-f]{7} · /)
+  await expect(commit).toHaveAttribute('data-selected', 'true')
   await app.close()
 })

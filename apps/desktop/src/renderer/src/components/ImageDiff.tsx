@@ -54,7 +54,7 @@ export function ImageDiff({ repoId, target, path }: { repoId: string; target: Di
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repoId, key])
 
-  if (!sides) return <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground/70">Loading image…</div>
+  if (!sides) return <div className="flex flex-1 items-center justify-center text-sm text-hint">Loading image…</div>
   const both = !!sides.old?.url && !!sides.new?.url
   const measured = (which: 'old' | 'new') => (e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget
@@ -100,8 +100,8 @@ function Side({ label, side, onLoad, testId }: { label: string; side: Loaded | n
       <figcaption className="rounded bg-card/90 px-2 py-0.5 text-2xs text-muted-foreground">
         {label}{side ? ` · ${formatBytes(side.size)}${side.w ? ` · ${side.w}×${side.h}` : ''}` : ''}
       </figcaption>
-      {!side ? <div className="rounded bg-card/90 px-3 py-6 text-xs text-muted-foreground/70">{label === 'Before' ? 'Added in this change' : 'Deleted in this change'}</div>
-        : side.tooBig ? <div className="rounded bg-card/90 px-3 py-6 text-xs text-muted-foreground/70">Too large to show ({formatBytes(side.size)})</div>
+      {!side ? <div className="rounded bg-card/90 px-3 py-6 text-xs text-hint">{label === 'Before' ? 'Added in this change' : 'Deleted in this change'}</div>
+        : side.tooBig ? <div className="rounded bg-card/90 px-3 py-6 text-xs text-hint">Too large to show ({formatBytes(side.size)})</div>
         : <img src={side.url!} alt={label} onLoad={onLoad} className="max-h-[70vh] max-w-full border border-border object-contain" />}
     </figure>
   )
