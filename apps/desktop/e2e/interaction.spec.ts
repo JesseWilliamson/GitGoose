@@ -135,7 +135,7 @@ test('double-clicking a commit row checks out its branch, undoably', async () =>
   // The two clicks leave exactly this commit selected.
   await expect(page.locator('[data-testid="commit-row"][data-selected]')).toHaveCount(1)
   await expect(page.locator(`[data-testid="commit-row"][data-hash="${wip}"]`)).toHaveAttribute('data-selected', 'true')
-  await page.getByTestId('toast-action').filter({ hasText: 'Undo' }).last().click()
+  await page.getByTestId('toast-action').filter({ hasText: 'Undo' }).first().click()
   await expect.poll(branch).toBe('main')
   await app.close()
 })
@@ -180,7 +180,7 @@ test('double-clicking a commit where several branches point asks which one to ch
   await page.locator('[data-testid="ref-pill"][data-ref="refs/heads/release"]').dblclick()
   await expect.poll(branch).toBe('release')
   await expect(page.getByRole('menu')).toHaveCount(0)
-  await page.getByTestId('toast-action').filter({ hasText: 'Undo' }).last().click()
+  await page.getByTestId('toast-action').filter({ hasText: 'Undo' }).first().click()
   await expect.poll(branch).toBe('main')
   // release points at wip's commit: until the app has seen the undo, that row is still HEAD's
   // own and a double-click there rightly does nothing. Wait for the app, not only for git.

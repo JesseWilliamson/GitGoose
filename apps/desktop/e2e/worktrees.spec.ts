@@ -26,7 +26,7 @@ test('add a worktree on a new branch (it opens as a tab), then remove it and und
   await page.getByRole('menuitem', { name: 'Remove worktree' }).click()
   await expect(item).toHaveCount(0)
   expect(existsSync(expected)).toBe(false)
-  await page.getByTestId('toast-action').filter({ hasText: 'Undo' }).last().click()
+  await page.getByTestId('toast-action').filter({ hasText: 'Undo' }).first().click()
   await expect(item).toHaveCount(1)
   expect(existsSync(expected)).toBe(true)
   await app.close()

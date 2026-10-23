@@ -377,7 +377,7 @@ test("recompose asks the area's model, and its chat can switch models", async ()
   await expect(page.getByRole('option')).toHaveText(['Default (Fake Smart)', 'Fake Fast', 'Fake Smart'])
   await expect(chat.getByTestId('thread-by').first()).toHaveText('fake-agent · Fake Fast')
 
-  await page.getByRole('option', { name: 'Fake Smart' }).click()
+  await page.getByRole('option', { name: 'Fake Smart', exact: true }).click()
   await chat.getByTestId('thread-input').fill('FAKE:model')
   await chat.getByTestId('thread-input').press('Enter')
   await expect(chat.getByText('Model: smart')).toBeVisible()

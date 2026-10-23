@@ -59,7 +59,7 @@ test('apply a suggestion (undoable); fix with AI shows the change before writing
   await finding.getByTestId('apply-suggestion').click()
   await expect.poll(file).toContain('return a + b')
   await expect(page.getByTestId('finding')).toHaveCount(0)
-  await page.getByTestId('toast-action').filter({ hasText: 'Undo' }).last().click()
+  await page.getByTestId('toast-action').filter({ hasText: 'Undo' }).first().click()
   await expect.poll(file).toBe(broken)
 
   // Fix with AI: the agent asks to edit; its version is shown as a diff; Use writes it.
