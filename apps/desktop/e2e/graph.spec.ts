@@ -155,19 +155,25 @@ test('Tower look: two-line rows beside hollow nodes, text indented by the lanes,
   await expect(page.getByTestId('month-header')).toHaveCount(0)
   // Nodes are hollow: the page colour inside, the lane colour as the ring.
   await expect(plain.locator('[data-testid="commit-node"] circle').last()).toHaveAttribute('fill', 'var(--gs-bg)')
-  // Thirteen lanes where the text moves aside for twelve: a node past the last lane is left out
+  // Thirteen lanes where the text moves aside for eight: a node past the last lane is left out
   // rather than pinned at the edge, where it would sit on another branch's line.
   const far = page.locator('[data-testid="commit-row"] svg[data-offscreen]').first()
   await expect(far).toBeVisible()
   await expect(far.locator('[data-testid="commit-node"]')).toHaveCount(0)
-  // Text starts further right where more lanes are open: cellWidth(lanes) = 6 + min(12, max(2, lanes)) * 24.
+  // Text starts further right where more lanes are open, but never further than 166 px in:
+  // cellWidth(lanes) = 6 + the first four lanes at 24 px + the next four at 16 px (at most eight).
   // The busiest row is the last of the twelve branch tips the log lists (every other tip's line
   // passes through it); which tip that is depends on the log order, so take the widest. The
   // quiet row is HEAD: newest, so above every tip, with nothing open beside it. (The branches
   // fork from the root, so every older row has their lines running through it.)
   const busyX = Math.max(...await page.locator('[data-testid="commit-row"]:has-text("work on b") [data-testid="row-body"]')
     .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().x)))
-  expect(busyX).toBeGreaterThan((await head.getByTestId('row-body').boundingBox())!.x + 100)
+  const headBox = (await head.getByTestId('row-body').boundingBox())!
+  expect(busyX).toBeGreaterThan(headBox.x + 100)
+  // ...and the message (the row body, whose left edge is the lane cell's right edge) starts no
+  // further than 170 px from the row's left edge, with twelve lanes open.
+  const rowLeft = (await head.boundingBox())!.x
+  expect(busyX - rowLeft).toBeLessThanOrEqual(170)
   await expect(page.getByTestId('sidebar-viewing')).toHaveText('Viewing 13/13')
   await page.locator('[data-testid="sidebar-ref"][data-ref="refs/heads/b3"]').hover()
   await page.locator('[data-testid="sidebar-ref"][data-ref="refs/heads/b3"]').getByTestId('toggle-hidden').click()
@@ -185,6 +191,8 @@ test('compact rows: GitKraken\'s graph, avatar nodes, pills on the left, message
   }
   r.checkout('main')
   const { app, page } = await launch(r.dir)
+  // Wide enough for the branch / tag column (a narrow pane puts the pills after the message: see below).
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1800, 640))
   await page.evaluate(() => window.gitgoose.setSettings({ graphStyle: 'compact' }))
   const head = page.locator(`[data-testid="commit-row"][data-hash="${r.head()}"]`)
   await expect.poll(async () => (await head.boundingBox())!.height).toBe(32)
@@ -207,6 +215,34 @@ test('compact rows: GitKraken\'s graph, avatar nodes, pills on the left, message
   expect(new Set(xs).size).toBe(1)
   const title = (await page.getByTestId('graph-header').getByText('Commit message').boundingBox())!
   expect(Math.abs(title.x - xs[0]!)).toBeLessThan(1)
+  await app.close()
+})
+
+test('compact rows in a narrow pane: the message keeps 40% of the row, the pills follow it, columns give way', async () => {
+  const r = makeFixture('linear')
+  for (let i = 0; i < 12; i++) {
+    r.checkout('-b', `b${i}`, 'main~4')
+    r.commit(`work on b${i}`, { [`b${i}.txt`]: 'x\n' })
+  }
+  r.checkout('main')
+  const { app, page } = await launch(r.dir)
+  // The 1280 px window of the UI audit, with the sidebar and Details open: a pane of about 715 px.
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1280, 800))
+  await page.evaluate(() => window.gitgoose.setSettings({ graphStyle: 'compact' }))
+  const head = page.locator(`[data-testid="commit-row"][data-hash="${r.head()}"]`)
+  await expect.poll(async () => (await head.boundingBox())!.height).toBe(32)
+  // The pills are after the message, not in a column of their own; the connector line goes with the column.
+  await expect(head.getByTestId('refs-cell')).toHaveCount(0)
+  await expect(head.getByTestId('refs-inline').locator('[data-testid="ref-pill"][data-ref="refs/heads/main"]')).toBeVisible()
+  await expect(head.locator('svg [data-testid="ref-line"]')).toHaveCount(0)
+  await expect(page.getByTestId('graph-header')).not.toContainText('Branch / Tag')
+  // The message column has at least 40% of the row (it had 90 px of 715).
+  const row = (await head.boundingBox())!
+  const body = (await head.getByTestId('row-body').boundingBox())!
+  expect(body.width).toBeGreaterThanOrEqual(row.width * 0.4)
+  // Widen the window and the column comes back.
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1800, 800))
+  await expect(head.getByTestId('refs-cell')).toBeVisible()
   await app.close()
 })
 
@@ -255,8 +291,9 @@ test('a detached HEAD gets a HEAD pill, in both layouts', async () => {
   await expect(row.getByTestId('head-pill')).toHaveText('HEAD')
   await expect(page.getByTestId('head-pill')).toHaveCount(1)
   await page.evaluate(() => window.gitgoose.setSettings({ graphStyle: 'compact' }))
-  await expect(row.getByTestId('refs-cell').getByTestId('head-pill')).toBeVisible()
-  await expect(row.locator('svg [data-testid="ref-line"]')).toHaveCount(1)
+  // In this window's narrow pane the pills follow the message; with the column they would be in refs-cell.
+  await expect(row.getByTestId('refs-inline').getByTestId('head-pill')).toBeVisible()
+  await expect(page.getByTestId('head-pill')).toHaveCount(1)
   // On a branch, the branch's pill says where HEAD is: no HEAD pill.
   r.checkout('main')
   await expect(page.getByTestId('head-pill')).toHaveCount(0)
