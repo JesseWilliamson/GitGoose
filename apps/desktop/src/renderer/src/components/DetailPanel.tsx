@@ -3,7 +3,7 @@ import type { Identity, Person, Signature } from '@gitgoose/shared'
 import { Archive, Check, ChevronDown, Copy, Minus, MoreHorizontal, Plus, ShieldAlert, ShieldCheck, Sparkles, Undo2, X } from 'lucide-react'
 import clsx from 'clsx'
 import { DropdownMenu } from 'radix-ui'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { copy, discard as discardFiles, lfsLock, lfsPatternFor, lfsTrack, openDiffTool, openInEditor, pop, restoreFileFrom, run, snapshot, stashApply, stashDrop, stashToBranch, stashWith, stashWithMessage } from '../lib/actions'
 import { cancelAi, startAi, useAi, useAiEnabled } from '../lib/ai'
 import { api } from '../lib/api'
@@ -172,14 +172,14 @@ function WipPanel({ view }: { view: RepoView }) {
         </div>
       )}
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex min-h-0 flex-1 flex-col" data-testid="unstaged">
+        <FitSection testId="unstaged" header={
           <SectionHeader right={unstaged.length > 0 && (
             <span className="flex gap-1 normal-case">
               <Button size="sm" variant="ghost" onClick={() => void discard(unstaged.map((e) => e.path))} title="Discard all unstaged changes">Discard all</Button>
               <Button size="sm" onClick={() => void stage(unstaged.map((e) => e.path))} data-testid="stage-all">Stage all</Button>
             </span>
           )}>Unstaged ({unstaged.length})</SectionHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto">
+        }>
             <FileListView items={unstaged} pathOf={(e) => e.path} filter={filter} testId="unstaged"
               folderActions={(paths) => <>
                 <IconAction title="Discard changes in this folder" onClick={() => void discard(paths)}><Undo2 size={12} /></IconAction>
@@ -208,14 +208,13 @@ function WipPanel({ view }: { view: RepoView }) {
                   </>} />
               )
             }} />
-            {unstaged.length === 0 && <div className="px-3 py-2 text-xs text-muted-foreground/70">No unstaged changes</div>}
-          </div>
-        </div>
-        <div className="flex min-h-0 flex-1 flex-col border-t border-border" data-testid="staged">
+            {unstaged.length === 0 && <div className="px-3 py-1 text-xs text-muted-foreground/70">No unstaged changes</div>}
+        </FitSection>
+        <FitSection testId="staged" headerClassName="border-t border-border" header={
           <SectionHeader right={staged.length > 0 && <Button size="sm" onClick={() => void unstage(staged.map((e) => e.path))}>Unstage all</Button>}>
             Staged ({staged.length})
           </SectionHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto">
+        }>
             <FileListView items={staged} pathOf={(e) => e.path} filter={filter} testId="staged"
               folderActions={(paths) => <IconAction title="Unstage folder" onClick={() => void unstage(paths)}><Minus size={12} /></IconAction>}
               renderFile={(e, { order, ...layout }) => {
@@ -233,12 +232,50 @@ function WipPanel({ view }: { view: RepoView }) {
                   actions={<IconAction title={n ? `Unstage${n}` : 'Unstage file'} onClick={() => void unstage(paths)}><Minus size={12} /></IconAction>} />
               )
             }} />
-            {staged.length === 0 && <div className="px-3 py-2 text-xs text-muted-foreground/70">Stage files or lines to commit them</div>}
-          </div>
-        </div>
+            {staged.length === 0 && <div className="px-3 py-1 text-xs text-muted-foreground/70">Nothing staged</div>}
+        </FitSection>
       </div>
       <ChangeHints view={view} />
       <CommitBox view={view} stagedCount={staged.length} />
+    </div>
+  )
+}
+
+/**
+ * Unstaged and Staged share the panel's height by content, not half and half: a list of three
+ * files takes the height of three files (and its header), and the other section gets the rest.
+ * Two long lists still split the height evenly.
+ *
+ * How: both sections may grow equally (`flex-1 basis-0`), but each is capped at its natural
+ * height (the header plus the whole list, measured), so a short list stops growing and the
+ * space it does not want goes to the other one. The cap is a measurement, not a guess, because
+ * folders, long names and the empty message change the height. A list never shrinks below
+ * three rows (or its whole height, if that is less), so a long one next to a short one does
+ * not squeeze the short one into a sliver.
+ */
+const MIN_LIST = 72
+function FitSection({ testId, header, headerClassName, children }: { testId: string; header: React.ReactNode; headerClassName?: string; children: React.ReactNode }) {
+  const head = useRef<HTMLDivElement>(null)
+  const list = useRef<HTMLDivElement>(null)
+  const [nat, setNat] = useState<{ head: number; list: number } | null>(null)
+  useLayoutEffect(() => {
+    const h = head.current
+    const l = list.current
+    if (!h || !l) return
+    const measure = () => setNat((n) => (n && n.head === h.offsetHeight && n.list === l.offsetHeight ? n : { head: h.offsetHeight, list: l.offsetHeight }))
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(h)
+    ro.observe(l)
+    return () => ro.disconnect()
+  }, [])
+  return (
+    <div className="flex min-h-0 flex-1 basis-0 flex-col" data-testid={testId}
+      style={nat ? { maxHeight: nat.head + nat.list, minHeight: nat.head + Math.min(nat.list, MIN_LIST) } : undefined}>
+      <div ref={head} className={headerClassName}>{header}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div ref={list}>{children}</div>
+      </div>
     </div>
   )
 }
@@ -387,11 +424,6 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
 
   return (
     <div className="border-t border-border p-3" data-testid="commit-box">
-      <button onClick={() => useStore.setState({ dialog: { kind: 'identity', repoId: id, onSaved: () => setIdentityTick((t) => t + 1) } })}
-        title={identity?.scope === 'local' ? 'Set for this repository' : identity?.scope === 'global' ? 'Your global identity' : 'No identity set: git will refuse to commit'}
-        className={clsx('mb-2 block max-w-full truncate text-left text-2xs hover:text-foreground', identity && !identity.scope ? 'text-warn' : 'text-muted-foreground/70')} data-testid="commit-identity">
-        {identity ? (identity.name || identity.email ? `as ${identity.name ?? '?'} <${identity.email ?? '?'}>${identity.scope === 'local' ? ' · this repository' : ''}` : 'Set who you commit as…') : '\u00a0'}
-      </button>
       <div className="relative">
         <input
           value={summary}
@@ -448,6 +480,13 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
           {amend ? 'Amend' : stagedCount ? `Commit ${stagedCount} ${stagedCount === 1 ? 'file' : 'files'}` : 'Commit'}
         </Button>
       </div>
+      {/* Who the commit is by: information about the commit, so it follows the fields and the
+          buttons instead of leading them. */}
+      <button onClick={() => useStore.setState({ dialog: { kind: 'identity', repoId: id, onSaved: () => setIdentityTick((t) => t + 1) } })}
+        title={identity?.scope === 'local' ? 'Set for this repository' : identity?.scope === 'global' ? 'Your global identity' : 'No identity set: git will refuse to commit'}
+        className={clsx('mt-2 block max-w-full truncate text-left text-2xs hover:text-foreground', identity && !identity.scope ? 'text-warn' : 'text-muted-foreground')} data-testid="commit-identity">
+        {identity ? (identity.name || identity.email ? `as ${identity.name ?? '?'} <${identity.email ?? '?'}>${identity.scope === 'local' ? ' · this repository' : ''}` : 'Set who you commit as…') : '\u00a0'}
+      </button>
     </div>
   )
 }
