@@ -39,7 +39,7 @@ test('take one file out of a stash; turn a stash into a branch', async () => {
   await item(page, 'Take this file from the stash').click()
   await expect.poll(() => readOrNull(join(r.dir, 'a.txt'))).toBe('a2\n')
   expect(readFileSync(join(r.dir, 'b.txt'), 'utf8')).toBe('b\n')
-  await page.getByTestId('toast-action').filter({ hasText: 'Undo' }).last().click()
+  await page.getByTestId('toast-action').filter({ hasText: 'Undo' }).first().click()
   await expect.poll(() => r.git('status', '--porcelain')).toBe('')
 
   await page.getByTestId('stash-item').click({ button: 'right' })
@@ -61,7 +61,7 @@ test('a snapshot saves the changes in the stash list and leaves them in place; u
   await expect(page.getByTestId('stash-item')).toHaveCount(1)
   await expect(page.getByTestId('unstaged-file')).toHaveCount(3)
   expect(r.git('status', '--porcelain').trim().split('\n')).toHaveLength(3)
-  await page.getByTestId('toast-action').filter({ hasText: 'Undo' }).last().click()
+  await page.getByTestId('toast-action').filter({ hasText: 'Undo' }).first().click()
   await expect(page.getByTestId('stash-item')).toHaveCount(0)
   await expect(page.getByTestId('unstaged-file')).toHaveCount(3)
   await app.close()

@@ -432,7 +432,7 @@ export function GraphMenu({ repoId }: { repoId: string }) {
       <CM.Label>{hash.slice(0, 7)} {commit?.subject}</CM.Label>
       <CM.Item onSelect={() => newBranch(repoId, hash)}>Create branch here…</CM.Item>
       <CM.Item onSelect={() => newTag(repoId, hash)}>Create tag here…</CM.Item>
-      <CM.Item onSelect={() => void checkout(repoId, hash)} disabled={isHeadCommit}>Check out this commit (detached)</CM.Item>
+      <CM.Item onSelect={() => void checkout(repoId, hash)} reason={isHeadCommit ? 'This is HEAD' : undefined}>Check out this commit (detached)</CM.Item>
       <CM.Separator />
       <CM.Item onSelect={() => void cherryPick(repoId, hash)} disabled={isHeadCommit}>Cherry-pick onto {headName}</CM.Item>
       <CM.Item onSelect={() => void revert(repoId, hash)}>Revert this commit</CM.Item>
