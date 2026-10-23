@@ -88,7 +88,7 @@ export function Thread({ thread, repoId, testids = {}, placeholder, hint, hideFe
       <div className="flex shrink-0 items-center justify-end border-t border-line px-2 pt-1.5">
         {/* The area's pick: a change applies from the next message (main moves the conversation if needed). */}
         <ModelPicker area={areaOfAnchor(thread.anchor)} />
-        <PromptButton area={areaOfAnchor(thread.anchor)} repoId={repoId} task={null} className="ml-1" />
+        <PromptButton area={areaOfAnchor(thread.anchor)} className="ml-1" />
       </div>
       <div className="flex shrink-0 gap-2 p-2 pt-1.5">
         <textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} data-testid={testids.input ?? 'thread-input'}

@@ -1,28 +1,23 @@
 import {
   DEFAULT_PROMPTS, effectivePrompt, promptKindsOf,
-  type AiArea, type AiTask, type PromptKind, type PromptPreview, type PromptSource, type PromptText,
+  type AiArea, type PromptKind, type PromptSource, type PromptText,
 } from '@gitgoose/shared'
 import clsx from 'clsx'
-import { ChevronRight, FileText, Lock, RotateCcw } from 'lucide-react'
+import { FileText, RotateCcw } from 'lucide-react'
 import { Popover } from 'radix-ui'
 import { useEffect, useRef, useState } from 'react'
 import { draftSaved, publishDraft } from '../lib/ai'
-import { api, toUiError } from '../lib/api'
 import { reportError, setSettingEntry, useStore } from '../lib/store'
-import { Button, Spinner } from './ui'
+import { Button } from './ui'
 
 /**
- * The prompt, shown and editable where it is used. The "Prompt" button beside an area's model
- * picker opens it: the system prompt and instructions (editable, remembered for this area), the
- * answer format (fixed: GitGoose parses the answer with it) and the context, built by main from
- * the repository exactly as a real request would (aiPromptPreview), so what you read is what
- * goes. Settings → AI edits the defaults with the same editor (PromptEditor).
+ * The prompt's editable words, where they are used. The "Prompt" button beside an area's model
+ * picker opens them: the system prompt and instructions, remembered for this area. The parts the
+ * user cannot change (the answer format GitGoose parses, the context built per request) are not
+ * shown. Settings → AI edits the defaults with the same editor (PromptEditor).
  */
-export function PromptButton({ area, repoId, task, className }: {
+export function PromptButton({ area, className }: {
   area: AiArea
-  repoId: string | null
-  /** The request this area would make now; null: show the words only (the context is built when sent). */
-  task: AiTask | null
   className?: string
 }) {
   const kinds = promptKindsOf(area)
@@ -54,15 +49,15 @@ export function PromptButton({ area, repoId, task, className }: {
             </div>
           )}
           {/* Keyed: switching prompt kinds starts that kind's draft fresh. */}
-          <AreaPrompt key={kind} kind={kind} repoId={repoId} task={task?.kind === kind ? task : null} />
+          <AreaPrompt key={kind} kind={kind} />
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
   )
 }
 
-/** One kind's words as this area uses them, saved as the area's edit; plus the live preview. */
-function AreaPrompt({ kind, repoId, task }: { kind: PromptKind; repoId: string | null; task: AiTask | null }) {
+/** One kind's words as this area uses them, saved as the area's edit. */
+function AreaPrompt({ kind }: { kind: PromptKind }) {
   const settings = useStore((s) => s.settings)!
   const used = effectivePrompt(kind, settings)
   const fallback = effectivePrompt(kind, settings, { area: false })
@@ -83,19 +78,11 @@ function AreaPrompt({ kind, repoId, task }: { kind: PromptKind; repoId: string |
     save(null, true)
   }
 
-  // A blank part is no edit: the next request uses Settings' (or the built-in) words for it
-  // (effectivePrompt), so the preview must too; main alone would fall back to the built-in words.
-  const sent: PromptText = {
-    system: draft.system.trim() ? draft.system : fallback.system,
-    instructions: draft.instructions.trim() ? draft.instructions : fallback.instructions,
-  }
-  const preview = usePreview(repoId, task, sent)
   return (
     <div className="min-h-0 overflow-y-auto p-3">
-      <PromptEditor kind={kind} value={draft} onChange={change} rendered={preview.parts?.instructions}
+      <PromptEditor kind={kind} value={draft} onChange={change}
         source={sameWords(draft, fallback) ? fallback.source : 'area'} onReset={used.source === 'area' || !sameWords(draft, fallback) ? reset : undefined}
         resetLabel={fallback.source === 'settings' ? 'Reset to Settings' : 'Reset to built-in'} />
-      <Context preview={preview} task={task} />
     </div>
   )
 }
@@ -111,18 +98,15 @@ const SOURCE_LABEL: Record<PromptSource, string> = {
 }
 
 /**
- * The editable words of one prompt and its fixed answer format. Used by the area panel and by
- * Settings → AI → Prompts.
+ * The editable words of one prompt. Used by the area panel and by Settings → AI → Prompts.
  */
-export function PromptEditor({ kind, value, onChange, source, onReset, resetLabel = 'Reset to built-in', rendered }: {
+export function PromptEditor({ kind, value, onChange, source, onReset, resetLabel = 'Reset to built-in' }: {
   kind: PromptKind
   value: PromptText
   onChange: (v: PromptText) => void
   source: PromptSource
   onReset?: () => void
   resetLabel?: string
-  /** The instructions with their {names} filled in, when they differ from the template. */
-  rendered?: string
 }) {
   const def = DEFAULT_PROMPTS[kind]
   const vars = Object.entries(def.vars)
@@ -144,71 +128,8 @@ export function PromptEditor({ kind, value, onChange, source, onReset, resetLabe
           Filled in when sent: {vars.map(([name, what], i) => <span key={name}>{i ? ', ' : ''}<code className="text-muted">{`{${name}}`}</code> ({what})</span>)}.
         </p>
       )}
-      {rendered && rendered !== value.instructions && (
-        <details className="mt-1 text-[11px] text-faint">
-          <summary className="cursor-default">As it will be sent</summary>
-          <pre className="selectable mt-1 rounded border border-line bg-bg p-2 font-mono whitespace-pre-wrap" data-testid="prompt-rendered">{rendered}</pre>
-        </details>
-      )}
-      {def.format && (
-        <>
-          <label className="mt-3 mb-1 flex items-center gap-1 text-[11px] font-semibold tracking-wide text-muted uppercase"
-            title="GitGoose reads the answer in this shape, so it cannot be changed">
-            <Lock size={10} /> Answer format <span className="font-normal normal-case">(fixed: GitGoose reads the answer with it)</span>
-          </label>
-          <pre className="selectable rounded-md border border-line/60 bg-bg/60 p-2 font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-muted" data-testid="prompt-format">{def.format}</pre>
-        </>
-      )}
     </div>
   )
-}
-
-/** The context the request carries, built by main now (read-only). */
-function Context({ preview, task }: { preview: Preview; task: AiTask | null }) {
-  const [open, setOpen] = useState(false)
-  if (!task) {
-    return <p className="mt-3 text-[11px] text-faint">The context (the change, the commit, …) is built when the request is sent; in a conversation, each message's "Sent" shows exactly what went out.</p>
-  }
-  const ctx = preview.parts?.context ?? ''
-  return (
-    <div className="mt-3" data-testid="prompt-context">
-      <button onClick={() => setOpen(!open)} className="flex w-full items-center gap-1 text-[11px] font-semibold tracking-wide text-muted uppercase hover:text-fg">
-        <ChevronRight size={12} className={clsx('transition-transform', open && 'rotate-90')} /> Context
-        <span className="font-normal normal-case">
-          {preview.loading ? ' (building…)' : preview.error ? '' : ` (${ctx.split('\n').length.toLocaleString()} lines, ${ctx.length.toLocaleString()} characters)`}
-        </span>
-        {preview.loading && <Spinner className="ml-1" />}
-      </button>
-      {preview.error && <p className="mt-1 text-xs text-del" data-testid="prompt-context-error">{preview.error}</p>}
-      {preview.parts?.note && <p className="mt-1 text-[11px] text-faint">{preview.parts.note}</p>}
-      {open && ctx && <pre className="selectable mt-1 max-h-80 overflow-auto rounded-md border border-line/60 bg-bg/60 p-2 font-mono text-[11px] whitespace-pre" data-testid="prompt-context-text">{ctx}</pre>}
-    </div>
-  )
-}
-
-interface Preview { parts: PromptPreview | null; loading: boolean; error: string | null }
-
-/** Main's preview of `task` with these words, rebuilt (debounced) when either changes. */
-function usePreview(repoId: string | null, task: AiTask | null, words: PromptText): Preview {
-  const [state, setState] = useState<Preview>({ parts: null, loading: false, error: null })
-  const key = JSON.stringify([repoId, task, words])
-  useEffect(() => {
-    if (!task) return setState({ parts: null, loading: false, error: null })
-    let live = true
-    setState((s) => ({ ...s, loading: true }))
-    const t = setTimeout(() => {
-      api.aiPromptPreview(repoId ?? '', task, words).then(
-        (parts) => live && setState({ parts, loading: false, error: null }),
-        (e) => live && setState({ parts: null, loading: false, error: toUiError(e).message }),
-      )
-    }, 250)
-    return () => {
-      live = false
-      clearTimeout(t)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key])
-  return state
 }
 
 /**

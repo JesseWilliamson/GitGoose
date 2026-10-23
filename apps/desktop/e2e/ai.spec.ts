@@ -152,10 +152,12 @@ test("the commit box shows its prompt; an edit there is what is sent, and Settin
   await page.getByTestId('prompt-button-commit').click()
   const panel = page.getByTestId('prompt-panel-commit')
   await expect(panel.getByTestId('prompt-source')).toHaveText('Built-in')
-  // The fixed format is shown, not editable; the context is built from the staged change, sending nothing.
-  await expect(panel.getByTestId('prompt-format')).toHaveText('Reply with the commit message only: no code fences, no commentary.')
-  await panel.getByTestId('prompt-context').getByRole('button').click()
-  await expect(panel.getByTestId('prompt-context-text')).toContainText('+export const widgets = new Map()')
+  // Only the editable words are shown: not the fixed answer format, not the context.
+  await expect(panel.getByTestId('prompt-system')).toBeVisible()
+  await expect(panel.getByTestId('prompt-instructions')).toBeVisible()
+  await expect(panel).not.toContainText('Reply with the commit message only')
+  await expect(panel.getByTestId('prompt-format')).toHaveCount(0)
+  await expect(panel.getByTestId('prompt-context')).toHaveCount(0)
   expect(existsSync(log)).toBe(false)
 
   // The fake writes "commit message for" requests, so the edit keeps those words.
@@ -181,7 +183,7 @@ test("the commit box shows its prompt; an edit there is what is sent, and Settin
   await app.close()
 })
 
-test("a blank part in the area's prompt previews Settings' words, as the request sends them", async () => {
+test("a blank part in the area's prompt falls back to Settings' words, as the request sends them", async () => {
   const r = makeFixture('linear')
   r.write('widgets.ts', 'export const widgets = new Map()\n')
   r.git('add', 'widgets.ts')
@@ -199,7 +201,7 @@ test("a blank part in the area's prompt previews Settings' words, as the request
   await expect(panel.getByTestId('prompt-source')).toHaveText('From Settings → AI')
   // Blank instructions fall back to Settings' words, not the built-in ones.
   await panel.getByTestId('prompt-instructions').fill('')
-  await expect(panel.getByTestId('prompt-rendered')).toHaveText(words)
+  await expect(panel.getByTestId('prompt-rendered')).toHaveCount(0)
   await page.keyboard.press('Escape')
 
   await page.getByTestId('ai-commit-message').click()
