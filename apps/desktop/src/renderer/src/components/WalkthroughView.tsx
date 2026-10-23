@@ -8,7 +8,7 @@ import { ensureLoaded, updateRepo, type RepoView } from '../lib/store'
 import { startWalkthrough, stopWalkthrough } from '../lib/walkthrough'
 import { MermaidDiagram } from './MermaidDiagram'
 import { RailToggle, ThreadRail, useRailOpen } from './ThreadRail'
-import { Button, Spinner } from './ui'
+import { Button, SectionHeader, Spinner } from './ui'
 import { AiTargetButton } from './AiTargetButton'
 
 const LAYER: Record<ReadingLayer, string> = {
@@ -54,7 +54,7 @@ export function WalkthroughView({ view }: { view: RepoView }) {
           <>
             <p className="selectable max-w-3xl text-base leading-relaxed" data-testid="walkthrough-summary">{r.summary}</p>
 
-            <h3 className="mt-6 mb-2 text-xs font-semibold text-muted-foreground uppercase">Changes</h3>
+            <SectionHeader as="h3" className="mt-6 mb-1 px-0">Changes</SectionHeader>
             <div className="grid max-w-4xl gap-2" data-testid="walkthrough-groups">
               {r.groups.map((g) => (
                 <div key={g.title} className="rounded-md border border-border bg-card p-3">
@@ -69,12 +69,12 @@ export function WalkthroughView({ view }: { view: RepoView }) {
 
             {r.diagram && (
               <>
-                <h3 className="mt-6 mb-2 text-xs font-semibold text-muted-foreground uppercase">Diagram</h3>
+                <SectionHeader as="h3" className="mt-6 mb-1 px-0">Diagram</SectionHeader>
                 <MermaidDiagram source={r.diagram} />
               </>
             )}
 
-            <h3 className="mt-6 mb-2 text-xs font-semibold text-muted-foreground uppercase">Reading order</h3>
+            <SectionHeader as="h3" className="mt-6 mb-1 px-0">Reading order</SectionHeader>
             <div className="max-w-4xl" data-testid="reading-order">
               {layers.map(([layer, hs]) => (
                 <div key={layer} className="mb-3">
@@ -94,7 +94,7 @@ export function WalkthroughView({ view }: { view: RepoView }) {
 
             {r.history.length > 0 && (
               <>
-                <h3 className="mt-6 mb-2 text-xs font-semibold text-muted-foreground uppercase">Recent history of these files</h3>
+                <SectionHeader as="h3" className="mt-6 mb-1 px-0">Recent history of these files</SectionHeader>
                 <div className="max-w-4xl text-sm">
                   {r.history.map((c) => (
                     <button key={c.hash} onClick={() => { updateRepo(view.id, { selected: { kind: 'commit', hash: c.hash }, center: { kind: 'graph' } }); void ensureLoaded(view.id, c.hash) }}

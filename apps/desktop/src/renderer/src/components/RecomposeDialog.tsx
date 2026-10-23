@@ -14,7 +14,7 @@ import { toast, updateRepo, useStore } from '../lib/store'
 import { useThread } from '../lib/thread'
 import { AiTargetButton } from './AiTargetButton'
 import { Thread } from './Thread'
-import { Button, CM, DM, Modal, Spinner } from './ui'
+import { Button, CM, DM, Modal, SectionHeader, Spinner } from './ui'
 
 /**
  * Recompose with AI, GitKraken-style: the AI proposes a new set of commits for the selected
@@ -459,12 +459,10 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
         <div className="flex w-80 shrink-0 flex-col border-r border-border bg-card" data-testid="recompose-commits-column">
           {/* One line, never wrapping: a hint that changed the header's height would move the rows
               under the pointer mid-drag and flip the drop target back and forth. */}
-          <div className="flex items-center gap-2 px-3 pt-2 pb-1 text-2xs font-semibold tracking-wide whitespace-nowrap text-hint uppercase">
-            <span className="shrink-0">Commits</span>
-            <span className="min-w-0 flex-1 truncate text-right font-normal normal-case tracking-normal">
+          <SectionHeader className="whitespace-nowrap"
+            right={<span className="min-w-0 truncate font-normal text-hint">
               {draggingUnit ? <span className="text-primary">drop on a commit, or above for a new one</span> : `${draft.length}, oldest at the bottom`}
-            </span>
-          </div>
+            </span>}>Commits</SectionHeader>
           <ContextMenu.Root>
             <ContextMenu.Trigger asChild>
               {/* Focusable, so a click or drag on a row keeps focus in the dialog and Ctrl+Z still reaches it. */}
@@ -532,10 +530,7 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
             dragged: nothing here takes a drop. */}
         {current && (
           <div className={clsx('flex min-w-0 flex-1 flex-col transition-opacity', draggingUnit && 'opacity-40')} data-testid="recompose-hunks-column">
-            <div className="flex items-center px-3 pt-2 pb-1 text-2xs font-semibold tracking-wide text-hint uppercase">
-              <span className="flex-1">Hunks</span>
-              <span className="font-normal normal-case tracking-normal">{current.units.length} in commit {sel + 1}</span>
-            </div>
+            <SectionHeader right={<span className="font-normal text-hint">{current.units.length} in commit {sel + 1}</span>}>Hunks</SectionHeader>
             <div className="border-b border-border px-3 pb-3">
               <textarea key={sel} value={current.message} onChange={(e) => update((d) => editMessage(d, sel, e.target.value), `message:${sel}`)}
                 rows={Math.max(2, Math.min(6, current.message.split('\n').length))} placeholder={`Message for commit ${sel + 1} (first line is the summary)`}

@@ -6,6 +6,7 @@ import { openInEditor } from '../lib/actions'
 import { api } from '../lib/api'
 import { indexingText } from '../lib/codegraph'
 import { useStore } from '../lib/store'
+import { SectionHeader } from './ui'
 
 const mod = (e: React.MouseEvent) => (window.gitgoose?.platform === 'darwin' ? e.metaKey : e.ctrlKey)
 
@@ -77,7 +78,7 @@ export function CodePeekPanel({ repoId, repoPath, name, rev, onClose }: { repoId
         ))}
         {peek && peek.references.length > 0 && (
           <div className="py-1">
-            <div className="px-3 py-1 font-sans text-2xs font-semibold text-hint uppercase">Used in</div>
+            <SectionHeader className="font-sans">Used in</SectionHeader>
             {peek.references.map((r) => (
               <button key={`${r.path}:${r.line}:${r.column}`} onClick={() => open(r.path, r.line)} data-testid="peek-reference"
                 className="flex w-full items-center gap-3 px-3 py-0.5 text-left hover:bg-accent">

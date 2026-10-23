@@ -10,7 +10,7 @@ import { saveSettings, useStore } from '../lib/store'
 import { OptionSelect } from './OptionSelect'
 import { AiPanel } from './AiPanel'
 import { SettingsRow, SwitchSlot } from './SettingsRow'
-import { Kbd } from './ui'
+import { Kbd, SectionHeader } from './ui'
 
 /**
  * The settings page, generated from the SETTINGS table in packages/shared/src/settings.ts.
@@ -118,7 +118,7 @@ export function SettingsPage() {
               const Panel = SECTION_PANELS[s]
               return (
                 <section key={s} data-section={s} className="mt-6 scroll-mt-6">
-                  <h2 className="flex h-7 items-center border-b border-border text-2xs font-semibold tracking-wide text-muted-foreground uppercase">{s}</h2>
+                  <SectionHeader as="h2" className="h-8 border-b border-border px-0">{s}</SectionHeader>
                   {shown.filter((v) => v.spec.section === s).map((v) => (
                     <SettingRow key={v.key} k={v.key} spec={v.spec} value={settings[v.key]} />
                   ))}

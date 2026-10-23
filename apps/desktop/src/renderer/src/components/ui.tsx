@@ -95,12 +95,25 @@ export function Spinner({ className }: { className?: string }) {
   return <span className={cn('inline-block size-3 animate-spin rounded-full border-2 border-current border-t-transparent', className)} />
 }
 
-export function SectionHeader({ children, right }: { children: ReactNode; right?: ReactNode }) {
+/** The look of every section header: sentence case, 12 px medium, muted. Not uppercase: it is a label, not a shout. */
+export const sectionHeaderClass = 'text-xs font-medium text-muted-foreground'
+
+/**
+ * The one section header. `count` is a muted suffix ("Unstaged 3"), `right` is a slot for the
+ * section's own actions, `as` lets a heading be a real heading for screen readers, and
+ * `className` adjusts the padding where a header sits in a narrower surface.
+ */
+export function SectionHeader({ children, count, right, as: Tag = 'div', className }: {
+  children: ReactNode; count?: number | string; right?: ReactNode; as?: 'div' | 'h2' | 'h3'; className?: string
+}) {
   return (
-    <div className="flex h-row-lg items-center justify-between px-3 text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
-      <span className="truncate">{children}</span>
+    <Tag className={cn('flex h-row-lg items-center justify-between gap-2 px-3', sectionHeaderClass, className)}>
+      <span className="truncate">
+        {children}
+        {count !== undefined && <span className="ml-1.5 font-normal text-hint">{count}</span>}
+      </span>
       {right}
-    </div>
+    </Tag>
   )
 }
 

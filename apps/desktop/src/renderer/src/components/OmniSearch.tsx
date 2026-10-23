@@ -15,7 +15,7 @@ import {
   type OmniEntry, type OmniKind, type OmniResult, type OmniScope,
 } from '../lib/omni'
 import { ensureLoaded, updateRepo, useStore, type RepoView } from '../lib/store'
-import { Spinner } from './ui'
+import { SectionHeader, Spinner } from './ui'
 
 /**
  * One search for everything, opened with Ctrl+K (or Ctrl+F), like the search on the Next.js
@@ -225,10 +225,9 @@ function OmniPanel({ initial, close }: { initial: string; close: () => void }) {
 
 function GroupHeading({ label, shown, total }: { label: string; shown: number; total: number }) {
   return (
-    <span className="flex items-baseline gap-2 text-2xs font-semibold tracking-wide text-hint uppercase">
+    <SectionHeader className="h-row px-0" right={total > shown ? <span className="font-normal text-hint">{shown} of {total.toLocaleString()} · Tab to narrow</span> : undefined}>
       {label}
-      {total > shown && <span className="font-normal tracking-normal normal-case">{shown} of {total.toLocaleString()} · Tab to narrow</span>}
-    </span>
+    </SectionHeader>
   )
 }
 

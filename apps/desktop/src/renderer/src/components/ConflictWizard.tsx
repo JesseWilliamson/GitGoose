@@ -8,7 +8,7 @@ import { useRunningJob } from '../lib/aiJobs'
 import { api } from '../lib/api'
 import { opName, sentence, splitPath } from '../lib/format'
 import { reportError, updateRepo, useSetting, useStore, type RepoView } from '../lib/store'
-import { Button, Spinner } from './ui'
+import { Button, SectionHeader, Spinner } from './ui'
 import { AiTargetButton } from './AiTargetButton'
 
 const ResultEditor = lazy(() => import('./ResultEditor'))
@@ -297,7 +297,7 @@ function ConflictCard({ seg, index, count, choice, onChoose }: {
         <SidePanel side="theirs" label={seg.theirsLabel || 'incoming'} lines={seg.theirs} taken={takes('theirs')} onTake={() => onChoose(choice === 'ours' ? 'both' : 'theirs')} />
       </div>
       <div className="border-t border-border" data-testid="conflict-result">
-        <div className="px-3 pt-1.5 text-2xs font-semibold text-hint uppercase">Result</div>
+        <SectionHeader>Result</SectionHeader>
         {choice ? (
           <pre className="px-0 pt-1 pb-2 font-mono text-xs">
             {result.length ? result.map((r, i) => (

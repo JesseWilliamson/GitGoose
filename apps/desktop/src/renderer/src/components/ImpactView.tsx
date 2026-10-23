@@ -7,7 +7,7 @@ import { indexingText } from '../lib/codegraph'
 import { assessImpact, showImpact } from '../lib/impact'
 import { updateRepo, type RepoView } from '../lib/store'
 import { RailToggle, ThreadRail, useRailOpen } from './ThreadRail'
-import { Button, Spinner } from './ui'
+import { Button, SectionHeader, Spinner } from './ui'
 import { AiTargetButton } from './AiTargetButton'
 
 const CHANGE_STYLE = { changed: 'bg-warn/15 text-warn', added: 'bg-add/15 text-add', removed: 'bg-destructive/15 text-destructive' }
@@ -57,7 +57,7 @@ export function ImpactView({ view }: { view: RepoView }) {
         )}
         {r && (
           <>
-            <h3 className="mb-2 text-xs font-semibold text-muted-foreground uppercase">Definitions touched</h3>
+            <SectionHeader as="h3" className="mb-1 px-0">Definitions touched</SectionHeader>
             {!r.symbols.length && <p className="text-hint">None found (no known language, or only top-level code changed).</p>}
             <div className="mb-5 flex max-w-4xl flex-wrap gap-2" data-testid="impact-symbols">
               {r.symbols.map((s) => (
@@ -69,7 +69,7 @@ export function ImpactView({ view }: { view: RepoView }) {
               ))}
             </div>
 
-            <h3 className="mb-2 text-xs font-semibold text-muted-foreground uppercase">Used elsewhere</h3>
+            <SectionHeader as="h3" className="mb-1 px-0">Used elsewhere</SectionHeader>
             {!r.callers.length && <p className="mb-5 text-hint">No uses outside the change.</p>}
             <div className="mb-5 max-w-5xl" data-testid="impact-callers">
               {[...bySymbol].map(([symbol, list]) => (
@@ -90,7 +90,7 @@ export function ImpactView({ view }: { view: RepoView }) {
               ))}
             </div>
 
-            <h3 className="mb-2 text-xs font-semibold text-muted-foreground uppercase">Tests</h3>
+            <SectionHeader as="h3" className="mb-1 px-0">Tests</SectionHeader>
             <div className="mb-5" data-testid="impact-tests">
               {r.tests.length ? r.tests.map((t) => <div key={t} className="font-mono text-xs">{t}</div>) : <p className="text-hint">No tests found for this code.</p>}
             </div>
