@@ -1,5 +1,5 @@
 import { Tooltip as RTooltip } from 'radix-ui'
-import type { ComponentProps, ReactNode } from 'react'
+import { useEffect, useState, type ComponentProps, type ReactNode } from 'react'
 import { cn } from '../../lib/cn'
 
 export const TooltipProvider = ({ children }: { children: ReactNode }) => (
@@ -17,11 +17,22 @@ export function TooltipContent({ className, sideOffset = 6, ...props }: Componen
   )
 }
 
-/** A tooltip around one element: `<WithTooltip text="Push"><button/></WithTooltip>`. No text, no tooltip. */
+/**
+ * A tooltip around one element: `<WithTooltip text="Push"><button/></WithTooltip>`. No text, no tooltip.
+ * It closes on any press anywhere: while a Radix menu is open the page's pointer events are off,
+ * so the trigger would never see its pointer leave and the tooltip would sit on top of the menu.
+ */
 export function WithTooltip({ text, children, side, delay }: { text?: string; children: ReactNode; side?: 'top' | 'bottom' | 'left' | 'right'; delay?: number }) {
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    if (!open) return
+    const close = () => setOpen(false)
+    window.addEventListener('pointerdown', close, true)
+    return () => window.removeEventListener('pointerdown', close, true)
+  }, [open])
   if (!text) return <>{children}</>
   return (
-    <Tooltip delayDuration={delay}>
+    <Tooltip open={open} onOpenChange={setOpen} delayDuration={delay}>
       <TooltipTrigger asChild>{children}</TooltipTrigger>
       <TooltipContent side={side}>{text}</TooltipContent>
     </Tooltip>

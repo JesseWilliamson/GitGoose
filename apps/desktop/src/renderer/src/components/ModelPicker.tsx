@@ -69,7 +69,7 @@ export function ModelPicker({ area, defaults, className, onPicked, agentsOnly }:
   // Settings → AI's default for the API is a model, not "whatever": no blank entry there.
   const blank = !(defaults && target.provider === 'anthropic')
   const stale = !!list.list?.at && Date.now() - list.list.at > STALE_MS
-  const select = 'h-6 max-w-44 px-1.5 text-xs'
+  const select = 'h-6 min-w-0 max-w-44 flex-1 px-1.5 text-xs'
 
   const whoOptions: SelectOption[] = [
     { value: 'default', label: `Default (${targetLabel({ ...base, model: undefined })})` },
@@ -84,7 +84,7 @@ export function ModelPicker({ area, defaults, className, onPicked, agentsOnly }:
   ].filter((o): o is SelectOption => o !== null)
 
   return (
-    <span className={clsx('inline-flex items-center gap-1', className)} data-testid={area ? `model-picker-${area}` : 'model-picker-default'}>
+    <span className={clsx('inline-flex min-w-0 items-center gap-1', className)} data-testid={area ? `model-picker-${area}` : 'model-picker-default'}>
       {area && (
         <OptionSelect value={who} onChange={setWho} options={whoOptions} className={select} aria-label="Who answers" data-testid="model-picker-who" />
       )}

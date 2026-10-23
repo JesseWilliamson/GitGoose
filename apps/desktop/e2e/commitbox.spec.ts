@@ -71,3 +71,24 @@ test('a failing pre-commit hook shows its output; Skip hooks commits anyway', as
   await expect(page.getByTestId('commit-options')).not.toContainText('no hooks')
   await app.close()
 })
+
+test('with AI on, the model picker, Prompt, Write and Commit all fit in the footer without overlapping', async () => {
+  const r = setup()
+  const { app, page } = await launch(r.dir, isolatedGlobal())
+  await page.evaluate(() => window.gitgoose.setSettings({ aiProvider: 'agent', aiAgent: 'claude' } as never))
+  const box = page.getByTestId('commit-box')
+  await expect(box.getByTestId('ai-commit-message')).toBeVisible()
+  const triggers = box.getByTestId('model-picker-commit').getByRole('combobox')
+  await expect(triggers).toHaveCount(2)
+  const bounds = (await box.boundingBox())!
+  type Rect = { x: number; y: number; width: number; height: number }
+  const rects: Rect[] = [(await page.getByTestId('commit-button').boundingBox())!, (await box.getByTestId('ai-commit-message').boundingBox())!]
+  for (let i = 0; i < 2; i++) rects.push((await triggers.nth(i).boundingBox())!)
+  for (const rect of rects) {
+    expect(rect.x).toBeGreaterThanOrEqual(bounds.x)
+    expect(rect.x + rect.width).toBeLessThanOrEqual(bounds.x + bounds.width + 0.5)
+  }
+  const overlap = (a: Rect, b: Rect) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+  for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) expect(overlap(rects[i]!, rects[j]!), `${i} overlaps ${j}`).toBe(false)
+  await app.close()
+})
