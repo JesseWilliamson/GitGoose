@@ -39,12 +39,20 @@ lists are kept under, and which process a session lives in.
 - **Models come from the agent.** ACP has no model list outside a session: models are the
   session config option with category `model` in `session/new`'s `configOptions` (flat or
   grouped; we flatten), changed with `session/set_config_option` and by the agent itself
-  (`config_option_update`). Main keeps each agent's last list (settings `aiAgentModels`) so a
-  picker can show it without starting anything; with none yet, *Load models…* starts the agent
-  and opens and closes one session (the user clicked, as with Test). An agent with no model
-  option shows "Chosen by the agent".
+  (`config_option_update`). Main keeps each agent's last list (settings `aiAgentModels`, by
+  `targetKey`, so the custom command has its own) so a picker can show it without starting
+  anything; with none yet, *Load models…* starts the agent and opens and closes one session (the
+  user clicked, as with Test). An agent with no model option shows "Chosen by the agent". Test
+  only initializes the agent (no session), so it learns no models.
 - **The API's list** is `GET /v1/models`, fetched only when the user picks *Load models…* (it
-  sends the key and nothing else), and kept while the app runs.
+  sends the key and nothing else). Main keeps it in settings (`aiApiModels`, with the time) like
+  the agents' lists, so a restart does not lose it, and `aiModels` returns it with no request.
+  Nothing refreshes a list on its own (no call the user did not ask for): an old one (over 24
+  hours) is still shown, and the select says so in its entry.
+- **Refresh, and one load at a time.** Once a list is known the select's entry reads *Refresh
+  models…* and loads again. One load runs per target key: the renderer shares a promise among
+  all pickers on screen, and main does the same so two windows do not start two agents or two
+  requests. A failed refresh keeps the list there was.
 - **The model is set before the turn.** After opening or loading a session, main switches it to
   the target's model; a model the agent does not offer fails the send with `ai-model` before the
   turn starts. Blank after an earlier pick goes back to the agent's own default.

@@ -309,28 +309,52 @@ export class AiService {
     const s = this.deps.settings()
     const target = this.target(t) ?? t
     if (target.provider === 'anthropic') {
-      const defaultModel = s.anthropicModel
-      const apiKey = this.deps.apiKey.get()
-      if (!apiKey) return { models: [], defaultModel, known: false, error: 'Add an Anthropic API key in Settings → AI.' }
-      try {
-        return { models: await anthropicModels({ apiKey, baseURL: this.deps.anthropicBaseURL, fetch: this.deps.fetch }), defaultModel, known: true }
-      } catch (e) {
-        return { models: [], defaultModel, known: false, error: (e as Error).message }
-      }
+      // The API's default is the model setting, whatever the list was saved with.
+      const saved = s.aiApiModels
+      if (saved) return { ...saved, defaultModel: s.anthropicModel }
+      return { models: [], defaultModel: s.anthropicModel, known: false, ...(this.deps.apiKey.get() ? {} : { error: 'Add an Anthropic API key in Settings → AI.' }) }
     }
     const cached = s.aiAgentModels[targetKey(target)]
-    if (!cached) return { models: [], known: false }
-    const { at: _at, ...list } = cached
-    return list
+    return cached ?? { models: [], known: false }
   }
 
-  /** "Load models": start the agent, open a session (that lists them), close it. No content is sent. */
-  async loadModels(t: AiTarget): Promise<AiModelList> {
-    await this.withAgent(this.agentLineOf(t), async (agent) => {
+  /** One load per target key at a time: a second caller (another window) waits for the first. */
+  private loading = new Map<string, Promise<AiModelList>>()
+
+  /**
+   * "Load models" / "Refresh models": the user asked, so this may start the agent (open a session,
+   * which lists them, close it; no content is sent) or call GET /v1/models. The result is saved
+   * (for an agent, by the session's own report) and returned as `models` would.
+   */
+  loadModels(t: AiTarget): Promise<AiModelList> {
+    const target = this.target(t) ?? t
+    const key = targetKey(target)
+    let run = this.loading.get(key)
+    if (!run) {
+      run = this.loadNow(target).finally(() => this.loading.delete(key))
+      this.loading.set(key, run)
+    }
+    return run
+  }
+
+  private async loadNow(target: AiTarget): Promise<AiModelList> {
+    if (target.provider === 'anthropic') {
+      const apiKey = this.deps.apiKey.get()
+      if (!apiKey) return this.models(target)
+      try {
+        const models = await anthropicModels({ apiKey, baseURL: this.deps.anthropicBaseURL, fetch: this.deps.fetch })
+        this.deps.setSettings({ aiApiModels: { models, known: true, at: Date.now() } })
+      } catch (e) {
+        // A failed refresh keeps the list there was.
+        return { ...(await this.models(target)), error: (e as Error).message }
+      }
+      return this.models(target)
+    }
+    await this.withAgent(this.agentLineOf(target), async (agent) => {
       const sessionId = await agent.openSession(tmpdir())
       agent.closeSession(sessionId)
     })
-    return this.models(t)
+    return this.models(target)
   }
 
   /** Keep what a new session said about models, for pickers (written only when it changed). */
