@@ -372,8 +372,26 @@ export interface ReviewLearning {
   added: number
 }
 
+/**
+ * Something the user attached to a message in the AI panel (a context chip). Only a reference:
+ * the renderer never reads git. Main turns each one into text when the message is sent
+ * (main/ai/context.ts), under the size cap, and the turn's `sent` keeps that text.
+ */
+export type AiContextRef =
+  | { kind: 'commits'; hashes: string[] }
+  /** A branch or tag: its full name (refs/heads/x) or a short one. */
+  | { kind: 'ref'; name: string }
+  | { kind: 'stash'; ref: string; index: number }
+  /** Files at a commit; `rev` 'worktree' is the changes list (working tree against the index, and the index against HEAD). */
+  | { kind: 'files'; rev: string; paths: string[] }
+  | { kind: 'wip' }
+  /** Two revisions, or a revision and the working tree (`to` null). */
+  | { kind: 'compare'; from: string; to: string | null }
+
 /** What the user asked the AI to do. Each builds its own prompt in main/ai/prompts.ts. */
 export interface AiRunOptions {
+  /** Thread sends: what the user attached (context chips). Rendered by main, appended under the user's words. */
+  context?: AiContextRef[]
   /** Send even though the secret scan found something, with each hit replaced by "[REDACTED kind]". */
   redact?: boolean
   /**

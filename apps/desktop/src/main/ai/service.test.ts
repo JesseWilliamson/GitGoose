@@ -159,6 +159,45 @@ describe('threads', () => {
     expect(two!.trim()).toBe('second')
   })
 
+  it('context chips: main renders them under the words; the agent receives them and the turn keeps exactly that as sent', async () => {
+    const log = join(tempDir(), 'prompts.log')
+    process.env.FAKE_AGENT_LOG = log
+    cleanup.push(() => void delete process.env.FAKE_AGENT_LOG)
+    const t = await setup()
+    t.ai.consent()
+    const hash = t.r.git('rev-parse', 'HEAD').trim()
+    const thread = await t.ai.openThread('x', { kind: 'free' })
+    const r1 = await t.ai.sendThread(thread.id, 'what is this', { context: [{ kind: 'commits', hashes: [hash] }] })
+    await ended(t.events, r1)
+    // A later message with another chip: sent as just the words and the chip's text.
+    const r2 = await t.ai.sendThread(thread.id, 'and the changes?', { context: [{ kind: 'wip' }] })
+    await ended(t.events, r2)
+    const [one, two] = readFileSync(log, 'utf8').split('\n---\n')
+    expect(one).toContain(`Context: commit ${hash.slice(0, 7)} Commit 5`)
+    expect(one).toContain("The user's message:\nwhat is this")
+    expect(two).toContain('and the changes?')
+    expect(two).toContain('Context: uncommitted changes')
+    expect(two).toContain('widgets.ts')
+    const seen = mirror(t.events, thread)
+    const users = seen.turns.filter((x) => x.role === 'user')
+    // The thread shows the words; `sent` is what went out, context included.
+    expect(users[0]!.blocks).toEqual([{ type: 'text', text: 'what is this' }])
+    expect(users[0]!.sent).toContain(`Context: commit ${hash.slice(0, 7)} Commit 5`)
+    expect(users[1]!.sent).toContain('Context: uncommitted changes')
+    expect(seen.title).toBe('what is this')
+    // Saved with it, like every other feature's sent text.
+    expect(t.settings.aiThreads[t.repo.path]![0]!.turns[0]!.sent).toContain('Commit 5')
+  })
+
+  it('context goes through the secret scan like the words do', async () => {
+    const t = await setup()
+    t.ai.consent()
+    t.r.write('.env.local', 'AWS_SECRET=AKIAIOSFODNN7EXAMPLE\n')
+    t.r.git('add', '.env.local')
+    const thread = await t.ai.openThread('x', { kind: 'free' })
+    await expect(t.ai.sendThread(thread.id, 'look', { context: [{ kind: 'wip' }] })).rejects.toMatchObject({ code: 'ai-secrets' })
+  })
+
   it('a feature run with keepThread is the first turn of a thread; a findings artifact is checked like the review', async () => {
     const t = await setup()
     t.ai.consent()

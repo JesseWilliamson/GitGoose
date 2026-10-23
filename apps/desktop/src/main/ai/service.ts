@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os'
 import { AcpAgent, type PermissionAsk, type PromptHooks, type SessionModels } from './acp'
 import { anthropicChat, anthropicModels } from './anthropic'
 import type { SecretFile } from './keyStore'
+import { renderContext } from './context'
 import { extractJson, locateSecret, redactSecrets, repairPlan, scanSecrets, verifyFindings, verifyMermaid, verifyPushChecks, verifyWalkthrough } from '@gitgoose/git'
 import { lintForReview } from './linters'
 import {
@@ -508,7 +509,9 @@ export class AiService {
     rec.starting = true
     let out: Outgoing
     try {
-      out = await this.outgoing(rec, target, message, undefined, opts.redact === true)
+      // The chips the user attached, rendered now (the renderer sent references only), under their words.
+      const context = opts.context?.length ? await renderContext(this.deps.repo(rec.repoId), opts.context) : ''
+      out = await this.outgoing(rec, target, context ? `${message}\n\n${context}` : message, undefined, opts.redact === true)
     } finally {
       rec.starting = false
     }
