@@ -132,16 +132,6 @@
   }
 }
 
-/*
- * `text-muted-foreground/70` used to be the hint grey: the muted colour at 70% opacity, which on
- * the card is 4.0 : 1 in dark and 3.1 : 1 in light. The hint is now its own token (`text-hint`,
- * above), and this rule makes any leftover use of the old spelling resolve to it, so a hint is
- * never quieter than the token says. New code writes `text-hint`.
- */
-.text-muted-foreground\/70 {
-  color: var(--hint);
-}
-
 :root,
 :root[data-theme='dark'] {
   --gs-bg: #171719;

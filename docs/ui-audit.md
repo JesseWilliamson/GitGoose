@@ -198,8 +198,8 @@ with the WCAG formula, on the card:
 a little better in dark and a little worse in light.) The new hint is at least 4.5 : 1 on the page,
 the card and popovers in both themes, and still quieter than the muted text (6.70 and 5.90), so the
 hierarchy survives. `lib/hint.test.ts` reads the hex values from `styles.css` and fails if a palette
-change breaks it. A rule in `styles.css` resolves the old spelling to the same token for the files
-the 2a PR owns; a sweep after both merge can delete it.
+change breaks it. Every former `text-muted-foreground/70` now says `text-hint`; there is no
+compatibility rule left.
 
 **Section headers.** One component, `SectionHeader` (sentence case, 12 px medium, muted, an optional
 muted `count`, a `right` slot, `as` for real headings). Welcome, Impact, Walkthrough, Settings, the
