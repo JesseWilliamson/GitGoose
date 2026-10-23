@@ -13,7 +13,7 @@ test('the search box names its shortcuts with the real modifier, no ⌘ glyph el
   const search = page.getByTestId('omni-open')
   // macOS writes shortcuts as glyphs (⌘K), elsewhere as words (Ctrl+K).
   const key = (k: string) => (process.platform === 'darwin' ? `⌘${k}` : `Ctrl+${k}`)
-  await expect(search).toContainText(key('K'))
+  await expect(toolbar.locator('kbd')).toHaveText(key('K'))
   await expect(search).toHaveAttribute('title', `Search everything (${key('K')}); commands only: ${key('P')}`)
   await app.close()
 })

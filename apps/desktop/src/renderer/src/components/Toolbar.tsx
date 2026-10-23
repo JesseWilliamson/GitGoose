@@ -59,9 +59,9 @@ export function Toolbar({ view }: { view: RepoView }) {
       {/* A real input (shadcn's) with a search icon and the shortcut, 20 rem wide. It is read-only: clicking it,
           or pressing Enter on it, opens the search (a dialog with its own field), so it never holds text.
           The shortcut is spelled out per platform (not the cmd glyph everywhere). */}
-      <div className="no-drag relative mx-3 w-80 min-w-0" title={`Search everything (${shortcutOf('search', keys)}); commands only: ${shortcutOf('palette', keys)}`}>
+      <div className="no-drag relative mx-3 w-80 min-w-0">
         <Search size={16} className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-hint" />
-        <Input readOnly value="" placeholder="Search…" aria-label="Search" aria-keyshortcuts={shortcutOf('search', keys)} data-testid="omni-open"
+        <Input readOnly value="" placeholder="Search…" aria-label="Search" title={`Search everything (${shortcutOf('search', keys)}); commands only: ${shortcutOf('palette', keys)}`} aria-keyshortcuts={shortcutOf('search', keys)} data-testid="omni-open"
           onClick={() => runCommand('search')}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); runCommand('search') } }}
           className="h-row-lg cursor-pointer bg-background pr-16 pl-8 text-xs shadow-none placeholder:text-hint md:text-xs dark:bg-background" />
