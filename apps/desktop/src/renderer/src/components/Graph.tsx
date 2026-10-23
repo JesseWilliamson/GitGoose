@@ -7,6 +7,7 @@ import { ContextMenu } from 'radix-ui'
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { bisectMark, bisectReset, checkout, checkoutRow, showAllInGraph } from '../lib/actions'
 import { avatarSrc } from '../lib/avatar'
+import { AUTHOR_W, compactColumns, SHA_W, type CompactColumns } from '../lib/graphColumns'
 import { startDrag, type DropTarget } from '../lib/dnd'
 import { authorLine, formatDate, laneColor, shortHash, stashLabel } from '../lib/format'
 import { lineEnded, lineIndexOf, lineThrough } from '../lib/lineView'
@@ -20,16 +21,9 @@ const isMac = window.gitgoose?.platform === 'darwin'
 /** Avatar beside the text in comfy rows (compact rows draw it as the node). */
 const AVATAR = 30
 // The compact layout's columns: fixed widths, so every row's message, author, date
-// and SHA start at the same x and read as columns.
-const REFS_W = 160
-const AUTHOR_W = 140
+// and SHA start at the same x and read as columns. Which of them there is room for depends on the
+// pane's width (the side panels decide how wide it is): see lib/graphColumns.ts.
 const DATE_W: Record<string, number> = { relative: 100, absolute: 110, both: 200 }
-const SHA_W = 68
-// Container queries (the pane's width, not the window's: the side panels decide how wide it is)
-// drop the optional columns when the pane gets narrow, so the message never gets squeezed out.
-const COL_AUTHOR = 'hidden @2xl:flex'
-const COL_DATE = 'hidden @xl:block'
-const COL_SHA = 'hidden @3xl:block'
 
 /** A local and a remote branch with the same name share one pill. */
 interface Pill {
@@ -93,6 +87,8 @@ export interface RowLook {
   /** Compact only: the graph column's width (the same on every row) and the date column's. */
   graphW: number
   dateW: number
+  /** Compact only: which of the optional columns the pane has room for. */
+  cols: CompactColumns
 }
 
 /** Repositories whose first rows have been marked (see GraphList). */
@@ -109,8 +105,24 @@ function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
   // grows (as pages arrive), so the columns do not shift while scrolling back up.
   const graphW = compact ? compactWidth(view.line ? 1 : log.maxWidth) : 0
   const dateW = DATE_W[dateFormat] ?? 100
-  const look = useMemo<RowLook>(() => ({ compact, rowH, dateFormat, showRemotes, showTags, avatars, graphW, dateW }),
-    [compact, rowH, dateFormat, showRemotes, showTags, avatars, graphW, dateW])
+  // The pane's width, measured before the first paint and on every resize: the compact columns
+  // that fit are worked out from it. (Container queries cannot do this: when the branch / tag
+  // column goes, its pills move to another place in the row.)
+  const paneRef = useRef<HTMLDivElement>(null)
+  const [paneW, setPaneW] = useState(900)
+  useLayoutEffect(() => {
+    const el = paneRef.current
+    if (!el || !compact) return
+    const measure = () => setPaneW(Math.round(el.clientWidth))
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [compact])
+  const cols = compactColumns(paneW, graphW, dateW)
+  const look = useMemo<RowLook>(() => ({ compact, rowH, dateFormat, showRemotes, showTags, avatars, graphW, dateW, cols }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cols by value: a resize that changes nothing keeps every row as it is
+    [compact, rowH, dateFormat, showRemotes, showTags, avatars, graphW, dateW, cols.refsW, cols.author, cols.date, cols.sha])
   const snap = view.snapshot
 
   // The line view (lib/lineView.ts): only the rows on the line through `anchor`, or all rows.
@@ -297,9 +309,7 @@ function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
   const wipLanes = log.rows[0]?.width ?? 1
 
   return (
-    // @container: one-line rows drop the author when the pane is narrow (container queries, not
-    // window size, because the side panels decide how wide this pane is).
-    <div className="@container relative flex min-h-0 min-w-0 flex-1 flex-col">
+    <div ref={paneRef} className="relative flex min-h-0 min-w-0 flex-1 flex-col">
       <BisectBar view={view} />
       <FilterBar view={view} />
       {compact && <CompactHeader look={look} clipped={log.maxWidth > COMPACT_LANES} />}
@@ -372,14 +382,14 @@ function CompactHeader({ look, clipped }: { look: RowLook; clipped: boolean }) {
   return (
     <div className="flex h-7 shrink-0 items-center border-b border-border bg-card text-2xs font-semibold tracking-wide whitespace-nowrap text-muted-foreground/70 uppercase"
       data-testid="graph-header">
-      <div style={{ width: REFS_W }} className="shrink-0 truncate px-3">Branch / Tag</div>
+      {look.cols.refsW > 0 && <div style={{ width: look.cols.refsW }} className="shrink-0 truncate px-3">Branch / Tag</div>}
       <div style={{ width: look.graphW }} className="shrink-0 truncate px-1" title={clipped ? 'Lanes past the eighth are not drawn' : undefined}>
         Graph{clipped && <span className="ml-1 font-normal normal-case">›</span>}
       </div>
       <div className="min-w-0 flex-1 truncate px-2">Commit message</div>
-      <div style={{ width: AUTHOR_W }} className={clsx('shrink-0 truncate px-2', COL_AUTHOR)}>Author</div>
-      <div style={{ width: look.dateW }} className={clsx('shrink-0 truncate px-2', COL_DATE)}>Date</div>
-      <div style={{ width: SHA_W }} className={clsx('shrink-0 truncate px-2', COL_SHA)}>SHA</div>
+      {look.cols.author && <div style={{ width: AUTHOR_W }} className="shrink-0 truncate px-2">Author</div>}
+      {look.cols.date && <div style={{ width: look.dateW }} className="shrink-0 truncate px-2">Date</div>}
+      {look.cols.sha && <div style={{ width: SHA_W }} className="shrink-0 truncate px-2">SHA</div>}
       {/* Lines up with the rows' right padding. */}
       <div className="w-3 shrink-0" />
     </div>
@@ -432,7 +442,7 @@ function WipRow({ style, view, cellW, look, selected, lane, color }: {
         data-selected={selected || undefined}
         className={clsx('flex items-center border-b border-border/40 text-sm', selected ? 'bg-select' : 'hover:bg-accent')}
       >
-        <div style={{ width: REFS_W }} className="shrink-0" />
+        {look.cols.refsW > 0 && <div style={{ width: look.cols.refsW }} className="shrink-0" />}
         <WipCell width={cellW} hasHead={!!view.snapshot.head.hash} h={look.rowH} lane={lane} color={color} variant="avatar" />
         <div className="flex min-w-0 flex-1 items-center gap-2 px-2 whitespace-nowrap text-muted-foreground italic">
           <span className="min-w-0 truncate">// WIP: {label.toLowerCase()}</span>
@@ -506,7 +516,7 @@ const CommitRow = memo(function CommitRow(props: {
   const lane = laneColor(row.color)
   const cellW = look.compact ? look.graphW : cellWidth(props.lineAbove === undefined ? row.width : 1)
   /** Compact rows: pills (or a stash or bisect mark) in the column on the left, joined to the node by a line. */
-  const labelled = look.compact && (head || pills.length > 0 || !!props.stash || !!props.bisect)
+  const labelled = look.compact && look.cols.refsW > 0 && (head || pills.length > 0 || !!props.stash || !!props.bisect)
 
   /**
    * Drag the commit (or the selection it is part of) somewhere: onto another row to move or squash
@@ -593,24 +603,34 @@ const CommitRow = memo(function CommitRow(props: {
       >
         {/* The branch and tag pills in a column of their own, left of the graph, with a line in
             the lane colour running from them to the node (GraphCell draws the rest of it). */}
-        <div style={{ width: REFS_W, ...(labelled && !props.selected ? { background: `color-mix(in srgb, ${lane} 9%, transparent)` } : {}) }}
-          className="flex h-full min-w-0 shrink-0 items-center gap-1 overflow-hidden pl-2" data-testid="refs-cell">
-          {marks(2)}
-          {labelled && <span className="h-0.5 min-w-2 flex-1" style={{ background: lane, opacity: 0.85 }} />}
-        </div>
+        {look.cols.refsW > 0 && (
+          <div style={{ width: look.cols.refsW, ...(labelled && !props.selected ? { background: `color-mix(in srgb, ${lane} 9%, transparent)` } : {}) }}
+            className="flex h-full min-w-0 shrink-0 items-center gap-1 overflow-hidden pl-2" data-testid="refs-cell">
+            {marks(2)}
+            {labelled && <span className="h-0.5 min-w-2 flex-1" style={{ background: lane, opacity: 0.85 }} />}
+          </div>
+        )}
         <GraphCell row={row} width={cellW} showPending={props.showPending} isHead={props.isHead} h={look.rowH} stash={!!commit.stash}
           author={people[0]} band refLine={labelled} lineAbove={props.lineAbove} lineAboveColor={props.lineAboveColor} lineBelow={props.lineBelow} />
-        {/* No avatar here: the graph node already is one. */}
+        {/* No avatar here: the graph node already is one. When the pane is too narrow for the
+            branch / tag column, the pills follow the message instead (lib/graphColumns.ts). */}
         <div className={clsx('flex min-w-0 flex-1 items-center gap-2 px-2', props.stash && 'text-muted-foreground italic')} data-testid="row-body">
-          <span className="min-w-0 flex-1 truncate" data-testid="row-subject">{subject}</span>
+          <span className="min-w-0 truncate" data-testid="row-subject">{subject}</span>
+          {look.cols.refsW === 0 && (
+            <span className="flex max-w-[50%] shrink-0 items-center gap-1 overflow-hidden not-italic" data-testid="refs-inline">{marks(2)}</span>
+          )}
         </div>
-        <div style={{ width: AUTHOR_W }} className={clsx('min-w-0 shrink-0 items-center px-2 text-xs text-muted-foreground', COL_AUTHOR)} data-testid="row-author" title={authorsTitle}>
-          <span className="truncate">{authors}</span>
-        </div>
-        <div style={{ width: look.dateW }} className={clsx('shrink-0 truncate px-2 text-xs text-muted-foreground tabular-nums', COL_DATE)} data-testid="row-date">
-          {formatDate(commit.authorDate, look.dateFormat)}
-        </div>
-        <div style={{ width: SHA_W }} className={clsx('shrink-0 px-2 font-mono text-xs text-muted-foreground/70', COL_SHA)} data-testid="row-sha">{shortHash(commit.hash)}</div>
+        {look.cols.author && (
+          <div style={{ width: AUTHOR_W }} className="flex min-w-0 shrink-0 items-center px-2 text-xs text-muted-foreground" data-testid="row-author" title={authorsTitle}>
+            <span className="truncate">{authors}</span>
+          </div>
+        )}
+        {look.cols.date && (
+          <div style={{ width: look.dateW }} className="shrink-0 truncate px-2 text-xs text-muted-foreground tabular-nums" data-testid="row-date">
+            {formatDate(commit.authorDate, look.dateFormat)}
+          </div>
+        )}
+        {look.cols.sha && <div style={{ width: SHA_W }} className="shrink-0 px-2 font-mono text-xs text-muted-foreground/70" data-testid="row-sha">{shortHash(commit.hash)}</div>}
         <div className="w-3 shrink-0" />
       </div>
     )

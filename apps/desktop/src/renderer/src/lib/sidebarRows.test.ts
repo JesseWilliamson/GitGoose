@@ -24,7 +24,7 @@ describe('sidebarRows', () => {
   it('lists the sections in order, branches as a folder tree, remotes and tags closed', () => {
     expect(rows()).toEqual([
       '# Workspace', '  @working-copy', '  @history', '  @stashes', '    (No stashes)', '  @reflog',
-      '# Pinned', '  (Drag a branch here to pin it)',
+      '# Pinned',
       '# Branches', '  feature/', '    login', '    search', '  main',
       '# Remotes', '  [origin]',
       '# Tags',
@@ -34,7 +34,7 @@ describe('sidebarRows', () => {
 
   it('opens what is open: a remote as a tree of its branches, tags newest first', () => {
     const open = new Set(['remote:origin', 'section:tags'])
-    expect(rows({ isOpen: (k) => open.has(k) || defaultOpen(k, 1) }).slice(13)).toEqual([
+    expect(rows({ isOpen: (k) => open.has(k) || defaultOpen(k, 1) }).slice(12)).toEqual([
       '# Remotes', '  [origin]', '    feature/', '      x', '    main',
       '# Tags', '  v3', '  v2', '  v1',
       '# Worktrees',
@@ -44,7 +44,7 @@ describe('sidebarRows', () => {
   it('a collapsed folder hides its branches; folders can be turned off', () => {
     expect(rows({ isOpen: (k) => k !== 'folder:branches:feature' && defaultOpen(k, 1) })).toContain('  feature/')
     expect(rows({ isOpen: (k) => k !== 'folder:branches:feature' && defaultOpen(k, 1) })).not.toContain('    login')
-    expect(rows({ folders: false }).slice(8, 12)).toEqual(['# Branches', '  feature/login', '  feature/search', '  main'])
+    expect(rows({ folders: false }).slice(7, 11)).toEqual(['# Branches', '  feature/login', '  feature/search', '  main'])
   })
 
   it('the filter flattens and narrows branches, remotes and tags, opening what it searches', () => {
@@ -61,8 +61,13 @@ describe('sidebarRows', () => {
     expect(rows({ pins: ['main', 'gone', 'feature/search'] }).slice(6, 9)).toEqual(['# Pinned', '  main', '  feature/search'])
   })
 
+  it('an empty Pinned section is only its header', () => {
+    expect(rows().slice(6, 8)).toEqual(['# Pinned', '# Branches'])
+    expect(rows({ pins: ['main'] }).slice(6, 9)).toEqual(['# Pinned', '  main', '# Branches'])
+  })
+
   it('a long tag list is shortened, newest first, with the rest one click away', () => {
-    expect(rows({ tagLimit: 2, isOpen: (k) => k === 'section:tags' || defaultOpen(k, 1) }).slice(15, 19)).toEqual(['# Tags', '  v3', '  v2', '  +1 older'])
+    expect(rows({ tagLimit: 2, isOpen: (k) => k === 'section:tags' || defaultOpen(k, 1) }).slice(14, 18)).toEqual(['# Tags', '  v3', '  v2', '  +1 older'])
     // The filter still searches every tag.
     expect(rows({ tagLimit: 2, filter: 'v1' })).toContain('  v1')
   })

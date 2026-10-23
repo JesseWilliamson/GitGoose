@@ -11,12 +11,20 @@ export const ROW_H = 52
 export const ROW_H_COMPACT = 32
 /** Lane spacing: wide enough for an avatar node with the lines either side. */
 export const LANE_W = 24
+/**
+ * Comfy rows draw small ring nodes, so lanes past the first few can sit closer: this many lanes
+ * at LANE_W, the rest at TIGHT_W. Most histories have four or fewer open lanes and look as they
+ * did; a busy one gains lanes without pushing the text across the window.
+ */
+export const WIDE_LANES = 4
+export const TIGHT_W = 16
 const PAD = 6
 /**
  * Lanes the comfy rows move aside for, at most. Real histories can have dozens open at once;
  * past this many the text stays put and the far nodes are left out of the row (see `offscreen`).
+ * Four at 24 px and four at 16 px is 166 px: the text starts at 166 px at the very most.
  */
-export const MAX_LANES = 12
+export const MAX_LANES = 8
 /** The content never starts closer than this many lanes in, so short rows line up with one another. */
 const MIN_LANES = 2
 /**
@@ -40,14 +48,19 @@ const BAND_INSET = 2
 const PENDING_DASH = '3 4'
 const STASH_DASH = '2 4'
 
-export const laneX = (lane: number) => PAD + lane * LANE_W + LANE_W / 2
+/** How wide lane `lane` is: LANE_W, or TIGHT_W past the first WIDE_LANES when `tight` (comfy rows). */
+const laneW = (lane: number, tight: boolean) => (tight && lane >= WIDE_LANES ? TIGHT_W : LANE_W)
+/** Where lane `lane` starts, from the left edge of the lanes (not counting PAD). */
+const laneLeft = (lane: number, tight: boolean) => (tight ? Math.min(lane, WIDE_LANES) * LANE_W + Math.max(0, lane - WIDE_LANES) * TIGHT_W : lane * LANE_W)
+/** The x of a lane's line and nodes. Lanes 0 to 3 are at the same x in both layouts. `tight`: comfy spacing. */
+export const laneX = (lane: number, tight = false) => PAD + laneLeft(lane, tight) + laneW(lane, tight) / 2
 
 /**
  * How wide the graph part of a comfy row is: just past the lanes it uses. The text of
  * a commit on a busy stretch of history starts further right than one on a quiet stretch, which
- * is what makes the shape of the history readable without a fixed column.
+ * is what makes the shape of the history readable without a fixed column. Never more than 166 px.
  */
-export const cellWidth = (lanes: number) => PAD + Math.min(MAX_LANES, Math.max(MIN_LANES, lanes)) * LANE_W
+export const cellWidth = (lanes: number) => PAD + laneLeft(Math.min(MAX_LANES, Math.max(MIN_LANES, lanes)), true)
 
 /**
  * The compact graph column: the same width on every row (the widest the history has been so far,
@@ -113,10 +126,13 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
   // A node whose lane is past the last lane the row makes room for is left out: pinning it at
   // the edge would put a dot on top of the last visible lane's line, reading as a commit on a
   // branch it has nothing to do with. The row still shows the lines that pass through it.
-  const lastX = width - (band ? STRIP_W : 0) - LANE_W / 2
+  // Comfy rows (ring nodes) space lanes tighter past the first few; compact rows (avatars) never do.
+  const tight = !author
   const lane = lineAbove === undefined ? row.lane : 0
-  const cx = laneX(lane)
-  const offscreen = cx > lastX
+  const cx = laneX(lane, tight)
+  const lastX = width - (band ? STRIP_W : 0) - laneW(lane, tight) / 2
+  // The node's whole lane has to fit in the width.
+  const offscreen = cx + laneW(lane, tight) / 2 > width - (band ? STRIP_W : 0) + 2
   const color = laneColor(row.color)
   const r = nodeRadius(author ? 'avatar' : 'ring')
   const clip = `clip-${row.hash}`
@@ -134,7 +150,7 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
         if (e.pending && !showPending) return null
         const dashed = e.pending ? PENDING_DASH : e.stash ? STASH_DASH : undefined
         return (
-          <path key={i} d={edgePath(e.part, laneX(e.from), laneX(e.to), h)} fill="none" stroke={laneColor(e.color)} strokeWidth={e.stash ? 2 : LINE_W}
+          <path key={i} d={edgePath(e.part, laneX(e.from, tight), laneX(e.to, tight), h)} fill="none" stroke={laneColor(e.color)} strokeWidth={e.stash ? 2 : LINE_W}
             strokeLinecap="round" strokeLinejoin="round" strokeDasharray={dashed} opacity={e.pending ? 0.7 : e.stash ? 0.8 : 1}
             data-edge={e.stash ? 'stash' : e.pending ? 'pending' : undefined} />
         )
@@ -222,7 +238,7 @@ function StashNode({ cx, cy, r, color }: { cx: number; cy: number; r: number; co
 export function WipCell({ width, hasHead, h = ROW_H, lane, color, variant = 'ring' }: {
   width: number; hasHead: boolean; h?: number; lane: number; color: number; variant?: NodeVariant
 }) {
-  const cx = laneX(lane)
+  const cx = laneX(lane, variant === 'ring')
   const stroke = laneColor(color)
   // A little bigger than a ring (the pencil needs the room), the same size as an avatar.
   const r = variant === 'avatar' ? nodeRadius('avatar') : nodeRadius('ring') + 2

@@ -71,6 +71,9 @@ export function startDrag(dt: DataTransfer, source: DragSource): void {
   dt.setData(mime, data)
   dt.effectAllowed = 'copyMove'
   current = source
+  // Listeners hear about it a moment later: the browser takes the drag image when this handler
+  // returns, and a re-render before then would put the dragged row in a different place.
+  setTimeout(emit, 0)
 }
 
 export function currentDrag(): DragSource | null {
@@ -79,7 +82,20 @@ export function currentDrag(): DragSource | null {
 
 export function endDrag(): void {
   current = null
+  emit()
 }
+
+const listeners = new Set<() => void>()
+function emit(): void {
+  for (const l of listeners) l()
+}
+/** For `useSyncExternalStore`: tells the UI when a drag starts or ends. */
+export function subscribeDrag(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => void listeners.delete(listener)
+}
+/** A local branch is being dragged (a snapshot for `useSyncExternalStore`). */
+export const isDraggingBranch = (): boolean => current?.kind === 'ref' && current.ref.kind === 'local'
 
 // ------------------------------------------------------------------ where it is dropped
 

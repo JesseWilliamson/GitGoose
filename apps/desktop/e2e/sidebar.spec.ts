@@ -70,6 +70,35 @@ test('sidebar sections; branches as a folder tree that remembers what is folded'
   await app.close()
 })
 
+test('one row anatomy: counts, dates and badges end at the same right edge in every section; the footer is one row', async () => {
+  const { r } = setup()
+  r.git('branch', '--merged', 'main')
+  const { app, page } = await launch(r.dir)
+  await expect(ref(page, 'refs/heads/main')).toBeVisible()
+  /** The right edge of the last piece of text in a row. */
+  const edge = (loc: ReturnType<typeof section>) => loc.first().evaluate((el) => {
+    const tail = [...el.querySelectorAll('span')].filter((s) => s.children.length === 0 && s.textContent?.trim()).at(-1)!
+    return Math.round(tail.getBoundingClientRect().right * 2) / 2
+  })
+  const edges = [
+    await edge(section(page, 'branches')),
+    await edge(folder(page, 'feature')),
+    await edge(page.getByTestId('stash-item')),
+    await edge(page.locator('[data-testid="workspace-item"][data-item="stashes"]')),
+    await edge(section(page, 'worktrees')),
+  ]
+  expect(new Set(edges).size, `right edges ${edges.join(', ')}`).toBe(1)
+  // An empty section draws no count.
+  await expect(section(page, 'pinned')).not.toContainText('0')
+  await expect(section(page, 'pinned')).toHaveText('Pinned')
+  // Filter, + and the gear share one row, each with a name for a tooltip and a screen reader.
+  const boxes = await Promise.all(['sidebar-filter', 'sidebar-add', 'sidebar-gear'].map(async (id) => (await page.getByTestId(id).boundingBox())!))
+  expect(new Set(boxes.map((b) => Math.round(b.y + b.height / 2))).size).toBe(1)
+  await expect(page.getByTestId('sidebar-add')).toHaveAttribute('title', /New/)
+  await expect(page.getByTestId('sidebar-gear')).toHaveAttribute('aria-label', 'Sidebar options')
+  await app.close()
+})
+
 test('the filter box flattens the tree while it has text, and the tree comes back as it was', async () => {
   const { r } = setup()
   const { app, page } = await launch(r.dir)

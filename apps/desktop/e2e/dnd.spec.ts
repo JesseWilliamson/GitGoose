@@ -127,6 +127,24 @@ test('branch onto section headers and folders: new branch, new tag, rename into 
   await undo(page)
   await expect(branch(page, 'pick')).toBeVisible()
 
+  // An empty Pinned section is only its header; "Drop to pin" shows in its header while one is dragged.
+  const pinHint = page.getByTestId('pin-hint')
+  await expect(pinHint).toHaveCount(0)
+  for (let attempt = 0; ; attempt++) {
+    await branch(page, 'topic').hover()
+    await page.mouse.down()
+    await page.mouse.move(600, 630, { steps: 6 })
+    try {
+      await expect(pinHint).toBeVisible({ timeout: 1500 })
+      break
+    } catch (e) {
+      await page.mouse.up()
+      if (attempt === 2) throw e
+    }
+  }
+  await page.mouse.up()
+  await expect(pinHint).toHaveCount(0)
+
   await drag(page, branch(page, 'topic'), header(page, 'pinned'), { badge: 'Pin topic' })
   await expect(page.locator('[data-testid="sidebar-ref"][data-section="pinned"] [data-testid="ref-label"]')).toHaveText(['topic'])
   // Already pinned: the header is no target for it now (no badge).

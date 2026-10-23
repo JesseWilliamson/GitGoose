@@ -23,7 +23,11 @@ export function StatusBar({ view }: { view: RepoView }) {
       <span className="flex-1" />
       <AiJobsChip />
       <span data-testid="commit-count">{log.commits.length.toLocaleString()}{log.done ? '' : '+'} {log.commits.length === 1 && log.done ? 'commit' : 'commits'}</span>
-      <span className="max-w-96 truncate" title={snap.path}>{snap.path}</span>
+      {/* Cut from the left: what tells two repositories apart is the end of the path (the folder),
+          not "/home/me/work/". direction: rtl makes the overflow clip at the start, and the inner
+          bdi keeps the path itself reading left to right (without it the rtl block would move the
+          leading "/" to the end). */}
+      <span className="max-w-96 min-w-0 truncate" style={{ direction: 'rtl' }} title={snap.path} data-testid="status-path"><bdi dir="ltr">{snap.path}</bdi></span>
     </div>
   )
 }

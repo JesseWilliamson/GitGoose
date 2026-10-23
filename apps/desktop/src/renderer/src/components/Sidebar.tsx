@@ -6,7 +6,7 @@ import {
   Laptop, ListTree, Pin, Plus, RefreshCw, Settings2, Tag,
 } from 'lucide-react'
 import { ContextMenu, DropdownMenu } from 'radix-ui'
-import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import {
   addRemote, addSubmodule, addWorktree, checkout, checkoutPull, deleteBranch, deleteRemoteBranch, deleteTag, hasGitHubRemote, hideInGraph, isStale, lfsPull,
   lfsSetUp, loadPulls, newBranch, newTag, pop, remoteNames, restoreGraphFilter, revealInHistory, showAllInGraph, showBranchHistory, showHistory, showInGraph,
@@ -15,7 +15,7 @@ import {
 import { relativeTime, stashLabel } from '../lib/format'
 import { refShown } from '../lib/graphFilter'
 import { shortcutOf } from '../lib/keys'
-import { startDrag, type DropTarget } from '../lib/dnd'
+import { isDraggingBranch, startDrag, subscribeDrag, type DropTarget } from '../lib/dnd'
 import { foldersOf } from '../lib/refTree'
 import {
   defaultOpen, focusable, folderKey, openKeyOf, parentIndex, refKey, rowHeight, sidebarRows, type RefSection, type SidebarRow, type WorkspaceItem,
@@ -219,13 +219,6 @@ export function Sidebar({ view }: { view: RepoView }) {
 
   return (
     <aside className="flex h-full min-h-0 w-full flex-col bg-card">
-      <div className="flex h-6 shrink-0 items-center gap-1.5 px-3 pt-1.5 text-xs text-muted-foreground" data-testid="sidebar-viewing">
-        <Eye size={12} className="shrink-0" />
-        <span className="min-w-0 flex-1 truncate">
-          {soloed.length ? `Viewing the history of ${soloed.join(', ')}` : `Viewing ${shown.toLocaleString()}/${branches.length.toLocaleString()}`}
-        </span>
-        {shown < branches.length && <button onClick={() => showAllInGraph(view.id)} className="shrink-0 font-medium text-primary hover:underline">Show all</button>}
-      </div>
       <ContextMenu.Root>
         <ContextMenu.Trigger asChild>
           <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto pt-1 pb-2 outline-none" data-testid="sidebar" tabIndex={0} onKeyDown={onKeyDown}>
@@ -242,20 +235,28 @@ export function Sidebar({ view }: { view: RepoView }) {
         </ContextMenu.Trigger>
         <GraphMenu repoId={view.id} />
       </ContextMenu.Root>
-      <div className="shrink-0 border-t border-border p-2">
+      {/* Only when the graph is not showing every branch (a branch hidden, or one soloed). At the
+          bottom, so it appears without moving the rows above it: the row you just hid stays under the pointer. */}
+      {(shown < branches.length || soloed.length > 0) && (
+        <div className="flex h-6 shrink-0 items-center gap-1.5 border-t border-border px-3 text-2xs text-muted-foreground" data-testid="sidebar-viewing">
+          <Eye size={12} className="shrink-0" />
+          <span className="min-w-0 flex-1 truncate">
+            {soloed.length ? `Viewing the history of ${soloed.join(', ')}` : `Viewing ${shown.toLocaleString()}/${branches.length.toLocaleString()}`}
+          </span>
+          <button onClick={() => showAllInGraph(view.id)} className="shrink-0 font-medium text-primary hover:underline">Show all</button>
+        </div>
+      )}
+      <div className="flex shrink-0 items-center gap-1 border-t border-border p-2">
         <input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Escape' && filter) { e.preventDefault(); setFilter('') } }}
-          placeholder="Filter branches and tags"
+          placeholder="Filter…" title="Filter branches and tags" aria-label="Filter branches and tags"
           data-testid="sidebar-filter"
-          className="h-input w-full rounded-md border border-border bg-background px-2 text-xs outline-none focus:border-primary"
+          className="h-input min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-xs outline-none focus:border-primary"
         />
-        <div className="mt-1.5 flex items-center gap-1">
-          <AddMenu view={view} />
-          <span className="flex-1" />
-          <GearMenu path={snap.path} />
-        </div>
+        <AddMenu view={view} />
+        <GearMenu path={snap.path} />
       </div>
     </aside>
   )
@@ -320,17 +321,19 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
       return (
         <div style={style} data-testid="sidebar-section" data-section={row.section} data-name={row.title}
           data-drop-target={SECTION_TARGETS.has(row.section) ? drop({ kind: 'section', section: row.section as 'branches' }) : undefined}
-          className={clsx('flex items-center pr-2', cursor && 'bg-select')}
+          className={clsx('group relative flex items-center', cursor && 'bg-select')}
           onContextMenu={menu ? () => useStore.setState({ menu: { kind: 'section', section: menu } }) : noMenu}>
           <button onClick={() => { onCursor(row.key); onToggle(row.key) }} style={{ paddingLeft: 8 }}
-            className="flex h-full min-w-0 flex-1 items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground">
+            className="flex h-full min-w-0 flex-1 items-center gap-1.5 pr-3 text-xs font-semibold text-muted-foreground hover:text-foreground">
             {row.open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
             {ICONS[row.section]}
             <span className="flex-1 truncate text-left">{row.title}</span>
-            {row.section !== 'workspace' && <span className="text-2xs font-normal text-muted-foreground/70">{row.count}</span>}
+            {/* An empty section shows no count: "0" is chrome, not information. */}
+            {row.section === 'pinned' && row.count === 0 ? <PinHint /> : row.section !== 'workspace' && row.count > 0 && <Meta>{row.count}</Meta>}
           </button>
-          {row.section === 'remotes' && <SmallButton label="Add remote" onClick={() => addRemote(id)}><Plus size={13} /></SmallButton>}
-          {row.section === 'worktrees' && <SmallButton label="Add worktree" onClick={() => addWorktree(id)}><Plus size={13} /></SmallButton>}
+          {/* Shown on hover, left of the count: the count keeps the column every row ends in. */}
+          {row.section === 'remotes' && <SmallButton label="Add remote" className="absolute top-1/2 right-9 -translate-y-1/2 opacity-0 group-hover:opacity-100 focus-visible:opacity-100" onClick={() => addRemote(id)}><Plus size={13} /></SmallButton>}
+          {row.section === 'worktrees' && <SmallButton label="Add worktree" className="absolute top-1/2 right-9 -translate-y-1/2 opacity-0 group-hover:opacity-100 focus-visible:opacity-100" onClick={() => addWorktree(id)}><Plus size={13} /></SmallButton>}
         </div>
       )
     }
@@ -350,8 +353,8 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
           {row.open !== undefined ? (row.open ? <ChevronDown size={12} className="-ml-3.5 shrink-0" /> : <ChevronRight size={12} className="-ml-3.5 shrink-0" />) : null}
           <span className="shrink-0">{w.icon}</span>
           <span className="min-w-0 flex-1 truncate">{w.label}</span>
-          {row.item === 'working-copy' && changes > 0 && <span className="text-2xs text-muted-foreground/70">{changes}</span>}
-          {row.item === 'stashes' && prefs?.stashCount !== false && <span className="text-2xs text-muted-foreground/70" data-testid="stash-count">{row.count}</span>}
+          {row.item === 'working-copy' && changes > 0 && <Meta>{changes}</Meta>}
+          {row.item === 'stashes' && prefs?.stashCount !== false && <Meta testId="stash-count">{row.count}</Meta>}
           {row.item === 'pulls' && (
             <SmallButton label="Refresh pull requests" title="Refresh pull requests (asks GitHub)" onClick={(e) => { e.stopPropagation(); void loadPulls(id) }}>
               <RefreshCw size={11} className={view.pullsLoading ? 'animate-spin' : ''} />
@@ -371,7 +374,7 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
           {row.open ? <ChevronDown size={12} className="shrink-0" /> : <ChevronRight size={12} className="shrink-0" />}
           <Folder size={12} className="shrink-0" />
           <span className="min-w-0 flex-1 truncate">{row.name}</span>
-          <span className="text-2xs text-muted-foreground/70">{row.count}</span>
+          <Meta>{row.count}</Meta>
         </div>
       )
     case 'remote': {
@@ -384,7 +387,7 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
             {row.open ? <ChevronDown size={12} className="shrink-0" /> : <ChevronRight size={12} className="shrink-0" />}
             <Cloud size={12} className="shrink-0" />
             <span className={clsx('min-w-0 flex-1 truncate text-left', hidden && 'text-muted-foreground/70 line-through')}>{row.remote}</span>
-            <span className="text-2xs font-normal text-muted-foreground/70">{row.count}</span>
+            <Meta>{row.count}</Meta>
           </button>
         </div>
       )
@@ -403,7 +406,7 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
           title={`${s.message}\n${relativeTime(s.date)}\nClick to see its changes, double-click to pop`}
           className={clsx(base, (selected || cursor) && 'bg-select')}>
           <span className="min-w-0 flex-1 truncate">{stashLabel(s.message)}</span>
-          <span className="text-2xs text-muted-foreground/70">{relativeTime(s.date)}</span>
+          <Meta>{relativeTime(s.date)}</Meta>
         </div>
       )
     }
@@ -416,7 +419,7 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
           onContextMenu={() => useStore.setState({ menu: { kind: 'pull', number: p.number } })}
           title={`#${p.number} ${p.title}\n${p.author} wants to merge ${p.branch} into ${p.base}\nDouble-click to check it out`}
           className={base}>
-          <span className="shrink-0 text-2xs text-muted-foreground/70">#{p.number}</span>
+          <Meta>#{p.number}</Meta>
           <span className="min-w-0 flex-1 truncate">{p.title}</span>
           {p.draft && <Badge>draft</Badge>}
           {p.fromFork && <Badge title="From a fork">fork</Badge>}
@@ -439,7 +442,7 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
           className={clsx(base, w.current && 'font-semibold')}>
           {w.current && <span className="-ml-4 w-3 text-2xs text-primary">✓</span>}
           <span className="min-w-0 flex-1 truncate">{w.branch ?? `detached at ${w.head?.slice(0, 7) ?? '?'}`}</span>
-          <span className="max-w-24 truncate text-2xs text-muted-foreground/70">{folder}</span>
+          <Meta className="max-w-24 truncate">{folder}</Meta>
           {w.locked !== undefined && <Badge title={w.locked || undefined}>locked</Badge>}
           {w.prunable && <Badge title={w.prunable}>missing</Badge>}
         </div>
@@ -517,14 +520,16 @@ function RefRow({ row, style, cursor, look, onClick, onDoubleClick }: {
   const soloed = filter.solo.includes(r.name)
   /** Out of the graph: hidden, or not among the soloed refs. HEAD's branch always shows. */
   const out = !head && r.kind !== 'tag' && !refShown(r, filter, look.headBranch)
+  /** The eye that hides a branch in the graph (HEAD's branch and tags cannot be hidden). */
+  const canToggle = !head && r.kind !== 'tag'
   const pr = r.kind === 'local' ? look.prs.get(r.shortName) : undefined
   const fetched = look.lastFetched ? `, last fetched ${relativeTime(look.lastFetched)}` : ''
   const tracking = r.upstream ? `Tracks ${r.upstream.replace(/^refs\/remotes\//, '')}${fetched}` : ''
   // Badge order: ↑n ↓n, gone, merged, stale, worktree, #PR, local only.
   const badges: ReactNode[] = []
-  if ((r.ahead ?? 0) > 0) badges.push(<span key="ahead" className="text-2xs text-add" title={`${r.ahead} to push. ${tracking}`}>↑{r.ahead}</span>)
-  if ((r.behind ?? 0) > 0) badges.push(<span key="behind" className="text-2xs text-warn" title={`${r.behind} to pull. ${tracking}`}>↓{r.behind}</span>)
-  if (r.upstreamGone) badges.push(<span key="gone" className="text-2xs text-muted-foreground/70" title="Upstream deleted on the remote">gone</span>)
+  if ((r.ahead ?? 0) > 0) badges.push(<span key="ahead" className="text-2xs text-add tabular-nums" title={`${r.ahead} to push. ${tracking}`}>↑{r.ahead}</span>)
+  if ((r.behind ?? 0) > 0) badges.push(<span key="behind" className="text-2xs text-warn tabular-nums" title={`${r.behind} to pull. ${tracking}`}>↓{r.behind}</span>)
+  if (r.upstreamGone) badges.push(<Badge key="gone" title="Upstream deleted on the remote">gone</Badge>)
   if (r.kind === 'local' && !head) {
     if (look.merged.has(r.shortName)) badges.push(<Badge key="merged" title={`Already in ${look.headBranch ?? 'HEAD'}: safe to delete`}>merged</Badge>)
     if (look.stale && isStale(r)) badges.push(<Badge key="stale" title="No commits for 90 days">stale</Badge>)
@@ -551,35 +556,62 @@ function RefRow({ row, style, cursor, look, onClick, onDoubleClick }: {
     >
       {head && <span className="-ml-4 w-3 text-2xs text-primary">✓</span>}
       <span className={clsx('min-w-[4.5rem] flex-1 truncate', out && 'text-muted-foreground/70 line-through decoration-muted-foreground/50')} data-testid="ref-label">{row.label}</span>
-      {/* Badges give way before the branch name does: the name is what you are looking for. They
-          wrap onto a second line that is cut off, so a badge that does not fit disappears whole
-          instead of showing as "sta". */}
-      {badges.length > 0 && <span className="flex h-4 min-w-0 shrink flex-wrap items-center justify-end gap-x-1 overflow-hidden">{badges}</span>}
-      {soloed && <span title="Showing its history: the graph shows only the branches you picked"><Focus size={12} className="text-primary" /></span>}
-      {!head && r.kind !== 'tag' && (
-        <button
-          onClick={(e) => { e.stopPropagation(); if (filter.hidden.includes(r.name)) showInGraph(look.repoId, r.name); else hideInGraph(look.repoId, r.name) }}
-          onDoubleClick={(e) => e.stopPropagation()}
-          title={hidden ? 'Show in the graph' : 'Hide in the graph'} aria-label={hidden ? 'Show in the graph' : 'Hide in the graph'} data-testid="toggle-hidden"
-          className={clsx('rounded p-0.5 text-muted-foreground/70 hover:text-foreground', hidden ? '' : 'opacity-0 group-hover:opacity-100')}>
-          {hidden ? <EyeOff size={12} /> : <Eye size={12} />}
-        </button>
-      )}
+      {/* The right column, the same one every row ends in: badges give way before the branch
+          name does (they wrap onto a second line that is cut off, so a badge that does not fit
+          disappears whole instead of showing as "sta"). On hover the eye takes their place. */}
+      <span className="relative flex h-4 min-w-0 shrink items-center justify-end gap-1 bg-inherit">
+        {soloed && <span title="Showing its history: the graph shows only the branches you picked"><Focus size={12} className="text-primary" /></span>}
+        {badges.length > 0 && (
+          <span className={clsx('flex h-4 min-w-0 shrink flex-wrap items-center justify-end gap-x-1 overflow-hidden', canToggle && (hidden ? 'invisible' : 'group-hover:invisible'))}>{badges}</span>
+        )}
+        {canToggle && (
+          <button
+            onClick={(e) => { e.stopPropagation(); if (filter.hidden.includes(r.name)) showInGraph(look.repoId, r.name); else hideInGraph(look.repoId, r.name) }}
+            onDoubleClick={(e) => e.stopPropagation()}
+            title={hidden ? 'Show in the graph' : 'Hide in the graph'} aria-label={hidden ? 'Show in the graph' : 'Hide in the graph'} data-testid="toggle-hidden"
+            className={clsx('absolute inset-y-0 right-0 flex items-center rounded px-0.5 text-muted-foreground hover:text-foreground', hidden ? 'bg-inherit' : 'bg-inherit opacity-0 group-hover:opacity-100 focus-visible:opacity-100')}>
+            {hidden ? <EyeOff size={12} /> : <Eye size={12} />}
+          </button>
+        )}
+      </span>
     </div>
   )
 }
 
-function SmallButton({ label, title, onClick, children }: { label: string; title?: string; onClick: (e: React.MouseEvent) => void; children: ReactNode }) {
+function SmallButton({ label, title, className, onClick, children }: { label: string; title?: string; className?: string; onClick: (e: React.MouseEvent) => void; children: ReactNode }) {
   return (
-    <button title={title ?? label} aria-label={label} onClick={onClick} onDoubleClick={(e) => e.stopPropagation()} className="ml-1 rounded p-0.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground">
+    <button title={title ?? label} aria-label={label} onClick={onClick} onDoubleClick={(e) => e.stopPropagation()}
+      className={clsx('ml-1 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground', className)}>
       {children}
     </button>
   )
 }
 
-function Badge({ title, children }: { title?: string; children: ReactNode }) {
-  return <span title={title} className="rounded bg-accent px-1 text-2xs text-muted-foreground/70">{children}</span>
+/**
+ * An empty Pinned section is just its header. While a branch is dragged, the header says it takes
+ * it: in its own row, so nothing below moves (a drop target that shifts under the pointer is one
+ * you miss).
+ */
+function PinHint() {
+  const dragging = useSyncExternalStore(subscribeDrag, isDraggingBranch)
+  return dragging ? <span className="shrink-0 text-2xs font-normal text-primary" data-testid="pin-hint">Drop to pin</span> : null
 }
+
+/**
+ * What a row says about itself, at its right edge: a count, a date, the folder of a worktree.
+ * One size and one grey everywhere, so the eye can run down the right edge of the sidebar.
+ */
+function Meta({ children, className, testId }: { children: ReactNode; className?: string; testId?: string }) {
+  return <span className={clsx('shrink-0 text-2xs font-normal text-muted-foreground tabular-nums', className)} data-testid={testId}>{children}</span>
+}
+
+/** A state of a row (merged, stale, a pull request, locked...): the one pill every section uses. */
+function Badge({ title, children }: { title?: string; children: ReactNode }) {
+  return <span title={title} className="rounded bg-accent px-1 text-2xs text-muted-foreground">{children}</span>
+}
+
+/** The icon buttons beside the filter box: square, quiet, the same height as the box. */
+const FOOTER_BUTTON = 'flex size-input shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground'
 
 /** The + below the sidebar: everything new that the sidebar lists. */
 function AddMenu({ view }: { view: RepoView }) {
@@ -588,7 +620,7 @@ function AddMenu({ view }: { view: RepoView }) {
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
-        <button aria-label="New…" title="Create a branch, tag, remote, submodule or worktree" data-testid="sidebar-add" className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
+        <button aria-label="New…" title="New: branch, tag, remote, submodule or worktree" data-testid="sidebar-add" className={FOOTER_BUTTON}>
           <Plus size={14} />
         </button>
       </DropdownMenu.Trigger>
@@ -612,7 +644,7 @@ function GearMenu({ path }: { path: string }) {
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
-        <button aria-label="Sidebar options" title="Sidebar options" data-testid="sidebar-gear" className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
+        <button aria-label="Sidebar options" title="Sidebar options" data-testid="sidebar-gear" className={FOOTER_BUTTON}>
           <Settings2 size={14} />
         </button>
       </DropdownMenu.Trigger>
