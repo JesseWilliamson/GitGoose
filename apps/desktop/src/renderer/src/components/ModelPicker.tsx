@@ -6,6 +6,7 @@ import clsx from 'clsx'
 import { useEffect, useRef, useState } from 'react'
 import { setAreaTarget } from '../lib/ai'
 import { api, toUiError } from '../lib/api'
+import { OptionSelect, type SelectOption } from './ui/select'
 import { reportError, saveSettings, setSettingEntry, useStore } from '../lib/store'
 
 /**
@@ -64,31 +65,35 @@ export function ModelPicker({ area, defaults, className, onPicked, agentsOnly }:
   const defaultName = blankId ? offered.find((m) => m.id === blankId)?.name ?? blankId : null
   // Settings → AI's default for the API is a model, not "whatever": no blank entry there.
   const blank = !(defaults && target.provider === 'anthropic')
-  const select = 'h-6 max-w-44 truncate rounded-md border border-line bg-bg px-1.5 text-xs text-fg outline-none focus:border-accent disabled:opacity-50'
+  const select = 'h-6 max-w-44 px-1.5 text-xs'
+
+  const whoOptions: SelectOption[] = [
+    { value: 'default', label: `Default (${targetLabel({ ...base, model: undefined })})` },
+    ...(Object.keys(AGENT_PRESETS) as Exclude<AgentPreset, 'custom'>[]).map((p) => ({ value: `agent:${p}`, label: AGENT_PRESETS[p].label })),
+    ...(settings.aiAgentCommand.trim() ? [{ value: 'agent:custom', label: agentLabel('custom', settings.aiAgentCommand) }] : []),
+    ...(!agentsOnly && (hasKey || picked?.provider === 'anthropic') ? [{ value: 'anthropic', label: 'Anthropic API' }] : []),
+  ]
+  const modelOptions: SelectOption[] = [
+    list.list?.fixed ? { value: '', label: 'Chosen by the agent' } : blank ? { value: '', label: defaultName ? `Default (${defaultName})` : 'Default model' } : null,
+    ...models.map((m) => ({ value: m.id, label: m.name, title: m.description })),
+    !list.list?.known ? { value: LOAD, label: list.loading ? 'Loading…' : 'Load models…' } : null,
+  ].filter((o): o is SelectOption => o !== null)
 
   return (
     <span className={clsx('inline-flex items-center gap-1', className)} data-testid={area ? `model-picker-${area}` : 'model-picker-default'}>
       {area && (
-        <select value={who} onChange={(e) => setWho(e.target.value)} className={select} aria-label="Who answers" data-testid="model-picker-who">
-          <option value="default">Default ({targetLabel({ ...base, model: undefined })})</option>
-          {(Object.keys(AGENT_PRESETS) as Exclude<AgentPreset, 'custom'>[]).map((p) => <option key={p} value={`agent:${p}`}>{AGENT_PRESETS[p].label}</option>)}
-          {settings.aiAgentCommand.trim() && <option value="agent:custom">{agentLabel('custom', settings.aiAgentCommand)}</option>}
-          {!agentsOnly && (hasKey || picked?.provider === 'anthropic') && <option value="anthropic">Anthropic API</option>}
-        </select>
+        <OptionSelect value={who} onChange={setWho} options={whoOptions} className={select} aria-label="Who answers" data-testid="model-picker-who" />
       )}
-      <select
+      <OptionSelect
         value={target.model ?? ''}
+        options={modelOptions}
         disabled={list.loading || (list.list?.fixed && !target.model)}
-        onChange={(e) => (e.target.value === LOAD ? void list.load() : setModel(e.target.value))}
+        onChange={(v) => (v === LOAD ? void list.load() : setModel(v))}
         className={select}
         aria-label="Model"
         title={list.error ?? undefined}
         data-testid="model-picker-model"
-      >
-        {list.list?.fixed ? <option value="">Chosen by the agent</option> : blank && <option value="">{defaultName ? `Default (${defaultName})` : 'Default model'}</option>}
-        {models.map((m) => <option key={m.id} value={m.id} title={m.description}>{m.name}</option>)}
-        {!list.list?.known && <option value={LOAD}>{list.loading ? 'Loading…' : 'Load models…'}</option>}
-      </select>
+      />
     </span>
   )
 }
