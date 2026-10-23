@@ -33,3 +33,20 @@ export async function anthropicChat(o: ChatOptions): Promise<string> {
   const message = await stream.finalMessage()
   return message.content.map((b) => (b.type === 'text' ? b.text : '')).join('')
 }
+
+/**
+ * The models this key can use (GET /v1/models), newest first as the API returns them. Only
+ * called when the user opens a model picker for the API: it sends nothing but the key.
+ */
+export async function anthropicModels(o: { apiKey: string; baseURL?: string; fetch?: typeof fetch; signal?: AbortSignal }): Promise<{ id: string; name: string }[]> {
+  // Loaded on first use, like anthropicChat: not on the startup path.
+  const { default: Anthropic } = await import('@anthropic-ai/sdk')
+  const client = new Anthropic({ apiKey: o.apiKey, baseURL: o.baseURL, maxRetries: 1, fetch: o.fetch })
+  const out: { id: string; name: string }[] = []
+  // The list pages itself; 100 is far more than one key has today, so this stops at the first page or two.
+  for await (const m of client.models.list({ limit: 100 }, { signal: o.signal })) {
+    out.push({ id: m.id, name: m.display_name || m.id })
+    if (out.length >= 200) break
+  }
+  return out
+}

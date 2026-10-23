@@ -6,7 +6,7 @@ prompts.ts, anthropic.ts, keyStore.ts), `packages/shared/src/ai.ts` and `thread.
 `components/AiDialogs.tsx`, `components/AiPanel.tsx`, `components/AiChatPanel.tsx`. Tests:
 `main/ai/*.test.ts`, `shared/src/thread.test.ts`, `renderer/src/lib/markdown.test.ts`,
 `e2e/ai.spec.ts` and `e2e/thread.spec.ts`, against `e2e/fake-agent.mjs` (a real ACP agent over
-stdio, scripted) and `fakeAnthropic`. No test talks to a real agent or API.
+stdio, scripted; `FAKE_AGENT_MODELS=1` gives it a model option) and `fakeAnthropic`. No test talks to a real agent or API.
 
 ## Settings → AI
 
@@ -17,6 +17,45 @@ stdio, scripted) and `fakeAnthropic`. No test talks to a real agent or API.
 - API key: stored with safeStorage (memory only without a keychain), model setting
   (`claude-opus-5-5` by default), *Longest answer* (`max_tokens`, 8192 by default). Text
   features only: no tools, so a thread in this mode never shows tool cards.
+- *Default model*: the model picker for the configured provider. For an agent it is that agent's
+  default (blank: the agent's own); for the API key, the `anthropicModel` setting.
+
+## Choosing who answers, per area
+
+Every AI area has the same picker (`components/ModelPicker.tsx`): *who* (Default, any agent
+preset, the custom command if set, the Anthropic API if a key is saved) and *model*. Settings →
+AI only sets the default. An area's pick is remembered for that area alone (settings
+`aiAreaTargets`: commit, explain, review, walkthrough, impact, recompose, ask, chat, conflict,
+push-checks, error); Default follows Settings. Thread views show it under the turns, so one
+placement covers every chat (Recompose, Review, Walkthrough, Impact, Explain, Ask, AI panel);
+Recompose also shows it while the plan is being asked for, and a new pick there restarts the
+request on it.
+
+A request carries its `AiTarget` (`{ provider, agent?, agentCommand?, model? }`); main fills the
+blanks from settings. `targetKey` (`agent:<command line>` or `anthropic`) names the process: it is
+what consent is given to (a model change asks nothing new; another agent does), what cached model
+lists are kept under, and which process a session lives in.
+
+- **Models come from the agent.** ACP has no model list outside a session: models are the
+  session config option with category `model` in `session/new`'s `configOptions` (flat or
+  grouped; we flatten), changed with `session/set_config_option` and by the agent itself
+  (`config_option_update`). Main keeps each agent's last list (settings `aiAgentModels`) so a
+  picker can show it without starting anything; with none yet, *Load models…* starts the agent
+  and opens and closes one session (the user clicked, as with Test). An agent with no model
+  option shows "Chosen by the agent".
+- **The API's list** is `GET /v1/models`, fetched only when the user picks *Load models…* (it
+  sends the key and nothing else), and kept while the app runs.
+- **The model is set before the turn.** After opening or loading a session, main switches it to
+  the target's model; a model the agent does not offer fails the send with `ai-model` before the
+  turn starts. Blank after an earlier pick goes back to the agent's own default.
+- **A thread can switch.** A thread records its target (`AiThread.target`, sent as `meta`). The
+  same agent with another model keeps the session and switches it in place. Another agent, or
+  the API, closes the session and opens one there that is told the conversation so far, exactly
+  as after a restart without `session/load` (from the API, its separate system prompt goes in
+  front). A send with no pick continues with whoever the thread was last with. Each agent turn
+  records who answered (`AiTurn.by`, e.g. "Codex · GPT-5"); the thread shows it where it changes.
+- **One process per agent.** Main keeps an `AcpAgent` per command line. One with sessions, the
+  default, or any area's pick is kept; others are stopped when settings change.
 
 ## Features
 
@@ -41,6 +80,38 @@ on the chip); Stop and Discard are the explicit ways to throw one away. A commit
 belongs to the commit, not to the panel showing it (`lib/explain.ts`): selecting another commit
 and coming back, or restarting, shows it again from the kept `explain` thread. The commit
 message and push checks are short inline waits and are not jobs.
+
+## The prompts, shown and editable
+
+The words of every prompt are data (`packages/shared/src/prompts.ts`, `DEFAULT_PROMPTS`), one
+per AI task plus `chat` (the AI panel's opening). A prompt is four parts, sent in this order:
+
+| part | editable | what |
+|---|---|---|
+| system | yes | who the model is (the API takes it separately; an agent gets it on top) |
+| instructions | yes | what to do and how to say it; a template: `{label}`, `{commits}`, `{profile}` are filled per request, unknown names stay as typed |
+| answer format | **no** | the JSON shape or "the message only": the checker that reads the answer (verifyFindings, repairPlan, …) depends on these exact words, so they are shown with a lock and never come from the user (`PromptText` has no field for them) |
+| context | no | the diff, commits, code around the change: built fresh for each request |
+
+- **Where the words come from**, part by part (a blank part falls through): the area's edit
+  (settings `aiPromptEdits`, made in its Prompt panel), else Settings → AI → Prompts
+  (`aiPrompts`), else the built-in words. `effectivePrompt` decides, in shared, so the panel
+  and main agree.
+- **The Prompt panel** (`components/PromptPanel.tsx`) is a button beside every model picker. It
+  shows the system prompt and instructions (editable, remembered for that area, *Reset*), the
+  locked answer format, and the context from `aiPromptPreview`: main runs the same builder as
+  a real request with the words being edited, read-only git only, sending nothing. The one
+  difference: a review's linters run programs, so they run only when the review is sent (the
+  panel says so). Areas with no request to preview (chats, push checks, error explanations)
+  show the words; the context is built when sent.
+- **What you see is what goes.** `startAi` sends the area's words with the request
+  (`AiRunOptions.prompt`).
+- **Chats show what was sent.** Each user turn keeps exactly what went out when that is more
+  than what was typed (`AiTurn.sent`: the opening with its context, a replay, a feature's
+  request; for the API the first turn shows its separate system prompt first). The thread
+  shows it under *Sent*. Saved threads keep 20k characters of it.
+- The built-in instructions keep their first lines word for word: the fake agent tells
+  requests apart by them.
 
 ## Rules main enforces
 

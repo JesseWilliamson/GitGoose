@@ -3,10 +3,11 @@ import type {
   ReflogEntry, Remote, SearchField, Submodule, Worktree, StashEntry, UndoEntry,
 } from './index'
 import type {
-  AgentInfo, AiArtifactResult, AiPermissionRequest, AiResult, AiRunOptions, AiStatus, AiTask, AiThread, AiUpdate, ArtifactKind, AskThread, ImpactResult, LinterInfo, PermissionAnswer, PushCheck, PushCheckPlan,
+  AgentInfo, AiArtifactResult, AiModelList, PromptPreview, AiPermissionRequest, AiResult, AiRunOptions, AiStatus, AiTarget, AiTask, AiThread, AiUpdate, ArtifactKind, AskThread, ImpactResult, LinterInfo, PermissionAnswer, PushCheck, PushCheckPlan,
   ReviewLearning, ReviewScope, ThreadAnchor,
 } from './ai'
 import type { PullRequestList } from './github'
+import type { PromptText } from './prompts'
 import type { Settings } from './settings'
 
 export interface LogPage {
@@ -102,9 +103,23 @@ export interface GitGooseApi {
   openPullRequest(url: string): Promise<void>
 
   // AI (see apps/desktop/src/main/ai/)
-  aiStatus(): Promise<AiStatus>
-  /** The user agreed to send content to the configured provider (asked once per provider/agent). */
-  aiConsent(): Promise<AiStatus>
+  /** Status of a target (omitted: Settings → AI). */
+  aiStatus(target?: AiTarget): Promise<AiStatus>
+  /** The user agreed to send content to this target's provider (asked once per provider/agent; omitted: Settings → AI). */
+  aiConsent(target?: AiTarget): Promise<AiStatus>
+  /**
+   * The models a target can use, without starting anything: for an agent the list from its last
+   * session (known: false if there was none yet); for the API key, the API's model list.
+   */
+  aiModels(target: AiTarget): Promise<AiModelList>
+  /** The user asked for an agent's models: start it, open a session to read them, close it. */
+  aiLoadModels(target: AiTarget): Promise<AiModelList>
+  /**
+   * What `task` would send, without sending it: the prompt's parts with the context built from
+   * the repository now (read-only git; linters are not run, they run when the review is sent).
+   * `prompt` previews unsaved words.
+   */
+  aiPromptPreview(repoId: string, task: AiTask, prompt?: PromptText): Promise<PromptPreview>
   /**
    * Run a task: a thread whose first message is the task's prompt, closed when the answer is in
    * (or, with opts.keepThread, kept for the view to chat on: AiResult.threadId). Text streams as
@@ -132,10 +147,10 @@ export interface GitGooseApi {
   openExternal(url: string): Promise<void>
   aiCancel(requestId: string): Promise<void>
   aiRespondPermission(permissionId: number, optionId: string | null): Promise<void>
-  /** Start the agent (if needed) and say who it is and how it logs in. */
-  aiAgentInfo(): Promise<AgentInfo>
+  /** Start the agent (if needed) and say who it is and how it logs in (omitted: Settings → AI's agent). */
+  aiAgentInfo(target?: AiTarget): Promise<AgentInfo>
   /** Log in with a method the agent handles itself. */
-  aiAuthenticate(methodId: string): Promise<void>
+  aiAuthenticate(methodId: string, target?: AiTarget): Promise<void>
   aiSetApiKey(key: string | null): Promise<AiStatus>
   openPath(path: string): Promise<void>
   /** Open a file in the configured external editor (Settings → Integrations), at a line if given. */
@@ -370,7 +385,7 @@ export const API_METHODS = [
   'getSettings', 'setSettings', 'pickDirectory', 'openRepo', 'closeRepo', 'initRepo', 'cloneRepo',
   'respondPrompt', 'openPath', 'openInEditor', 'openTerminal', 'revealPath', 'logError',
   'pullRequests', 'createPullRequest', 'checkoutPullRequest', 'openPullRequest',
-  'aiStatus', 'aiConsent', 'aiRun', 'aiCancel', 'aiRespondPermission', 'aiAgentInfo', 'aiAuthenticate', 'aiSetApiKey',
+  'aiStatus', 'aiConsent', 'aiModels', 'aiLoadModels', 'aiPromptPreview', 'aiRun', 'aiCancel', 'aiRespondPermission', 'aiAgentInfo', 'aiAuthenticate', 'aiSetApiKey',
   'aiThreadOpen', 'aiThreadSend', 'aiThreadCancel', 'aiThreadClose', 'aiThreads', 'aiThreadDelete', 'aiThreadPermission', 'aiThreadArtifact', 'openExternal',
   'snapshot', 'logPage', 'commitDetails', 'diff', 'fileHistory', 'blame', 'search', 'searchCommits', 'listFiles', 'stashList', 'reflog', 'setGraphFilter', 'submodules', 'updateSubmodules', 'syncSubmodules', 'addSubmodule', 'removeSubmodule', 'worktrees', 'addWorktree', 'removeWorktree', 'lockWorktree', 'pruneWorktrees',
   'lastCommitMessage',

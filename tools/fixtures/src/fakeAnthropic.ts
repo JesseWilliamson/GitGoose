@@ -13,11 +13,23 @@ export interface FakeAnthropic {
   close(): Promise<void>
 }
 
+/** What GET /v1/models lists. */
+export const FAKE_MODELS = [{ id: 'claude-opus-5-5', name: 'Claude Opus 5.5' }, { id: 'claude-haiku-5-5', name: 'Claude Haiku 5.5' }]
+
 export async function fakeAnthropic(reply: string[] = ['Fix: ', 'retry the push.'], status = 200): Promise<FakeAnthropic> {
   const requests: FakeAnthropic['requests'] = []
   const server = createServer(async (req, res) => {
     let raw = ''
     for await (const c of req) raw += c
+    // The model list (GET /v1/models), one page, shaped like the real API's.
+    if (req.method === 'GET' && req.url?.startsWith('/v1/models')) {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({
+        data: FAKE_MODELS.map((m) => ({ type: 'model', id: m.id, display_name: m.name, created_at: '2026-01-01T00:00:00Z' })),
+        has_more: false, first_id: FAKE_MODELS[0]!.id, last_id: FAKE_MODELS.at(-1)!.id,
+      }))
+      return
+    }
     if (req.method !== 'POST' || !req.url?.startsWith('/v1/messages')) {
       res.writeHead(404).end()
       return

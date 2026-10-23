@@ -12,6 +12,8 @@ import { history, push, redo, undo, type History } from '../lib/history'
 import { addCommit, draftProblems, editMessage, moveCommit, moveUnit, removeEmpty, squashCommits, type Draft } from '../lib/recomposeDraft'
 import { toast, updateRepo, useStore } from '../lib/store'
 import { useThread } from '../lib/thread'
+import { ModelPicker } from './ModelPicker'
+import { PromptButton } from './PromptPanel'
 import { Thread } from './Thread'
 import { Button, CM, DM, Modal, Spinner } from './ui'
 
@@ -98,6 +100,10 @@ export function RecomposeDialog() {
       })
     }
   }
+  // A new pick while it is still asking: ask the new pick instead (recomposeWithAi stops the old request and its job).
+  const restart = () => {
+    recomposeWithAi(state.repoId, state.hashes)
+  }
   return (
     <Modal open onClose={hide} title={`${title} with AI`} width={state.proposal ? 1120 : 560} tall={!!state.proposal}
       onEscapeKeyDown={(e) => {
@@ -112,7 +118,9 @@ export function RecomposeDialog() {
         ) : state.error ? (
           <>
             <div className="flex items-start gap-2 text-del" data-testid="recompose-error"><CircleAlert size={15} className="mt-px shrink-0" /> {state.error}</div>
-            <div className="mt-4 flex justify-end gap-2">
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <ModelPicker area="recompose" />
+              <PromptButton area="recompose" repoId={state.repoId} task={{ kind: 'recompose', hashes: state.hashes }} className="mr-auto" />
               <Button onClick={discard}>Close</Button>
               <Button variant="primary" onClick={() => recomposeWithAi(state.repoId, state.hashes)}>Try again</Button>
             </div>
@@ -121,7 +129,9 @@ export function RecomposeDialog() {
           <>
             <div className="flex items-center gap-2 text-muted"><Spinner /> Asking the AI how to split these changes into commits…</div>
             <p className="mt-2 text-xs text-faint">You can close this; the plan waits in the status bar.</p>
-            <div className="mt-4 flex justify-end gap-2">
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <ModelPicker area="recompose" onPicked={restart} />
+              <PromptButton area="recompose" repoId={state.repoId} task={{ kind: 'recompose', hashes: state.hashes }} className="mr-auto" />
               <Button onClick={discard} data-testid="recompose-stop">Stop</Button>
               <Button variant="primary" onClick={hide} data-testid="recompose-hide">Close</Button>
             </div>

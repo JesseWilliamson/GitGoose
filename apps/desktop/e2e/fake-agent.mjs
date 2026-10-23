@@ -10,12 +10,15 @@
 //   "FAKE:slow"                 streams slowly until session/cancel stops it
 //   "FAKE:findings", "FAKE:plan" (follow-ups) revise the review / recompose plan as a json:<kind> block
 //   "FAKE:message"              suggests a commit message as a json:commit-message block
+//   "FAKE:model"                "Model: <the session's model>" (FAKE_AGENT_MODELS only)
 //   a follow-up                 "Turn N. You said: <last line>." (N counts this session's turns,
 //                               plus any replayed after a restart: "(replayed K earlier turns)")
 //   "Explain"                   asks to read a file in the repo and one outside it, then explains
 //   anything else               "Turn 1. You said: <last line>."
 // FAKE_AGENT_AUTH=1    session/new fails with auth_required until `authenticate` is called
 // FAKE_AGENT_LOG=file  appends every prompt it receives (tests check what was sent)
+// FAKE_AGENT_MODELS=1  offers models as an ACP config option (category "model": fast, default
+//                      "smart"); session/set_config_option switches them, and an unknown one fails
 // FAKE_AGENT_GATE=file an answer waits while that file is missing (until the turn is cancelled),
 //                      so a test can do other things while the AI is still working: create the
 //                      file to let answers through, delete it to hold the next ones
@@ -33,6 +36,11 @@ const REPLAY = '<<user>>'
 let authed = process.env.FAKE_AGENT_AUTH !== '1'
 const log = (s) => process.env.FAKE_AGENT_LOG && appendFileSync(process.env.FAKE_AGENT_LOG, s + '\n---\n')
 const tick = () => new Promise((r) => setTimeout(r, 15))
+const MODELS = process.env.FAKE_AGENT_MODELS === '1'
+  ? [{ group: 'fake', name: 'Fake models', options: [{ value: 'fast', name: 'Fake Fast' }, { value: 'smart', name: 'Fake Smart', description: 'The default' }] }]
+  : null
+/** A session's config options: the model selector, grouped (as real agents may send it). */
+const configOptions = (s) => (MODELS ? [{ id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: s.model, options: MODELS }] : undefined)
 
 async function say(cx, sessionId, text) {
   await update(cx, sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } })
@@ -80,6 +88,11 @@ async function answer(id, session, text, cx) {
   const lastLine = text.trim().split('\n').at(-1)
   const first = history[0]?.user ?? (replayed ? text : '')
 
+  // The new message only: a replay carries earlier "FAKE:model" turns that must not answer again.
+  if (lastLine.includes('FAKE:model')) {
+    await say(cx, id, `Model: ${session.model ?? 'none'}`)
+    return { stopReason: 'end_turn' }
+  }
   if (text.includes('FAKE:crash')) {
     await say(cx, id, 'Thinking')
     process.exit(3)
@@ -177,7 +190,8 @@ async function answer(id, session, text, cx) {
     // Writes the file with the finding's lines replaced (by the suggestion, if there is one).
     const path = /^File: (.+)$/m.exec(text)?.[1]
     const [, start, end] = /at lines (\d+)-(\d+)/.exec(text) ?? []
-    const suggestion = /A suggested replacement for those lines:\n([\s\S]*?)\n\nChange only/.exec(text)?.[1]
+    // The suggestion runs to the next blank line (the file follows it in the prompt's context).
+    const suggestion = /A suggested replacement for those lines:\n([\s\S]*?)\n\n/.exec(text)?.[1]
     if (!(await ask(cx, id, 'edit-fix', 'edit', `Edit ${path}`, path))) {
       await say(cx, id, 'Left the file as it was.')
       return { stopReason: 'end_turn' }
@@ -287,9 +301,10 @@ acp
     if (!authed) throw acp.RequestError.authRequired()
     // Unique across restarts, so a loaded session is never confused with a new one.
     const sessionId = `s${process.pid}-${sessions.size + 1}`
-    sessions.set(sessionId, { cwd: ctx.params.cwd, history: [], cancelled: false, reply: '' })
+    const s = { cwd: ctx.params.cwd, history: [], cancelled: false, reply: '', model: MODELS ? 'smart' : undefined }
+    sessions.set(sessionId, s)
     save()
-    return { sessionId }
+    return { sessionId, configOptions: configOptions(s) }
   })
   .onRequest(acp.methods.agent.session.load, async (ctx) => {
     const s = sessions.get(ctx.params.sessionId)
@@ -300,6 +315,14 @@ acp
       await ctx.client.notify(acp.methods.client.session.update, { sessionId: ctx.params.sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: h.agent } } })
     }
     return {}
+  })
+  .onRequest(acp.methods.agent.session.setConfigOption, (ctx) => {
+    const s = sessions.get(ctx.params.sessionId)
+    const known = MODELS?.flatMap((g) => g.options).some((o) => o.value === ctx.params.value)
+    if (!s || ctx.params.configId !== 'model' || !known) throw acp.RequestError.invalidParams(undefined, `no such model: ${ctx.params.value}`)
+    s.model = ctx.params.value
+    log(`set model ${s.model}`)
+    return { configOptions: configOptions(s) }
   })
   .onRequest(acp.methods.agent.session.prompt, (ctx) => prompt(ctx.params, ctx.client))
   .onNotification(acp.methods.agent.session.cancel, (ctx) => {

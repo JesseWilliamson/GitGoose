@@ -1,5 +1,6 @@
 import type { GraphFilter } from './index'
-import type { AiThread, PushCheck, ReviewLearning } from './ai'
+import type { AiArea, AiModelList, AiTarget, AiThread, PushCheck, ReviewLearning } from './ai'
+import type { PromptKind, PromptText } from './prompts'
 import { askToThread } from './thread'
 import { DEFAULT_LAYOUT, normalizeLayout, type PaneLayout } from './layout'
 
@@ -181,7 +182,21 @@ export const SETTINGS = {
     label: 'Custom agent command', section: 'AI', placeholder: 'my-agent --acp',
     description: 'Used when Agent is "Custom command". It must speak the Agent Client Protocol on stdin/stdout.',
   }),
-  anthropicModel: text('claude-opus-5-5', { label: 'Model (API key only)', section: 'AI', placeholder: 'claude-opus-5-5' }),
+  /** The API key mode's default model. Edited by the model picker in Settings → AI, not a row of its own. */
+  anthropicModel: internal('claude-opus-5-5'),
+  /** Each agent's default model, by its command line (targetKey); none: the agent's own default. */
+  aiAgentModel: internal<Record<string, string>>({}),
+  /** The target picked in each AI area (Recompose, Review, …); an area with none uses the default. */
+  aiAreaTargets: internal<Partial<Record<AiArea, AiTarget>>>({}),
+  /**
+   * The models each agent offered in its last session, by targetKey. ACP lists models only in a
+   * session's config options, so this is how a picker can show them before anything is started.
+   */
+  aiAgentModels: internal<Record<string, AiModelList & { at: number }>>({}),
+  /** Settings → AI → Prompts: the default words per prompt (blank parts use the built-in ones). */
+  aiPrompts: internal<Partial<Record<PromptKind, PromptText>>>({}),
+  /** Words edited in an area's Prompt panel, remembered for that area ("Reset" drops them). */
+  aiPromptEdits: internal<Partial<Record<PromptKind, PromptText>>>({}),
   anthropicMaxTokens: num(8192, 1024, 64000, 1024, {
     label: 'Longest answer (API key only)', section: 'AI', unit: 'tokens', keywords: 'max_tokens length limit',
     description: 'Long reviews and walkthroughs need room; a lower limit costs less.',
