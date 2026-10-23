@@ -7,7 +7,8 @@ import { describe, expect, it } from 'vitest'
  * small text is 4.5 : 1. The colours are read from styles.css, so changing a palette value that
  * breaks the contrast fails here instead of going unnoticed.
  */
-const css = readFileSync(join(import.meta.dirname, '..', 'styles.css'), 'utf8')
+// Normalised: a Windows checkout with autocrlf turns the file's newlines into CRLF.
+const css = readFileSync(join(import.meta.dirname, '..', 'styles.css'), 'utf8').replace(/\r\n/g, '\n')
 
 /** The declarations of the block that starts with `selector` (the first one in the file). */
 function block(selector: string): Record<string, string> {
