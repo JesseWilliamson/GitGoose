@@ -95,19 +95,21 @@ function replaceAt<T>(list: T[], i: number, value: T): T[] {
   return out
 }
 
-const FENCE = /^```json:([a-z-]+)[ \t]*\n([\s\S]*?)\n```[ \t]*$/gm
+const FENCE = /^```(json:[a-z-]+|mermaid)[ \t]*\n([\s\S]*?)\n```[ \t]*$/gm
 
 /**
  * Split a reply into text and artifacts: every fenced block tagged ```json:<kind> with a kind we
- * know becomes an artifact block (its body unchecked: main verifies it when the card asks).
+ * know, and every ```mermaid block (a diagram), becomes an artifact block (its body unchecked:
+ * main verifies it when the card asks).
  * Other fences, and unknown tags, stay in the text as code.
  */
 export function splitArtifacts(text: string): AiBlock[] {
   const out: AiBlock[] = []
   let from = 0
   for (const m of text.matchAll(FENCE)) {
-    const kind = m[1] as ArtifactKind
-    if (!ARTIFACT_KINDS.includes(kind)) continue
+    const kind = (m[1] === 'mermaid' ? 'diagram' : m[1]!.slice('json:'.length)) as ArtifactKind
+    // json:diagram is not a format any more: a diagram is Mermaid.
+    if (!ARTIFACT_KINDS.includes(kind) || (kind === 'diagram' && m[1] !== 'mermaid')) continue
     const before = text.slice(from, m.index).trim()
     if (before) out.push({ type: 'text', text: before })
     out.push({ type: 'artifact', artifact: kind, json: m[2]! })
@@ -120,7 +122,7 @@ export function splitArtifacts(text: string): AiBlock[] {
 
 /** A turn's text as the agent wrote it, artifacts put back as their fences. */
 export function turnText(turn: AiTurn): string {
-  return turn.blocks.map((b) => (b.type === 'text' ? b.text : b.type === 'artifact' ? `\`\`\`json:${b.artifact}\n${b.json}\n\`\`\`` : '')).filter(Boolean).join('\n\n')
+  return turn.blocks.map((b) => (b.type === 'text' ? b.text : b.type === 'artifact' ? `\`\`\`${b.artifact === 'diagram' ? 'mermaid' : `json:${b.artifact}`}\n${b.json}\n\`\`\`` : '')).filter(Boolean).join('\n\n')
 }
 
 /**

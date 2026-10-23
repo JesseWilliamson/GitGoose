@@ -27,6 +27,7 @@
     "@parcel/watcher": "^2.6.0",
     "@tree-sitter-grammars/tree-sitter-kotlin": "^1.1.0",
     "electron-updater": "^6.8.9",
+    "mermaid": "^12.2.0",
     "tree-sitter-c": "^0.24.1",
     "tree-sitter-c-sharp": "^0.23.5",
     "tree-sitter-cpp": "^0.23.4",
