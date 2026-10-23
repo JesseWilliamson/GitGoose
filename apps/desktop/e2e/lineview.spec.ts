@@ -104,3 +104,23 @@ test('View → Line View keeps the line until Esc; the uncommitted changes show 
   await expect(row(page, Y)).toBeVisible()
   await app.close()
 })
+
+test('the line is drawn in the first lane, however far right the branch was in the full graph', async () => {
+  const { r, A, B, Y } = setup()
+  const { app, page } = await launch(r.dir)
+  // laneX(n) = 6 + 24n + 12: lane 0 is x 18. In the full graph topic's commits sit next to main's.
+  const node = (hash: string) => row(page, hash).locator('[data-testid="commit-node"] circle, [data-testid="avatar-node"] circle').first()
+  await expect(node(B)).toHaveAttribute('cx', '18')
+  await expect(node(Y)).not.toHaveAttribute('cx', '18')
+
+  await row(page, Y).click()
+  await page.keyboard.press(`${mod}+l`)
+  await expect(page.getByTestId('line-bar')).toBeVisible()
+  await expect(node(Y)).toHaveAttribute('cx', '18')
+  await expect(node(A)).toHaveAttribute('cx', '18')
+
+  await page.keyboard.press('Escape')
+  await expect(row(page, B)).toBeVisible()
+  await expect(node(Y)).not.toHaveAttribute('cx', '18')
+  await app.close()
+})
