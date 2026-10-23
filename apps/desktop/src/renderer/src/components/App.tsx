@@ -3,10 +3,11 @@ import { useEffect } from 'react'
 import { applyPatchFile, applyPatchFromClipboard, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, redo, showHistory, showWorkingCopy, stash, undo } from '../lib/actions'
 import { comboOf, keymap } from '../lib/keys'
 import { goBack, goForward, installMouseNavigation, installNavigation } from '../lib/navigation'
-import { closeTab, onCommand, runCommand, updateRepo, saveSettings, setting, toggleLine, useActiveRepo, useStore } from '../lib/store'
+import { sonnerPresenter } from '../lib/toasts'
+import { closeTab, setToastPresenter, onCommand, runCommand, updateRepo, saveSettings, setting, toggleLine, useActiveRepo, useStore } from '../lib/store'
 import { AttentionBar } from './AttentionBar'
 import { OmniSearch } from './OmniSearch'
-import { Dialogs, PromptDialog, Toasts } from './Dialogs'
+import { Dialogs, PromptDialog } from './Dialogs'
 import { CheckoutMenu } from './menus'
 import { DragBadge } from './DragBadge'
 import { SettingsPage } from './SettingsPage'
@@ -14,10 +15,14 @@ import { AiDialogs } from './AiDialogs'
 import { StatusBar } from './StatusBar'
 import { TabBar } from './TabBar'
 import { Toolbar } from './Toolbar'
+import { Toaster } from '@/components/ui/sonner'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { Welcome } from './Welcome'
 import { toggleSlot } from './Workspace'
 import { Workspace } from './Workspace'
 import { toggleChat } from '../lib/thread'
+
+setToastPresenter(sonnerPresenter)
 
 function isTyping(): boolean {
   const el = document.activeElement
@@ -132,6 +137,7 @@ export function App() {
   const ready = useStore((s) => s.settings !== null)
   const page = useStore((s) => s.page)
   return (
+    <TooltipProvider delayDuration={400}>
     <div className="flex h-full flex-col">
       <TabBar />
       <AttentionBar />
@@ -152,7 +158,9 @@ export function App() {
       <PromptDialog />
       <DragBadge />
       <CheckoutMenu />
-      <Toasts />
+      {/* Bottom centre, over the graph: bottom right would cover the Commit button for 5 seconds. */}
+      <Toaster position="bottom-center" offset={32} expand visibleToasts={5} containerAriaLabel="Notifications" />
     </div>
+    </TooltipProvider>
   )
 }

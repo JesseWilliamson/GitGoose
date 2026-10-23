@@ -24,6 +24,8 @@ export default defineConfig({
   },
   renderer: {
     plugins: [react(), tailwindcss()],
+    // `@/` is the renderer's source root: the path shadcn's generated components import from.
+    resolve: { alias: { '@': resolve(import.meta.dirname, 'src/renderer/src') } },
     // Smaller bundles parse faster, and startup time is a feature here.
     build: { minify: true },
   },

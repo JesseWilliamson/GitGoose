@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react'
 import { setAreaTarget } from '../lib/ai'
 import { api, toUiError } from '../lib/api'
 import { singleFlight } from '../lib/singleFlight'
+import { OptionSelect, type SelectOption } from './OptionSelect'
 import { reportError, saveSettings, setSettingEntry, useStore } from '../lib/store'
 
 /**
@@ -68,31 +69,35 @@ export function ModelPicker({ area, defaults, className, onPicked, agentsOnly }:
   // Settings → AI's default for the API is a model, not "whatever": no blank entry there.
   const blank = !(defaults && target.provider === 'anthropic')
   const stale = !!list.list?.at && Date.now() - list.list.at > STALE_MS
-  const select = 'h-6 max-w-44 truncate rounded-md border border-line bg-bg px-1.5 text-xs text-fg outline-none focus:border-accent disabled:opacity-50'
+  const select = 'min-w-0 max-w-44 flex-1 px-1.5 text-xs data-[size=default]:h-6'
+
+  const whoOptions: SelectOption[] = [
+    { value: 'default', label: `Default (${targetLabel({ ...base, model: undefined })})` },
+    ...(Object.keys(AGENT_PRESETS) as Exclude<AgentPreset, 'custom'>[]).map((p) => ({ value: `agent:${p}`, label: AGENT_PRESETS[p].label })),
+    ...(settings.aiAgentCommand.trim() ? [{ value: 'agent:custom', label: agentLabel('custom', settings.aiAgentCommand) }] : []),
+    ...(!agentsOnly && (hasKey || picked?.provider === 'anthropic') ? [{ value: 'anthropic', label: 'Anthropic API' }] : []),
+  ]
+  const modelOptions: SelectOption[] = [
+    list.list?.fixed ? { value: '', label: 'Chosen by the agent' } : blank ? { value: '', label: defaultName ? `Default (${defaultName})` : 'Default model' } : null,
+    ...models.map((m) => ({ value: m.id, label: m.name, title: m.description })),
+    !list.list?.fixed ? { value: LOAD, label: list.loading ? 'Loading…' : list.list?.known ? (stale ? 'Refresh models… (list is over a day old)' : 'Refresh models…') : 'Load models…' } : null,
+  ].filter((o): o is SelectOption => o !== null)
 
   return (
-    <span className={clsx('inline-flex items-center gap-1', className)} data-testid={area ? `model-picker-${area}` : 'model-picker-default'}>
+    <span className={clsx('inline-flex min-w-0 items-center gap-1', className)} data-testid={area ? `model-picker-${area}` : 'model-picker-default'}>
       {area && (
-        <select value={who} onChange={(e) => setWho(e.target.value)} className={select} aria-label="Who answers" data-testid="model-picker-who">
-          <option value="default">Default ({targetLabel({ ...base, model: undefined })})</option>
-          {(Object.keys(AGENT_PRESETS) as Exclude<AgentPreset, 'custom'>[]).map((p) => <option key={p} value={`agent:${p}`}>{AGENT_PRESETS[p].label}</option>)}
-          {settings.aiAgentCommand.trim() && <option value="agent:custom">{agentLabel('custom', settings.aiAgentCommand)}</option>}
-          {!agentsOnly && (hasKey || picked?.provider === 'anthropic') && <option value="anthropic">Anthropic API</option>}
-        </select>
+        <OptionSelect value={who} onChange={setWho} options={whoOptions} className={select} aria-label="Who answers" data-testid="model-picker-who" />
       )}
-      <select
+      <OptionSelect
         value={target.model ?? ''}
+        options={modelOptions}
         disabled={list.loading || (list.list?.fixed && !target.model)}
-        onChange={(e) => (e.target.value === LOAD ? void list.load() : setModel(e.target.value))}
+        onChange={(v) => (v === LOAD ? void list.load() : setModel(v))}
         className={select}
         aria-label="Model"
         title={list.error ?? undefined}
         data-testid="model-picker-model"
-      >
-        {list.list?.fixed ? <option value="">Chosen by the agent</option> : blank && <option value="">{defaultName ? `Default (${defaultName})` : 'Default model'}</option>}
-        {models.map((m) => <option key={m.id} value={m.id} title={m.description}>{m.name}</option>)}
-        {!list.list?.fixed && <option value={LOAD}>{list.loading ? 'Loading…' : list.list?.known ? (stale ? 'Refresh models… (list is over a day old)' : 'Refresh models…') : 'Load models…'}</option>}
-      </select>
+      />
     </span>
   )
 }

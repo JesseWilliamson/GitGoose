@@ -4,6 +4,7 @@ import { RotateCcw, Search, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 import { COMMANDS, comboOf, conflicts, formatCombo } from '../lib/keys'
 import { saveSettings, useStore } from '../lib/store'
+import { OptionSelect } from './OptionSelect'
 import { AiPanel } from './AiPanel'
 
 /**
@@ -151,9 +152,7 @@ function ChoiceControl({ spec, value, onChange }: { spec: Extract<SettingSpec, {
     )
   }
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value)} className="h-8 rounded-md border border-line bg-bg px-2 text-[13px]">
-      {spec.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
+    <OptionSelect value={value} onChange={onChange} options={spec.options} aria-label={spec.label} />
   )
 }
 
