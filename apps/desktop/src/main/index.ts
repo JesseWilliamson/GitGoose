@@ -16,7 +16,7 @@ import { installMenu } from './menu'
 import { RepoManager } from './repos'
 import { applyZoom, getSettings, onSettingsChanged, setSettings } from './settings'
 import { scheduleUpdateCheck } from './updater'
-import { loadWindowState, trackWindowState } from './windowState'
+import { loadWindowState, OVERLAY_DARK, OVERLAY_LIGHT, TITLE_BAR_HEIGHT, trackWindowState } from './windowState'
 
 // Startup timeline (read by tools/bench): every import above has been evaluated by now.
 performance.mark('gitgoose:main-loaded')
@@ -155,7 +155,13 @@ function createWindow(): BrowserWindow {
     title: 'GitGoose',
     ...(process.platform === 'darwin' ? {} : { icon: iconPath }),
     backgroundColor: dark || getSettings().theme === 'dark' ? '#171719' : '#ffffff',
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    // The tab bar row is the title bar everywhere. Windows keeps the OS-drawn caption buttons
+    // (titleBarOverlay: Snap Layouts); Linux draws its own in the renderer (TabBar.tsx).
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
+    ...(process.platform === 'darwin' ? {} : { autoHideMenuBar: true }),
+    ...(process.platform === 'win32'
+      ? { titleBarOverlay: { ...(dark || getSettings().theme === 'dark' ? OVERLAY_DARK : OVERLAY_LIGHT), height: TITLE_BAR_HEIGHT } }
+      : {}),
     webPreferences: {
       preload: join(here, '../preload/index.cjs'),
       sandbox: true,
@@ -175,6 +181,11 @@ function createWindow(): BrowserWindow {
     win.show()
   })
   trackWindowState(win)
+  const sendState = () => broadcast({ type: 'window-state', maximized: win.isMaximized() })
+  win.on('maximize', sendState)
+  win.on('unmaximize', sendState)
+  win.on('enter-full-screen', sendState)
+  win.on('leave-full-screen', sendState)
   // Refresh on focus: catches changes made by other tools when the watcher is unavailable.
   win.on('focus', () => repos.refreshAll())
   // Links open in the browser, never inside the app.
