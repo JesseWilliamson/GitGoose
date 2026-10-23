@@ -43,3 +43,9 @@ export function trackWindowState(win: BrowserWindow): void {
   win.on('move', later)
   win.on('close', save)
 }
+
+/** Height of the title bar (the tab bar row) in CSS px; the Windows caption buttons match it. */
+export const TITLE_BAR_HEIGHT = 36
+/** Caption button colours for the first paint, the same as --gs-bg / --gs-fg in styles.css. */
+export const OVERLAY_DARK = { color: '#171719', symbolColor: '#e7e7e9' }
+export const OVERLAY_LIGHT = { color: '#ffffff', symbolColor: '#1f2023' }

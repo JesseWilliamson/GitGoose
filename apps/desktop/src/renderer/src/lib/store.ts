@@ -705,6 +705,11 @@ export function applyTheme(settings: Settings): void {
   const dark = settings.theme === 'dark' || (settings.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)
   const root = document.documentElement
   root.dataset.theme = dark ? 'dark' : 'light'
+  // The Windows caption buttons are drawn by the OS: hand them this theme's colours.
+  if (window.gitgoose?.platform === 'win32') {
+    const css = getComputedStyle(root)
+    void api.windowSetOverlay({ color: css.getPropertyValue('--gs-bg').trim(), symbolColor: css.getPropertyValue('--gs-fg').trim() }).catch(() => {})
+  }
   // UI scale is applied by the main process as the window zoom; only code panes read these.
   root.style.setProperty('--gs-code-size', `${settings.codeFontSize}px`)
   root.style.setProperty('--gs-code-font', settings.codeFontFamily.trim() || 'var(--font-mono)')
