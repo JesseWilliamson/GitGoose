@@ -3,7 +3,8 @@
   "compilerOptions": {
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
-    "types": ["vite/client"]
+    "types": ["vite/client"],
+    "paths": { "@/*": ["./src/renderer/src/*"] }
   },
   "include": ["src/renderer/src", "src/preload/types.d.ts"],
   // These run real git through @gitgoose/fixtures (Node), so tsconfig.node.json checks them.

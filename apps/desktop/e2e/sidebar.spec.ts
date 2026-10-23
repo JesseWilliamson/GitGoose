@@ -181,7 +181,7 @@ test('the keyboard: arrows move and fold, Space shows history, Enter checks out,
   await sidebar(page).press('Delete')
   await page.getByRole('button', { name: 'Delete anyway' }).click()
   await expect(ref(page, 'refs/heads/fix')).toHaveCount(0)
-  await page.getByTestId('toast-action').filter({ hasText: 'Undo' }).last().click()
+  await page.getByTestId('toast-action').filter({ hasText: 'Undo' }).first().click()
   await expect(ref(page, 'refs/heads/fix')).toHaveCount(1)
   await app.close()
 })
