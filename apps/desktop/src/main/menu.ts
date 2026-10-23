@@ -1,5 +1,7 @@
+import { isPaneVisible } from '@gitgoose/shared'
 import { app, Menu, type MenuItemConstructorOptions } from 'electron'
 import { broadcast } from './ipc'
+import { getSettings, onSettingsChanged } from './settings'
 
 /**
  * Native menu. Items that are app commands send a 'command' event; the renderer owns the logic
@@ -9,7 +11,30 @@ import { broadcast } from './ipc'
  * but do not register it (`registerAccelerator: false`, as VS Code does), so a key press is
  * handled in exactly one place and never fires twice.
  */
+/** The View menu's checkable pane items: menu item id -> pane. */
+const PANE_ITEMS = { 'show-branches': 'branches', 'show-details': 'details', 'show-ai': 'ai' } as const
+
+/**
+ * The checkmarks follow the layout in place. The menu is never rebuilt for them: replacing the
+ * application menu on Linux/GTK can pull the keyboard focus out of the page a moment later, which
+ * broke "Mod+Shift+A again hides the pane" (the composer had lost focus), and a divider drag
+ * rewrites the layout many times.
+ */
+function syncPaneChecks(): void {
+  const menu = Menu.getApplicationMenu()
+  if (!menu) return
+  const layout = getSettings().layout
+  for (const [id, pane] of Object.entries(PANE_ITEMS)) {
+    const item = menu.getMenuItemById(id)
+    const checked = isPaneVisible(layout, pane)
+    if (item && item.checked !== checked) item.checked = checked
+  }
+}
+
+/** Built once at startup. */
 export function installMenu(): void {
+  onSettingsChanged((_s, changed) => { if (changed.has('layout')) syncPaneChecks() })
+  const layout = getSettings().layout
   const cmd = (name: string) => () => broadcast({ type: 'command', name })
   const isMac = process.platform === 'darwin'
   const template: MenuItemConstructorOptions[] = [
@@ -66,14 +91,16 @@ export function installMenu(): void {
         { label: 'Back', accelerator: isMac ? 'Cmd+[' : 'Alt+Left', click: cmd('back'), registerAccelerator: false },
         { label: 'Forward', accelerator: isMac ? 'Cmd+]' : 'Alt+Right', click: cmd('forward'), registerAccelerator: false },
         { type: 'separator' },
-        { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+B', click: cmd('toggle-sidebar'), registerAccelerator: false },
-        { label: 'Toggle Details', accelerator: 'CmdOrCtrl+Alt+B', click: cmd('toggle-details'), registerAccelerator: false },
+        // Panes (ADR-010): a checkmark means the pane is on screen; a click shows or hides it.
+        { id: 'show-branches', label: 'Show Branches', type: 'checkbox', checked: isPaneVisible(layout, 'branches'), accelerator: 'CmdOrCtrl+B', click: cmd('toggle-sidebar'), registerAccelerator: false },
+        { id: 'show-details', label: 'Show Details', type: 'checkbox', checked: isPaneVisible(layout, 'details'), accelerator: 'CmdOrCtrl+Alt+B', click: cmd('toggle-details'), registerAccelerator: false },
+        { id: 'show-ai', label: 'Show AI', type: 'checkbox', checked: isPaneVisible(layout, 'ai'), accelerator: 'CmdOrCtrl+Shift+A', click: cmd('toggle-ai-pane'), registerAccelerator: false },
+        { label: 'Toggle Bottom Panel', accelerator: 'CmdOrCtrl+J', click: cmd('toggle-bottom'), registerAccelerator: false },
         { label: 'Hide Side Panels', click: cmd('layout-wide-graph') },
-        { label: 'Reset Panel Sizes', click: cmd('layout-default') },
+        { label: 'Reset Layout', click: cmd('layout-default') },
         { label: 'Toggle Comfy / Compact Graph', click: cmd('toggle-graph-style') },
         // Holding Shift shows the line for as long as it is held; this keeps it on.
         { label: 'Line View', accelerator: 'CmdOrCtrl+L', click: cmd('line-view'), registerAccelerator: false },
-        { label: 'AI Chat', accelerator: 'CmdOrCtrl+Shift+A', click: cmd('ai-chat'), registerAccelerator: false },
         { type: 'separator' },
         { label: 'Working Copy', accelerator: 'CmdOrCtrl+Alt+1', click: cmd('ws-working-copy'), registerAccelerator: false },
         { label: 'History', accelerator: 'CmdOrCtrl+Alt+2', click: cmd('ws-history'), registerAccelerator: false },

@@ -1,4 +1,4 @@
-import { setCollapsed, turnText } from '@gitgoose/shared'
+import { isPaneVisible, showPane, turnText } from '@gitgoose/shared'
 import { useEffect } from 'react'
 import { create } from 'zustand'
 import { cancelAi, showRepo, startAi } from './ai'
@@ -32,18 +32,18 @@ function patch(k: string, p: Partial<Explanation>): void {
   useExplains.setState((s) => (s[k] ? { [k]: { ...s[k], ...p } } : s))
 }
 
-/** Is this commit's explanation on screen: the commit selected, and the Details side not collapsed? */
+/** Is this commit's explanation on screen: the commit selected, and the Details pane on screen? */
 function selected(repoId: string, hash: string): boolean {
   const s = useStore.getState()
   const sel = s.repos[repoId]?.selected
-  return s.active === repoId && !s.page && !setting('layout').right.collapsed && sel?.kind === 'commit' && sel.hash === hash
+  return s.active === repoId && !s.page && isPaneVisible(setting('layout'), 'details') && sel?.kind === 'commit' && sel.hash === hash
 }
 
-/** Show a commit in the Details side, opening the side if it is collapsed. */
+/** Show a commit in the Details pane, showing the pane if it is hidden, behind a tab or collapsed. */
 function showCommit(repoId: string, hash: string): void {
   showRepo(repoId)
   const layout = setting('layout')
-  if (layout.right.collapsed) void saveSettings({ layout: setCollapsed(layout, 'right', false) })
+  if (!isPaneVisible(layout, 'details')) void saveSettings({ layout: showPane(layout, 'details') })
   updateRepo(repoId, { selected: { kind: 'commit', hash } })
   void ensureLoaded(repoId, hash)
 }

@@ -2,7 +2,7 @@ import { initRepo, makeFixture, tempDir } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import { chmodSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { launch } from './app'
+import { hideAiPane, launch } from './app'
 
 /**
  * Waiting on the AI never holds the user up, and an answer is never lost by looking elsewhere.
@@ -34,7 +34,7 @@ test('why did this fail: the answer goes to the AI panel, and looking elsewhere 
   await expect(panel.getByTestId('thread-feature')).toContainText('Why did this fail')
   await expect(page.getByTestId('ai-jobs')).toContainText('AI: Why:')
   // Carry on meanwhile: close the panel, look at another commit.
-  await panel.getByRole('button', { name: 'Close the AI panel' }).click()
+  await hideAiPane(page)
   await page.getByTestId('commit-row').nth(1).click()
   await expect(page.getByTestId('commit-files')).toBeVisible()
 

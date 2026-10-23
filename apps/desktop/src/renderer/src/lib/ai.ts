@@ -1,8 +1,9 @@
-import { AI_AUTH_REQUIRED, defaultTarget, requestWords, type AgentAuthMethod, type AiArea, type AiPermissionRequest, type AiResult, type AiTarget, type AiTask, type PromptKind, type PromptText, type RecomposeProposal, type ReviewScope, type ThreadAnchor } from '@gitgoose/shared'
+import { AI_AUTH_REQUIRED, defaultTarget, isPaneVisible, requestWords, type AgentAuthMethod, type AiArea, type AiPermissionRequest, type AiResult, type AiTarget, type AiTask, type PromptKind, type PromptText, type RecomposeProposal, type ReviewScope, type ThreadAnchor } from '@gitgoose/shared'
 import { create } from 'zustand'
 import { dropJob, finishJob, onJobReady, parkJob, registerJob, sweepJobs } from './aiJobs'
 import { api, toUiError } from './api'
-import { attention, choose, reportError, setSettingEntry, toast, updateRepo, useStore } from './store'
+import { showAiPane } from './panes'
+import { attention, choose, reportError, setSettingEntry, setting, toast, updateRepo, useStore } from './store'
 
 /**
  * Renderer side of the AI features. `startAi` does the asking (set up? agreed? logged in?) and
@@ -288,16 +289,17 @@ export function showRepo(repoId: string): void {
   if (useStore.getState().repos[repoId]) useStore.setState({ active: repoId, page: null })
 }
 
-/** Open a repository's AI panel on a thread. */
+/** Show a thread in the AI pane: the pane is shown and activated wherever it lives (ADR-010). */
 export function openInPanel(repoId: string, threadId: string): void {
-  updateRepo(repoId, (v) => ({ chat: { ...v.chat, open: true, threadId } }))
+  updateRepo(repoId, (v) => ({ chat: { ...v.chat, threadId } }))
+  showAiPane()
 }
 
-/** Is this thread on screen in the AI panel? */
+/** Is this thread on screen in the AI pane? */
 function panelShows(repoId: string, threadId: string | null): boolean {
   const s = useStore.getState()
   const chat = s.repos[repoId]?.chat
-  return !!threadId && s.active === repoId && !s.page && !!chat?.open && chat.threadId === threadId
+  return !!threadId && s.active === repoId && !s.page && isPaneVisible(setting('layout'), 'ai') && chat?.threadId === threadId
 }
 
 /** A run's end finishes its job: an answer or an error stays until seen; nothing at all (stopped, not set up) drops it. */

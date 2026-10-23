@@ -32,11 +32,12 @@ export const COMMANDS: KeyCommand[] = [
   { id: 'zoom-in', label: 'Zoom in', defaults: ['mod+='] },
   { id: 'zoom-out', label: 'Zoom out', defaults: ['mod+-'] },
   { id: 'zoom-reset', label: 'Actual size', defaults: ['mod+0'] },
-  { id: 'toggle-sidebar', label: 'Show or hide the sidebar', defaults: ['mod+b'] },
-  { id: 'toggle-details', label: 'Show or hide the details panel', defaults: ['mod+alt+b'] },
+  { id: 'toggle-sidebar', label: 'Show or hide the Branches pane', defaults: ['mod+b'] },
+  { id: 'toggle-details', label: 'Show or hide the Details pane', defaults: ['mod+alt+b'] },
+  { id: 'toggle-bottom', label: 'Collapse or expand the bottom panel', defaults: ['mod+j'] },
   // Mod+L, not the plan's Mod+Shift+L: that one has been Fetch for a long time.
   { id: 'line-view', label: 'Show only the selected line of history, or everything again', defaults: ['mod+l'] },
-  { id: 'ai-chat', label: 'Show or hide the AI panel (chat about this repository)', defaults: ['mod+shift+a'] },
+  { id: 'ai-chat', label: 'Show the AI pane and focus it, or hide it when it has focus', defaults: ['mod+shift+a'] },
   { id: 'toggle-graph-style', label: 'Switch the graph between comfy and compact', defaults: [] },
   // Tower's Workspace keys are Mod+1…5; here Mod+1…9 switch tabs (and Mod+0 is Actual Size), so
   // the Workspace takes Mod+Alt and the same digits. In the sidebar, Mod+0 goes to HEAD's branch too.

@@ -1,10 +1,11 @@
-import { AI_AUTH_REQUIRED, openingPromptKind, reduceThread, type AiContextRef, type AiThread, type AiUpdate, type ThreadAnchor } from '@gitgoose/shared'
+import { AI_AUTH_REQUIRED, hidePane, isPaneVisible, openingPromptKind, reduceThread, setCollapsed, showPane, slotOf, type AiContextRef, type AiThread, type AiUpdate, type ThreadAnchor } from '@gitgoose/shared'
 import { useEffect, useState } from 'react'
 import { create } from 'zustand'
 import { areaOfAnchor, areaTarget, askLogin, askToRedact, ensureAi, onAiThread, useAi, whatFor, wordsFor } from './ai'
 import { forgetExplanationThread } from './explain'
 import { api, toUiError } from './api'
-import { reportError, updateRepo } from './store'
+import { focusInAiPane, focusAiComposer, saveLayout, showAiPane } from './panes'
+import { reportError, setting, updateRepo, useStore } from './store'
 
 /**
  * The renderer's copy of the conversations on screen. Main sends every event of a thread as
@@ -24,6 +25,7 @@ export function onThreadUpdate(e: { threadId: string; requestId: string; update:
   if (!t) return
   const next = reduceThread(t, e.requestId, e.update)
   if (next !== t) useThreads.setState((s) => ({ threads: { ...s.threads, [e.threadId]: next } }))
+  if (e.update.kind === 'done') revealAnswer(next.repoId, e.threadId)
   // A finished Ask answer: the commit's question list shows it from now on.
   if (e.update.kind === 'done' && next.anchor.kind === 'ask') {
     void api.askThreads(next.repoId).then((askThreads) => updateRepo(next.repoId, { askThreads }), () => {})
@@ -135,7 +137,7 @@ export async function deleteThread(repoId: string, threadId: string): Promise<vo
     walkthrough: mine(v.walkthrough),
     impact: mine(v.impact),
     ask: v.ask?.threadId === threadId ? null : v.ask,
-    chat: v.chat.threadId === threadId ? { open: v.chat.open, threadId: null, nonce: Date.now() } : v.chat,
+    chat: v.chat.threadId === threadId ? { threadId: null, nonce: Date.now() } : v.chat,
   }))
   useAi.setState((s) => (s.recompose?.threadId === threadId ? { recompose: { ...s.recompose, threadId: undefined } } : s))
   forgetExplanationThread(repoId, threadId)
@@ -147,14 +149,35 @@ export function stopThread(threadId: string): void {
   void api.aiThreadCancel(threadId)
 }
 
-/** The free-standing AI panel (Mod+Shift+A): open or close it for the active repository. */
-export function toggleChat(repoId: string): void {
-  updateRepo(repoId, (v) => ({ chat: { ...v.chat, open: !v.chat.open } }))
+/**
+ * The AI pane's key (Mod+Shift+A): when the pane is not on screen, show it and put the cursor in
+ * its message box; when it is on screen and the focus is already inside it, hide it; on screen without the focus, just focus it. (Which slot it lives in, and
+ * whether that slot is open, is the layout's business: packages/shared/src/layout.ts.)
+ */
+export function toggleChat(): void {
+  const layout = setting('layout')
+  if (isPaneVisible(layout, 'ai')) {
+    // On screen: the key hides it when the user is already in it, and otherwise takes them there.
+    if (focusInAiPane()) return saveLayout(hidePane(layout, 'ai'))
+    return focusAiComposer()
+  }
+  saveLayout(showPane(layout, 'ai'))
+  focusAiComposer()
 }
 
-/** Start a new conversation in the AI panel. */
+/** Start a new conversation in the AI pane. */
 export function newChat(repoId: string): void {
-  updateRepo(repoId, { chat: { open: true, threadId: null, nonce: Date.now() } })
+  updateRepo(repoId, { chat: { threadId: null, nonce: Date.now() } })
+  showAiPane()
+  focusAiComposer()
+}
+
+/** An answer arrived in the thread the AI pane shows: a collapsed slot opens so it can be seen. */
+function revealAnswer(repoId: string, threadId: string): void {
+  if (useStore.getState().repos[repoId]?.chat.threadId !== threadId) return
+  const layout = setting('layout')
+  const slot = slotOf(layout, 'ai')
+  if (slot && layout[slot].collapsed && layout[slot].active === 'ai') saveLayout(setCollapsed(layout, slot, false))
 }
 
 /** Which chat rails are open, per view kind (remembered while the app runs). */
