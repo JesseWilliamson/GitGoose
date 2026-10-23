@@ -8,6 +8,8 @@ import { Popover } from 'radix-ui'
 import { useEffect, useRef, useState } from 'react'
 import { draftSaved, publishDraft } from '../lib/ai'
 import { reportError, setSettingEntry, useStore } from '../lib/store'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { SettingsRow } from './SettingsRow'
 import { Button } from './ui'
 
 /**
@@ -176,20 +178,18 @@ export function PromptSettings() {
   const edited = (k: PromptKind) => !!settings.aiPrompts[k]
   const areaEdited = (k: PromptKind) => !!settings.aiPromptEdits[k]
   return (
-    <div className="mt-3 border-t border-line pt-3" data-testid="prompt-settings">
-      <div className="mb-2">
-        Prompts
-        <span className="block text-xs text-faint">The default words for each AI request. An area's Prompt button can change them for that area; the answer format is fixed.</span>
-      </div>
-      <div className="flex gap-3">
-        <div className="w-44 shrink-0">
+    <div data-testid="prompt-settings">
+      <SettingsRow label="Prompts" last={false}
+        description="The default words for each AI request. An area's Prompt button can change them for that area; the answer format is fixed." />
+      <Tabs value={kind} onValueChange={(v) => setKind(v as PromptKind)} orientation="vertical" className="flex-row gap-6 border-b border-line pt-1 pb-3">
+        <TabsList className="w-44 shrink-0 items-stretch gap-0.5 self-start bg-transparent p-0">
           {kinds.map((k) => (
-            <button key={k} onClick={() => setKind(k)} data-testid={`prompt-kind-${k}`}
-              className={clsx('block w-full truncate rounded px-2 py-1 text-left text-xs', k === kind ? 'bg-select text-fg' : 'text-muted hover:bg-hover hover:text-fg')}>
+            <TabsTrigger key={k} value={k} data-testid={`prompt-kind-${k}`}
+              className="h-7 flex-none justify-start truncate rounded px-2 text-xs text-muted hover:bg-hover hover:text-fg data-[state=active]:bg-select data-[state=active]:text-fg data-[state=active]:shadow-none dark:data-[state=active]:border-transparent dark:data-[state=active]:bg-select dark:data-[state=active]:text-fg">
               {DEFAULT_PROMPTS[k].label}{edited(k) ? ' •' : ''}
-            </button>
+            </TabsTrigger>
           ))}
-        </div>
+        </TabsList>
         <div className="min-w-0 flex-1">
           <SettingsPrompt key={kind} kind={kind} />
           {areaEdited(kind) && (
@@ -199,7 +199,7 @@ export function PromptSettings() {
             </p>
           )}
         </div>
-      </div>
+      </Tabs>
     </div>
   )
 }
