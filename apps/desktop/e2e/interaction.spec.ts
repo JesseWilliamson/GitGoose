@@ -1,7 +1,7 @@
 import { makeFixture } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import { createServer } from 'node:http'
-import { dragTo, launch } from './app'
+import { dragTo, expectTooltip, launch } from './app'
 
 async function dragRef(page: Page, from: string, to: string) {
   await dragTo(page, page.locator(`[data-testid="ref-pill"][data-ref="${from}"]`), page.locator(`[data-testid="ref-pill"][data-ref="${to}"]`))
@@ -208,10 +208,7 @@ test('a menu item that cannot run is greyed out and says why on hover', async ()
   await expect(item).toHaveAttribute('aria-disabled', 'true')
   await expect(item).toHaveAttribute('aria-description', 'This is HEAD')
   // shadcn items are pointer-events: none when disabled; the tooltip hangs on the wrapper around them.
-  const at = (await item.boundingBox())!
-  await page.mouse.move(at.x + 20, at.y + at.height / 2, { steps: 8 })
-  await page.mouse.move(at.x + 60, at.y + at.height / 2, { steps: 8 })
-  await expect(page.getByRole('tooltip').first()).toHaveText('This is HEAD', { timeout: 10_000 })
+  await expectTooltip(page, item.locator('xpath=..'), 'This is HEAD')
   // Clicking it does nothing: still on main, menu open.
   await item.click({ force: true })
   expect(r.git('rev-parse', '--abbrev-ref', 'HEAD').trim()).toBe('main')
