@@ -181,7 +181,7 @@ function createWindow(): BrowserWindow {
     win.show()
   })
   trackWindowState(win)
-  const sendState = () => broadcast({ type: 'window-state', maximized: win.isMaximized() })
+  const sendState = () => !win.isDestroyed() && broadcast({ type: 'window-state', maximized: win.isMaximized() })
   win.on('maximize', sendState)
   win.on('unmaximize', sendState)
   win.on('enter-full-screen', sendState)

@@ -1,4 +1,4 @@
-import { isPaneVisible } from '@gitgoose/shared'
+import { PANES, isPaneVisible } from '@gitgoose/shared'
 import { app, Menu, type MenuItemConstructorOptions } from 'electron'
 import { broadcast } from './ipc'
 import { getSettings, onSettingsChanged } from './settings'
@@ -12,12 +12,25 @@ import { getSettings, onSettingsChanged } from './settings'
  * handled in exactly one place and never fires twice.
  */
 let watching = false
+let quitting = false
 
 export function installMenu(): void {
   // The View menu's checkmarks show which panes are on screen, so a new layout rebuilds the menu.
   if (!watching) {
     watching = true
-    onSettingsChanged((_s, changed) => { if (changed.has('layout')) installMenu() })
+    // Only when a checkmark would change (a drag of a divider rewrites the layout often), and
+    // never while quitting: a menu rebuilt on the way out has nothing to show and can only get in the way.
+    let shown = ''
+    const sig = () => PANES.map((p) => isPaneVisible(getSettings().layout, p)).join()
+    shown = sig()
+    onSettingsChanged((_s, changed) => {
+      if (!changed.has('layout') || quitting) return
+      const now = sig()
+      if (now === shown) return
+      shown = now
+      installMenu()
+    })
+    app.on('before-quit', () => { quitting = true })
   }
   const layout = getSettings().layout
   const cmd = (name: string) => () => broadcast({ type: 'command', name })
