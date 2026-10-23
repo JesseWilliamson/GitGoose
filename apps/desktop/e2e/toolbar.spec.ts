@@ -1,6 +1,6 @@
 import { makeFixture } from '@gitgoose/fixtures'
 import { expect, test } from '@playwright/test'
-import { launch } from './app'
+import { expectTooltip, launch } from './app'
 
 test('the toolbar is one slim row and the Undo chip names the last operation', async () => {
   const r = makeFixture('branches')
@@ -39,8 +39,7 @@ test('a tooltip closes when a menu opens next to it', async () => {
   const r = makeFixture('branches')
   const { app, page } = await launch(r.dir)
   const toolbar = page.getByTestId('toolbar')
-  await toolbar.getByRole('button', { name: 'Push' }).first().hover()
-  await expect(page.getByRole('tooltip').filter({ hasText: 'Push' }).first()).toBeVisible()
+  await expectTooltip(page, toolbar.getByRole('button', { name: 'Push' }).first(), 'Push')
   // Move there like a hand does (several steps), then press: the menu opens under the open tooltip.
   const chevron = (await toolbar.getByRole('button', { name: 'Pull options' }).boundingBox())!
   await page.mouse.move(chevron.x + chevron.width / 2, chevron.y + chevron.height / 2, { steps: 12 })
