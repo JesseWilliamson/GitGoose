@@ -1,12 +1,11 @@
 import { runningTurn, type AiThread } from '@gitgoose/shared'
-import { Check, History, MessagesSquare, Plus, Trash2, X } from 'lucide-react'
+import { Check, History, MessagesSquare, Plus, Trash2 } from 'lucide-react'
 import { DropdownMenu } from 'radix-ui'
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../lib/api'
 import { clearDropped, markSent, useChips, useSentContext } from '../lib/aiContext'
-import { modName } from '../lib/keys'
 import { reportError, updateRepo, type RepoView } from '../lib/store'
-import { deleteThread, newChat, toggleChat, useThread, useThreads } from '../lib/thread'
+import { deleteThread, newChat, useThread, useThreads } from '../lib/thread'
 import { ANCHOR_KIND, groupThreadsByDay } from '../lib/threadHistory'
 import { AiContextBar } from './AiContextBar'
 import { Thread } from './Thread'
@@ -18,7 +17,7 @@ const NONE: string[] = []
 const HISTORY_ITEMS = 40
 
 /**
- * The AI panel (Mod+Shift+A): a conversation about the repository, and the one place everything
+ * The AI pane (Mod+Shift+A; ADR-010): a conversation about the repository, and the one place everything
  * AI shows up. Its first message goes with the repository's name and HEAD, plus the context
  * chips above the composer (the selection, and whatever was dropped on the panel); the agent can
  * ask to read files. It also shows answers that have no view of their own (why an action
@@ -47,7 +46,7 @@ export function AiChatPanel({ view }: { view: RepoView }) {
     return () => clearInterval(timer)
   }, [historyOpen, view.id])
   return (
-    <div className="absolute inset-y-0 right-0 z-20 flex w-[min(420px,90%)] flex-col border-l border-line bg-panel shadow-xl" data-testid="ai-chat-panel" data-drop-target='{"kind":"ai"}' key={view.chat.nonce}>
+    <div className="flex min-h-0 flex-1 flex-col" data-testid="ai-chat-panel" data-drop-target='{"kind":"ai"}' key={view.chat.nonce}>
       <div className="flex h-9 shrink-0 items-center gap-1 border-b border-line px-3 text-xs">
         <MessagesSquare size={14} className="text-accent" />
         <span className="min-w-0 flex-1 truncate font-semibold">AI · {thread?.title || view.snapshot.name}</span>
@@ -70,7 +69,6 @@ export function AiChatPanel({ view }: { view: RepoView }) {
             )}
           </DM.Content>
         </DropdownMenu.Root>
-        <button onClick={() => toggleChat(view.id)} title={`Close (${modName()}+Shift+A)`} aria-label="Close the AI panel" className="rounded p-1 text-muted hover:bg-hover hover:text-fg"><X size={13} /></button>
       </div>
       {thread
         ? <Thread thread={thread} repoId={view.id} className="flex-1" placeholder="Ask about this repository (Enter sends, Shift+Enter for a new line)"

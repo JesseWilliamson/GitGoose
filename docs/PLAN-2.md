@@ -239,7 +239,7 @@ and invalid stored values fall back to defaults instead of breaking startup.
 
 ## 7. Movable, resizable panes
 
-*Later change (Jesse): moving panes between slots was removed; the panes have fixed places and stay resizable and collapsible. The layout setting now holds only side widths and collapsed flags; older saved layouts keep their widths.*
+*Later change (Jesse): moving panes between slots was removed; the panes have fixed places and stay resizable and collapsible. The layout setting now holds only side widths and collapsed flags; older saved layouts keep their widths. Moving came back with the AI pane, which needs a home the user chooses: see [ADR-010](adr/010-panes.md), which supersedes this section's slot model (left / right / bottom slots of tabbed panes around a fixed centre).*
 
 ### Design: layout as data
 

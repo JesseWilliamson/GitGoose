@@ -1,4 +1,4 @@
-import { DEFAULT_LAYOUT, setCollapsed, type Settings } from '@gitgoose/shared'
+import { DEFAULT_LAYOUT, wideGraph, type Settings } from '@gitgoose/shared'
 import { useEffect } from 'react'
 import { applyPatchFile, applyPatchFromClipboard, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, redo, showHistory, showWorkingCopy, stash, undo } from '../lib/actions'
 import { comboOf, keymap } from '../lib/keys'
@@ -18,7 +18,7 @@ import { Toolbar } from './Toolbar'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Welcome } from './Welcome'
-import { toggleSlot } from './Workspace'
+import { toggleBottom, togglePane } from '../lib/panes'
 import { Workspace } from './Workspace'
 import { toggleChat } from '../lib/thread'
 
@@ -50,10 +50,13 @@ function useCommands() {
         case 'sidebar-tags-50': case 'sidebar-tags-100': case 'sidebar-tags-250': case 'sidebar-tags-all':
           return void saveSettings({ sidebarTags: name.slice('sidebar-tags-'.length) as Settings['sidebarTags'] })
         case 'toggle-graph-style': return void saveSettings({ graphStyle: setting('graphStyle') === 'compact' ? 'comfy' : 'compact' })
-        case 'toggle-sidebar': return toggleSlot('left')
-        case 'toggle-details': return toggleSlot('right')
+        case 'toggle-sidebar': return togglePane('branches')
+        case 'toggle-details': return togglePane('details')
+        case 'toggle-bottom': return toggleBottom()
+        // The View menu's checkbox: show or hide, unlike the key, which also focuses.
+        case 'toggle-ai-pane': return togglePane('ai')
         case 'layout-default': return void saveSettings({ layout: structuredClone(DEFAULT_LAYOUT) })
-        case 'layout-wide-graph': return void saveSettings({ layout: setCollapsed(setCollapsed(setting('layout'), 'left', true), 'right', true) })
+        case 'layout-wide-graph': return void saveSettings({ layout: wideGraph(setting('layout')) })
         case 'back': return goBack()
         case 'forward': return goForward()
       }
@@ -82,7 +85,7 @@ function useCommands() {
         case 'reflog': return updateRepo(id, { center: { kind: 'reflog' } })
         case 'command-log': return updateRepo(id, { center: { kind: 'commands' } })
         case 'line-view': return toggleLine(id)
-        case 'ai-chat': return toggleChat(id)
+        case 'ai-chat': return toggleChat()
         // Workspace items (the sidebar handles Stashes, Pull Requests and the current branch itself).
         case 'ws-working-copy': return showWorkingCopy(id)
         case 'ws-history': return showHistory(id)

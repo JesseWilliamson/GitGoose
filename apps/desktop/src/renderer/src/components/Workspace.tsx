@@ -1,9 +1,9 @@
-import { setCollapsed, setSize, type PaneLayout, type Slot } from '@gitgoose/shared'
+import { setCollapsed, setSize, type Slot } from '@gitgoose/shared'
 import { Group, Panel, Separator, usePanelRef } from 'react-resizable-panels'
-import { useEffect, useRef, type ReactNode } from 'react'
-import { saveSettings, setting, useSetting, type RepoView } from '../lib/store'
+import { useEffect, useRef } from 'react'
+import { saveLayout } from '../lib/panes'
+import { setting, useSetting, type RepoView } from '../lib/store'
 import { ConflictWizard } from './ConflictWizard'
-import { DetailPanel } from './DetailPanel'
 import { FileView } from './DiffView'
 import { Graph } from './Graph'
 import { CommandLogView } from './CommandLogView'
@@ -11,24 +11,21 @@ import { ReflogView } from './ReflogView'
 import { ReviewView } from './ReviewView'
 import { WalkthroughView } from './WalkthroughView'
 import { ImpactView } from './ImpactView'
-import { Sidebar } from './Sidebar'
-import { AiChatPanel } from './AiChatPanel'
+import { PaneDropZones, SlotView } from './Pane'
 
 /**
- * The repository window: branches on the left, the graph in the centre, details on the right.
- * The places are fixed; the dividers resize the sides (and collapse them, dragged past the
- * minimum), and the sizes persist in the `layout` setting (packages/shared/src/layout.ts).
- * A file's diff opens over the graph and closes back to it.
+ * The repository window (ADR-010): three slots around a fixed centre. The centre is the graph
+ * (or a file's diff, a review, ... that opens over it); the left, right and bottom slots hold
+ * panes as tabs. Which pane is in which slot is the `layout` setting (packages/shared/src/layout.ts);
+ * the dividers resize a slot (and collapse it, dragged past the minimum), and a slot with no
+ * panes is not drawn at all.
  */
 
-const TITLES: Record<Slot, string> = { left: 'Branches', right: 'Details' }
-const MIN: Record<Slot, number> = { left: 160, right: 260 }
-
-function saveLayout(next: PaneLayout) {
-  void saveSettings({ layout: next })
-}
+const MIN: Record<Slot, number> = { left: 160, right: 260, bottom: 160 }
+const SEPARATOR = 'bg-line transition-colors hover:bg-accent data-[separator-state=drag]:bg-accent'
 
 export function Workspace({ view }: { view: RepoView }) {
+  const layout = useSetting('layout')
   const center = view.center.kind === 'conflicts' ? <ConflictWizard view={view} />
     : view.center.kind === 'reflog' ? <ReflogView view={view} />
     : view.center.kind === 'commands' ? <CommandLogView view={view} />
@@ -41,40 +38,62 @@ export function Workspace({ view }: { view: RepoView }) {
   return (
     <div className="relative flex min-h-0 flex-1" data-testid="workspace">
       <Group orientation="horizontal" className="min-h-0 flex-1">
-        <SidePanel slot="left"><Sidebar view={view} /></SidePanel>
-        <Separator id="sep-left" className="w-px bg-line transition-colors hover:bg-accent data-[separator-state=drag]:bg-accent" />
+        {layout.left.panes.length > 0 && <SlotPanel slot="left" view={view} />}
+        {layout.left.panes.length > 0 && <Separator id="sep-left" className={`w-px ${SEPARATOR}`} />}
         <Panel id="center" minSize={320}>
-          <main className="flex h-full min-w-0 flex-col">{center}</main>
+          <Group orientation="vertical" className="h-full">
+            <Panel id="main" minSize={160}>
+              <main className="flex h-full min-w-0 flex-col">{center}</main>
+            </Panel>
+            {layout.bottom.panes.length > 0 && <Separator id="sep-bottom" className={`h-px ${SEPARATOR}`} />}
+            {layout.bottom.panes.length > 0 && <SlotPanel slot="bottom" view={view} />}
+          </Group>
         </Panel>
-        <Separator id="sep-right" className="w-px bg-line transition-colors hover:bg-accent data-[separator-state=drag]:bg-accent" />
-        <SidePanel slot="right"><DetailPanel view={view} /></SidePanel>
+        {layout.right.panes.length > 0 && <Separator id="sep-right" className={`w-px ${SEPARATOR}`} />}
+        {layout.right.panes.length > 0 && <SlotPanel slot="right" view={view} />}
       </Group>
-      {view.chat.open && <AiChatPanel view={view} />}
+      <PaneDropZones />
     </div>
   )
 }
 
-function SidePanel({ slot, children }: { slot: Slot; children: ReactNode }) {
+/** A slot's panel: its size is a width (left, right) or a height (bottom) and persists per slot. */
+function SlotPanel({ slot, view }: { slot: Slot; view: RepoView }) {
   const st = useSetting('layout')[slot]
   const ref = usePanelRef()
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Collapse and expand when the setting changes (keyboard toggles, the palette, other windows).
   useEffect(() => {
-    const p = ref.current
-    if (!p) return
-    if (st.collapsed && !p.isCollapsed()) p.collapse()
-    else if (!st.collapsed && p.isCollapsed()) p.expand()
-    // A size set elsewhere (Reset panel sizes) applies too; after a drag it already matches.
-    if (!st.collapsed && Math.abs(p.getSize().inPixels - st.size) > 2) p.resize(st.size)
+    let frame = 0
+    let tries = 0
+    const apply = () => {
+      const p = ref.current
+      if (!p) return
+      try {
+        if (st.collapsed && !p.isCollapsed()) p.collapse()
+        else if (!st.collapsed && p.isCollapsed()) p.expand()
+        // A size set elsewhere (Reset layout) applies too; after a drag it already matches.
+        if (!st.collapsed && Math.abs(p.getSize().inPixels - st.size) > 2) p.resize(st.size)
+      } catch (e) {
+        // A panel that has just joined a running group has no measurements for a frame or two
+        // (its defaultSize is right already); try again once the group has laid it out.
+        if (++tries < 10) frame = requestAnimationFrame(apply)
+        else throw e
+      }
+    }
+    apply()
+    return () => cancelAnimationFrame(frame)
   }, [st.collapsed, st.size, ref])
+
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
 
   return (
     <Panel id={slot} panelRef={ref} defaultSize={st.collapsed ? 0 : st.size} minSize={MIN[slot]} collapsible collapsedSize={0}
       groupResizeBehavior="preserve-pixel-size"
       onResize={(_size, _id, prev) => {
         if (!prev) return // the initial measurement is not a user change
-        // Persist after the drag settles; dragging past the minimum collapses the side.
+        // Persist after the drag settles; dragging past the minimum collapses the slot.
         if (timer.current) clearTimeout(timer.current)
         timer.current = setTimeout(() => {
           // The size now, not the one this event carried: a collapse from the keyboard or the
@@ -85,21 +104,10 @@ function SidePanel({ slot, children }: { slot: Slot; children: ReactNode }) {
           const collapsed = size.inPixels < 1
           let next = setCollapsed(current, slot, collapsed)
           if (!collapsed) next = setSize(next, slot, size.inPixels)
-          if (JSON.stringify(next) !== JSON.stringify(current)) saveLayout(next)
+          saveLayout(next)
         }, 250)
       }}>
-      <div className="flex h-full min-h-0 flex-col bg-panel" data-testid={`slot-${slot}`}>
-        <div className="flex h-6 shrink-0 items-center border-b border-line bg-bg/40 px-2 text-[11px] font-semibold tracking-wide text-muted uppercase">
-          {TITLES[slot]}
-        </div>
-        <div className="flex min-h-0 flex-1 flex-col">{children}</div>
-      </div>
+      <SlotView slot={slot} view={view} />
     </Panel>
   )
-}
-
-/** Keyboard and View menu: show or hide a side. */
-export function toggleSlot(slot: Slot): void {
-  const layout = setting('layout')
-  saveLayout(setCollapsed(layout, slot, !layout[slot].collapsed))
 }
