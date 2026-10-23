@@ -76,15 +76,16 @@ What "go back to basics" meant in practice, four questions asked of every surfac
 
 ## Surface by surface
 
-"Done" is UI audit 1; "Next" is UI audit 2.
+"Done" is UI audit 1; "Done (audit 2a)" is the sidebar, graph lanes, working copy, Details header and
+status bar; "Next" is UI audit 2b.
 
 | Surface | What is wrong (one line) | What to do (one line) | |
 |---|---|---|---|
 | Welcome | Logo and three equal cards float in an empty window, no recents, no shortcuts. | Recent repositories as the main list, Open / Clone / New as one row of quiet buttons, shortcuts as a footer. | Next |
-| Graph, comfy | The lane cell grows with the lane count (198 px at 8 lanes, 294 at the cap of 12) so text starts mid-window; empty lanes sit on the left of most rows. | Cap it lower, compress unused lanes, let the message start at a fixed indent. | Next |
-| Graph, compact | Ref column and lanes leave the message 90 px. | Message first: refs inline after it, lanes capped. | Next |
-| Working copy | Staged and Unstaged split the height evenly; identity line is the first thing in the commit box. | Split by content; identity under the fields, in the commit options. | Next |
-| Details | Explain row carried two selects and Prompt; e-mail address truncated mid-word. | One target button in the Explain row; name and date only. | Target button done; header Next |
+| Graph, comfy | The lane cell grows with the lane count (198 px at 8 lanes, 294 at the cap of 12) so text starts mid-window; empty lanes sit on the left of most rows. | Cap it lower, compress unused lanes, let the message start at a fixed indent. | Done (audit 2a): 4 lanes at 24 px, then 16 px, cap 8; the text starts at 166 px at most. |
+| Graph, compact | Ref column and lanes leave the message 90 px. | Message first: refs inline after it, lanes capped. | Done (audit 2a): columns give way (SHA, branch / tag, author, date) until the message keeps 40% of the row; the pills follow the message. |
+| Working copy | Staged and Unstaged split the height evenly; identity line is the first thing in the commit box. | Split by content; identity under the fields, in the commit options. | Done (audit 2a) |
+| Details | Explain row carried two selects and Prompt; e-mail address truncated mid-word. | One target button in the Explain row; name and date only. | Done (audit 2a): the target button, and the header (name and relative date, the address on hover) |
 | AI pane | Two headers; four stacked control bars (33% of the pane); empty state a faint paragraph top-left. | No pane header (New / History move to the strip); one composer box; centred empty state. | Done |
 | Pane tab strips | Uppercase 11 px, ⋯ on every tab, an inset underline: a third tab style. | 12 px medium sentence case, 2 px primary underline, ⋯ on hover or when open, right-click opens the same menu, a right slot for pane actions. | Done |
 | File diff | Five controls in three styles in one bar. | Group: view mode left, tools in a menu right. | Next |
@@ -92,8 +93,8 @@ What "go back to basics" meant in practice, four questions asked of every surfac
 | Context menu | Items are fine; shadcn's blue highlight was the old `accent`. Disabled items now carry reasons. | Done by the colour vocabulary: highlight is the subdued accent surface. | Done |
 | Dialogs | Title, field and buttons are right but the width and spacing are chosen per dialog. | One width per kind, header / body / footer rhythm on the 4 px grid. | Next |
 | Toolbar | Search is a fake input 26 rem wide; badges on pull and push overlap their icons. | Search as the shadcn `Input` with a kbd hint, badges as counts beside the icon. | Next |
-| Sidebar | Eye row, mixed badges, always-on drag hint, lone + and filter icon. | One row anatomy, counts right-aligned in one column, hint only while dragging. | Next |
-| Status bar | Path is truncated at the wrong end. | Truncate left or show the folder name. | Next |
+| Sidebar | Eye row, mixed badges, always-on drag hint, lone + and filter icon. | One row anatomy, counts right-aligned in one column, hint only while dragging. | Done (audit 2a) |
+| Status bar | Path is truncated at the wrong end. | Truncate left or show the folder name. | Done (audit 2a) |
 | Tokens | Two vocabularies, hand-typed sizes. | One vocabulary, a documented scale. | Done |
 
 ## What changed in UI audit 1
@@ -179,3 +180,29 @@ the AI pane uses for New and History. Details could put Review / Stash there lat
 Every change was checked by screenshot in dark and light: the graph with a commit selected, the
 context menu (the highlight is the subdued surface, not blue), Details, the working copy, the file
 diff, the AI pane (empty, with a chip, the actions menu open, the target popover open), a dialog.
+
+## What changed in UI audit 2a
+
+**Sidebar.** Every row is icon, name, then one right-aligned column (`Meta` for counts, dates and
+folders; `Badge` for states such as merged, stale, a pull request) in `text-2xs
+text-muted-foreground`, ending 12 px from the edge in every section. The eye that hides a branch
+replaces the badges on hover instead of reserving room beside them. "Viewing n/m" shows only when the graph hides
+something, above the filter box so it does not move the rows. An empty Pinned section is its
+header; "Drop to pin" shows in that header while a branch is dragged (not as a new row: a drop
+target that shifts under the pointer is one you miss). The footer's + and gear sit in one row with
+the filter box.
+
+**Graph lanes.** Comfy: the first four lanes are 24 px apart, the next four 16 px, and the cap is
+eight lanes, so the text starts at 166 px at the very most (it was 294). Compact: `lib/graphColumns.ts`
+keeps the message at 40% of the row and drops columns until it does: SHA, then the branch / tag
+column (its pills follow the message), then author, then date. At 1280 x 800 with Details open the
+message had 90 px of 715; it has about 400.
+
+**Working copy.** Unstaged and Staged are each capped at their natural height (measured), so a short
+list takes its own height and the other section gets the rest. The identity line is under the
+Amend / Commit row.
+
+**Details header.** Name and relative date; the address is the tooltip on the name.
+
+**Status bar.** The path is cut from the left (`direction: rtl` with an inner `bdi`), the full path in
+the tooltip.
