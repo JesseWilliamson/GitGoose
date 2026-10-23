@@ -44,7 +44,7 @@ export function WalkthroughView({ view }: { view: RepoView }) {
         </div>
         {r && <EffortBadge effort={r.effort} why={r.effortWhy} />}
         <ModelPicker area="walkthrough" />
-        <PromptButton area="walkthrough" repoId={view.id} task={{ kind: 'walkthrough', scope: w.scope }} />
+        <PromptButton area="walkthrough" />
         {w.requestId ? <Button onClick={() => stopWalkthrough(view.id)}><Spinner /> Stop</Button> : <Button onClick={() => startWalkthrough(view.id, w.scope)}>Again</Button>}
         {r && <RailToggle kind="walkthrough" />}
         <Button variant="ghost" onClick={() => updateRepo(view.id, { center: { kind: 'graph' } })}>Back to graph</Button>
