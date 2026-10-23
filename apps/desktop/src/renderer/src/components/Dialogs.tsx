@@ -7,8 +7,9 @@ import { relativeTime } from '../lib/format'
 import { COMMANDS, FIXED_KEYS, formatCombo, keymap, modName } from '../lib/keys'
 import { api } from '../lib/api'
 import { withPushChecks } from '../lib/pushchecks'
-import { dismissToast, setting, toast, useStore } from '../lib/store'
+import { setting, toast, useStore } from '../lib/store'
 import { Button, Modal, TextField } from './ui'
+import { OptionSelect } from './ui/select'
 import { ModelPicker } from './ModelPicker'
 import { PromptButton } from './PromptPanel'
 
@@ -227,9 +228,8 @@ function CreatePullDialog({ repoId, branch, close }: { repoId: string; branch: s
         </label>
         <div className="flex items-center gap-3 text-[13px]">
           <label className="flex items-center gap-2">Into
-            <select value={base} onChange={(e) => setBase(e.target.value)} aria-label="Base branch" className="h-7 rounded-md border border-line bg-bg px-1 text-[13px]">
-              {(bases.length ? bases : [base]).map((b) => <option key={b} value={b}>{b}</option>)}
-            </select>
+            <OptionSelect value={base} onChange={setBase} aria-label="Base branch" className="h-7 px-2"
+              options={(bases.length ? bases : [base]).map((b) => ({ value: b, label: b }))} />
           </label>
         </div>
         {needsPush && <p className="text-xs text-muted">{branch} will be pushed to {remote} first.</p>}
@@ -351,10 +351,8 @@ function PushRulesDialog({ repoId, close }: { repoId: string; close: () => void 
             <div className="mb-1 flex gap-2">
               <input value={c.name} onChange={(e) => edit(i, { name: e.target.value })} placeholder="Name (e.g. No debug logging)" aria-label="Check name"
                 className="h-7 min-w-0 flex-1 rounded-md border border-line bg-bg px-2 text-[13px] outline-none focus:border-accent" />
-              <select value={c.mode} onChange={(e) => edit(i, { mode: e.target.value as PushCheck['mode'] })} aria-label="When it fails" className="h-7 rounded-md border border-line bg-bg px-1 text-[13px]">
-                <option value="warn">Warn</option>
-                <option value="block">Block</option>
-              </select>
+              <OptionSelect value={c.mode} onChange={(v) => edit(i, { mode: v as PushCheck['mode'] })} aria-label="When it fails" className="h-7 px-2"
+                options={[{ value: 'warn', label: 'Warn' }, { value: 'block', label: 'Block' }]} />
               <Button size="sm" variant="ghost" onClick={() => setMine((m) => m!.filter((_, n) => n !== i))}>Remove</Button>
             </div>
             <textarea value={c.instructions} onChange={(e) => edit(i, { instructions: e.target.value })} rows={2} aria-label="What to check"
@@ -541,34 +539,5 @@ export function PromptDialog() {
         </div>
       </form>
     </Modal>
-  )
-}
-
-export function Toasts() {
-  const toasts = useStore((s) => s.toasts)
-  const [expanded, setExpanded] = useState<number | null>(null)
-  return (
-    // Bottom centre, over the graph: bottom right would cover the Commit button for 5 seconds.
-    <div className="pointer-events-none fixed bottom-8 left-1/2 z-50 flex w-96 max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-col gap-2" data-testid="toasts">
-      {toasts.map((t) => (
-        <div key={t.id} role="status" data-kind={t.kind}
-          className="pointer-events-auto rounded-lg border border-line bg-raised p-3 text-[13px] shadow-xl shadow-black/30">
-          <div className="flex items-start gap-2">
-            <span className={`mt-1 size-2 shrink-0 rounded-full ${t.kind === 'success' ? 'bg-add' : 'bg-accent'}`} />
-            <div className="min-w-0 flex-1">
-              <div className="font-medium">{t.title}</div>
-              {t.detail && (
-                <pre onClick={() => setExpanded(expanded === t.id ? null : t.id)}
-                  className={`selectable mt-1 cursor-pointer font-mono text-[11px] whitespace-pre-wrap text-muted ${expanded === t.id ? 'max-h-64 overflow-auto' : 'line-clamp-3'}`}>{t.detail}</pre>
-              )}
-            </div>
-            {t.action && (
-              <Button size="sm" onClick={() => { dismissToast(t.id); t.action!.run() }} data-testid="toast-action">{t.action.label}</Button>
-            )}
-            <button onClick={() => dismissToast(t.id)} className="text-faint hover:text-fg" title="Dismiss">✕</button>
-          </div>
-        </div>
-      ))}
-    </div>
   )
 }
