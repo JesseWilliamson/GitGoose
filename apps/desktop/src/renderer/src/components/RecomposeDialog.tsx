@@ -12,8 +12,7 @@ import { history, push, redo, undo, type History } from '../lib/history'
 import { addCommit, draftProblems, editMessage, moveCommit, moveUnit, removeEmpty, squashCommits, type Draft } from '../lib/recomposeDraft'
 import { toast, updateRepo, useStore } from '../lib/store'
 import { useThread } from '../lib/thread'
-import { ModelPicker } from './ModelPicker'
-import { PromptButton } from './PromptPanel'
+import { AiTargetButton } from './AiTargetButton'
 import { Thread } from './Thread'
 import { Button, CM, DM, Modal, Spinner } from './ui'
 
@@ -119,8 +118,7 @@ export function RecomposeDialog() {
           <>
             <div className="flex items-start gap-2 text-destructive" data-testid="recompose-error"><CircleAlert size={15} className="mt-px shrink-0" /> {state.error}</div>
             <div className="mt-4 flex items-center justify-end gap-2">
-              <ModelPicker area="recompose" />
-              <PromptButton area="recompose" className="mr-auto" />
+              <AiTargetButton area="recompose" className="mr-auto" />
               <Button onClick={discard}>Close</Button>
               <Button variant="primary" onClick={() => recomposeWithAi(state.repoId, state.hashes)}>Try again</Button>
             </div>
@@ -130,8 +128,7 @@ export function RecomposeDialog() {
             <div className="flex items-center gap-2 text-muted-foreground"><Spinner /> Asking the AI how to split these changes into commits…</div>
             <p className="mt-2 text-xs text-muted-foreground/70">You can close this; the plan waits in the status bar.</p>
             <div className="mt-4 flex items-center justify-end gap-2">
-              <ModelPicker area="recompose" onPicked={restart} />
-              <PromptButton area="recompose" className="mr-auto" />
+              <AiTargetButton area="recompose" onPicked={restart} className="mr-auto" />
               <Button onClick={discard} data-testid="recompose-stop">Stop</Button>
               <Button variant="primary" onClick={hide} data-testid="recompose-hide">Close</Button>
             </div>

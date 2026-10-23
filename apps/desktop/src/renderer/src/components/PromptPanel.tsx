@@ -3,6 +3,7 @@ import {
   type AiArea, type PromptKind, type PromptSource, type PromptText,
 } from '@gitgoose/shared'
 import clsx from 'clsx'
+import { cn } from '@/lib/utils'
 import { FileText, RotateCcw } from 'lucide-react'
 import { Popover } from 'radix-ui'
 import { useEffect, useRef, useState } from 'react'
@@ -31,7 +32,7 @@ export function PromptButton({ area, className }: {
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger asChild>
-        <button className={clsx('inline-flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground', className)}
+        <button className={cn('inline-flex h-row items-center gap-1 rounded-md border border-border px-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground', className)}
           title="Show and edit the prompt" data-testid={`prompt-button-${area}`}>
           <FileText size={12} /> Prompt{source === 'area' ? ' (edited)' : ''}
         </button>

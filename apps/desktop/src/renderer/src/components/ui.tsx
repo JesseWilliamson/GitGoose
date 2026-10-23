@@ -150,9 +150,10 @@ export const DM = {
   Content: ({ children, align = 'start' }: { children: ReactNode; align?: 'start' | 'end' | 'center' }) => (
     <DropdownMenuContent align={align} sideOffset={4} className="min-w-48 data-[state=open]:animate-none! data-[state=closed]:animate-none!">{children}</DropdownMenuContent>
   ),
-  Item: ({ children, onSelect, disabled, reason }: { children: ReactNode; onSelect: () => void; disabled?: boolean; reason?: string }) => (
+  /** `reason` greys the item out and says why on hover (a tooltip, and aria-description); `title` is what an enabled item does. */
+  Item: ({ children, onSelect, disabled, reason, title, testId }: { children: ReactNode; onSelect: () => void; disabled?: boolean; reason?: string; title?: string; testId?: string }) => (
     <Reason reason={reason}>
-      <DropdownMenuItem className={itemText} onSelect={onSelect} disabled={disabled || !!reason} aria-description={reason}>{children}</DropdownMenuItem>
+      <DropdownMenuItem className={itemText} onSelect={onSelect} disabled={disabled || !!reason} aria-description={reason} title={reason ? undefined : title} data-testid={testId}>{children}</DropdownMenuItem>
     </Reason>
   ),
   /** A toggle that keeps the menu open, so several can be flipped in a row. */

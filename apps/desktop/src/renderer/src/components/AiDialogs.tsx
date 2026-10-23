@@ -11,8 +11,7 @@ import { acceptFix, showFix } from '../lib/review'
 import { toast, useStore } from '../lib/store'
 import { RecomposeDialog } from './RecomposeDialog'
 import { Button, Modal, Spinner } from './ui'
-import { ModelPicker } from './ModelPicker'
-import { PromptButton } from './PromptPanel'
+import { AiTargetButton } from './AiTargetButton'
 
 /** Every AI modal: consent, login, tool permission, streamed answers, conflict proposals. */
 export function AiDialogs() {
@@ -155,8 +154,7 @@ function OutputDialog() {
         <div className="mt-4 flex items-center justify-between gap-2">
           <span className="flex items-center gap-1 text-2xs text-muted-foreground/70"><Sparkles size={11} /> AI-written; check it before acting on it.</span>
           <div className="flex items-center gap-2">
-            <ModelPicker area="error" />
-            <PromptButton area="error" />
+            <AiTargetButton area="error" />
             {o.requestId && <Button onClick={() => cancelAi(o.requestId!)}>Stop</Button>}
             <Button variant="primary" onClick={close}>Close</Button>
           </div>

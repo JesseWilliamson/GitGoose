@@ -26,8 +26,7 @@ import { FileListTools, FileListView, FileRow, statusKind } from './FileList'
 import { modName } from '../lib/keys'
 import { Button, CM, DM, SectionHeader, Spinner } from './ui'
 import { firstReason, whyNotAi, whyNotWithoutStaged } from '../lib/menuRules'
-import { ModelPicker } from './ModelPicker'
-import { PromptButton } from './PromptPanel'
+import { AiTargetButton } from './AiTargetButton'
 
 /** The commit box's request (one object, so its Prompt panel does not rebuild every render). */
 const COMMIT_TASK = { kind: 'commit-message' } as const
@@ -417,8 +416,7 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
       />
       {aiOn && (
         <div className="mt-2 flex min-w-0 items-center gap-2">
-          <ModelPicker area="commit" className="min-w-0 flex-1" />
-          <PromptButton area="commit" />
+          <AiTargetButton area="commit" />
           <Button size="sm" variant="ghost" onClick={() => void writeMessage()} disabled={!writing && stagedCount === 0} data-testid="ai-commit-message"
             title={writing ? 'Stop' : 'Write the message with AI, from the staged changes'}>
             {writing ? <><Spinner /> Stop</> : <><Sparkles size={13} /> Write</>}
@@ -739,8 +737,7 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
             {!shown ? (
               <span className="flex min-w-0 items-center gap-2">
                 <Button size="sm" variant="ghost" onClick={explain} disabled={loading} data-testid="ai-explain-commit"><Sparkles size={12} /> Explain</Button>
-                <ModelPicker area="explain" className="min-w-0 flex-1" />
-                <PromptButton area="explain" />
+                <AiTargetButton area="explain" />
               </span>
             ) : (
               <div className="rounded-md border border-border bg-background/60 p-2 text-sm" data-testid="ai-explanation">

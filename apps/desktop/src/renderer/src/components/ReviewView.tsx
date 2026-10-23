@@ -7,8 +7,7 @@ import { api } from '../lib/api'
 import { toast, updateRepo, useStore, type RepoView } from '../lib/store'
 import { RailToggle, ThreadRail, useRailOpen } from './ThreadRail'
 import { Button, Spinner } from './ui'
-import { ModelPicker } from './ModelPicker'
-import { PromptButton } from './PromptPanel'
+import { AiTargetButton } from './AiTargetButton'
 
 export const SEVERITY_STYLE: Record<FindingSeverity, string> = {
   critical: 'bg-destructive text-white',
@@ -50,8 +49,7 @@ export function ReviewView({ view }: { view: RepoView }) {
             {` · ${r.profile} profile`}
           </div>
         </div>
-        <ModelPicker area="review" />
-        <PromptButton area="review" />
+        <AiTargetButton area="review" />
         {r.requestId ? <Button onClick={() => stopReview(view.id)}><Spinner /> Stop</Button>
           : <Button onClick={() => startReview(view.id, r.scope, { incremental: true })} title="Only what changed since this review is sent again">Review again</Button>}
         {result && <RailToggle kind="review" />}

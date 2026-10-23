@@ -164,3 +164,17 @@ function useModels(target: AiTarget | null): { list: AiModelList | null; loading
   }
   return { list: held.key === key ? held.list : null, loading: loadingKey === key, error, load }
 }
+
+/**
+ * What the area answers with, in words: "Claude · default", "Codex · GPT-5", "Anthropic API · claude-opus-5-5".
+ * The model's name comes from the list main has saved (no agent is started for it); "default" means
+ * the agent's own choice. Null when AI is off.
+ */
+export function useTargetLabel(area: AiArea): string | null {
+  const settings = useStore((s) => s.settings)
+  const target = (settings?.aiAreaTargets[area] ?? (settings ? defaultTarget(settings) : null)) ?? null
+  const { list } = useModels(target)
+  if (!target) return null
+  const label = targetLabel(target, list?.models)
+  return target.model ? label : `${label} · default`
+}

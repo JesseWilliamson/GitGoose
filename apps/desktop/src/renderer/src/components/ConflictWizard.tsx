@@ -9,8 +9,7 @@ import { api } from '../lib/api'
 import { opName, sentence, splitPath } from '../lib/format'
 import { reportError, updateRepo, useSetting, useStore, type RepoView } from '../lib/store'
 import { Button, Spinner } from './ui'
-import { ModelPicker } from './ModelPicker'
-import { PromptButton } from './PromptPanel'
+import { AiTargetButton } from './AiTargetButton'
 
 const ResultEditor = lazy(() => import('./ResultEditor'))
 const MergePanes = lazy(() => import('./MergePanes'))
@@ -171,7 +170,7 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
             <i className="size-2 rounded-sm bg-theirs" /> {versions.theirs === null ? 'Keep deleted (theirs)' : 'Take theirs'}
           </button>
         </div>
-        {aiOn && versions.merged !== null && <><ModelPicker area="conflict" agentsOnly /><PromptButton area="conflict" /></>}
+        {aiOn && versions.merged !== null && <AiTargetButton area="conflict" agentsOnly />}
         {agentOn && versions.merged !== null && (
           <Button size="sm" onClick={askAi} data-testid="ai-resolve" title={asking ? 'Stop' : 'Ask your AI agent to propose a resolution (you review it before anything is written)'}>
             {asking ? <><Spinner /> Stop</> : <><Sparkles size={12} /> Ask AI</>}
