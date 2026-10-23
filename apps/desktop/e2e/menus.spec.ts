@@ -1,6 +1,6 @@
 import { initRepo, tempDir } from '@gitgoose/fixtures'
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { launch } from './app'
+import { expectTooltip, launch } from './app'
 
 /**
  * An item that cannot run is greyed, not missing, and says why. shadcn items are
@@ -9,12 +9,7 @@ import { launch } from './app'
 async function expectDisabledWith(page: Page, item: Locator, reason: string) {
   await expect(item).toHaveAttribute('aria-disabled', 'true')
   await expect(item).toHaveAttribute('aria-description', reason)
-  // A long menu scrolls: bring the item into view first.
-  await item.scrollIntoViewIfNeeded()
-  const at = (await item.boundingBox())!
-  await page.mouse.move(at.x + 20, at.y + at.height / 2, { steps: 8 })
-  await page.mouse.move(at.x + 60, at.y + at.height / 2, { steps: 8 })
-  await expect(page.getByRole('tooltip').first()).toHaveText(reason, { timeout: 10_000 })
+  await expectTooltip(page, item.locator('xpath=..'), reason)
 }
 
 /** base - A (on main) - side branch work - M (merge, HEAD) - after */
