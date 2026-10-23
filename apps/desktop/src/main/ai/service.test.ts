@@ -179,6 +179,9 @@ describe('threads', () => {
     expect(checked.review.dropped.map((d) => d.title)).toEqual(['Invented in chat'])
     // An artifact the anchor does not take is refused.
     expect(await t.ai.checkArtifact(thread.id, 'plan', '{}')).toMatchObject({ kind: 'problem' })
+    // A ```mermaid block is the diagram artifact: main keeps the source (the renderer parses it); an empty one is refused.
+    expect(await t.ai.checkArtifact(thread.id, 'diagram', 'sequenceDiagram\n  A->>B: hi')).toEqual({ kind: 'diagram', mermaid: 'sequenceDiagram\n  A->>B: hi' })
+    expect(await t.ai.checkArtifact(thread.id, 'diagram', '  ')).toMatchObject({ kind: 'problem' })
   })
 
   it('a feature thread nobody opens still ends its session after the idle grace', async () => {

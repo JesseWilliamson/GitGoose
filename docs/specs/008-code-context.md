@@ -46,7 +46,7 @@ definitions used, N test files`, or `code (no graph yet)` when the index was not
 patterns and `git grep` answered instead, and `(cut for size)` when the budget bit.
 
 Walkthrough gets a smaller slice (12 definitions, 4 sample uses, 8 used definitions, 8k
-characters): the flows a sequence diagram draws. Push checks and Assess impact get the parsed
+characters): the flows a diagram draws. Push checks and Assess impact get the parsed
 definitions in their hunk headers (no extra context).
 
 ## Where the facts come from

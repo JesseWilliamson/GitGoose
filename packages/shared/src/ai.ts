@@ -313,11 +313,6 @@ export interface WalkthroughHunk {
   summary?: string
 }
 
-export interface SequenceDiagram {
-  participants: string[]
-  messages: { from: string; to: string; label: string }[]
-}
-
 export interface WalkthroughResult {
   scope: ReviewScope
   label: string
@@ -330,7 +325,8 @@ export interface WalkthroughResult {
   groups: { title: string; description: string; files: string[] }[]
   /** Hunks in reading order. */
   hunks: WalkthroughHunk[]
-  sequence: SequenceDiagram | null
+  /** Mermaid source for a flow the change alters (checked for shape here; the renderer parses it), or null. */
+  diagram: string | null
   /** Recent commits (before this change) that touched the same files. */
   history: { hash: string; subject: string; author: string; date: number }[]
   skipped: string[]
@@ -408,7 +404,7 @@ export type AiTask =
   /** Review a change: findings tied to lines, checked against the diff before they are shown. */
   | { kind: 'push-checks'; branch?: string; checks: PushCheckPlan['checks'] }
   | { kind: 'review'; scope: ReviewScope; profile: ReviewProfile; previous?: { findings: ReviewFinding[]; hunkKeys: string[]; contextKey: string } }
-  /** Explain a change: summary, grouped files, effort, reading order, a sequence diagram. */
+  /** Explain a change: summary, grouped files, effort, reading order, a Mermaid diagram. */
   | { kind: 'walkthrough'; scope: ReviewScope }
   /** Which of the call sites found by Repo.impact are at risk (it may cite only those). */
   | { kind: 'assess-impact'; scope: ReviewScope }
@@ -530,7 +526,7 @@ export type ThreadAnchor =
 
 /**
  * Structured results an agent may send inside a conversation, each as one fenced block tagged
- * ```json:<kind>. The renderer parses them and main checks them with the same verifier as the
+ * ```json:<kind> (a diagram is a plain ```mermaid block). The renderer parses them and main checks them with the same verifier as the
  * feature's first answer (findings, plan, walkthrough) before anything can be applied.
  */
 export type ArtifactKind = 'findings' | 'plan' | 'diagram' | 'commit-message' | 'walkthrough'
@@ -652,5 +648,5 @@ export type AiArtifactResult =
   | { kind: 'plan'; recompose: RecomposeProposal }
   | { kind: 'walkthrough'; walkthrough: WalkthroughResult }
   | { kind: 'commit-message'; message: string }
-  | { kind: 'diagram'; sequence: SequenceDiagram }
+  | { kind: 'diagram'; mermaid: string }
   | { kind: 'problem'; message: string }

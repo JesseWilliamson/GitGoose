@@ -107,7 +107,7 @@ function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
   const log = getLog(view.id)
   // As wide as the widest stretch of history loaded so far, up to COMPACT_LANES: it only ever
   // grows (as pages arrive), so the columns do not shift while scrolling back up.
-  const graphW = compact ? compactWidth(log.maxWidth) : 0
+  const graphW = compact ? compactWidth(view.line ? 1 : log.maxWidth) : 0
   const dateW = DATE_W[dateFormat] ?? 100
   const look = useMemo<RowLook>(() => ({ compact, rowH, dateFormat, showRemotes, showTags, avatars, graphW, dateW }),
     [compact, rowH, dateFormat, showRemotes, showTags, avatars, graphW, dateW])
@@ -319,8 +319,8 @@ function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
                 const style = { position: 'absolute' as const, top: 0, left: 0, right: 0, height: item.size, transform: `translateY(${item.start}px)` }
                 const r = rowOf(i)
                 if (r === -1) {
-                  return <WipRow key="wip" style={style} view={view} cellW={compact ? graphW : cellWidth(wipLanes)} look={look} selected={view.selected.kind === 'wip'}
-                    lane={log.layout.headLane} color={log.layout.headColor} />
+                  return <WipRow key="wip" style={style} view={view} cellW={compact ? graphW : cellWidth(visible ? 1 : wipLanes)} look={look} selected={view.selected.kind === 'wip'}
+                    lane={visible ? 0 : log.layout.headLane} color={log.layout.headColor} />
                 }
                 const commit = log.commits[r]
                 const row = log.rows[r]
@@ -504,7 +504,7 @@ const CommitRow = memo(function CommitRow(props: {
     [props.refs, props.headBranch, look.showRemotes, look.showTags])
   const head = props.detachedHead
   const lane = laneColor(row.color)
-  const cellW = look.compact ? look.graphW : cellWidth(row.width)
+  const cellW = look.compact ? look.graphW : cellWidth(props.lineAbove === undefined ? row.width : 1)
   /** Compact rows: pills (or a stash or bisect mark) in the column on the left, joined to the node by a line. */
   const labelled = look.compact && (head || pills.length > 0 || !!props.stash || !!props.bisect)
 

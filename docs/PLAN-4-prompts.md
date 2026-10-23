@@ -1,7 +1,7 @@
 # PLAN-4 prompts
 
 One prompt per phase of `docs/PLAN-4.md`, to paste into a fresh Opus session in the right checkout.
-Run them in order (1 → 2 → 3 → 4 → 5a → 5b → 6a → 6b → 7). Each prompt starts with the same
+Run them in order (1 → 2 → 3 → 4 → 5a → 5b → 6b → 7 (6a is dropped)). Each prompt starts with the same
 preamble; it is repeated so a prompt can be pasted on its own.
 
 How to get a production-quality result out of each session:
@@ -280,7 +280,8 @@ Build:
    AiTurn, AiBlock). Each anchor has a system preamble in prompts.ts that (a) gives the feature's
    existing context and (b) states the artifact protocol: when revising the findings / plan /
    diagram / commit message / walkthrough, send the whole thing in one fenced block tagged
-   ```json:findings (json:plan, json:diagram, json:commit-message, json:walkthrough); otherwise prose.
+   ```json:findings (json:plan, json:commit-message, json:walkthrough; a diagram is a ```mermaid block);
+   otherwise prose.
 4. Renderer: components/Thread.tsx (turn list; composer with Shift+Enter newline, Stop, retry;
    tool-call cards with status, rawInput and diffs; permission cards inline with Deny / Allow once /
    Allow for this session; thought blocks collapsed by default) and lib/markdown.tsx, a small
@@ -351,104 +352,55 @@ DoD per the preamble. Anything that would hand a credential to the agent is an a
 
 ---
 
-## Phase 6a prompt (run in the DiagramBuilder checkout): dsviz skill and extensions
+## Phase 6a prompt: not applicable
 
 ```
-You are working in the dsviz repository (/home/user/DiagramBuilder, npm package dsviz). Read
-CLAUDE.md, README.md, src/index.ts, src/scene.ts, render.ts, styles.ts, camera.ts, connector.ts,
-static.ts, src/uml/*, src/sys/*, src/ds/graph.ts, src/ds/tree.ts, tests/*, site/examples.ts, one
-or two demos, and build.mjs. Then read /home/user/GitGoose/docs/PLAN-4.md Phase 6 in full: it says
-what GitGoose needs from the library and why.
-
-Rules: the core stays zero-dependency and framework-free; layouts never know about styling (emit
-roles, the stylesheet decides); ids stay stable across frames so tweens work; text is estimated,
-never measured; nothing touches window or document at import time; every family has tests in
-tests/, a demo in site/demos with an entry in site/examples.ts, and a line in the guide. Jesse is
-learning: explain the interesting idea in each commit message and leave docs/learn-style notes where
-the plan names an exercise.
-
-Deliver, as separate commits:
-1. src/spec.ts: DiagramSpec (discriminated on type: sequence | class | state | architecture | graph
-   | git | array | table | code), validateSpec(x): { ok, errors: {path, message}[] } with precise
-   hand-written checks (unknown ids referenced by edges/messages, missing fields, wrong types),
-   fromSpec(spec, opts): Scene, describeSpec(spec): string (plain-language alt text). Tests for every
-   type, valid and invalid.
-2. src/layout/layered.ts: a Sugiyama-lite DAG layout (cycle breaking by DFS back-edge reversal,
-   longest-path layering, barycenter ordering with a few sweeps, coordinate assignment with
-   configurable rank and node gaps, horizontal or vertical). ds.graph gains layout: 'layered' |
-   'circle' (default circle, unchanged), sys.architecture and uml.classDiagram use it for nodes
-   without x/y. Deterministic for a given input order. Tests: exact positions on a 5-node DAG,
-   invariants on random DAGs (no overlaps, edges go down/right, every node placed), a cycle input
-   does not hang.
-3. src/layout/tidy.ts: Reingold–Tilford for n-ary trees (ds.tree(root, {layout:'tidy'})); binaryTree
-   can opt in. Tests on the classic shapes; keep src/ds/tree.ts's note pointing at it as the exercise.
-4. ds.graph: shape: 'rect' | 'circle' with rect nodes sized to the label estimate; node kind →
-   role node-<kind>; styles for changed / upstream / downstream / test kinds.
-5. src/git/graph.ts: git.graph(commits [{hash, parents, label?, tone?}], refs [{name, hash,
-   kind}], {highlight?, rowH?, laneW?}): lanes by first-parent inheritance (tips take the first free
-   lane, first parent inherits, merges open or join lanes), nodes, curved edges, ref labels, tones per
-   lane. Tests: a linear history is one lane; a branch and merge opens and closes a lane; a branch on
-   top of another continues the lane.
-6. uml.sequence: notes ({over: id | [a,b], text, at: row}), alt else-dividers (fragment.sections:
-   [{label, from, to}]), per-message tone, activations off per diagram.
-7. src/code/block.ts: code.block(lines, {highlight: [[from,to]], numbers?: boolean}) as a monospace
-   block with line numbers and highlighted ranges.
-8. Renderer and React: text crossfade on label change (old text fades out while new fades in, same
-   id); <Diagram injectStyles> prop; controls inject their stylesheet once, not per render;
-   toSVG({theme: 'light' | 'dark'}).
-9. The skill: .claude/skills/dsviz/SKILL.md (under 500 lines) with references/api.md (signatures of
-   every exported family and type), references/spec.md (the JSON spec with one example per type and
-   the validation errors), references/recipes.md (sequence from a call trace, architecture with
-   zones, a layered DAG, a git graph, a before/after array, embedding in React with a dark theme
-   mapped from app tokens). Follow the skill-creator conventions: a clear description line that
-   says when to load it, imperative steps, no duplication of what the references hold. Add
-   `npm run sync:skill -- <path>` that copies the folder into another repository.
-10. Version 2.2.0, CHANGELOG entry, README and guide updates, site demos for each new piece.
-
-Definition of done: npm run typecheck, npm test, npm run build and npm run build:site pass; every
-new piece has tests that fail without it; the skill is tried once by a fresh agent session asked to
-"draw a sequence diagram for a login flow with dsviz" using only the skill (record what it got
-wrong and fix the skill). Push the branch; publishing is a release Jesse makes.
+Dropped. 6a was the dsviz skill and extensions, run in the DiagramBuilder checkout. GitGoose uses
+Mermaid instead (see docs/PLAN-4.md Phase 6), so there is nothing to build in DiagramBuilder and
+no skill to copy. Go straight to 6b.
 ```
 
 ---
 
-## Phase 6b prompt: dsviz in GitGoose
+## Phase 6b prompt: Mermaid in GitGoose
 
 ```
-Phase 6b of docs/PLAN-4.md. Requires dsviz 2.2.0 published (or, until then, a pnpm link to
-/home/user/DiagramBuilder; say which you used). Read lib/sequence.ts and sequence.test.ts,
-components/WalkthroughView.tsx (the SVG), ImpactView.tsx, lib/impact.ts, main/ai/prompts.ts
-(walkthrough), packages/shared/src/ai.ts (SequenceDiagram, WalkthroughResult), styles.css (tokens),
-the Thread component from 5a, and the dsviz skill after copying it.
+Phase 6b of docs/PLAN-4.md. Read lib/sequence.ts and sequence.test.ts, components/WalkthroughView.tsx
+(the SVG), ImpactView.tsx, lib/impact.ts, main/ai/prompts.ts (walkthrough), packages/shared/src/ai.ts
+(SequenceDiagram, WalkthroughResult), packages/shared/src/thread.ts (splitArtifacts), styles.css
+(tokens, dark and light), and the Thread component from 5a.
 
-Adding dsviz as a dependency was asked for in the brief; still state it in the PR description with
-the version and the bundle size change of the renderer.
+Jesse decided on Mermaid: the model writes a fenced ```mermaid block (sequence, state,
+flowchart/architecture, gitGraph, ER, class diagrams, as Mermaid supports them). Adding the
+`mermaid` package was asked for; still state it in the PR description with the version and the
+bundle size change of the renderer.
 
 Build:
-1. Copy the skill: run dsviz's sync:skill into .claude/skills/dsviz/ and add `pnpm sync:skill` to
-   the root package.json so it can be refreshed; never edit the copy by hand.
-2. components/DiagramView.tsx: wraps <Diagram injectStyles> with GitGoose's tokens mapped onto
-   --dv-surface/--dv-fg/--dv-muted/--dv-font/--dv-mono, `.dark` from the app theme, Copy as SVG /
-   Save as SVG / Save as PNG (toSVG + canvas; saving goes through main's existing save dialog IPC),
-   aria-label from describeSpec. Lazy-load dsviz with a dynamic import so the graph's first paint
-   does not pay for it (measure with the bench's first-paint number).
-3. Walkthrough: the model returns diagrams: DiagramSpec[] (sequence, state, architecture, git);
-   validateSpec drops invalid ones into the existing "dropped" list with the error; render with
-   DiagramView; delete lib/sequence.ts and its SVG once the e2e passes with the new path; migrate
-   the SequenceDiagram type to DiagramSpec (shared).
-4. Thread artifacts: ```json:diagram blocks become diagram artifacts; the Explain preamble may ask
-   for one diagram when a commit changes a control flow; the free AI panel can draw on request.
-5. Impact view: a blast-radius picture with ds.graph layered: changed definitions, their uses
-   outside the change, tests; node kinds mapped to roles; click a node to jump to its file as the
-   list does today.
-6. Tests: unit for the token mapping and for validateSpec integration (a bad spec is listed, not
-   rendered); e2e walkthrough.spec.ts and impact.spec.ts updated (the fake agent returns one valid
-   and one invalid diagram), ai.spec.ts for a chat diagram artifact; bench first paint unchanged.
-7. docs/learn/09-layered-layout.md: exercise to implement dsviz's layered layout from its tests
-   (point at the DiagramBuilder checkout and its test file). Spec 006/007 mention diagrams; ADR-010
-   "Diagrams are data: a validated JSON spec drawn by dsviz" explains why we verify specs like
-   findings instead of rendering model-written SVG or Mermaid.
+1. lib/mermaid.ts: validateMermaid(src): Promise<{ ok: true } | { ok: false; message }> using
+   mermaid.parse; it never throws, the parser's message is the error. Parsing needs a DOM, so the
+   test runs under happy-dom (a valid and an invalid diagram). renderMermaid(src) with mermaid.render,
+   a fresh id per render, securityLevel 'strict', startOnLoad false, theme 'base' with themeVariables
+   built from the --gs-* and --lane-N tokens. Load mermaid with a dynamic import so the graph's
+   first paint does not pay for it (measure with the bench's first-paint number).
+2. components/MermaidDiagram.tsx: draws the source, draws again when the source or the app theme
+   changes, shows the parser's message in place when the source is invalid.
+3. Walkthrough: the model returns "diagram": null | a Mermaid string; the main process keeps it
+   if it is a non-empty string of sane size (verifyMermaid); the view draws it with MermaidDiagram,
+   so an invalid diagram shows its parse error there. Delete lib/sequence.ts and the SVG component
+   once the e2e passes with the new path; replace SequenceDiagram in shared.
+4. Thread artifacts: ```mermaid blocks become diagram artifacts; the card parses them with
+   validateMermaid (an invalid one is a problem card with the message) and draws them with
+   MermaidDiagram. The artifact protocol asks for a ```mermaid block of the right kind with one
+   short example; the Explain preamble may ask for one diagram when a commit changes a flow; the
+   free AI panel can draw on request. ```json:diagram is no longer a format.
+5. Impact view: a blast-radius picture as a Mermaid flowchart: changed definitions, their uses
+   outside the change, tests; classes for changed / upstream / downstream / test nodes; click a
+   node to jump to its file as the list does today.
+6. Tests: validateMermaid (valid and invalid), verifyMermaid, splitArtifacts for ```mermaid; e2e
+   walkthrough.spec.ts and impact.spec.ts updated (the fake agent returns a Mermaid diagram), ai.spec.ts
+   for a chat diagram artifact; bench first paint unchanged.
+7. Spec 006 mentions diagrams in chat: keep it in step. There is no dsviz skill and no layered-layout
+   exercise any more.
 
 DoD per the preamble, bench included.
 ```
@@ -470,10 +422,10 @@ navigation, reading-diffs, findings, reviewing, chat and snapshots pages).
 Build, in this order:
 1. packages/shared/src/changestack.ts: types (ChangeStack { overview: { intent, risk, dependencies,
    architecture, behaviour, uncertainties }, layers: Layer[] }, Layer { id, title, intent,
-   hunks: string[], summary, risk, dependsOn, diagram?: DiagramSpec }, Readiness { band: ready |
+   hunks: string[], summary, risk, dependsOn, diagram?: string }, Readiness { band: ready |
    caution | risky | blocked, confidence, reasons[] }) and verifyStack(answer, hunks): every hunk id
    exists, each hunk in exactly one layer (leftovers → "Other changes"), no dependency cycles,
-   overview items cite only known hunk ids, diagrams pass validateSpec. Tests for each rule.
+   overview items cite only known hunk ids, diagrams parse with mermaid.parse. Tests for each rule.
 2. Prompt + service: changeStack(scope) reusing numberedDiff, intent and code context, asking for
    one JSON object; toChangeStack + verifier; cached per (scope key, head, base, guidance hash) like
    reviews; a Refresh that re-sends only changed hunks and keeps layers whose hunks are unchanged.

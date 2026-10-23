@@ -7,7 +7,7 @@ const FAKE = join(import.meta.dirname, 'fake-agent.mjs')
 const AGENT_CMD = `"${process.execPath}" "${FAKE}"`
 const AGENT = { aiProvider: 'agent', aiAgent: 'custom', aiAgentCommand: AGENT_CMD, aiConsent: [`agent:${AGENT_CMD}`] }
 
-test('walkthrough of a commit: summary, effort, checked groups, sequence diagram, reading order, history', async () => {
+test('walkthrough of a commit: summary, effort, checked groups, diagram, reading order, history', async () => {
   const r = initRepo()
   r.commit('root', { 'src/calc.ts': 'export function total(a: number, b: number) {\n  return a - b\n}\n', 'src/calc.test.ts': 'test("t", () => {})\n' })
   const fix = r.commit('fix the total', {
@@ -26,7 +26,7 @@ test('walkthrough of a commit: summary, effort, checked groups, sequence diagram
   const groups = w.getByTestId('walkthrough-groups')
   await expect(groups).not.toContainText('invented.ts')
   await expect(groups).toContainText('Other changes')
-  await expect(w.getByTestId('sequence').locator('text', { hasText: 'total(a, b)' })).toHaveCount(1)
+  await expect(w.getByTestId('mermaid').locator('text', { hasText: 'total(a, b)' }).first()).toBeVisible()
   // Reading order: implementation before tests, each with its summary.
   const hunks = w.getByTestId('reading-hunk')
   await expect(hunks.first()).toContainText('src/calc.ts')

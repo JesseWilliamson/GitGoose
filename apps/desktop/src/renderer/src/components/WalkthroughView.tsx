@@ -6,7 +6,7 @@ import { relativeTime } from '../lib/format'
 import { targetFor } from '../lib/review'
 import { ensureLoaded, updateRepo, type RepoView } from '../lib/store'
 import { startWalkthrough, stopWalkthrough } from '../lib/walkthrough'
-import { SequenceSvg } from './SequenceSvg'
+import { MermaidDiagram } from './MermaidDiagram'
 import { RailToggle, ThreadRail, useRailOpen } from './ThreadRail'
 import { Button, Spinner } from './ui'
 import { ModelPicker } from './ModelPicker'
@@ -22,7 +22,7 @@ const LAYER: Record<ReadingLayer, string> = {
 
 /**
  * A walkthrough of a change (CodeRabbit's, made local): what it does, how hard it is to
- * review, the files grouped by purpose, a sequence diagram of any flow it changes, every piece
+ * review, the files grouped by purpose, a diagram of any flow it changes, every piece
  * in reading order with a one-line summary, and recent history of the same files.
  */
 export function WalkthroughView({ view }: { view: RepoView }) {
@@ -69,10 +69,10 @@ export function WalkthroughView({ view }: { view: RepoView }) {
               ))}
             </div>
 
-            {r.sequence && (
+            {r.diagram && (
               <>
-                <h3 className="mt-6 mb-2 text-[12px] font-semibold text-muted uppercase">Sequence</h3>
-                <SequenceSvg d={r.sequence} />
+                <h3 className="mt-6 mb-2 text-[12px] font-semibold text-muted uppercase">Diagram</h3>
+                <MermaidDiagram source={r.diagram} />
               </>
             )}
 

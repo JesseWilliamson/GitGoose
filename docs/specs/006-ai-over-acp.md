@@ -190,16 +190,17 @@ Features with structured results keep producing them in a conversation. Each anc
 message states the protocol: when revising the findings (review), the plan (recompose), the
 walkthrough, or when writing a commit message (AI panel) or a diagram, send the whole thing as
 one fenced block tagged ```` ```json:findings ```` (`json:plan`, `json:walkthrough`,
-`json:commit-message`, `json:diagram`); otherwise answer in prose (Markdown, no HTML).
+`json:commit-message`; a diagram is a ```` ```mermaid ```` block); otherwise answer in prose
+(Markdown, no HTML).
 
 When the turn ends, the tagged blocks become artifact blocks. The card asks main to check one
 (`aiThreadArtifact`) with **the same verifier as the feature's first answer**, against what the
 feature saw: `verifyFindings` (findings on lines of the change; the rest listed as thrown out),
-`repairPlan`, `verifyWalkthrough`, the commit-message cleaner, the sequence-diagram check. An
+`repairPlan`, `verifyWalkthrough`, the commit-message cleaner, `mermaid.parse` for a diagram (in the renderer, which has a DOM). An
 anchor only takes its own kinds. **Apply** is the user's: findings join the review marked "from
 chat" (Undo), a plan becomes the recompose editor's plan as one undo step, a walkthrough is
 replaced (Undo), a commit message replaces the draft in the commit box (Undo), a diagram is drawn
-inline. Nothing changes behind the user.
+inline (an invalid one shows the parser's message). Nothing changes behind the user.
 
 ## Markdown
 
