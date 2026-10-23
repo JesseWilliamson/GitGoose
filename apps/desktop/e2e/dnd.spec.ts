@@ -62,7 +62,8 @@ const foldWorkspace = async (page: Page) => {
   await header(page, 'workspace').getByRole('button').first().click()
   await expect(workspace(page, 'history')).toHaveCount(0)
 }
-const undo = (page: Page) => page.getByTestId('toast-action').filter({ hasText: 'Undo' }).last().click()
+// Toasts are listed newest first (sonner), so the newest Undo is the first one.
+const undo = (page: Page) => page.getByTestId('toast-action').filter({ hasText: 'Undo' }).first().click()
 
 /** main: A - B; topic (from A): T; pick (from A): P1 - P2; an untracked note so the WIP row shows. */
 function setup() {

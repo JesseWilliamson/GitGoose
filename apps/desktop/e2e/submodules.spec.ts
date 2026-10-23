@@ -29,7 +29,7 @@ test('clone a missing submodule, open it as a tab, remove it and undo', async ()
   await page.getByRole('menuitem', { name: 'Remove submodule' }).click()
   await expect(item).toHaveCount(0)
   await expect(page.getByTestId('staged-file')).toHaveCount(2) // .gitmodules and lib
-  await page.getByTestId('toast-action').filter({ hasText: 'Undo' }).last().click()
+  await page.getByTestId('toast-action').filter({ hasText: 'Undo' }).first().click()
   await expect(item).toHaveCount(1)
   await expect.poll(() => clone.git('status', '--porcelain')).toBe('')
 

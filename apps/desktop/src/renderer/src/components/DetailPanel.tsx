@@ -417,6 +417,16 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
         data-testid="commit-body"
         className="mt-2 w-full resize-none rounded-md border border-line bg-bg px-2 py-1.5 text-[13px] outline-none focus:border-accent"
       />
+      {aiOn && (
+        <div className="mt-2 flex min-w-0 items-center gap-2">
+          <ModelPicker area="commit" className="min-w-0 flex-1" />
+          <PromptButton area="commit" />
+          <Button size="sm" variant="ghost" onClick={() => void writeMessage()} disabled={!writing && stagedCount === 0} data-testid="ai-commit-message"
+            title={writing ? 'Stop' : 'Write the message with AI, from the staged changes'}>
+            {writing ? <><Spinner /> Stop</> : <><Sparkles size={13} /> Write</>}
+          </Button>
+        </div>
+      )}
       <div className="mt-2 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-muted" title="Amend the previous commit instead of making a new one">
@@ -436,13 +446,6 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
               <DM.Item onSelect={() => useStore.setState({ dialog: { kind: 'identity', repoId: id, onSaved: () => setIdentityTick((t) => t + 1) } })}>Change who you commit as…</DM.Item>
             </DM.Content>
           </DropdownMenu.Root>
-          {aiOn && <><ModelPicker area="commit" /><PromptButton area="commit" /></>}
-          {aiOn && (
-            <Button size="sm" variant="ghost" onClick={() => void writeMessage()} disabled={!writing && stagedCount === 0} data-testid="ai-commit-message"
-              title={writing ? 'Stop' : 'Write the message with AI, from the staged changes'}>
-              {writing ? <><Spinner /> Stop</> : <><Sparkles size={13} /> Write</>}
-            </Button>
-          )}
         </div>
         <Button variant="primary" disabled={!canCommit} onClick={() => void commit()} data-testid="commit-button" title={`Commit (${modName()}+Enter)`}>
           {view.busy === 'Commit' ? <Spinner /> : <Check size={14} />}
@@ -736,9 +739,9 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
         {aiOn && !stash && (
           <div className="mt-2">
             {!shown ? (
-              <span className="flex items-center gap-2">
+              <span className="flex min-w-0 items-center gap-2">
                 <Button size="sm" variant="ghost" onClick={explain} disabled={loading} data-testid="ai-explain-commit"><Sparkles size={12} /> Explain</Button>
-                <ModelPicker area="explain" />
+                <ModelPicker area="explain" className="min-w-0 flex-1" />
                 <PromptButton area="explain" />
               </span>
             ) : (

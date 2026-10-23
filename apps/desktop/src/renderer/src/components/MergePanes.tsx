@@ -11,6 +11,7 @@ import {
 } from '../lib/mergeState'
 import { choose } from '../lib/store'
 import { Button } from './ui'
+import { OptionSelect } from './OptionSelect'
 
 /**
  * Three-pane merge, laid out like GitKraken's: yours and theirs side by side on top, the result
@@ -356,12 +357,12 @@ export default function MergePanes({ base, ours, theirs, labels, onSave }: Merge
       <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-2 border-b border-line bg-panel px-3 py-1 text-xs">
         <label className="flex items-center gap-1.5 text-muted">
           Start from
-          <select value={start} onChange={(e) => changeStart(e.target.value as StartFrom)} data-testid="merge-start"
-            className="h-6 rounded border border-line bg-bg px-1 text-fg">
-            <option value="non-conflicting">Non-conflicting changes applied</option>
-            <option value="base">The common ancestor</option>
-            <option value="markers">Git's merge (with markers)</option>
-          </select>
+          <OptionSelect value={start} onChange={(v) => changeStart(v as StartFrom)} data-testid="merge-start" aria-label="Start from" className="px-1.5 text-xs data-[size=default]:h-6"
+            options={[
+              { value: 'non-conflicting', label: 'Non-conflicting changes applied' },
+              { value: 'base', label: 'The common ancestor' },
+              { value: 'markers', label: "Git's merge (with markers)" },
+            ]} />
         </label>
         <Button size="sm" onClick={applyAll} disabled={pendingChanges === 0} data-testid="apply-non-conflicting"
           title="Apply every change that only one side made">
