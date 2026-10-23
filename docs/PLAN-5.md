@@ -24,7 +24,8 @@ through `GitRunner`, the two performance rules, the definition of done) apply to
 | 4 | Context menus: grey out with a reason instead of hiding | 2 | 1 |
 | 5 | Pane system (ADR-010): slots, tabs, moving, the AI pane docked | 2 | 1 |
 | 6 | AI pane: context chips, drag in, actions from the pane | 2 | 1 |
-| 7 | UI audit and redesign | 3 | 4, 5, 6 |
+| 7 | UI audit and redesign | 3 | 4, 5, 6, 8 |
+| 8 | Settings page: one grid | 2 | 1 |
 
 Wave 1 PRs touch disjoint files and merge in any order. Wave 2 starts from main after wave 1.
 Wave 3 is the polish pass over everything and comes last so it does not fight the others.
@@ -258,6 +259,37 @@ what to do. Then the fixes, in one PR, by surface:
 before and after in the PR description.
 
 ---
+
+## 8. Settings page: one grid
+
+**Why.** Jesse: "the settings being all weird and unaligned is crap." Each control is right-aligned
+at its own intrinsic width, so segmented controls, sliders, selects, inputs and switches make a
+ragged right edge; descriptions under the labels make rows of uneven height; the AI section nests
+a card with its own inner grid at a different indent. Nothing lines up because nothing shares an
+edge.
+
+**What** (`components/SettingsPage.tsx`, `packages/shared/src/settings.ts` only for labels):
+
+- One grid for every row: a label column (label, then the description under it in muted 12 px)
+  and a control column of one fixed width (360 px) at the right of a page column of fixed width
+  (max 960 px, centred). Every control fills the control column: segmented controls, selects,
+  text inputs, sliders (track plus value), buttons. The one exception is the switch, pinned to
+  the right edge of the column. Each row has the same vertical padding (12 px) and a 1 px line
+  below it; a section header has the same spacing above and below throughout.
+- Segmented controls whose options are too long for the column wrap to a select.
+- The AI section is rows like every other section: *AI features*, *Agent*, *Test* as a row with
+  its button in the control column and the agent's reported name as the description; the
+  *Prompts* editor is a full-width block under its own row (tabs on the left, editors on the
+  right, the shadcn `Tabs` look), not a nested card.
+- The sidebar nav highlights the section in view as the page scrolls, and the search box is the
+  `Input` primitive at the same width as the nav.
+- Keyboard section: the same grid (shortcut label left, the key chips right-aligned in the
+  control column).
+- Both themes checked.
+
+**Tests.** `e2e/settings.spec.ts` passes unchanged (ids and labels stay); one new assertion:
+every control in the Appearance section has the same left `x` and the same width (read bounding
+boxes of the control column's children).
 
 ## How the PRs are run
 
