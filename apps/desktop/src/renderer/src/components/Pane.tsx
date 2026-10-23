@@ -129,7 +129,7 @@ function PaneMenu({ pane, slot }: { pane: PaneId; slot: Slot }) {
         </DropdownMenu.Trigger>
         <DM.Content align="end">
           {SLOTS.map((s) => (
-            <DM.Item key={s} disabled={s === slot} onSelect={() => changeLayout((l) => movePane(l, pane, s))}>Move to {s}</DM.Item>
+            <DM.Item key={s} reason={s === slot ? `Already in the ${s} slot` : undefined} onSelect={() => changeLayout((l) => movePane(l, pane, s))}>Move to {s}</DM.Item>
           ))}
           <DM.Separator />
           <DM.Item onSelect={() => changeLayout((l) => hidePane(l, pane))}>Hide</DM.Item>
