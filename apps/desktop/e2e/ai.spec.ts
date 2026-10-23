@@ -228,3 +228,48 @@ test('in a chat, each message can show exactly what was sent', async () => {
   await expect(panel.getByTestId('thread-sent')).toContainText('HEAD: main at')
   await app.close()
 })
+
+test("the API's model list is asked for once, and reopening Settings does not ask again", async () => {
+  const api = await fakeAnthropic()
+  const r = makeFixture('linear')
+  const { app, page } = await launch(r.dir, { GITGOOSE_ANTHROPIC_BASE_URL: api.url })
+  await set(page, { aiProvider: 'anthropic' })
+  await page.getByTestId('toolbar').getByRole('button', { name: 'Settings' }).click()
+  await page.getByTestId('ai-api-key').fill('sk-ant-e2e')
+  await page.getByRole('button', { name: 'Save' }).click()
+  const model = page.getByTestId('ai-panel').getByTestId('model-picker-model')
+  // Nothing is known, so nothing was asked: the setting's model id and the offer to load.
+  await expect(model.locator('option')).toHaveText(['claude-opus-5-5', 'Load models…'])
+  expect(api.modelRequests).toBe(0)
+  await model.selectOption({ label: 'Load models…' })
+  await expect(model.locator('option')).toHaveText(['Claude Opus 5.5', 'Claude Haiku 5.5', 'Refresh models…'])
+  expect(api.modelRequests).toBe(1)
+  // Main kept the list with the time it was fetched; the picker reads it from there.
+  expect((await page.evaluate(() => window.gitgoose.getSettings())).aiApiModels?.models).toHaveLength(2)
+  await page.getByTestId('settings-close').click()
+  await page.getByTestId('toolbar').getByRole('button', { name: 'Settings' }).click()
+  await expect(model.locator('option')).toHaveText(['Claude Opus 5.5', 'Claude Haiku 5.5', 'Refresh models…'])
+  expect(api.modelRequests).toBe(1)
+  await app.close()
+  await api.close()
+})
+
+test("an agent's model list survives a restart: the picker offers Refresh, not Load models…", async () => {
+  const r = makeFixture('linear')
+  const profile = tempDir('gitgoose-profile-')
+  const env = { GITGOOSE_USER_DATA: profile, FAKE_AGENT_MODELS: '1' }
+  let { app, page } = await launch(r.dir, env)
+  await set(page, AGENT)
+  await page.getByTestId('toolbar').getByRole('button', { name: 'Settings' }).click()
+  let model = page.getByTestId('ai-panel').getByTestId('model-picker-model')
+  await expect(model.locator('option')).toHaveText(['Default model', 'Load models…'])
+  await model.selectOption({ label: 'Load models…' })
+  await expect(model.locator('option')).toHaveText(['Default (Fake Smart)', 'Fake Fast', 'Fake Smart', 'Refresh models…'])
+  await app.close()
+
+  ;({ app, page } = await launch(r.dir, env))
+  await page.getByTestId('toolbar').getByRole('button', { name: 'Settings' }).click()
+  model = page.getByTestId('ai-panel').getByTestId('model-picker-model')
+  await expect(model.locator('option')).toHaveText(['Default (Fake Smart)', 'Fake Fast', 'Fake Smart', 'Refresh models…'])
+  await app.close()
+})

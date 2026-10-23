@@ -193,6 +193,12 @@ export const SETTINGS = {
    * session's config options, so this is how a picker can show them before anything is started.
    */
   aiAgentModels: internal<Record<string, AiModelList & { at: number }>>({}),
+  /**
+   * The models the Anthropic API listed the last time the user asked (GET /v1/models), kept like
+   * the agents' lists so a restart does not lose it. Never refreshed on its own: a call the user
+   * did not ask for is not made; an old list is shown and the picker offers "Refresh".
+   */
+  aiApiModels: internal<(AiModelList & { at: number }) | null>(null),
   /** Settings → AI → Prompts: the default words per prompt (blank parts use the built-in ones). */
   aiPrompts: internal<Partial<Record<PromptKind, PromptText>>>({}),
   /** Words edited in an area's Prompt panel, remembered for that area ("Reset" drops them). */

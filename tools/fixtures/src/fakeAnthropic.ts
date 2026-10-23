@@ -10,6 +10,8 @@ export interface FakeAnthropic {
   server: Server
   /** Request bodies received, parsed. */
   requests: { model: string; max_tokens?: number; system?: string; messages: { role: string; content: string }[]; headers: Record<string, string | string[] | undefined> }[]
+  /** How many times GET /v1/models was called. */
+  readonly modelRequests: number
   close(): Promise<void>
 }
 
@@ -18,11 +20,13 @@ export const FAKE_MODELS = [{ id: 'claude-opus-5-5', name: 'Claude Opus 5.5' }, 
 
 export async function fakeAnthropic(reply: string[] = ['Fix: ', 'retry the push.'], status = 200): Promise<FakeAnthropic> {
   const requests: FakeAnthropic['requests'] = []
+  let modelRequests = 0
   const server = createServer(async (req, res) => {
     let raw = ''
     for await (const c of req) raw += c
     // The model list (GET /v1/models), one page, shaped like the real API's.
     if (req.method === 'GET' && req.url?.startsWith('/v1/models')) {
+      modelRequests++
       res.writeHead(200, { 'content-type': 'application/json' })
       res.end(JSON.stringify({
         data: FAKE_MODELS.map((m) => ({ type: 'model', id: m.id, display_name: m.name, created_at: '2026-01-01T00:00:00Z' })),
@@ -58,6 +62,7 @@ export async function fakeAnthropic(reply: string[] = ['Fix: ', 'retry the push.
     url: `http://127.0.0.1:${(server.address() as { port: number }).port}`,
     server,
     requests,
+    get modelRequests() { return modelRequests },
     close: () => new Promise<void>((r) => server.close(() => r())),
   }
 }
