@@ -25,6 +25,7 @@ import { ChangeHints } from './ChangeHints'
 import { FileListTools, FileListView, FileRow, statusKind } from './FileList'
 import { modName } from '../lib/keys'
 import { Button, CM, DM, SectionHeader, Spinner } from './ui'
+import { firstReason, whyNotAi, whyNotWithoutStaged } from '../lib/menuRules'
 import { ModelPicker } from './ModelPicker'
 import { PromptButton } from './PromptPanel'
 
@@ -99,6 +100,7 @@ function FileMenu({ view, target, children }: { view: RepoView; target: DiffTarg
 
 function WipPanel({ view }: { view: RepoView }) {
   const aiOn = useAiEnabled()
+  const aiWhy = aiOn ? undefined : whyNotAi(undefined)
   const st = view.snapshot.status
   const unstaged = st.filter((e) => e.kind === 'untracked' || (e.kind !== 'unmerged' && e.worktree !== '.'))
   const staged = st.filter((e) => e.kind !== 'untracked' && e.kind !== 'unmerged' && e.index !== '.')
@@ -139,14 +141,10 @@ function WipPanel({ view }: { view: RepoView }) {
               <Button size="sm" variant="ghost" data-testid="review-menu" title="Review, explain or assess these changes"><Sparkles size={12} /> Review</Button>
             </DropdownMenu.Trigger>
             <DM.Content align="end">
-              {aiOn && (
-                <>
-                  <DM.Item onSelect={() => startReview(id, { kind: 'working' })}>Review all uncommitted changes</DM.Item>
-                  <DM.Item disabled={!staged.length} onSelect={() => startReview(id, { kind: 'staged' })}>Review staged changes</DM.Item>
-                  <DM.Item onSelect={() => startWalkthrough(id, { kind: 'working' })}>Walk me through these changes</DM.Item>
-                  <DM.Separator />
-                </>
-              )}
+              <DM.Item reason={aiWhy} onSelect={() => startReview(id, { kind: 'working' })}>Review all uncommitted changes</DM.Item>
+              <DM.Item reason={firstReason(aiWhy, whyNotWithoutStaged(staged.length))} onSelect={() => startReview(id, { kind: 'staged' })}>Review staged changes</DM.Item>
+              <DM.Item reason={aiWhy} onSelect={() => startWalkthrough(id, { kind: 'working' })}>Walk me through these changes</DM.Item>
+              <DM.Separator />
               <DM.Item onSelect={() => showImpact(id, { kind: 'working' })}>What could these changes affect?</DM.Item>
             </DM.Content>
           </DropdownMenu.Root>
@@ -161,8 +159,8 @@ function WipPanel({ view }: { view: RepoView }) {
               <DM.Item onSelect={() => stashWithMessage(id)}>Stash with a message…</DM.Item>
               <DM.Item onSelect={() => void snapshot(id)}>Save a snapshot (changes stay as they are)</DM.Item>
               <DM.Separator />
-              <DM.Item disabled={!staged.length} onSelect={() => void stashWith(id, { staged: true })}>Stash only the staged changes</DM.Item>
-              <DM.Item disabled={!staged.length} onSelect={() => void stashWith(id, { keepIndex: true })}>Stash all, keep the staged changes in place</DM.Item>
+              <DM.Item reason={whyNotWithoutStaged(staged.length)} onSelect={() => void stashWith(id, { staged: true })}>Stash only the staged changes</DM.Item>
+              <DM.Item reason={whyNotWithoutStaged(staged.length)} onSelect={() => void stashWith(id, { keepIndex: true })}>Stash all, keep the staged changes in place</DM.Item>
             </DM.Content>
           </DropdownMenu.Root>
         )}

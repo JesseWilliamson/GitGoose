@@ -93,19 +93,20 @@ test('fast-forward a branch that is not checked out; stop and start tracking; pu
   await expect(topic).not.toContainText('↓1')
 
   await topic.click({ button: 'right' })
-  await item(page, 'Stop tracking origin/main').click()
+  await pickFromSubmenu(page, 'More remote actions', 'Stop tracking origin/main')
   await expect.poll(() => r.tryGit('config', 'branch.topic.merge')).toBe(1)
   // The menu is built from what the sidebar shows: wait until it shows the change, not just git.
   await expect(topic).toHaveAttribute('data-upstream', '')
 
   await topic.click({ button: 'right' })
+  await pickFromSubmenu(page, 'More remote actions', 'Track a remote branch')
   await pickFromSubmenu(page, 'Track a remote branch', 'Other…')
   await page.getByTestId('dialog-input').fill('origin/main')
   await page.getByTestId('dialog-submit').click()
   await expect.poll(() => r.gitOrNull('rev-parse', '--abbrev-ref', 'topic@{upstream}')?.trim()).toBe('origin/main')
 
   await topic.click({ button: 'right' })
-  await item(page, 'Push to origin…').click()
+  await pickFromSubmenu(page, 'More remote actions', 'Push to origin…')
   await expect(page.getByTestId('dialog-input')).toHaveValue('topic')
   await page.getByTestId('dialog-input').fill('shared-topic')
   await page.getByTestId('dialog-submit').click()
