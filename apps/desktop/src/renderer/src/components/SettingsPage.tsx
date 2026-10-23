@@ -81,7 +81,7 @@ export function SettingsPage() {
         <nav className="flex w-56 shrink-0 flex-col border-r border-line bg-panel">
           <div className="relative p-3">
             <Search size={13} className="pointer-events-none absolute top-1/2 left-5.5 -translate-y-1/2 text-faint" />
-            <Input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search settings"
+            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search settings"
               className="h-8 bg-bg pl-7 text-[13px] md:text-[13px] dark:bg-bg" data-testid="settings-search" />
           </div>
           {sections.map((s) => (
@@ -92,13 +92,13 @@ export function SettingsPage() {
           ))}
         </nav>
         {/* The bottom padding lets the last sections scroll up to the top, where the nav picks them. */}
-        <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-8 pt-4 pb-[50vh]" data-testid="settings-scroll">
+        <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-8 pb-[50vh]" data-testid="settings-scroll">
           <div className="mx-auto max-w-[960px]">
             {sections.length === 0 && <p className="py-8 text-center text-sm text-faint">No settings match “{query}”.</p>}
             {sections.map((s) => {
               const Panel = SECTION_PANELS[s]
               return (
-                <section key={s} data-section={s} className="mt-8 scroll-mt-4 first:mt-0">
+                <section key={s} data-section={s} className="mt-6 scroll-mt-6">
                   <h2 className="flex h-7 items-center border-b border-line text-[11px] font-semibold tracking-wide text-muted uppercase">{s}</h2>
                   {shown.filter((v) => v.spec.section === s).map((v) => (
                     <SettingRow key={v.key} k={v.key} spec={v.spec} value={settings[v.key]} />
@@ -144,10 +144,10 @@ function NumberControl({ spec, value, onChange }: { spec: Extract<SettingSpec, {
         onChange={(e) => setLocal(Number(e.target.value))}
         onPointerUp={() => onChange(local)} onKeyUp={() => onChange(local)}
         className="min-w-0 flex-1 accent-[var(--gs-accent)]" />
-      {/* A fixed 56 px slot; the unit sits under the number so "8192 tokens" fits it. */}
-      <span className="flex w-14 shrink-0 flex-col items-end font-mono text-xs leading-tight text-muted" data-testid="number-value">
+      {/* A fixed 72 px slot, value and unit on one line ("8192 tokens"). */}
+      <span className="flex w-[72px] shrink-0 items-baseline justify-end gap-1 font-mono text-xs whitespace-nowrap text-fg" data-testid="number-value">
         {label}
-        {spec.unit && <span className="text-[10px] text-faint">{spec.unit}</span>}
+        {spec.unit && <span className="text-muted">{spec.unit}</span>}
       </span>
     </div>
   )

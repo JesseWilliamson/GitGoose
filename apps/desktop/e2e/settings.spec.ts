@@ -30,6 +30,7 @@ test('opens the settings page, searches it, and closes with Esc', async () => {
 test('every Appearance control shares one column edge, and the nav follows the scroll', async () => {
   const r = makeFixture('linear')
   const { app, page } = await launch(r.dir)
+  await page.getByTestId('commit-row').first().click()
   await page.keyboard.press('ControlOrMeta+,')
   const section = page.locator('[data-section="Appearance"]')
   await expect(section).toBeVisible()
