@@ -287,6 +287,10 @@ test('the API key mode chats too: each turn sends the whole conversation', async
   const { app, page } = await launch(r.dir, { GITGOOSE_ANTHROPIC_BASE_URL: api.url })
   await set(page, { aiProvider: 'anthropic', aiConsent: ['anthropic'] })
   await page.evaluate(() => window.gitgoose.aiSetApiKey('sk-ant-e2e'))
+  // The selection is a context chip and would go with each message (e2e/aipane.spec.ts); this test is about the bare turns.
+  await expect(page.getByTestId('commit-row').first()).toBeVisible()
+  await page.keyboard.press('ControlOrMeta+Shift+A')
+  await page.getByTestId('ai-context-chip-remove').click()
   const panel = await chat(page, 'What is this?')
   await expect(lastReply(panel)).toHaveText('Sure: it is a small repository.')
   await chat(page, 'And?')

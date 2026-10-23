@@ -1,10 +1,10 @@
-import { AI_AUTH_REQUIRED, hidePane, isPaneVisible, openingPromptKind, reduceThread, setCollapsed, showPane, slotOf, type AiThread, type AiUpdate, type ThreadAnchor } from '@gitgoose/shared'
+import { AI_AUTH_REQUIRED, hidePane, isPaneVisible, openingPromptKind, reduceThread, setCollapsed, showPane, slotOf, type AiContextRef, type AiThread, type AiUpdate, type ThreadAnchor } from '@gitgoose/shared'
 import { useEffect, useState } from 'react'
 import { create } from 'zustand'
 import { areaOfAnchor, areaTarget, askLogin, askToRedact, ensureAi, onAiThread, useAi, whatFor, wordsFor } from './ai'
 import { forgetExplanationThread } from './explain'
 import { api, toUiError } from './api'
-import { aiComposerFocused, focusAiComposer, saveLayout, showAiPane } from './panes'
+import { focusInAiPane, focusAiComposer, saveLayout, showAiPane } from './panes'
 import { reportError, setting, updateRepo, useStore } from './store'
 
 /**
@@ -90,19 +90,21 @@ export function useThread(repoId: string, anchor: ThreadAnchor, threadId: string
  * Send a message: the same questions as any AI request first (set up? agreed? logged in?), and
  * the secret scan's offer to redact. False when nothing was sent (the caller keeps the text).
  */
-export async function sendMessage(threadId: string, text: string): Promise<boolean> {
+export async function sendMessage(threadId: string, text: string, context?: AiContextRef[]): Promise<boolean> {
   const thread = useThreads.getState().threads[threadId]
   if (!thread || !text.trim()) return false
   // The area's picker decides who answers; main moves the conversation if that changed.
   const target = areaTarget(areaOfAnchor(thread.anchor)) ?? undefined
-  if (!(await ensureAi(whatFor(thread.anchor), target))) return false
+  // Context chips are references; main reads git for them. The consent notice says so.
+  const what = whatFor(thread.anchor) + (context?.length ? ', and the git output (messages, diffs, status) for the context chips you attached' : '')
+  if (!(await ensureAi(what, target))) return false
   let redact = false
   for (let attempt = 0; ; attempt++) {
     try {
       // A conversation that opens with words of its own (the AI panel's, Ask's) sends the ones on screen.
       const kind = openingPromptKind(thread.anchor)
       const prompt = kind ? wordsFor(kind) : undefined
-      const opts = { ...(redact ? { redact } : {}), ...(target ? { target } : {}), ...(prompt ? { prompt } : {}) }
+      const opts = { ...(redact ? { redact } : {}), ...(target ? { target } : {}), ...(prompt ? { prompt } : {}), ...(context?.length ? { context } : {}) }
       await api.aiThreadSend(threadId, text, Object.keys(opts).length ? opts : undefined)
       return true
     } catch (e) {
@@ -149,12 +151,16 @@ export function stopThread(threadId: string): void {
 
 /**
  * The AI pane's key (Mod+Shift+A): when the pane is not on screen, show it and put the cursor in
- * its message box; when the cursor is already there, hide it. (Which slot it lives in, and
+ * its message box; when it is on screen and the focus is already inside it, hide it; on screen without the focus, just focus it. (Which slot it lives in, and
  * whether that slot is open, is the layout's business: packages/shared/src/layout.ts.)
  */
 export function toggleChat(): void {
   const layout = setting('layout')
-  if (isPaneVisible(layout, 'ai') && aiComposerFocused()) return saveLayout(hidePane(layout, 'ai'))
+  if (isPaneVisible(layout, 'ai')) {
+    // On screen: the key hides it when the user is already in it, and otherwise takes them there.
+    if (focusInAiPane()) return saveLayout(hidePane(layout, 'ai'))
+    return focusAiComposer()
+  }
   saveLayout(showPane(layout, 'ai'))
   focusAiComposer()
 }

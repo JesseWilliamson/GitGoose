@@ -1,4 +1,4 @@
-import type { AiArtifactResult, AiBlock, AiPermissionAsk, AiPlanEntry, AiThread, AiToolCall, AiTurn, ArtifactKind, PermissionAnswer } from '@gitgoose/shared'
+import type { AiArtifactResult, AiBlock, AiContextRef, AiPermissionAsk, AiPlanEntry, AiThread, AiToolCall, AiTurn, ArtifactKind, PermissionAnswer } from '@gitgoose/shared'
 import { runningTurn } from '@gitgoose/shared'
 import clsx from 'clsx'
 import { Brain, Check, ChevronRight, Circle, CircleAlert, CircleDot, FileDiff, Hammer, RotateCcw, Send, ShieldQuestion, Sparkles, Square } from 'lucide-react'
@@ -34,10 +34,15 @@ export interface ThreadTestIds {
   agent?: string
 }
 
-export function Thread({ thread, repoId, testids = {}, placeholder, hint, hideFeature, className }: {
+export function Thread({ thread, repoId, testids = {}, placeholder, hint, hideFeature, className, above, context, onSent }: {
   thread: AiThread
   repoId: string
   testids?: ThreadTestIds
+  /** Shown just above the composer (the AI panel's context chips and actions). */
+  above?: ReactNode
+  /** Context chips to send with the next message (main renders them); `onSent` runs after a message went out. */
+  context?: AiContextRef[]
+  onSent?: () => void
   placeholder?: string
   /** Shown while the thread has no turns. */
   hint?: string
@@ -60,8 +65,9 @@ export function Thread({ thread, repoId, testids = {}, placeholder, hint, hideFe
   const send = async (message = text) => {
     if (!message.trim() || sending || running) return
     setSending(true)
-    const ok = await sendMessage(thread.id, message)
+    const ok = await sendMessage(thread.id, message, context)
     setSending(false)
+    if (ok) onSent?.()
     if (ok && message === text) setText('')
   }
   // Retry: the last message again, as a new turn (the failed one stays, so the record is honest).
@@ -86,6 +92,7 @@ export function Thread({ thread, repoId, testids = {}, placeholder, hint, hideFe
           {thread.commands?.length ? <>Commands: {thread.commands.map((c) => `/${c}`).join(' ')}</> : null}
         </div>
       )}
+      {above}
       <div className="flex shrink-0 items-center justify-end border-t border-line px-2 pt-1.5">
         {/* The area's pick: a change applies from the next message (main moves the conversation if needed). */}
         <ModelPicker area={areaOfAnchor(thread.anchor)} />

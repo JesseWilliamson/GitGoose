@@ -97,6 +97,7 @@ ask first. A badge by the pointer says what the drop will do and what Alt would 
 | stash → Working Copy / WIP row | Apply | Pop | – |
 | a file in a commit's or stash's file list → Working Copy / WIP row | Apply that file's change to the working tree | – | – |
 | working-copy file(s) → Stashes item | Stash only those files | – | – |
+| anything draggable (branch, tag, commits, stash, files) → the AI panel | Add it as a context chip (spec 006); changes nothing | – | – |
 
 Everything else is not a target: no badge, no highlight, the pointer says no. A dragged commit
 that is part of the selection drags the whole selection.

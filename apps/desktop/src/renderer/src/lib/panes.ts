@@ -34,10 +34,9 @@ export function toggleBottom(): void {
 
 const COMPOSER = '[data-testid="ai-chat-panel"] textarea'
 
-/** Is the cursor in the AI pane's message box? */
-export function aiComposerFocused(): boolean {
-  const el = document.activeElement
-  return !!el && el.matches(COMPOSER)
+/** Is the keyboard focus anywhere inside the AI pane (its message box, a button in it, ...)? */
+export function focusInAiPane(): boolean {
+  return !!document.activeElement?.closest('[data-testid="ai-chat-panel"]')
 }
 
 /** Put the cursor in the AI pane's message box once it exists (the pane may have just been shown). */

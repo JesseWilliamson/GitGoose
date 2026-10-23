@@ -1,4 +1,4 @@
-import { PANES, isPaneVisible } from '@gitgoose/shared'
+import { isPaneVisible } from '@gitgoose/shared'
 import { app, Menu, type MenuItemConstructorOptions } from 'electron'
 import { broadcast } from './ipc'
 import { getSettings, onSettingsChanged } from './settings'
@@ -11,27 +11,29 @@ import { getSettings, onSettingsChanged } from './settings'
  * but do not register it (`registerAccelerator: false`, as VS Code does), so a key press is
  * handled in exactly one place and never fires twice.
  */
-let watching = false
-let quitting = false
+/** The View menu's checkable pane items: menu item id -> pane. */
+const PANE_ITEMS = { 'show-branches': 'branches', 'show-details': 'details', 'show-ai': 'ai' } as const
 
-export function installMenu(): void {
-  // The View menu's checkmarks show which panes are on screen, so a new layout rebuilds the menu.
-  if (!watching) {
-    watching = true
-    // Only when a checkmark would change (a drag of a divider rewrites the layout often), and
-    // never while quitting: a menu rebuilt on the way out has nothing to show and can only get in the way.
-    let shown = ''
-    const sig = () => PANES.map((p) => isPaneVisible(getSettings().layout, p)).join()
-    shown = sig()
-    onSettingsChanged((_s, changed) => {
-      if (!changed.has('layout') || quitting) return
-      const now = sig()
-      if (now === shown) return
-      shown = now
-      installMenu()
-    })
-    app.on('before-quit', () => { quitting = true })
+/**
+ * The checkmarks follow the layout in place. The menu is never rebuilt for them: replacing the
+ * application menu on Linux/GTK can pull the keyboard focus out of the page a moment later, which
+ * broke "Mod+Shift+A again hides the pane" (the composer had lost focus), and a divider drag
+ * rewrites the layout many times.
+ */
+function syncPaneChecks(): void {
+  const menu = Menu.getApplicationMenu()
+  if (!menu) return
+  const layout = getSettings().layout
+  for (const [id, pane] of Object.entries(PANE_ITEMS)) {
+    const item = menu.getMenuItemById(id)
+    const checked = isPaneVisible(layout, pane)
+    if (item && item.checked !== checked) item.checked = checked
   }
+}
+
+/** Built once at startup. */
+export function installMenu(): void {
+  onSettingsChanged((_s, changed) => { if (changed.has('layout')) syncPaneChecks() })
   const layout = getSettings().layout
   const cmd = (name: string) => () => broadcast({ type: 'command', name })
   const isMac = process.platform === 'darwin'
@@ -90,9 +92,9 @@ export function installMenu(): void {
         { label: 'Forward', accelerator: isMac ? 'Cmd+]' : 'Alt+Right', click: cmd('forward'), registerAccelerator: false },
         { type: 'separator' },
         // Panes (ADR-010): a checkmark means the pane is on screen; a click shows or hides it.
-        { label: 'Show Branches', type: 'checkbox', checked: isPaneVisible(layout, 'branches'), accelerator: 'CmdOrCtrl+B', click: cmd('toggle-sidebar'), registerAccelerator: false },
-        { label: 'Show Details', type: 'checkbox', checked: isPaneVisible(layout, 'details'), accelerator: 'CmdOrCtrl+Alt+B', click: cmd('toggle-details'), registerAccelerator: false },
-        { label: 'Show AI', type: 'checkbox', checked: isPaneVisible(layout, 'ai'), accelerator: 'CmdOrCtrl+Shift+A', click: cmd('toggle-ai-pane'), registerAccelerator: false },
+        { id: 'show-branches', label: 'Show Branches', type: 'checkbox', checked: isPaneVisible(layout, 'branches'), accelerator: 'CmdOrCtrl+B', click: cmd('toggle-sidebar'), registerAccelerator: false },
+        { id: 'show-details', label: 'Show Details', type: 'checkbox', checked: isPaneVisible(layout, 'details'), accelerator: 'CmdOrCtrl+Alt+B', click: cmd('toggle-details'), registerAccelerator: false },
+        { id: 'show-ai', label: 'Show AI', type: 'checkbox', checked: isPaneVisible(layout, 'ai'), accelerator: 'CmdOrCtrl+Shift+A', click: cmd('toggle-ai-pane'), registerAccelerator: false },
         { label: 'Toggle Bottom Panel', accelerator: 'CmdOrCtrl+J', click: cmd('toggle-bottom'), registerAccelerator: false },
         { label: 'Hide Side Panels', click: cmd('layout-wide-graph') },
         { label: 'Reset Layout', click: cmd('layout-default') },

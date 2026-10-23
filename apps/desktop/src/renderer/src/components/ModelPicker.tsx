@@ -22,7 +22,7 @@ import { reportError, saveSettings, setSettingEntry, useStore } from '../lib/sto
  * restart) and never refreshes one on its own; once a list is known the select offers "Refresh
  * models…" instead, and says so when the list is over a day old.
  */
-export function ModelPicker({ area, defaults, className, onPicked, agentsOnly }: {
+export function ModelPicker({ area, defaults, className, onPicked, agentsOnly, fill }: {
   area?: AiArea
   defaults?: boolean
   className?: string
@@ -30,6 +30,8 @@ export function ModelPicker({ area, defaults, className, onPicked, agentsOnly }:
   onPicked?: () => void
   /** Only agents can answer here (resolving a conflict edits a file; the API only writes text). */
   agentsOnly?: boolean
+  /** Fill the width it is given (a settings row's control column) instead of staying compact. */
+  fill?: boolean
 }) {
   const settings = useStore((s) => s.settings)
   const picked = area ? settings?.aiAreaTargets[area] : undefined
@@ -69,7 +71,7 @@ export function ModelPicker({ area, defaults, className, onPicked, agentsOnly }:
   // Settings → AI's default for the API is a model, not "whatever": no blank entry there.
   const blank = !(defaults && target.provider === 'anthropic')
   const stale = !!list.list?.at && Date.now() - list.list.at > STALE_MS
-  const select = 'min-w-0 max-w-44 flex-1 px-1.5 text-xs data-[size=default]:h-6'
+  const select = fill ? 'min-w-0 w-full flex-1' : 'min-w-0 max-w-44 flex-1 px-1.5 text-xs data-[size=default]:h-6'
 
   const whoOptions: SelectOption[] = [
     { value: 'default', label: `Default (${targetLabel({ ...base, model: undefined })})` },
@@ -84,7 +86,7 @@ export function ModelPicker({ area, defaults, className, onPicked, agentsOnly }:
   ].filter((o): o is SelectOption => o !== null)
 
   return (
-    <span className={clsx('inline-flex min-w-0 items-center gap-1', className)} data-testid={area ? `model-picker-${area}` : 'model-picker-default'}>
+    <span className={clsx('inline-flex min-w-0 items-center gap-1', fill && 'w-full', className)} data-testid={area ? `model-picker-${area}` : 'model-picker-default'}>
       {area && (
         <OptionSelect value={who} onChange={setWho} options={whoOptions} className={select} aria-label="Who answers" data-testid="model-picker-who" />
       )}
