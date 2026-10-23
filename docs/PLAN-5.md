@@ -24,7 +24,7 @@ through `GitRunner`, the two performance rules, the definition of done) apply to
 | 4 | Context menus: grey out with a reason instead of hiding | 2 | 1 |
 | 5 | Pane system (ADR-010): slots, tabs, moving, the AI pane docked | 2 | 1 |
 | 6 | AI pane: context chips, drag in, actions from the pane | 2 | 1 |
-| 7 | UI audit and redesign | 3 | 4, 5, 6, 8 |
+| 7 | UI audit and redesign (two PRs: audit 1, then audit 2) | 3 | 4, 5, 6, 8 |
 | 8 | Settings page: one grid | 2 | 1 |
 | 9 | Custom title bar on every platform | 1 | – |
 
@@ -237,28 +237,39 @@ contrast, and nothing decorative that does no work.
 **How.** First the audit, as `docs/ui-audit.md`: screenshots of each surface (the e2e harness
 can take them: Toolbar, Sidebar, Graph in both styles, Details for a commit and for the working
 copy, a diff, Settings, the dialogs, the AI pane, Welcome), each with what is wrong in one line and
-what to do. Then the fixes, in one PR, by surface:
+what to do. Then the fixes, by surface. **The audit is split into two PRs**, because one was too
+big to review: *UI audit 1* does the foundations and the AI surfaces, *UI audit 2* does the rest.
+`docs/ui-audit.md` says which finding is in which. Each item below is tagged.
 
-- **Scale.** Type: 11 / 12 / 13 / 15 px only. Spacing: 4 px grid. Radii: 4 / 6 / 8. Heights:
-  rows 24 / 28, inputs 28, toolbar 40, tab bar 32, status bar 24. Put them in `styles.css` as
-  tokens and use them.
-- **Hierarchy.** Section headers one style (the `SectionHeader`), dialog titles one style, one
+UI audit 1 (the audit document; the scale and the single colour vocabulary; the AI pane redesign;
+`AiTargetButton`, the one compact "who answers" control, replacing the two selects and the Prompt
+button in Details, the commit box, the AI pane, the Review / Walkthrough / Impact rails and
+Recompose; the pane tab strip with a right slot) and UI audit 2 (Sidebar, graph lanes and
+compact columns, Toolbar, Welcome, omni search, dialogs, the diff header, the status bar, the
+Details header, the working copy's split, section headers, and the contrast of hint text).
+
+- **Scale** (audit 1). Type: 11 / 12 / 13 / 15 px only. Spacing: 4 px grid. Radii: 4 / 6 / 8.
+  Heights: rows 24 / 28, inputs 28, toolbar 40, tab bar 36 (the title bar), strip 28, status bar
+  24. Put them in `styles.css` as tokens and use them. Also one colour vocabulary (shadcn's names
+  and meanings, app-wide; the mapping is in `docs/ui-audit.md`).
+- **Hierarchy** (audit 1 for the AI surfaces and the tab strip; audit 2 for the rest). Section
+  headers one style (the `SectionHeader`), dialog titles one style, one
   accent colour used only for the primary action and selection, muted for secondary text,
   faint for hints. No three shades of grey text in one row.
-- **Toolbar.** Fewer, clearer controls; the location on the left, actions grouped (sync, branch,
+- **Toolbar** (audit 2). Fewer, clearer controls; the location on the left, actions grouped (sync, branch,
   stash), search in the middle, undo/redo and settings on the right; consistent icon size.
-- **Sidebar.** Rows align on one indent; counts and badges right-aligned in one column; section
+- **Sidebar** (audit 2). Rows align on one indent; counts and badges right-aligned in one column; section
   headers collapsible with a chevron on the left; hover and selection states consistent with
   the graph's.
-- **Details.** The commit header as one block (avatar, author, date, SHA with copy), the message
+- **Details** (audit 2; its Explain row is in audit 1). The commit header as one block (avatar, author, date, SHA with copy), the message
   as prose, the file list as a tree with the same row height as the sidebar.
-- **Graph rows.** Pills, date, author aligned to the same baselines; the compact style's lane
+- **Graph rows** (audit 2). Pills, date, author aligned to the same baselines; the compact style's lane
   strip not competing with the selection colour.
-- **Dialogs.** shadcn `Dialog` layout: title, body, actions right-aligned, primary last; one
+- **Dialogs** (audit 2). shadcn `Dialog` layout: title, body, actions right-aligned, primary last; one
   width per kind.
-- **Empty states and hints.** One voice, one place (under the header), no paragraphs where a
+- **Empty states and hints** (audit 1 for the AI pane, audit 2 for the rest). One voice, one place (under the header), no paragraphs where a
   line will do.
-- **Light theme.** Every change checked in both.
+- **Light theme** (both). Every change checked in both.
 
 **Tests.** The e2e suite passes; `pnpm bench --check` passes (graph rows changed). Screenshots
 before and after in the PR description.
