@@ -1,7 +1,7 @@
 import type { BlameLine, Commit, DiffTarget, FileDiff, HunkSelection, ReviewFinding } from '@gitgoose/shared'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import clsx from 'clsx'
-import { ChevronDown, ExternalLink, MessageCircleQuestion, X } from 'lucide-react'
+import { Ellipsis, MessageCircleQuestion, X } from 'lucide-react'
 import { DropdownMenu } from 'radix-ui'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AskPanel } from './AskPanel'
@@ -20,7 +20,7 @@ import { tokenize, type Tokens } from '../lib/highlight'
 import { heatByCommit, heatColor } from '../lib/heat'
 import { avatarSrc } from '../lib/avatar'
 import { codeLineHeight, ensureLoaded, reportError, saveSettings, updateRepo, useSetting, type FileMode, type RepoView } from '../lib/store'
-import { Button, DM, Spinner } from './ui'
+import { Button, DM, Segmented, Spinner } from './ui'
 import { modName } from '../lib/keys'
 import { findingsFor } from '../lib/review'
 import { askAbout } from '../lib/ask'
@@ -40,7 +40,7 @@ export function FileView({ view, target, mode }: { view: RepoView; target: DiffT
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) close()
+      if (e.key === 'Escape' && !e.defaultPrevented && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) close()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -53,31 +53,14 @@ export function FileView({ view, target, mode }: { view: RepoView; target: DiffT
           <span className="text-hint">{dir}</span><span className="font-semibold">{name}</span>
           <span className="ml-2 text-xs text-muted-foreground">{where}</span>
         </div>
-        {rev && <RevisionMenu view={view} rev={rev} path={target.path} />}
-        {mode === 'diff' && target.kind !== 'untracked' && (
-          <Button size="sm" variant="ghost" onClick={() => void openDiffTool(view.id, target)} title="Open in your external diff tool (Settings → Diff)" data-testid="open-diff-tool">
-            <ExternalLink size={12} /> Diff tool
-          </Button>
-        )}
         {mode === 'diff' && (
-          <div className="flex rounded-md border border-border p-0.5 text-xs" role="group" aria-label="Diff layout">
-            {(['unified', 'split'] as const).map((l) => (
-              <button key={l} onClick={() => void saveSettings({ diffLayout: l })} data-testid={`layout-${l}`} aria-pressed={layout === l}
-                className={clsx('rounded px-2 py-0.5', layout === l ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground')}>
-                {l === 'unified' ? 'Unified' : 'Split'}
-              </button>
-            ))}
-          </div>
+          <Segmented label="Diff layout" value={layout} onChange={(l) => void saveSettings({ diffLayout: l })} testId={(l) => `layout-${l}`}
+            options={[{ value: 'unified', label: 'Unified' }, { value: 'split', label: 'Split' }]} />
         )}
-        <div className="flex rounded-md border border-border p-0.5 text-xs">
-          {(['diff', 'history', 'blame'] as const).map((m) => (
-            <button key={m} onClick={() => setMode(m)}
-              className={clsx('rounded px-2 py-0.5 capitalize', mode === m ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground')}>
-              {m}
-            </button>
-          ))}
-        </div>
-        <button onClick={close} title="Close (Esc)" className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"><X size={16} /></button>
+        <Segmented label="View" value={mode} onChange={setMode} testId={(m) => `mode-${m}`}
+          options={[{ value: 'diff', label: 'Diff' }, { value: 'history', label: 'History' }, { value: 'blame', label: 'Blame' }]} />
+        <FileMenu view={view} target={target} mode={mode} rev={rev} />
+        <button onClick={close} title="Close (Esc)" aria-label="Close" className="no-drag flex size-row-lg items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><X size={16} /></button>
       </div>
       {mode === 'diff' && <DiffPane view={view} target={target} />}
       {mode === 'history' && <HistoryPane view={view} path={target.path} />}
@@ -444,18 +427,34 @@ function LineText({ text, tokens, ranges, kind, noNewline }: {
   )
 }
 
-/** Restore, open or save the file as it is at a revision. */
-function RevisionMenu({ view, rev, path }: { view: RepoView; rev: string; path: string }) {
+/**
+ * The file's less-used actions in one menu: what can be done with this version of it (open it,
+ * save it, restore it; only when the view is at a revision) and the external diff tool. Hidden
+ * when there is nothing in it.
+ */
+function FileMenu({ view, target, mode, rev }: { view: RepoView; target: DiffTarget; mode: FileMode; rev: string | undefined }) {
+  const path = target.path
+  const diffTool = mode === 'diff' && target.kind !== 'untracked'
+  if (!rev && !diffTool) return null
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
-        <Button size="sm" variant="ghost" data-testid="revision-menu">This version <ChevronDown size={12} /></Button>
+        <button aria-label="File actions" title="File actions" data-testid="file-menu"
+          className="no-drag flex size-row-lg items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground">
+          <Ellipsis size={16} />
+        </button>
       </DropdownMenu.Trigger>
       <DM.Content align="end">
-        <DM.Item onSelect={() => void api.openFileAt(view.id, rev, path).catch((e) => reportError('Could not open the file', e))}>Open this version</DM.Item>
-        <DM.Item onSelect={() => void api.saveFileAt(view.id, rev, path).catch((e) => reportError('Could not save the file', e))}>Save this version as…</DM.Item>
-        <DM.Separator />
-        <DM.Item onSelect={() => void restoreFileFrom(view.id, path, rev)}>{view.stashes.some((s) => s.hash === rev) ? 'Take this file from the stash' : 'Restore the working copy to this version'}</DM.Item>
+        {rev && (
+          <>
+            <DM.Label>This version</DM.Label>
+            <DM.Item testId="revision-open" onSelect={() => void api.openFileAt(view.id, rev, path).catch((e) => reportError('Could not open the file', e))}>Open this version</DM.Item>
+            <DM.Item testId="revision-save" onSelect={() => void api.saveFileAt(view.id, rev, path).catch((e) => reportError('Could not save the file', e))}>Save this version as…</DM.Item>
+            <DM.Item testId="revision-restore" onSelect={() => void restoreFileFrom(view.id, path, rev)}>{view.stashes.some((s) => s.hash === rev) ? 'Take this file from the stash' : 'Restore the working copy to this version'}</DM.Item>
+          </>
+        )}
+        {rev && diffTool && <DM.Separator />}
+        {diffTool && <DM.Item testId="open-diff-tool" title="Open in your external diff tool (Settings → Diff)" onSelect={() => void openDiffTool(view.id, target)}>Open in diff tool</DM.Item>}
       </DM.Content>
     </DropdownMenu.Root>
   )

@@ -21,6 +21,7 @@ test('open a diff in the external diff tool; resolve a conflict in the merge too
   await page.evaluate(() => window.gitgoose.setSettings({ diffTool: 'record', mergeTool: 'taketheirs' }))
 
   await page.getByTestId('unstaged-file').filter({ hasText: 'a.txt' }).click()
+  await page.getByTestId('file-menu').click()
   await page.getByTestId('open-diff-tool').click()
   await expect.poll(() => existsSync(out) && readFileSync(out, 'utf8')).toBe('one\ntwo\n')
 

@@ -98,6 +98,27 @@ export function ToolbarButton({ icon, label, onClick, disabled, title, count, ch
   )
 }
 
+/**
+ * A segmented control: a few options side by side, one of them chosen. The one style for every
+ * "pick one of these views" (the diff layout, the diff / history / blame tabs). Each option is a
+ * button with aria-pressed, so it is found by its name and keeps the keyboard behaviour of a button.
+ */
+export function Segmented<T extends string>({ value, onChange, options, label, testId }: {
+  value: T; onChange: (v: T) => void; label: string; testId?: (v: T) => string
+  options: { value: T; label: string }[]
+}) {
+  return (
+    <div role="group" aria-label={label} className="no-drag inline-flex h-row-lg shrink-0 items-center gap-0.5 rounded-md border border-border bg-background p-0.5">
+      {options.map((o) => (
+        <button key={o.value} type="button" onClick={() => onChange(o.value)} aria-pressed={value === o.value} data-testid={testId?.(o.value)}
+          className={cn('h-full rounded-sm px-2 text-xs', value === o.value ? 'bg-accent font-medium text-foreground' : 'text-muted-foreground hover:text-foreground')}>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export function Spinner({ className }: { className?: string }) {
   return <span className={cn('inline-block size-3 animate-spin rounded-full border-2 border-current border-t-transparent', className)} />
 }
