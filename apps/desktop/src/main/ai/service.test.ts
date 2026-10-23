@@ -743,11 +743,55 @@ describe('choosing who answers', () => {
     expect(await ai.models({ provider: 'anthropic' })).toMatchObject({ known: false })
     ai.setApiKey('sk-ant-test')
     ai.consent()
-    const list = await ai.models({ provider: 'anthropic' })
+    const list = await ai.loadModels({ provider: 'anthropic' })
     expect(list).toMatchObject({ known: true, defaultModel: 'claude-opus-5-5' })
     expect(list.models).toEqual(FAKE_MODELS)
     await ai.run('m3', 'x', { kind: 'explain-error', title: 'x', detail: 'y' }, { target: { provider: 'anthropic', model: 'claude-haiku-5-5' } })
     expect(api.requests.at(-1)).toMatchObject({ model: 'claude-haiku-5-5' })
+  })
+
+  it("the API's list is fetched when asked, then served from settings: no request, and it survives a restart", async () => {
+    const api = await fakeAnthropic()
+    cleanup.push(() => api.close())
+    const t = await setup({ aiProvider: 'anthropic' }, api)
+    const target: AiTarget = { provider: 'anthropic' }
+    t.ai.setApiKey('sk-ant-test')
+    // Listing alone never calls the API.
+    expect(await t.ai.models(target)).toMatchObject({ known: false })
+    expect(api.modelRequests).toBe(0)
+    // Two loads at once (two pickers, two windows) make one request.
+    const [a, b] = await Promise.all([t.ai.loadModels(target), t.ai.loadModels(target)])
+    expect(api.modelRequests).toBe(1)
+    expect(a.models).toEqual(FAKE_MODELS)
+    expect(b).toEqual(a)
+    // Later asks are answered from the saved list.
+    expect(await t.ai.models(target)).toMatchObject({ known: true, models: FAKE_MODELS })
+    expect(api.modelRequests).toBe(1)
+    // A restart: a new service on the same settings (no key in this one's keychain) has the list.
+    const again = await setup({ aiProvider: 'anthropic', aiApiModels: t.settings.aiApiModels }, api)
+    expect(await again.ai.models(target)).toMatchObject({ known: true, models: FAKE_MODELS, defaultModel: 'claude-opus-5-5' })
+    expect(api.modelRequests).toBe(1)
+    // Refreshing is a request again, and a failed one keeps the list there was.
+    await t.ai.loadModels(target)
+    expect(api.modelRequests).toBe(2)
+    await api.close()
+    const failed = await t.ai.loadModels(target)
+    expect(failed).toMatchObject({ known: true, models: FAKE_MODELS })
+    expect(failed.error).toBeTruthy()
+  })
+
+  it('two loads of one agent open one session, and a custom command has its own list', async () => {
+    const t = await two()
+    const first = t.ai.loadModels(t.a)
+    const second = t.ai.loadModels(t.a)
+    expect(second).toBe(first)
+    const [x, y] = await Promise.all([first, second])
+    expect(y).toEqual(x)
+    // One agent process, started once for both callers (a is also Settings → AI's agent).
+    expect(t.ai.agent.starts).toBe(1)
+    expect(await t.ai.models(t.a)).toMatchObject({ known: true })
+    expect(await t.ai.models(t.b)).toEqual({ models: [], known: false })
+    expect(targetKey(t.a)).not.toBe(targetKey(t.b))
   })
 })
 

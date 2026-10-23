@@ -60,6 +60,8 @@ export interface AiModelList {
   known: boolean
   /** The agent has no model option at all: it picks its model itself. */
   fixed?: boolean
+  /** When this list was fetched (ms since the epoch); the picker marks an old one. */
+  at?: number
   error?: string
 }
 

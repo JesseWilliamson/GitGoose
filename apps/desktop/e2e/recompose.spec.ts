@@ -373,7 +373,7 @@ test("recompose asks the area's model, and its chat can switch models", async ()
   const model = chat.getByTestId('model-picker-recompose').getByTestId('model-picker-model')
   // The list came from the session that answered: no "Load models…" needed.
   await expect(model).toHaveValue('fast')
-  await expect(model.locator('option')).toHaveText(['Default (Fake Smart)', 'Fake Fast', 'Fake Smart'])
+  await expect(model.locator('option')).toHaveText(['Default (Fake Smart)', 'Fake Fast', 'Fake Smart', 'Refresh models…'])
   await expect(chat.getByTestId('thread-by').first()).toHaveText('fake-agent · Fake Fast')
 
   await model.selectOption('smart')
