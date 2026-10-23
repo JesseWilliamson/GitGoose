@@ -64,7 +64,7 @@ export function TabBar() {
             onMouseDown={(e) => { if (e.button === 1) void closeTab(id) }}
             onClick={() => useStore.setState({ active: id })}
             title={r.snapshot.path}
-            className={clsx('no-drag group flex h-8 max-w-56 min-w-28 shrink-0 cursor-default items-center gap-2 rounded-t-md border border-b-0 px-3 text-[13px]',
+            className={clsx('no-drag group flex h-8 max-w-56 min-w-28 shrink-0 cursor-default items-center gap-2 rounded-t-md border border-b-0 px-3 text-sm',
               id === active ? 'border-line bg-panel text-fg' : 'border-transparent text-muted hover:text-fg')}>
             <span className="min-w-0 flex-1 truncate">{r.snapshot.name}</span>
             <button onClick={(e) => { e.stopPropagation(); void closeTab(id) }} title="Close tab"

@@ -37,14 +37,14 @@ export function Button({ variant = 'default', size = 'md', className, ...props }
     <ShadButton
       variant={look.variant}
       size={size === 'sm' ? 'xs' : 'sm'}
-      className={cn(size === 'md' && 'text-[13px]', look.className, className)}
+      className={cn(size === 'md' && 'text-sm', look.className, className)}
       {...props}
     />
   )
 }
 
 export function Kbd({ children }: { children: ReactNode }) {
-  return <ShadKbd className="h-auto min-w-0 rounded border border-line bg-panel px-1 py-px font-mono text-[10px] font-normal text-muted">{children}</ShadKbd>
+  return <ShadKbd className="h-auto min-w-0 rounded border border-line bg-panel px-1 py-px font-mono text-2xs font-normal text-muted">{children}</ShadKbd>
 }
 
 /**
@@ -97,7 +97,7 @@ export function Spinner({ className }: { className?: string }) {
 
 export function SectionHeader({ children, right }: { children: ReactNode; right?: ReactNode }) {
   return (
-    <div className="flex h-7 items-center justify-between px-3 text-[11px] font-semibold tracking-wide text-muted uppercase">
+    <div className="flex h-row-lg items-center justify-between px-3 text-2xs font-semibold tracking-wide text-muted uppercase">
       <span className="truncate">{children}</span>
       {right}
     </div>
@@ -118,7 +118,7 @@ function Reason({ reason, children }: { reason?: string; children: ReactNode }) 
   )
 }
 
-const itemText = 'h-7 py-0 text-[13px]'
+const itemText = 'h-row-lg py-0 text-sm'
 
 export const CM = {
   // No animation, like a native menu. Opening: shadcn slides the menu in from the left, so for its
@@ -134,7 +134,7 @@ export const CM = {
     </Reason>
   ),
   Separator: () => <ContextMenuSeparator />,
-  Label: ({ children }: { children: ReactNode }) => <ContextMenuLabel className="truncate py-1 text-[11px] font-normal text-faint">{children}</ContextMenuLabel>,
+  Label: ({ children }: { children: ReactNode }) => <ContextMenuLabel className="truncate py-1 text-2xs font-normal text-faint">{children}</ContextMenuLabel>,
   /** `reason` greys the whole submenu out (its trigger), for when none of its items could run. */
   Sub: ({ label, children, reason }: { label: string; children: ReactNode; reason?: string }) => (
     <ContextMenuSub>
@@ -163,7 +163,7 @@ export const DM = {
     </DropdownMenuCheckboxItem>
   ),
   Separator: () => <DropdownMenuSeparator />,
-  Label: ({ children }: { children: ReactNode }) => <DropdownMenuLabel className="py-1 text-[11px] font-normal text-faint">{children}</DropdownMenuLabel>,
+  Label: ({ children }: { children: ReactNode }) => <DropdownMenuLabel className="py-1 text-2xs font-normal text-faint">{children}</DropdownMenuLabel>,
   Sub: ({ label, children }: { label: string; children: ReactNode }) => (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger className={itemText}>{label}</DropdownMenuSubTrigger>
@@ -188,7 +188,7 @@ export function Modal({ open, onClose, title, children, width = 440, tall = fals
         // shadcn centres a dialog and caps it at sm:max-w-lg; ours sit near the top and choose their width.
         className={cn('block max-w-[94vw] translate-y-0 gap-0 p-4 sm:max-w-[94vw]', tall ? 'top-[5vh]' : 'top-[18%]')}
       >
-        <DialogTitle className="mb-3 text-[15px] leading-normal">{title}</DialogTitle>
+        <DialogTitle className="mb-3 text-base leading-normal">{title}</DialogTitle>
         <DialogDescription className="sr-only">{title}</DialogDescription>
         {children}
       </DialogContent>
@@ -200,7 +200,7 @@ export function TextField({ label, className, ...props }: InputHTMLAttributes<HT
   return (
     <label className="block">
       {label && <span className="mb-1 block text-xs text-muted">{label}</span>}
-      <Input {...props} className={cn('h-8 bg-bg px-2 py-0 text-[13px] shadow-none md:text-[13px] dark:bg-bg', className)} />
+      <Input {...props} className={cn('h-input bg-bg px-2 py-0 text-sm shadow-none md:text-sm dark:bg-bg', className)} />
     </label>
   )
 }

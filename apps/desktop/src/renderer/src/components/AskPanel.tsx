@@ -23,7 +23,7 @@ export function AskPanel({ repoId, ask }: { repoId: string; ask: NonNullable<Rep
         <span className="flex-1" />
         <button onClick={() => closeAsk(repoId)} title="Close" aria-label="Close ask" className="rounded p-1 text-muted hover:bg-hover hover:text-fg"><X size={13} /></button>
       </div>
-      {ask.anchor.code && <pre className="mx-3 mt-2 max-h-28 shrink-0 overflow-auto rounded border border-line bg-bg p-2 font-mono text-[12px] text-muted">{ask.anchor.code}</pre>}
+      {ask.anchor.code && <pre className="mx-3 mt-2 max-h-28 shrink-0 overflow-auto rounded border border-line bg-bg p-2 font-mono text-xs text-muted">{ask.anchor.code}</pre>}
       {thread
         ? <Thread thread={thread} repoId={repoId} className="min-h-0 flex-1" testids={{ root: 'ask-thread', input: 'ask-input', send: 'ask-send', user: 'ask-question', agent: 'ask-answer' }}
             placeholder="Ask about these lines (Enter sends, Shift+Enter for a new line)"

@@ -106,7 +106,7 @@ export function AiContextBar({ view, chips, sentKeys }: { view: RepoView; chips:
   const actions = paneActions(view, chips, aiOn)
   const pending = chips.filter((c) => !sentKeys.includes(c.key)).length
   return (
-    <div className="shrink-0 border-t border-line px-2 pt-1.5 pb-0.5 text-[11px]" data-testid="ai-context">
+    <div className="shrink-0 border-t border-line px-2 pt-1.5 pb-0.5 text-2xs" data-testid="ai-context">
       <div className="flex flex-wrap items-center gap-1">
         {chips.map((c) => {
           const Icon = ICON[c.kind]
@@ -114,7 +114,7 @@ export function AiContextBar({ view, chips, sentKeys }: { view: RepoView; chips:
           return (
             <Badge key={c.key} variant="outline" data-testid="ai-context-chip" data-kind={c.kind} data-selection={c.fromSelection || undefined} data-sent={sent ? 'true' : undefined}
               title={sent ? `${c.title} (already in this conversation, not sent again)` : c.title}
-              className={clsx('max-w-full rounded-md border-line bg-bg py-0.5 pr-0.5 pl-1.5 text-[11px] font-normal', sent ? 'text-muted' : 'text-fg')}>
+              className={clsx('max-w-full rounded-md border-line bg-bg py-0.5 pr-0.5 pl-1.5 text-2xs font-normal', sent ? 'text-muted' : 'text-fg')}>
               <Icon size={11} className={clsx('shrink-0', sent ? 'text-faint' : 'text-accent')} />
               <span className="min-w-0 truncate" data-testid="ai-context-chip-label">{c.label}</span>
               <button onClick={() => removeChip(view.id, c)} aria-label={`Remove ${c.label}`} title="Do not send this" data-testid="ai-context-chip-remove"

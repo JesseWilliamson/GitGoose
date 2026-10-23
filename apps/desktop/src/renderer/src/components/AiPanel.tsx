@@ -55,7 +55,7 @@ export function AiPanel() {
                   </span>
                 )}
                 {test?.error && (
-                  <pre className="selectable mt-1 max-h-32 overflow-auto rounded bg-bg p-2 text-[11px] whitespace-pre-wrap text-del" data-testid="ai-test-error">{test.error}</pre>
+                  <pre className="selectable mt-1 max-h-32 overflow-auto rounded bg-bg p-2 text-2xs whitespace-pre-wrap text-del" data-testid="ai-test-error">{test.error}</pre>
                 )}
               </>
             }>

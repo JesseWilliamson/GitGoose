@@ -38,7 +38,7 @@ export function PromptButton({ area, className }: {
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content align="end" sideOffset={6} collisionPadding={12}
-          className="z-50 flex max-h-[min(75vh,var(--radix-popover-content-available-height))] w-[min(620px,92vw)] flex-col overflow-hidden rounded-lg border border-line bg-raised text-[13px] shadow-2xl shadow-black/40"
+          className="z-50 flex max-h-[min(75vh,var(--radix-popover-content-available-height))] w-[min(620px,92vw)] flex-col overflow-hidden rounded-lg border border-line bg-raised text-sm shadow-2xl shadow-black/40"
           data-testid={`prompt-panel-${area}`}
           // Keys typed here are the panel's (Recompose's Ctrl+Z must not step its plan).
           onKeyDown={(e) => e.stopPropagation()}>
@@ -112,21 +112,21 @@ export function PromptEditor({ kind, value, onChange, source, onReset, resetLabe
 }) {
   const def = DEFAULT_PROMPTS[kind]
   const vars = Object.entries(def.vars)
-  const area = 'w-full resize-y rounded-md border border-line bg-bg px-2 py-1 font-mono text-[12px] leading-relaxed outline-none focus:border-accent'
+  const area = 'w-full resize-y rounded-md border border-line bg-bg px-2 py-1 font-mono text-xs leading-relaxed outline-none focus:border-accent'
   return (
     <div data-testid={`prompt-editor-${kind}`}>
       <div className="mb-2 flex items-center gap-2 text-xs">
         <span className="flex-1 text-faint" data-testid="prompt-source">{SOURCE_LABEL[source]}</span>
         {onReset && <Button size="sm" variant="ghost" onClick={onReset} data-testid="prompt-reset"><RotateCcw size={11} /> {resetLabel}</Button>}
       </div>
-      <label className="mb-1 block text-[11px] font-semibold tracking-wide text-muted uppercase">System</label>
+      <label className="mb-1 block text-2xs font-semibold tracking-wide text-muted uppercase">System</label>
       <textarea value={value.system} onChange={(e) => onChange({ ...value, system: e.target.value })} rows={2} spellCheck={false}
         className={clsx(area, 'mb-3')} data-testid="prompt-system" />
-      <label className="mb-1 block text-[11px] font-semibold tracking-wide text-muted uppercase">Instructions</label>
+      <label className="mb-1 block text-2xs font-semibold tracking-wide text-muted uppercase">Instructions</label>
       <textarea value={value.instructions} onChange={(e) => onChange({ ...value, instructions: e.target.value })} rows={Math.min(12, value.instructions.split('\n').length + 2)} spellCheck={false}
         className={area} data-testid="prompt-instructions" />
       {vars.length > 0 && (
-        <p className="mt-1 text-[11px] text-faint">
+        <p className="mt-1 text-2xs text-faint">
           Filled in when sent: {vars.map(([name, what], i) => <span key={name}>{i ? ', ' : ''}<code className="text-muted">{`{${name}}`}</code> ({what})</span>)}.
         </p>
       )}
@@ -193,7 +193,7 @@ export function PromptSettings() {
         <div className="min-w-0 flex-1">
           <SettingsPrompt key={kind} kind={kind} />
           {areaEdited(kind) && (
-            <p className="mt-2 flex items-center gap-2 text-[11px] text-warn">
+            <p className="mt-2 flex items-center gap-2 text-2xs text-warn">
               Its area has its own edit, which it uses instead of this.
               <Button size="sm" variant="ghost" onClick={() => void setPromptEdit(kind, null)}>Drop that edit</Button>
             </p>

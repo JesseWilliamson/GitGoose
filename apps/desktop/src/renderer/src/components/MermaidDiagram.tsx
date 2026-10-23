@@ -26,7 +26,7 @@ export function MermaidDiagram({ source }: { source: string }) {
     return (
       <div className="rounded-md border border-line bg-panel p-2 text-xs" data-testid="mermaid-error">
         <div className="text-del">This diagram could not be drawn.</div>
-        <pre className="selectable mt-1 font-mono text-[11px] whitespace-pre-wrap text-muted">{out.error}</pre>
+        <pre className="selectable mt-1 font-mono text-2xs whitespace-pre-wrap text-muted">{out.error}</pre>
       </div>
     )
   }

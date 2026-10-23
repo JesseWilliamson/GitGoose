@@ -33,7 +33,7 @@ export function AiJobsChip() {
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content side="top" align="end" sideOffset={6} data-testid="ai-jobs-list"
-          className="z-50 w-96 max-w-[94vw] rounded-md border border-line bg-raised p-1 text-[13px] shadow-xl shadow-black/30">
+          className="z-50 w-96 max-w-[94vw] rounded-md border border-line bg-raised p-1 text-sm shadow-xl shadow-black/30">
           {[...jobs].reverse().map((j) => <JobRow key={j.id} job={j} close={() => setOpen(false)} />)}
         </Popover.Content>
       </Popover.Portal>
@@ -50,7 +50,7 @@ function JobRow({ job, close }: { job: AiJob; close: () => void }) {
       </span>
       <div className="min-w-0 flex-1">
         <div className="truncate">{job.title}</div>
-        <div className="truncate text-[11px] text-faint" title={job.error}>
+        <div className="truncate text-2xs text-faint" title={job.error}>
           {job.status === 'running' ? 'Working on it…' : job.status === 'error' ? job.error ?? 'Failed' : 'Ready'}
           {repoName ? ` · ${repoName}` : ''}
         </div>

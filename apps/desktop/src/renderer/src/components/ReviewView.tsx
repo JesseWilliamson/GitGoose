@@ -43,7 +43,7 @@ export function ReviewView({ view }: { view: RepoView }) {
       <div className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-panel px-4">
         <Sparkles size={18} className="text-accent" />
         <div className="min-w-0 flex-1">
-          <div className="text-[14px] font-semibold">Review: {result?.label ?? 'running…'}</div>
+          <div className="text-base font-semibold">Review: {result?.label ?? 'running…'}</div>
           <div className="truncate text-xs text-muted">
             {r.requestId ? 'Reading the change…' : r.error ? 'The review failed.'
               : findings.length ? counts.map(([s, n]) => `${n} ${s}`).join(' · ') : 'No findings.'}
@@ -59,8 +59,8 @@ export function ReviewView({ view }: { view: RepoView }) {
       </div>
       <div className="flex min-h-0 flex-1">
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-        {r.error && <div className="m-4 rounded-md border border-del/40 bg-del/10 p-3 text-[13px] text-del">{r.error}</div>}
-        {result?.summary && <p className="selectable mx-4 mt-4 text-[13px] text-muted" data-testid="review-summary">{result.summary}</p>}
+        {r.error && <div className="m-4 rounded-md border border-del/40 bg-del/10 p-3 text-sm text-del">{r.error}</div>}
+        {result?.summary && <p className="selectable mx-4 mt-4 text-sm text-muted" data-testid="review-summary">{result.summary}</p>}
         {result?.incremental && (
           <div className="mx-4 mt-2 text-xs text-muted" data-testid="review-incremental">
             Re-review: {result.incremental.sent} changed piece{result.incremental.sent === 1 ? '' : 's'} sent, {result.incremental.unchanged} unchanged.
@@ -94,27 +94,27 @@ export function ReviewView({ view }: { view: RepoView }) {
             ))}
           </p>
         )}
-        {result && !findings.length && !r.error && <p className="mx-4 mt-4 text-[13px] text-faint">Nothing to report{result.findings.length ? ' (all dismissed)' : ''}.</p>}
+        {result && !findings.length && !r.error && <p className="mx-4 mt-4 text-sm text-faint">Nothing to report{result.findings.length ? ' (all dismissed)' : ''}.</p>}
         {[...byFile].map(([path, list]) => (
           <section key={path} className="mx-4 mt-4">
-            <h3 className="mb-2 font-mono text-[12px] text-muted">{path}</h3>
+            <h3 className="mb-2 font-mono text-xs text-muted">{path}</h3>
             {list.map((f) => (
               <div key={f.id} ref={r.focus === f.id ? focused : undefined} data-testid="finding" data-severity={f.severity}
                 className={clsx('mb-2 rounded-md border bg-panel p-3', r.focus === f.id ? 'border-accent' : 'border-line')}>
                 <div className="flex items-center gap-2">
-                  <span className={clsx('rounded px-1.5 text-[10px] font-semibold uppercase', SEVERITY_STYLE[f.severity])}>{f.severity}</span>
-                  <span className="text-[11px] text-faint">{f.type}</span>
-                  {f.source && <span className="rounded border border-line px-1 text-[10px] text-muted" data-testid="finding-source" title={f.source === 'scan' ? "Found by GitGoose's built-in secret scan, not the AI" : 'Reported by a linter, not the AI'}>{f.tool}</span>}
-                  {f.status && <span className={clsx('text-[10px]', f.status === 'new' ? 'text-accent' : 'text-faint')} data-testid="finding-status">{f.status === 'new' ? 'new' : 'still open'}</span>}
-                  {f.fromChat && <span className="rounded bg-accent/15 px-1 text-[10px] text-accent" data-testid="finding-from-chat" title="Applied from the chat beside the review">from chat</span>}
-                  <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">{f.title}</span>
-                  <button className="font-mono text-[11px] text-accent hover:underline" onClick={() => open(f)} title="Show in the diff">
+                  <span className={clsx('rounded px-1.5 text-2xs font-semibold uppercase', SEVERITY_STYLE[f.severity])}>{f.severity}</span>
+                  <span className="text-2xs text-faint">{f.type}</span>
+                  {f.source && <span className="rounded border border-line px-1 text-2xs text-muted" data-testid="finding-source" title={f.source === 'scan' ? "Found by GitGoose's built-in secret scan, not the AI" : 'Reported by a linter, not the AI'}>{f.tool}</span>}
+                  {f.status && <span className={clsx('text-2xs', f.status === 'new' ? 'text-accent' : 'text-faint')} data-testid="finding-status">{f.status === 'new' ? 'new' : 'still open'}</span>}
+                  {f.fromChat && <span className="rounded bg-accent/15 px-1 text-2xs text-accent" data-testid="finding-from-chat" title="Applied from the chat beside the review">from chat</span>}
+                  <span className="min-w-0 flex-1 truncate text-sm font-semibold">{f.title}</span>
+                  <button className="font-mono text-2xs text-accent hover:underline" onClick={() => open(f)} title="Show in the diff">
                     lines {f.startLine}{f.endLine !== f.startLine ? `-${f.endLine}` : ''}
                   </button>
                 </div>
-                <p className="selectable mt-1.5 text-[13px] whitespace-pre-wrap">{f.message}</p>
+                <p className="selectable mt-1.5 text-sm whitespace-pre-wrap">{f.message}</p>
                 {f.suggestion !== undefined && (
-                  <pre className="selectable mt-2 overflow-x-auto rounded border border-line bg-bg p-2 font-mono text-[12px]" data-testid="suggestion">
+                  <pre className="selectable mt-2 overflow-x-auto rounded border border-line bg-bg p-2 font-mono text-xs" data-testid="suggestion">
                     {(f.original ?? []).map((l, i) => <div key={`o${i}`} className="text-del">- {l}</div>)}
                     {f.suggestion.split('\n').map((l, i) => <div key={`n${i}`} className="text-add">+ {l}</div>)}
                   </pre>

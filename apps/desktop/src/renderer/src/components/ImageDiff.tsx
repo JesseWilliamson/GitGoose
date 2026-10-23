@@ -97,7 +97,7 @@ export function ImageDiff({ repoId, target, path }: { repoId: string; target: Di
 function Side({ label, side, onLoad, testId }: { label: string; side: Loaded | null; onLoad: (e: React.SyntheticEvent<HTMLImageElement>) => void; testId: string }) {
   return (
     <figure className="flex max-w-full flex-col items-center gap-2" data-testid={testId}>
-      <figcaption className="rounded bg-panel/90 px-2 py-0.5 text-[11px] text-muted">
+      <figcaption className="rounded bg-panel/90 px-2 py-0.5 text-2xs text-muted">
         {label}{side ? ` · ${formatBytes(side.size)}${side.w ? ` · ${side.w}×${side.h}` : ''}` : ''}
       </figcaption>
       {!side ? <div className="rounded bg-panel/90 px-3 py-6 text-xs text-faint">{label === 'Before' ? 'Added in this change' : 'Deleted in this change'}</div>

@@ -38,7 +38,7 @@ function ConsentDialog() {
   }
   return (
     <Modal open onClose={() => answer(false)} title={`Send to ${c.label}?`}>
-      <div className="text-[13px]" data-testid="ai-consent">
+      <div className="text-sm" data-testid="ai-consent">
         <p className="text-muted">
           To do this, GitGoose sends {c.what} to <b className="text-fg">{c.label}</b>.
           {c.label === 'Anthropic API' ? ' It goes to Anthropic with your API key.' : ' The agent runs on this computer with its own login, and may send it to its provider.'}
@@ -77,7 +77,7 @@ function LoginDialog() {
   }
   return (
     <Modal open onClose={() => done(false)} title={`Log in to ${l.agent}`} width={500}>
-      <div className="space-y-3 text-[13px]" data-testid="ai-login">
+      <div className="space-y-3 text-sm" data-testid="ai-login">
         <p className="text-muted">The agent needs you to log in. It keeps its own credentials; GitGoose never sees them.</p>
         {l.methods.map((m) => (
           <div key={m.id} className="rounded-md border border-line p-2.5">
@@ -85,7 +85,7 @@ function LoginDialog() {
             {m.description && <div className="text-xs text-muted">{m.description}</div>}
             {m.terminalCommand ? (
               <>
-                <pre className="selectable mt-2 overflow-x-auto rounded bg-bg p-2 font-mono text-[11px]">{m.terminalCommand}</pre>
+                <pre className="selectable mt-2 overflow-x-auto rounded bg-bg p-2 font-mono text-2xs">{m.terminalCommand}</pre>
                 <div className="mt-2 flex gap-2">
                   <Button size="sm" onClick={() => void navigator.clipboard.writeText(m.terminalCommand!)}><Copy size={12} /> Copy command</Button>
                   {l.repoId && <Button size="sm" onClick={() => void api.openTerminal(l.repoId!)}><SquareTerminal size={12} /> Open terminal</Button>}
@@ -115,7 +115,7 @@ function PermissionDialog() {
     kind === 'allow_once' ? 'Allow once' : kind === 'allow_always' ? 'Allow for this session' : name
   return (
     <Modal open onClose={deny} title="The agent wants to use a tool" width={500}>
-      <div className="text-[13px]" data-testid="ai-permission">
+      <div className="text-sm" data-testid="ai-permission">
         <div className="flex items-start gap-2">
           <ShieldQuestion size={18} className="mt-0.5 shrink-0 text-warn" />
           <div className="min-w-0">
@@ -148,12 +148,12 @@ function OutputDialog() {
   return (
     <Modal open onClose={close} title={o.title} width={560}>
       <div data-testid="ai-output">
-        <div className="selectable max-h-[50vh] min-h-16 overflow-y-auto text-[13px] leading-relaxed whitespace-pre-wrap" data-testid="ai-output-text">
+        <div className="selectable max-h-[50vh] min-h-16 overflow-y-auto text-sm leading-relaxed whitespace-pre-wrap" data-testid="ai-output-text">
           {o.text || (o.requestId ? <span className="flex items-center gap-2 text-muted"><Spinner /> Thinking…</span> : null)}
         </div>
         {o.error && <div className="mt-2 text-xs text-del" data-testid="ai-output-error">{o.error}</div>}
         <div className="mt-4 flex items-center justify-between gap-2">
-          <span className="flex items-center gap-1 text-[11px] text-faint"><Sparkles size={11} /> AI-written; check it before acting on it.</span>
+          <span className="flex items-center gap-1 text-2xs text-faint"><Sparkles size={11} /> AI-written; check it before acting on it.</span>
           <div className="flex items-center gap-2">
             <ModelPicker area="error" />
             <PromptButton area="error" />
@@ -222,7 +222,7 @@ function FixView({ fix }: { fix: NonNullable<ReturnType<typeof useAi.getState>['
   const rows = fix.before !== null && fix.after !== null ? fileDiffRows(fix.before, fix.after) : []
   return (
     <Modal open onClose={hide} title={`Fix: ${fix.title}`} width={760}>
-      <div className="text-[13px]" data-testid="ai-fix">
+      <div className="text-sm" data-testid="ai-fix">
         {fix.requestId && (
           <>
             <p className="flex items-center gap-2 text-muted"><Spinner /> Asking for a fix to {fix.path}…</p>
@@ -234,7 +234,7 @@ function FixView({ fix }: { fix: NonNullable<ReturnType<typeof useAi.getState>['
         {fix.after !== null && (
           <>
             {rows.length === 0 ? <p className="text-faint">The proposal is the same as the file: nothing to change.</p> : (
-              <pre className="selectable max-h-[55vh] overflow-auto rounded border border-line bg-bg py-1 font-mono text-[12px]" data-testid="ai-fix-diff">
+              <pre className="selectable max-h-[55vh] overflow-auto rounded border border-line bg-bg py-1 font-mono text-xs" data-testid="ai-fix-diff">
                 {rows.map((r, i) => r.kind === 'skip'
                   ? <div key={i} className="px-2 text-faint">⋯ {r.count} unchanged line{r.count === 1 ? '' : 's'}</div>
                   : <div key={i} className={clsx('px-2', r.kind === '+' && 'bg-add-bg', r.kind === '-' && 'bg-del-bg')}>{r.kind} {r.text}</div>)}
@@ -298,9 +298,9 @@ function ProposalView({ p }: { p: NonNullable<ReturnType<typeof useAi.getState>[
   }
   return (
     <Modal open onClose={hide} title={`Proposed resolution for ${p.path}`} width={720}>
-      <div className="text-[13px]" data-testid="ai-proposal">
+      <div className="text-sm" data-testid="ai-proposal">
         {p.note && <p className="mb-2 text-muted">{p.note}</p>}
-        <pre className="selectable max-h-[50vh] overflow-auto rounded border border-line bg-bg p-2 font-mono text-[12px]" data-testid="ai-proposal-content">{p.content}</pre>
+        <pre className="selectable max-h-[50vh] overflow-auto rounded border border-line bg-bg p-2 font-mono text-xs" data-testid="ai-proposal-content">{p.content}</pre>
         {stale ? (
           <p className="mt-2 flex items-start gap-1 text-xs text-del" data-testid="ai-proposal-stale">
             <CircleAlert size={12} className="mt-px shrink-0" />

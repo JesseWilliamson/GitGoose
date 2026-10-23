@@ -130,7 +130,7 @@ function WipPanel({ view }: { view: RepoView }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center gap-2 border-b border-line px-3 py-2 text-[13px]">
+      <div className="flex items-center gap-2 border-b border-line px-3 py-2 text-sm">
         <span className="min-w-0 flex-1 truncate">
           <span className="font-semibold">{st.length} file {st.length === 1 ? 'change' : 'changes'}</span>
           <span className="text-muted"> on {view.snapshot.head.branch ?? (view.snapshot.head.detached ? 'detached HEAD' : 'a new branch')}</span>
@@ -167,7 +167,7 @@ function WipPanel({ view }: { view: RepoView }) {
       </div>
       {st.length > 0 && <FileListTools filter={filter} onFilter={setFilter} />}
       {view.snapshot.operation && (
-        <div className="flex items-center justify-between gap-2 border-b border-line bg-warn/10 px-3 py-2 text-[13px]">
+        <div className="flex items-center justify-between gap-2 border-b border-line bg-warn/10 px-3 py-2 text-sm">
           <span><b>{sentence(opName(view.snapshot.operation))}</b> in progress{conflicted.length ? `, ${conflicted.length} conflicted` : ''}</span>
           <Button size="sm" onClick={() => updateRepo(id, { center: { kind: 'conflicts' } })}>Resolve…</Button>
         </div>
@@ -390,7 +390,7 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
     <div className="border-t border-line p-3" data-testid="commit-box">
       <button onClick={() => useStore.setState({ dialog: { kind: 'identity', repoId: id, onSaved: () => setIdentityTick((t) => t + 1) } })}
         title={identity?.scope === 'local' ? 'Set for this repository' : identity?.scope === 'global' ? 'Your global identity' : 'No identity set: git will refuse to commit'}
-        className={clsx('mb-2 block max-w-full truncate text-left text-[11px] hover:text-fg', identity && !identity.scope ? 'text-warn' : 'text-faint')} data-testid="commit-identity">
+        className={clsx('mb-2 block max-w-full truncate text-left text-2xs hover:text-fg', identity && !identity.scope ? 'text-warn' : 'text-faint')} data-testid="commit-identity">
         {identity ? (identity.name || identity.email ? `as ${identity.name ?? '?'} <${identity.email ?? '?'}>${identity.scope === 'local' ? ' · this repository' : ''}` : 'Set who you commit as…') : '\u00a0'}
       </button>
       <div className="relative">
@@ -401,9 +401,9 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
           placeholder="Summary"
           style={{ fontFamily: 'var(--gs-code-font)' }}
           data-testid="commit-summary"
-          className="h-8 w-full rounded-md border border-line bg-bg px-2 pr-9 text-[13px] outline-none focus:border-accent"
+          className="h-input w-full rounded-md border border-line bg-bg px-2 pr-9 text-sm outline-none focus:border-accent"
         />
-        <span className={`absolute top-2 right-2 text-[10px] ${summary.length > 72 ? 'text-warn' : 'text-faint'}`}>{summary.length}</span>
+        <span className={`absolute top-2 right-2 text-2xs ${summary.length > 72 ? 'text-warn' : 'text-faint'}`}>{summary.length}</span>
       </div>
       <textarea
         value={body}
@@ -413,7 +413,7 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
         style={{ fontFamily: 'var(--gs-code-font)', fontSize: 'var(--gs-code-size)' }}
         rows={3}
         data-testid="commit-body"
-        className="mt-2 w-full resize-none rounded-md border border-line bg-bg px-2 py-1.5 text-[13px] outline-none focus:border-accent"
+        className="mt-2 w-full resize-none rounded-md border border-line bg-bg px-2 py-1.5 text-sm outline-none focus:border-accent"
       />
       {aiOn && (
         <div className="mt-2 flex min-w-0 items-center gap-2">
@@ -434,7 +434,7 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
               <Button size="sm" variant="ghost" title="Commit options" aria-label="Commit options" data-testid="commit-options">
-                <MoreHorizontal size={14} />{noVerify && <span className="text-[10px] text-warn">no hooks</span>}
+                <MoreHorizontal size={14} />{noVerify && <span className="text-2xs text-warn">no hooks</span>}
               </Button>
             </DropdownMenu.Trigger>
             <DM.Content>
@@ -473,11 +473,11 @@ function CommitQuestions({ view, hash }: { view: RepoView; hash: string }) {
   if (!threads.length) return null
   return (
     <div className="border-b border-line px-3 py-2" data-testid="commit-questions">
-      <div className="mb-1 text-[11px] font-semibold text-muted uppercase">Questions ({threads.length})</div>
+      <div className="mb-1 text-2xs font-semibold text-muted uppercase">Questions ({threads.length})</div>
       {threads.map((t) => (
-        <button key={t.id} className="flex w-full items-baseline gap-2 rounded px-1 py-0.5 text-left text-[12px] hover:bg-hover"
+        <button key={t.id} className="flex w-full items-baseline gap-2 rounded px-1 py-0.5 text-left text-xs hover:bg-hover"
           onClick={() => { updateRepo(view.id, { center: { kind: 'file', target: { kind: 'commit', hash, path: t.path }, mode: 'diff' } }); openAsk(view.id, t) }}>
-          <span className="shrink-0 font-mono text-[11px] text-faint">{t.path.split('/').pop()}:{t.startLine}</span>
+          <span className="shrink-0 font-mono text-2xs text-faint">{t.path.split('/').pop()}:{t.startLine}</span>
           <span className="min-w-0 flex-1 truncate">{t.messages.find((m) => m.role === 'user')?.text}</span>
         </button>
       ))}
@@ -527,7 +527,7 @@ function ComparePanel({ view, sel }: { view: RepoView; sel: Extract<RepoView['se
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="compare-panel">
       <div className="border-b border-line p-3">
-        <div className="text-[14px] font-semibold">Comparing</div>
+        <div className="text-base font-semibold">Comparing</div>
         <div className="mt-1 flex items-center gap-2 font-mono text-xs">
           <span className="truncate rounded bg-hover px-1.5 py-0.5" title={sel.from}>{sel.fromLabel}</span>
           <span className="text-faint">→</span>
@@ -551,8 +551,8 @@ function ComparePanel({ view, sel }: { view: RepoView; sel: Extract<RepoView['se
           return (
             <FileRow key={f.path} {...layout} path={f.path} oldPath={f.oldPath} kind={f.change} selected={isOpen(view, t)} testId="compare-file"
               onClick={() => openFile(view, t)} menu={<FileMenu view={view} target={t} />}
-              stats={f.binary ? <span className="text-[11px] text-faint">bin</span> : (
-                <span className="shrink-0 font-mono text-[11px]"><span className="text-add">+{f.additions}</span> <span className="text-del">−{f.deletions}</span></span>
+              stats={f.binary ? <span className="text-2xs text-faint">bin</span> : (
+                <span className="shrink-0 font-mono text-2xs"><span className="text-add">+{f.additions}</span> <span className="text-del">−{f.deletions}</span></span>
               )} />
           )
         }} />}
@@ -623,7 +623,7 @@ function MultiPanel({ view, hashes }: { view: RepoView; hashes: string[] }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="multi-panel">
       <div className="border-b border-line px-3 pt-3 pb-2">
-        <div className="text-[14px] font-semibold">{hashes.length} commits selected</div>
+        <div className="text-base font-semibold">{hashes.length} commits selected</div>
         <div className="mt-0.5 text-xs text-muted">Right-click the selection for what you can do with them. Shift-click selects a range, {modName()}-click adds or removes one.</div>
       </div>
       <div className="max-h-[40%] shrink-0 overflow-y-auto border-b border-line py-1" data-testid="multi-commits">
@@ -632,8 +632,8 @@ function MultiPanel({ view, hashes }: { view: RepoView; hashes: string[] }) {
             onClick={() => selectCommit(view.id, c.hash)} title="Select only this commit">
             <Avatar name={c.authorName} email={c.authorEmail} src={avatarSrc(c.authorEmail, avatarSource)} size={24} />
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[13px]">{c.subject}</div>
-              <div className="truncate text-[11px] text-muted">{dateTime(c.authorDate)} by {c.authorName}</div>
+              <div className="truncate text-sm">{c.subject}</div>
+              <div className="truncate text-2xs text-muted">{dateTime(c.authorDate)} by {c.authorName}</div>
             </div>
             <span className="shrink-0 self-start font-mono text-xs text-faint">{shortHash(c.hash)}</span>
           </button>
@@ -656,8 +656,8 @@ function MultiPanel({ view, hashes }: { view: RepoView; hashes: string[] }) {
           : <FileListView items={list} pathOf={(f) => f.path} filter={fileFilter} testId="multi" renderFile={(f, layout) => (
             <FileRow key={f.path} {...layout} path={f.path} oldPath={f.oldPath} kind={f.change} selected={isOpen(view, f.target)} testId="multi-file"
               onClick={() => openFile(view, f.target)} menu={<FileMenu view={view} target={f.target} />}
-              stats={f.binary ? <span className="text-[11px] text-faint">bin</span> : (
-                <span className="shrink-0 font-mono text-[11px]">
+              stats={f.binary ? <span className="text-2xs text-faint">bin</span> : (
+                <span className="shrink-0 font-mono text-2xs">
                   {f.commits > 1 && <span className="mr-1 text-faint" title={`Touched by ${f.commits} of the selected commits`}>×{f.commits}</span>}
                   <span className="text-add">+{f.additions}</span> <span className="text-del">−{f.deletions}</span>
                 </span>
@@ -716,7 +716,7 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {stash && (
-        <div className="flex items-center gap-2 border-b border-line bg-accent/10 px-3 py-2 text-[13px]" data-testid="stash-header">
+        <div className="flex items-center gap-2 border-b border-line bg-accent/10 px-3 py-2 text-sm" data-testid="stash-header">
           <span className="min-w-0 flex-1 truncate"><b>Stash</b> {stash.ref}</span>
           <Button size="sm" onClick={() => void stashApply(view.id, stash.index)}>Apply</Button>
           <Button size="sm" variant="primary" onClick={() => {
@@ -732,8 +732,8 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
         </div>
       )}
       <div className="selectable border-b border-line p-3">
-        <div className="text-[14px] leading-snug font-semibold">{stash ? stashLabel(stash.message) : d.subject}</div>
-        {d.body && <pre className="mt-2 max-h-40 overflow-y-auto font-sans text-[13px] whitespace-pre-wrap text-muted">{d.body}</pre>}
+        <div className="text-base leading-snug font-semibold">{stash ? stashLabel(stash.message) : d.subject}</div>
+        {d.body && <pre className="mt-2 max-h-40 overflow-y-auto font-sans text-sm whitespace-pre-wrap text-muted">{d.body}</pre>}
         {aiOn && !stash && (
           <div className="mt-2">
             {!shown ? (
@@ -743,8 +743,8 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
                 <PromptButton area="explain" />
               </span>
             ) : (
-              <div className="rounded-md border border-line bg-bg/60 p-2 text-[13px]" data-testid="ai-explanation">
-                <div className="mb-1 flex items-center gap-1 text-[11px] text-faint">
+              <div className="rounded-md border border-line bg-bg/60 p-2 text-sm" data-testid="ai-explanation">
+                <div className="mb-1 flex items-center gap-1 text-2xs text-faint">
                   <Sparkles size={11} /> <span className="flex-1">AI explanation</span>
                   {shown.requestId && <Button size="sm" variant="ghost" onClick={explain}>Stop</Button>}
                   <button title="Close" className="rounded p-0.5 hover:bg-hover" onClick={() => closeExplanation(view.id, d.hash)}><X size={12} /></button>
@@ -794,8 +794,8 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
               drag={{ kind: 'files', rev: d.hash, paths: [f.path], stash: !!stash }}
               onClick={() => openFile(view, t)}
               menu={<FileMenu view={view} target={t} />}
-              stats={f.binary ? <span className="text-[11px] text-faint">bin</span> : (
-                <span className="shrink-0 font-mono text-[11px]"><span className="text-add">+{f.additions}</span> <span className="text-del">−{f.deletions}</span></span>
+              stats={f.binary ? <span className="text-2xs text-faint">bin</span> : (
+                <span className="shrink-0 font-mono text-2xs"><span className="text-add">+{f.additions}</span> <span className="text-del">−{f.deletions}</span></span>
               )} />
           )
         }} />

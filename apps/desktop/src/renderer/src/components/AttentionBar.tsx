@@ -23,7 +23,7 @@ function Row({ a }: { a: Attention }) {
   const aiOn = useAiEnabled()
   const repoId = useStore((s) => s.active)
   return (
-    <div className="border-b border-del/20 bg-del/12 px-3 py-1.5 text-[13px] last:border-b-0" data-testid="attention-row">
+    <div className="border-b border-del/20 bg-del/12 px-3 py-1.5 text-sm last:border-b-0" data-testid="attention-row">
       <div className="flex items-center gap-2">
         <AlertTriangle size={15} className="shrink-0 text-del" />
         <span className="min-w-0 flex-1 truncate font-medium">{a.title}</span>
@@ -47,7 +47,7 @@ function Row({ a }: { a: Attention }) {
         </button>
       </div>
       {open && a.detail && (
-        <pre className="selectable mt-1.5 mb-0.5 max-h-48 overflow-auto rounded bg-bg/60 p-2 font-mono text-[11px] whitespace-pre-wrap text-muted">{a.detail}</pre>
+        <pre className="selectable mt-1.5 mb-0.5 max-h-48 overflow-auto rounded bg-bg/60 p-2 font-mono text-2xs whitespace-pre-wrap text-muted">{a.detail}</pre>
       )}
     </div>
   )

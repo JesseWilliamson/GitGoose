@@ -112,7 +112,7 @@ export function RecomposeDialog() {
         const a = document.activeElement
         if (a instanceof HTMLTextAreaElement || a instanceof HTMLInputElement) { a.blur(); e.preventDefault() }
       }}>
-      <div data-testid="recompose-dialog" className="text-[13px]">
+      <div data-testid="recompose-dialog" className="text-sm">
         {state.proposal ? (
           <Review key={state.requestId ?? 'review'} repoId={state.repoId} proposal={state.proposal} close={discard} threadId={state.threadId} incoming={state.incoming} />
         ) : state.error ? (
@@ -462,7 +462,7 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
         <div className="flex w-80 shrink-0 flex-col border-r border-line bg-panel" data-testid="recompose-commits-column">
           {/* One line, never wrapping: a hint that changed the header's height would move the rows
               under the pointer mid-drag and flip the drop target back and forth. */}
-          <div className="flex items-center gap-2 px-3 pt-2 pb-1 text-[11px] font-semibold tracking-wide whitespace-nowrap text-faint uppercase">
+          <div className="flex items-center gap-2 px-3 pt-2 pb-1 text-2xs font-semibold tracking-wide whitespace-nowrap text-faint uppercase">
             <span className="shrink-0">Commits</span>
             <span className="min-w-0 flex-1 truncate text-right font-normal normal-case tracking-normal">
               {draggingUnit ? <span className="text-accent">drop on a commit, or above for a new one</span> : `${draft.length}, oldest at the bottom`}
@@ -495,10 +495,10 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
                         target ? 'border-accent bg-accent/15' : pickedSet.has(i) ? 'border-accent bg-accent/10' : 'border-transparent hover:bg-hover',
                         !c.units.length && !target && 'border-dashed border-del/50')}>
                       <GripVertical size={13} className="mt-0.5 shrink-0 text-faint opacity-0 group-hover:opacity-100" />
-                      <span className="mt-px w-4 shrink-0 text-right font-mono text-[11px] text-faint">{i + 1}</span>
+                      <span className="mt-px w-4 shrink-0 text-right font-mono text-2xs text-faint">{i + 1}</span>
                       <div className="min-w-0 flex-1">
                         <div className={clsx('truncate', !c.message.trim() && 'text-faint italic')} data-testid="recompose-title">{c.message.split('\n')[0] || 'No message yet'}</div>
-                        <div className="mt-0.5 flex gap-2 text-[11px] text-faint">
+                        <div className="mt-0.5 flex gap-2 text-2xs text-faint">
                           {c.units.length ? <><span>{files} {files === 1 ? 'file' : 'files'}</span><span className="text-add">+{stats.add}</span><span className="text-del">−{stats.del}</span></>
                             : <span className="text-del">No changes</span>}
                         </div>
@@ -535,14 +535,14 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
             dragged: nothing here takes a drop. */}
         {current && (
           <div className={clsx('flex min-w-0 flex-1 flex-col transition-opacity', draggingUnit && 'opacity-40')} data-testid="recompose-hunks-column">
-            <div className="flex items-center px-3 pt-2 pb-1 text-[11px] font-semibold tracking-wide text-faint uppercase">
+            <div className="flex items-center px-3 pt-2 pb-1 text-2xs font-semibold tracking-wide text-faint uppercase">
               <span className="flex-1">Hunks</span>
               <span className="font-normal normal-case tracking-normal">{current.units.length} in commit {sel + 1}</span>
             </div>
             <div className="border-b border-line px-3 pb-3">
               <textarea key={sel} value={current.message} onChange={(e) => update((d) => editMessage(d, sel, e.target.value), `message:${sel}`)}
                 rows={Math.max(2, Math.min(6, current.message.split('\n').length))} placeholder={`Message for commit ${sel + 1} (first line is the summary)`}
-                className="w-full resize-y rounded-md border border-line bg-bg px-2 py-1.5 font-mono text-[12px] outline-none focus:border-accent"
+                className="w-full resize-y rounded-md border border-line bg-bg px-2 py-1.5 font-mono text-xs outline-none focus:border-accent"
                 data-testid="recompose-message" />
             </div>
             <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3" data-testid="recompose-units">
@@ -608,7 +608,7 @@ function UnitCard({ unit, draft, here, slot, onPointerDown, onMove }: {
       onPointerDown={onPointerDown}>
       <div className="flex cursor-grab items-center gap-2 border-b border-line bg-panel px-2 py-1 text-xs select-none">
         <GripVertical size={12} className="shrink-0 text-faint" />
-        <span className="min-w-0 flex-1 truncate font-mono text-[12px]"><span className="text-faint">{dir}</span>{name}</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-xs"><span className="text-faint">{dir}</span>{name}</span>
         {unit.binary ? <span className="text-faint">binary</span> : <><span className="text-add">+{unit.added}</span><span className="text-del">−{unit.removed}</span></>}
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild>
@@ -625,7 +625,7 @@ function UnitCard({ unit, draft, here, slot, onPointerDown, onMove }: {
         </DropdownMenu.Root>
       </div>
       {unit.preview ? (
-        <pre className="selectable max-h-72 overflow-auto py-1 font-mono text-[11.5px] leading-[1.45]">
+        <pre className="selectable max-h-72 overflow-auto py-1 font-mono text-2xs leading-[1.45]">
           {unit.preview.split('\n').map((l, i) => (
             <div key={i} className={clsx('px-2', l.startsWith('+') ? 'bg-add-bg text-add' : l.startsWith('-') ? 'bg-del-bg text-del' : l.startsWith('@@') ? 'text-accent' : l.startsWith('…') ? 'text-faint italic' : 'text-muted')}>
               {l || ' '}

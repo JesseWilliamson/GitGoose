@@ -101,7 +101,7 @@ function HistoryList({ history, currentId, onOpen }: { history: AiThread[] | nul
             return (
               <DM.Item key={t.id} onSelect={() => onOpen(t.id)}>
                 <span className="flex w-80 max-w-full items-center gap-2" data-testid="ai-chat-history-item" data-kind={t.anchor.kind} data-running={running || undefined} data-current={t.id === currentId || undefined}>
-                  <span className="w-20 shrink-0 text-[11px] text-faint">{ANCHOR_KIND[t.anchor.kind]}</span>
+                  <span className="w-20 shrink-0 text-2xs text-faint">{ANCHOR_KIND[t.anchor.kind]}</span>
                   <span className="min-w-0 flex-1 truncate">{t.title || 'Untitled'}</span>
                   {running && <span data-testid="ai-chat-history-running" title="Answering now"><Spinner /></span>}
                   {t.id === currentId && <Check size={12} className="shrink-0 text-accent" aria-label="Open now" />}

@@ -106,9 +106,9 @@ export function DragBadge() {
 
   return (
     <div ref={badge} data-testid="drag-badge" style={{ display: 'none', position: 'fixed', left: 0, top: 0 }}
-      className="pointer-events-none z-50 flex max-w-96 flex-col rounded-md bg-accent px-2 py-1 text-[12px] font-medium text-accent-fg shadow-lg">
+      className="pointer-events-none z-50 flex max-w-96 flex-col rounded-md bg-accent px-2 py-1 text-xs font-medium text-accent-fg shadow-lg">
       <span ref={label} data-testid="drag-badge-label" />
-      <span ref={alt} data-testid="drag-badge-alt" className="text-[11px] font-normal opacity-80" />
+      <span ref={alt} data-testid="drag-badge-alt" className="text-2xs font-normal opacity-80" />
     </div>
   )
 }

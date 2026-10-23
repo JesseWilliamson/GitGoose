@@ -62,14 +62,14 @@ export function CodePeekPanel({ repoId, repoPath, name, rev, onClose }: { repoId
         <span className="flex-1" />
         <button onClick={onClose} title="Close (Esc)" aria-label="Close peek" className="rounded p-1 text-muted hover:bg-hover hover:text-fg"><X size={13} /></button>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto font-mono text-[12px]">
+      <div className="min-h-0 flex-1 overflow-auto font-mono text-xs">
         {error && <div className="p-3 font-sans text-xs text-del">{error}</div>}
         {!peek && !error && <div className="p-3 font-sans text-xs text-faint" data-testid="peek-waiting">{waiting ?? 'Searching…'}</div>}
         {peek && peek.definitions.length === 0 && <div className="px-3 pt-2 font-sans text-xs text-faint">No definition found (it may come from a dependency).</div>}
         {peek?.definitions.map((d) => (
           <div key={`${d.path}:${d.line}`} className="border-b border-line/60" data-testid="peek-definition">
             <button onClick={() => open(d.path, d.line)} className="flex w-full items-center gap-2 px-3 pt-2 pb-1 text-left font-sans text-xs hover:text-accent">
-              <span className="rounded bg-accent/15 px-1 text-[10px] text-accent">{d.kind}</span>
+              <span className="rounded bg-accent/15 px-1 text-2xs text-accent">{d.kind}</span>
               <span className="truncate">{d.path}:{d.line}</span>
             </button>
             <pre className="selectable overflow-x-auto px-3 pb-2 text-muted">{d.preview.join('\n')}{d.endLine > d.line + 14 ? '\n…' : ''}</pre>
@@ -77,7 +77,7 @@ export function CodePeekPanel({ repoId, repoPath, name, rev, onClose }: { repoId
         ))}
         {peek && peek.references.length > 0 && (
           <div className="py-1">
-            <div className="px-3 py-1 font-sans text-[11px] font-semibold text-faint uppercase">Used in</div>
+            <div className="px-3 py-1 font-sans text-2xs font-semibold text-faint uppercase">Used in</div>
             {peek.references.map((r) => (
               <button key={`${r.path}:${r.line}:${r.column}`} onClick={() => open(r.path, r.line)} data-testid="peek-reference"
                 className="flex w-full items-center gap-3 px-3 py-0.5 text-left hover:bg-hover">

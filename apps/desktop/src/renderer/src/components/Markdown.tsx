@@ -19,7 +19,7 @@ function Block({ b }: { b: MdBlock }): ReactNode {
   switch (b.t) {
     case 'p': return <p className="my-1.5 leading-relaxed"><Inline nodes={b.inline} /></p>
     case 'h': {
-      const size = b.level <= 1 ? 'text-[15px]' : b.level === 2 ? 'text-[14px]' : 'text-[13px]'
+      const size = b.level <= 2 ? 'text-base' : 'text-sm'
       return <div role="heading" aria-level={b.level} className={`mt-3 mb-1 font-semibold ${size}`}><Inline nodes={b.inline} /></div>
     }
     case 'list': {
@@ -67,7 +67,7 @@ function CodeBlock({ lang, text }: { lang: string; text: string }) {
   }, [lang, text])
   const lines = text.split('\n')
   return (
-    <pre className="my-2 max-h-96 overflow-auto rounded border border-line bg-bg p-2 font-mono text-[12px] leading-[1.45]" data-lang={lang || undefined}>
+    <pre className="my-2 max-h-96 overflow-auto rounded border border-line bg-bg p-2 font-mono text-xs leading-[1.45]" data-lang={lang || undefined}>
       {lines.map((l, i) => (
         <div key={i}>{tokens?.[i] ? tokens[i]!.map((t, k) => <span key={k} style={{ color: t.color }}>{t.content}</span>) : (l || ' ')}</div>
       ))}

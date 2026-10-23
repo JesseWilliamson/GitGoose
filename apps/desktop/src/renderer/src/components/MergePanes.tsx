@@ -389,7 +389,7 @@ export default function MergePanes({ base, ours, theirs, labels, onSave }: Merge
         </div>
         <SplitHandle box={box} split={split} onChange={setSplit} />
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex shrink-0 items-center gap-2 border-b border-line bg-panel px-3 py-1 text-[11px]">
+          <div className="flex shrink-0 items-center gap-2 border-b border-line bg-panel px-3 py-1 text-2xs">
             <span className="font-semibold text-fg">Result</span>
             <span className="text-faint">editable · lines show where they came from:</span>
             <span className="flex items-center gap-1 text-muted"><i className="size-2 rounded-sm bg-ours" /> yours</span>
@@ -406,7 +406,7 @@ export default function MergePanes({ base, ours, theirs, labels, onSave }: Merge
 /** "A · Yours (main)" in its side's colour, with how many of its changes still wait for a decision. */
 function PaneHeader({ side, label, pending }: { side: Side; label: string; pending: number }) {
   return (
-    <div className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-1 text-[11px]" data-testid={`merge-${side}-header`}
+    <div className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-1 text-2xs" data-testid={`merge-${side}-header`}
       style={{ background: `color-mix(in srgb, var(--gs-${side}) 12%, var(--gs-panel))` }}>
       <span className={clsx('rounded px-1 font-bold text-white', side === 'ours' ? 'bg-ours' : 'bg-theirs')}>{side === 'ours' ? 'A' : 'B'}</span>
       <span className="min-w-0 flex-1 truncate font-semibold">{side === 'ours' ? 'Yours' : 'Theirs'} <span className="font-normal text-muted">({label})</span></span>

@@ -21,7 +21,7 @@ export function Dialogs() {
   if (dialog.kind === 'confirm') {
     return (
       <Modal open onClose={close} title={dialog.title}>
-        <p className="mb-4 text-[13px] text-muted">{dialog.message}</p>
+        <p className="mb-4 text-sm text-muted">{dialog.message}</p>
         <div className="flex justify-end gap-2">
           <Button onClick={close}>Cancel</Button>
           <Button autoFocus variant={dialog.danger ? 'danger' : 'primary'} onClick={() => { close(); void dialog.onConfirm() }}>{dialog.confirm}</Button>
@@ -33,8 +33,8 @@ export function Dialogs() {
     return (
       <Modal open onClose={() => { close(); dialog.onDismiss?.() }} title={dialog.title} width={500}>
         <div data-testid="choice-dialog">
-          <p className="mb-3 text-[13px] text-muted">{dialog.message}</p>
-          {dialog.detail && <pre className="selectable mb-4 max-h-40 overflow-auto rounded bg-bg p-2 font-mono text-[11px] whitespace-pre-wrap text-muted">{dialog.detail}</pre>}
+          <p className="mb-3 text-sm text-muted">{dialog.message}</p>
+          {dialog.detail && <pre className="selectable mb-4 max-h-40 overflow-auto rounded bg-bg p-2 font-mono text-2xs whitespace-pre-wrap text-muted">{dialog.detail}</pre>}
           <div className="flex flex-wrap justify-end gap-2">
             {dialog.choices.map((c, i) => (
               <Button key={c.label} autoFocus={i === 0} variant={c.variant ?? 'default'} onClick={() => { close(); void c.run?.() }}>{c.label}</Button>
@@ -75,7 +75,7 @@ function TextDialog({ d, close }: { d: Extract<NonNullable<ReturnType<typeof use
           }
         }}
         style={{ fontFamily: 'var(--gs-code-font)' }}
-        className="w-full resize-y rounded-md border border-line bg-bg px-2 py-1.5 text-[13px] outline-none focus:border-accent" />
+        className="w-full resize-y rounded-md border border-line bg-bg px-2 py-1.5 text-sm outline-none focus:border-accent" />
       <div className="mt-3 flex justify-end gap-2">
         <Button onClick={close}>Cancel</Button>
         <Button variant="primary" disabled={!value.trim()} onClick={submit} data-testid="dialog-submit">{d.confirm}</Button>
@@ -105,22 +105,22 @@ function CleanupDialog({ repoId, close }: { repoId: string; close: () => void })
   }
   return (
     <Modal open onClose={close} title="Clean up branches" width={520}>
-      <p className="mb-3 text-[13px] text-muted">
+      <p className="mb-3 text-sm text-muted">
         Merged branches are already part of {view?.snapshot.head.branch ?? 'HEAD'}. Stale ones have had no commits for {STALE_DAYS} days. Undo brings deleted branches back.
       </p>
-      {candidates.length === 0 && <p className="mb-3 text-[13px] text-faint">Nothing to clean up.</p>}
+      {candidates.length === 0 && <p className="mb-3 text-sm text-faint">Nothing to clean up.</p>}
       <div className="mb-3 max-h-72 overflow-y-auto rounded-md border border-line" data-testid="cleanup-list">
         {candidates.map((c) => (
-          <label key={c.name} className="flex h-7 items-center gap-2 px-2 text-[13px] hover:bg-hover">
+          <label key={c.name} className="flex h-7 items-center gap-2 px-2 text-sm hover:bg-hover">
             <input type="checkbox" checked={picked.has(c.name)} onChange={() => toggle(c.name)} aria-label={c.name} />
             <span className="min-w-0 flex-1 truncate">{c.name}</span>
-            {c.merged && <span className="text-[10px] text-add">merged</span>}
-            {c.stale && <span className="text-[10px] text-warn">stale</span>}
-            {c.date !== undefined && <span className="w-20 text-right text-[11px] text-faint">{relativeTime(c.date)}</span>}
+            {c.merged && <span className="text-2xs text-add">merged</span>}
+            {c.stale && <span className="text-2xs text-warn">stale</span>}
+            {c.date !== undefined && <span className="w-20 text-right text-2xs text-faint">{relativeTime(c.date)}</span>}
           </label>
         ))}
       </div>
-      {unmerged > 0 && <p className="mb-3 text-[12px] text-warn">{unmerged} of these {unmerged === 1 ? 'is' : 'are'} not merged: {unmerged === 1 ? 'its' : 'their'} commits will only be reachable through undo.</p>}
+      {unmerged > 0 && <p className="mb-3 text-xs text-warn">{unmerged} of these {unmerged === 1 ? 'is' : 'are'} not merged: {unmerged === 1 ? 'its' : 'their'} commits will only be reachable through undo.</p>}
       <div className="flex justify-end gap-2">
         <Button onClick={close}>Cancel</Button>
         <Button variant={unmerged ? 'danger' : 'primary'} disabled={picked.size === 0} onClick={submit} data-testid="dialog-submit">
@@ -162,7 +162,7 @@ function IdentityDialog({ repoId, onSaved, close }: { repoId: string; onSaved?: 
       <form onSubmit={submit} className="space-y-3" data-testid="identity-dialog">
         <TextField autoFocus label="Name" value={name} onChange={(e) => setName(e.target.value)} />
         <TextField label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-        <div className="space-y-1 text-[13px]">
+        <div className="space-y-1 text-sm">
           <label className="flex items-center gap-2"><input type="radio" checked={scope === 'global'} onChange={() => setScope('global')} /> Every repository (your global git config)</label>
           <label className="flex items-center gap-2"><input type="radio" checked={scope === 'local'} onChange={() => setScope('local')} /> Only this repository</label>
         </div>
@@ -224,11 +224,11 @@ function CreatePullDialog({ repoId, branch, close }: { repoId: string; branch: s
         <label className="block">
           <span className="mb-1 block text-xs text-muted">Description</span>
           <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={5} placeholder="What this changes and why"
-            className="w-full resize-y rounded-md border border-line bg-bg px-2 py-1.5 text-[13px] outline-none focus:border-accent" />
+            className="w-full resize-y rounded-md border border-line bg-bg px-2 py-1.5 text-sm outline-none focus:border-accent" />
         </label>
-        <div className="flex items-center gap-3 text-[13px]">
+        <div className="flex items-center gap-3 text-sm">
           <label className="flex items-center gap-2">Into
-            <OptionSelect value={base} onChange={setBase} aria-label="Base branch" className="px-2 data-[size=default]:h-7"
+            <OptionSelect value={base} onChange={setBase} aria-label="Base branch" className="px-2 data-[size=default]:h-input"
               options={(bases.length ? bases : [base]).map((b) => ({ value: b, label: b }))} />
           </label>
         </div>
@@ -255,12 +255,12 @@ function LearningsDialog({ repoId, close }: { repoId: string; close: () => void 
   }
   return (
     <Modal open onClose={close} title="Review learnings" width={560}>
-      <p className="mb-3 text-[13px] text-muted">Sent with every review of this repository. They come from "Don't flag again" on findings.</p>
-      {list?.length === 0 && <p className="mb-3 text-[13px] text-faint">None yet.</p>}
+      <p className="mb-3 text-sm text-muted">Sent with every review of this repository. They come from "Don't flag again" on findings.</p>
+      {list?.length === 0 && <p className="mb-3 text-sm text-faint">None yet.</p>}
       <div className="mb-3 max-h-72 overflow-y-auto" data-testid="learnings">
         {list?.map((l, i) => (
-          <div key={i} className="flex items-center gap-2 border-b border-line/60 py-1.5 text-[13px]">
-            <span className="min-w-0 flex-1">{l.text}{l.path && <span className="ml-2 font-mono text-[11px] text-faint">{l.path}</span>}</span>
+          <div key={i} className="flex items-center gap-2 border-b border-line/60 py-1.5 text-sm">
+            <span className="min-w-0 flex-1">{l.text}{l.path && <span className="ml-2 font-mono text-2xs text-faint">{l.path}</span>}</span>
             <Button size="sm" variant="ghost" onClick={() => void remove(i)}>Remove</Button>
           </div>
         ))}
@@ -282,21 +282,21 @@ function PushChecksDialog({ d, close }: { d: Extract<NonNullable<ReturnType<type
   const failed = d.results.filter((r) => r.verdict === 'fail').length
   return (
     <Modal open onClose={close} title={d.outcome === 'block' ? 'A pre-push check failed' : 'Pre-push checks'} width={560}>
-      <p className="mb-3 text-[13px] text-muted">
+      <p className="mb-3 text-sm text-muted">
         {d.label}. {failed ? `${failed} of ${d.results.length} check${d.results.length === 1 ? '' : 's'} failed.` : 'A blocking check could not be judged.'}
         {d.outcome === 'block' ? ' Nothing was pushed.' : ''}
       </p>
       <div className="mb-4 max-h-80 overflow-y-auto" data-testid="push-checks">
         {d.results.map((r, i) => (
-          <div key={i} className="border-b border-line/60 py-2 text-[13px]" data-testid="push-check" data-verdict={r.verdict}>
+          <div key={i} className="border-b border-line/60 py-2 text-sm" data-testid="push-check" data-verdict={r.verdict}>
             <div className="flex items-center gap-2">
               <span className={clsx('w-4 text-center font-bold', VERDICT[r.verdict].className)} aria-label={VERDICT[r.verdict].label}>{VERDICT[r.verdict].icon}</span>
               <span className="min-w-0 flex-1 font-semibold">{r.name}</span>
-              <span className="text-[10px] text-faint">{SOURCE[r.source]}</span>
-              <span className={clsx('rounded px-1 text-[10px] uppercase', r.mode === 'block' ? 'bg-del/15 text-del' : 'bg-hover text-muted')}>{r.mode === 'block' ? 'blocks' : 'warns'}</span>
+              <span className="text-2xs text-faint">{SOURCE[r.source]}</span>
+              <span className={clsx('rounded px-1 text-2xs uppercase', r.mode === 'block' ? 'bg-del/15 text-del' : 'bg-hover text-muted')}>{r.mode === 'block' ? 'blocks' : 'warns'}</span>
             </div>
             <p className="selectable mt-1 pl-6 text-muted">{r.reason}</p>
-            {r.evidence.length > 0 && <p className="selectable mt-0.5 pl-6 font-mono text-[11px] text-faint">{r.evidence.map((e) => `${e.path}:${e.line}`).join('  ')}</p>}
+            {r.evidence.length > 0 && <p className="selectable mt-0.5 pl-6 font-mono text-2xs text-faint">{r.evidence.map((e) => `${e.path}:${e.line}`).join('  ')}</p>}
           </div>
         ))}
       </div>
@@ -332,32 +332,32 @@ function PushRulesDialog({ repoId, close }: { repoId: string; close: () => void 
   }
   return (
     <Modal open onClose={close} title="Pre-push checks" width={600}>
-      <p className="mb-3 text-[13px] text-muted">
+      <p className="mb-3 text-sm text-muted">
         Rules in plain words, checked by the AI against the commits you push. A failing Block check stops the push (you can still push anyway); Warn only tells you.
       </p>
       {repo.length > 0 && (
         <div className="mb-3">
           <div className="mb-1 text-xs text-faint">From .coderabbit.yaml (edit the file to change these)</div>
           {repo.map((c, i) => (
-            <div key={i} className="mb-1 rounded border border-line/60 px-2 py-1 text-[12px]"><span className="font-semibold">{c.name}</span> · {c.mode === 'block' ? 'blocks' : 'warns'}<div className="text-muted">{c.instructions}</div></div>
+            <div key={i} className="mb-1 rounded border border-line/60 px-2 py-1 text-xs"><span className="font-semibold">{c.name}</span> · {c.mode === 'block' ? 'blocks' : 'warns'}<div className="text-muted">{c.instructions}</div></div>
           ))}
         </div>
       )}
       <div className="mb-1 text-xs text-faint">Yours, for this repository</div>
       <div className="mb-3 max-h-72 space-y-2 overflow-y-auto" data-testid="push-rules">
-        {mine?.length === 0 && <p className="text-[13px] text-faint">None yet.</p>}
+        {mine?.length === 0 && <p className="text-sm text-faint">None yet.</p>}
         {mine?.map((c, i) => (
           <div key={i} className="rounded-md border border-line p-2">
             <div className="mb-1 flex gap-2">
               <input value={c.name} onChange={(e) => edit(i, { name: e.target.value })} placeholder="Name (e.g. No debug logging)" aria-label="Check name"
-                className="h-7 min-w-0 flex-1 rounded-md border border-line bg-bg px-2 text-[13px] outline-none focus:border-accent" />
-              <OptionSelect value={c.mode} onChange={(v) => edit(i, { mode: v as PushCheck['mode'] })} aria-label="When it fails" className="px-2 data-[size=default]:h-7"
+                className="h-input min-w-0 flex-1 rounded-md border border-line bg-bg px-2 text-sm outline-none focus:border-accent" />
+              <OptionSelect value={c.mode} onChange={(v) => edit(i, { mode: v as PushCheck['mode'] })} aria-label="When it fails" className="px-2 data-[size=default]:h-input"
                 options={[{ value: 'warn', label: 'Warn' }, { value: 'block', label: 'Block' }]} />
               <Button size="sm" variant="ghost" onClick={() => setMine((m) => m!.filter((_, n) => n !== i))}>Remove</Button>
             </div>
             <textarea value={c.instructions} onChange={(e) => edit(i, { instructions: e.target.value })} rows={2} aria-label="What to check"
               placeholder="What to check, in plain words (e.g. No console.log calls in src/; logging goes through logger.ts)"
-              className="w-full resize-y rounded-md border border-line bg-bg px-2 py-1 text-[13px] outline-none focus:border-accent" />
+              className="w-full resize-y rounded-md border border-line bg-bg px-2 py-1 text-sm outline-none focus:border-accent" />
           </div>
         ))}
       </div>
@@ -387,14 +387,14 @@ function LfsLocksDialog({ repoId, close }: { repoId: string; close: () => void }
   }
   return (
     <Modal open onClose={close} title="Git LFS locks" width={560}>
-      {error ? <p className="mb-3 text-[13px] text-del">{error}</p>
-        : locks === null ? <p className="mb-3 text-[13px] text-faint">Asking the server…</p>
-        : locks.length === 0 ? <p className="mb-3 text-[13px] text-faint">No files are locked.</p>
+      {error ? <p className="mb-3 text-sm text-del">{error}</p>
+        : locks === null ? <p className="mb-3 text-sm text-faint">Asking the server…</p>
+        : locks.length === 0 ? <p className="mb-3 text-sm text-faint">No files are locked.</p>
         : (
           <div className="mb-3 max-h-72 overflow-y-auto rounded-md border border-line" data-testid="lfs-locks">
             {locks.map((l) => (
-              <div key={l.id} className="flex h-8 items-center gap-2 px-2 text-[13px]">
-                <span className="min-w-0 flex-1 truncate font-mono text-[12px]">{l.path}</span>
+              <div key={l.id} className="flex h-8 items-center gap-2 px-2 text-sm">
+                <span className="min-w-0 flex-1 truncate font-mono text-xs">{l.path}</span>
                 <span className="text-xs text-muted">{l.owner}</span>
                 <Button size="sm" variant="ghost" onClick={() => unlock(l)}>Unlock</Button>
               </div>
@@ -425,11 +425,11 @@ function PickDialog({ d, close }: { d: Extract<NonNullable<ReturnType<typeof use
           else if (e.key === 'ArrowUp') { e.preventDefault(); setAt((a) => Math.max(a - 1, 0)) }
           else if (e.key === 'Enter' && shown[at]) { e.preventDefault(); pick(shown[at]!.value) }
         }}
-        className="mb-2 h-8 w-full rounded-md border border-line bg-bg px-2 text-[13px] outline-none focus:border-accent" />
+        className="mb-2 h-input w-full rounded-md border border-line bg-bg px-2 text-sm outline-none focus:border-accent" />
       <div className="max-h-72 overflow-y-auto" role="listbox">
         {shown.map((i, n) => (
           <div key={i.value} role="option" aria-selected={n === at} onMouseEnter={() => setAt(n)} onClick={() => pick(i.value)} data-testid="pick-item"
-            className={clsx('flex h-8 cursor-default items-center gap-2 rounded px-2 text-[13px]', n === at && 'bg-accent text-accent-fg')}>
+            className={clsx('flex h-8 cursor-default items-center gap-2 rounded px-2 text-sm', n === at && 'bg-accent text-accent-fg')}>
             <span className="truncate">{i.label}</span>
             {i.detail && <span className={clsx('truncate text-xs', n === at ? 'text-accent-fg/80' : 'text-faint')}>{i.detail}</span>}
           </div>
@@ -494,7 +494,7 @@ function ShortcutsDialog({ close }: { close: () => void }) {
   const mod = modName()
   return (
     <Modal open onClose={close} title="Keyboard shortcuts" width={520}>
-      <table className="w-full text-[13px]" data-testid="shortcuts">
+      <table className="w-full text-sm" data-testid="shortcuts">
         <tbody>
           {/* The live bindings, so rebinding in Settings → Keyboard shows up here too. */}
           {COMMANDS.map((c) => {
@@ -531,7 +531,7 @@ export function PromptDialog() {
   return (
     <Modal open onClose={() => answer(null)} title="Git needs your credentials">
       <form onSubmit={(e) => { e.preventDefault(); answer(value) }} className="space-y-3">
-        <div className="flex items-start gap-2 text-[13px] text-muted"><KeyRound size={16} className="mt-0.5 shrink-0" />{prompt.message.trim()}</div>
+        <div className="flex items-start gap-2 text-sm text-muted"><KeyRound size={16} className="mt-0.5 shrink-0" />{prompt.message.trim()}</div>
         <TextField autoFocus type={prompt.secret ? 'password' : 'text'} value={value} onChange={(e) => setValue(e.target.value)} data-testid="prompt-input" />
         <div className="flex justify-end gap-2">
           <Button type="button" onClick={() => answer(null)}>Cancel</Button>

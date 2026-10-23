@@ -50,7 +50,7 @@ export function CommandLogView({ view }: { view: RepoView }) {
       <div className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-panel px-4">
         <Terminal size={18} className="text-muted" />
         <div className="min-w-0 flex-1">
-          <div className="text-[14px] font-semibold">Git command log</div>
+          <div className="text-base font-semibold">Git command log</div>
           <div className="truncate text-xs text-muted">Newest first. Click one to see what git printed.</div>
         </div>
         <label className="flex items-center gap-1.5 text-xs text-muted">
@@ -58,7 +58,7 @@ export function CommandLogView({ view }: { view: RepoView }) {
         </label>
         <Button variant="ghost" onClick={() => updateRepo(view.id, { center: { kind: 'graph' } })}>Back to graph</Button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto font-mono text-[12px]">
+      <div className="min-h-0 flex-1 overflow-y-auto font-mono text-xs">
         {shown.length === 0 && <div className="p-4 font-sans text-xs text-faint">Nothing yet{reads ? '' : ' (reads are hidden)'}.</div>}
         {shown.map((r) => {
           const failed = r.code !== null && r.code !== 0

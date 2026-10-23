@@ -39,7 +39,7 @@ export function WalkthroughView({ view }: { view: RepoView }) {
       <div className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-panel px-4">
         <BookOpen size={18} className="text-accent" />
         <div className="min-w-0 flex-1">
-          <div className="text-[14px] font-semibold">Walkthrough: {r?.label ?? '…'}</div>
+          <div className="text-base font-semibold">Walkthrough: {r?.label ?? '…'}</div>
           <div className="truncate text-xs text-muted">{w.requestId ? 'Reading the change…' : w.error ? 'It failed.' : r ? `${r.hunks.length} pieces in ${new Set(r.hunks.map((h) => h.path)).size} files${w.fromChat ? ' · revised in the chat' : ''}` : ''}</div>
         </div>
         {r && <EffortBadge effort={r.effort} why={r.effortWhy} />}
@@ -51,19 +51,19 @@ export function WalkthroughView({ view }: { view: RepoView }) {
       </div>
       <div className="flex min-h-0 flex-1">
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-5 py-4">
-        {w.error && <div className="mb-4 rounded-md border border-del/40 bg-del/10 p-3 text-[13px] text-del">{w.error}</div>}
+        {w.error && <div className="mb-4 rounded-md border border-del/40 bg-del/10 p-3 text-sm text-del">{w.error}</div>}
         {r && (
           <>
-            <p className="selectable max-w-3xl text-[14px] leading-relaxed" data-testid="walkthrough-summary">{r.summary}</p>
+            <p className="selectable max-w-3xl text-base leading-relaxed" data-testid="walkthrough-summary">{r.summary}</p>
 
-            <h3 className="mt-6 mb-2 text-[12px] font-semibold text-muted uppercase">Changes</h3>
+            <h3 className="mt-6 mb-2 text-xs font-semibold text-muted uppercase">Changes</h3>
             <div className="grid max-w-4xl gap-2" data-testid="walkthrough-groups">
               {r.groups.map((g) => (
                 <div key={g.title} className="rounded-md border border-line bg-panel p-3">
-                  <div className="text-[13px] font-semibold">{g.title}</div>
-                  {g.description && <p className="mt-0.5 text-[13px] text-muted">{g.description}</p>}
+                  <div className="text-sm font-semibold">{g.title}</div>
+                  {g.description && <p className="mt-0.5 text-sm text-muted">{g.description}</p>}
                   <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
-                    {g.files.map((f) => <button key={f} onClick={() => open(f)} className="font-mono text-[12px] text-accent hover:underline">{f}</button>)}
+                    {g.files.map((f) => <button key={f} onClick={() => open(f)} className="font-mono text-xs text-accent hover:underline">{f}</button>)}
                   </div>
                 </div>
               ))}
@@ -71,22 +71,22 @@ export function WalkthroughView({ view }: { view: RepoView }) {
 
             {r.diagram && (
               <>
-                <h3 className="mt-6 mb-2 text-[12px] font-semibold text-muted uppercase">Diagram</h3>
+                <h3 className="mt-6 mb-2 text-xs font-semibold text-muted uppercase">Diagram</h3>
                 <MermaidDiagram source={r.diagram} />
               </>
             )}
 
-            <h3 className="mt-6 mb-2 text-[12px] font-semibold text-muted uppercase">Reading order</h3>
+            <h3 className="mt-6 mb-2 text-xs font-semibold text-muted uppercase">Reading order</h3>
             <div className="max-w-4xl" data-testid="reading-order">
               {layers.map(([layer, hs]) => (
                 <div key={layer} className="mb-3">
-                  <div className="mb-1 text-[12px] font-medium text-faint">{LAYER[layer]}</div>
+                  <div className="mb-1 text-xs font-medium text-faint">{LAYER[layer]}</div>
                   {hs.map((h) => <HunkRow key={h.id} h={h} onOpen={() => open(h.path)} />)}
                 </div>
               ))}
               {trivial.length > 0 && (
                 <div className="mb-3">
-                  <button className="text-[12px] text-faint hover:text-fg" onClick={() => setShowTrivial(!showTrivial)} data-testid="trivial-toggle">
+                  <button className="text-xs text-faint hover:text-fg" onClick={() => setShowTrivial(!showTrivial)} data-testid="trivial-toggle">
                     {trivial.length} small change{trivial.length === 1 ? '' : 's'} (imports, comments, formatting) {showTrivial ? '▾' : '▸'}
                   </button>
                   {showTrivial && trivial.map((h) => <HunkRow key={h.id} h={h} onOpen={() => open(h.path)} />)}
@@ -96,12 +96,12 @@ export function WalkthroughView({ view }: { view: RepoView }) {
 
             {r.history.length > 0 && (
               <>
-                <h3 className="mt-6 mb-2 text-[12px] font-semibold text-muted uppercase">Recent history of these files</h3>
-                <div className="max-w-4xl text-[13px]">
+                <h3 className="mt-6 mb-2 text-xs font-semibold text-muted uppercase">Recent history of these files</h3>
+                <div className="max-w-4xl text-sm">
                   {r.history.map((c) => (
                     <button key={c.hash} onClick={() => { updateRepo(view.id, { selected: { kind: 'commit', hash: c.hash }, center: { kind: 'graph' } }); void ensureLoaded(view.id, c.hash) }}
                       className="flex w-full items-center gap-3 rounded px-1 py-0.5 text-left hover:bg-hover">
-                      <span className="font-mono text-[11px] text-faint">{c.hash.slice(0, 7)}</span>
+                      <span className="font-mono text-2xs text-faint">{c.hash.slice(0, 7)}</span>
                       <span className="min-w-0 flex-1 truncate">{c.subject}</span>
                       <span className="text-xs text-faint">{c.author}, {relativeTime(c.date)}</span>
                     </button>
@@ -133,10 +133,10 @@ function EffortBadge({ effort, why }: { effort: number; why: string }) {
 
 function HunkRow({ h, onOpen }: { h: WalkthroughHunk; onOpen: () => void }) {
   return (
-    <button onClick={onOpen} data-testid="reading-hunk" className="flex w-full items-baseline gap-3 rounded px-1 py-0.5 text-left text-[13px] hover:bg-hover">
-      <span className="w-56 shrink-0 truncate font-mono text-[12px] text-muted">{h.path}:{h.startLine}</span>
+    <button onClick={onOpen} data-testid="reading-hunk" className="flex w-full items-baseline gap-3 rounded px-1 py-0.5 text-left text-sm hover:bg-hover">
+      <span className="w-56 shrink-0 truncate font-mono text-xs text-muted">{h.path}:{h.startLine}</span>
       <span className="min-w-0 flex-1">{h.summary ?? (h.within ? `Changes ${h.within}` : 'Changes')}</span>
-      <span className="font-mono text-[11px]"><span className="text-add">+{h.added}</span> <span className="text-del">−{h.removed}</span></span>
+      <span className="font-mono text-2xs"><span className="text-add">+{h.added}</span> <span className="text-del">−{h.removed}</span></span>
     </button>
   )
 }

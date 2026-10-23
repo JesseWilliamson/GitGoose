@@ -45,7 +45,7 @@ export function ConflictWizard({ view }: { view: RepoView }) {
       <div className="flex h-14 shrink-0 items-center gap-3 border-b border-line bg-panel px-4">
         <span className="flex size-8 items-center justify-center rounded-lg bg-warn/15 text-warn"><GitMerge size={17} /></span>
         <div className="min-w-0 flex-1">
-          <div className="text-[14px] font-semibold">{op ? `${sentence(opLabel)} in progress` : 'No operation in progress'}</div>
+          <div className="text-base font-semibold">{op ? `${sentence(opLabel)} in progress` : 'No operation in progress'}</div>
           <div className="flex items-center gap-2 text-xs text-muted">
             <span data-testid="conflict-progress">
               {files === null ? 'Checking…' : files.length ? `${resolved.length} of ${total} ${total === 1 ? 'file' : 'files'} resolved` : 'All conflicts resolved'}
@@ -75,16 +75,16 @@ export function ConflictWizard({ view }: { view: RepoView }) {
           const { dir, name } = splitPath(f.path)
           return (
             <button key={f.path} role="tab" aria-selected={current === f.path} onClick={() => setCurrent(f.path)} data-testid="conflict-file" title={f.path}
-              className={clsx('-mb-px flex h-8 max-w-72 shrink-0 items-center gap-1.5 rounded-t-md border px-3 text-[13px]',
+              className={clsx('-mb-px flex h-8 max-w-72 shrink-0 items-center gap-1.5 rounded-t-md border px-3 text-sm',
                 current === f.path ? 'border-line border-b-bg bg-bg text-fg' : 'border-transparent text-muted hover:bg-hover hover:text-fg')}>
               <CircleAlert size={13} className="shrink-0 text-del" />
               <span className="min-w-0 truncate"><span className="text-faint">{dir}</span>{name}</span>
-              <span className="shrink-0 rounded-full bg-del/15 px-1.5 text-[10px] font-semibold text-del" title={f.blocks ? `${f.blocks} conflicts` : f.code}>{f.blocks || f.code}</span>
+              <span className="shrink-0 rounded-full bg-del/15 px-1.5 text-2xs font-semibold text-del" title={f.blocks ? `${f.blocks} conflicts` : f.code}>{f.blocks || f.code}</span>
             </button>
           )
         })}
         {resolved.map((e) => (
-          <span key={e.path} className="-mb-px flex h-8 max-w-60 shrink-0 items-center gap-1.5 px-3 text-[13px] text-faint" data-testid="resolved-file" title={`${e.path}: resolved`}>
+          <span key={e.path} className="-mb-px flex h-8 max-w-60 shrink-0 items-center gap-1.5 px-3 text-sm text-faint" data-testid="resolved-file" title={`${e.path}: resolved`}>
             <CheckCircle2 size={13} className="shrink-0 text-add" />
             <span className="min-w-0 truncate">{splitPath(e.path).name}</span>
           </span>
@@ -159,7 +159,7 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-2 border-b border-line px-3 py-1.5">
-        <span className="min-w-32 flex-1 truncate text-[13px]" title={file.path}><span className="text-faint">{dir}</span><span className="font-semibold">{name}</span></span>
+        <span className="min-w-32 flex-1 truncate text-sm" title={file.path}><span className="text-faint">{dir}</span><span className="font-semibold">{name}</span></span>
         {/* The whole file from one side, in that side's colour. */}
         <div className="flex overflow-hidden rounded-md border border-line" role="group" aria-label="Take the whole file">
           <button onClick={() => resolveWith('ours')} disabled={versions.ours === null && versions.theirs === null}
@@ -240,7 +240,7 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
               // A little context around each conflict instead of the whole file.
               const lines = seg.lines
               const shown = lines.length > 8 ? [...lines.slice(0, si === 0 ? 0 : 3), '⋯', ...lines.slice(-3)] : lines
-              return <pre key={si} className="px-3 font-mono text-[12px] text-faint">{shown.join('\n')}</pre>
+              return <pre key={si} className="px-3 font-mono text-xs text-faint">{shown.join('\n')}</pre>
             }
             blockNo++
             const b = blockNo
@@ -293,14 +293,14 @@ function ConflictCard({ seg, index, count, choice, onChoose }: {
           ))}
         </div>
       </div>
-      <div className="grid grid-cols-2 font-mono text-[12px]">
+      <div className="grid grid-cols-2 font-mono text-xs">
         <SidePanel side="ours" label={seg.oursLabel || 'HEAD'} lines={seg.ours} taken={takes('ours')} onTake={() => onChoose(choice === 'theirs' ? 'both-theirs-first' : 'ours')} />
         <SidePanel side="theirs" label={seg.theirsLabel || 'incoming'} lines={seg.theirs} taken={takes('theirs')} onTake={() => onChoose(choice === 'ours' ? 'both' : 'theirs')} />
       </div>
       <div className="border-t border-line" data-testid="conflict-result">
-        <div className="px-3 pt-1.5 text-[11px] font-semibold text-faint uppercase">Result</div>
+        <div className="px-3 pt-1.5 text-2xs font-semibold text-faint uppercase">Result</div>
         {choice ? (
-          <pre className="px-0 pt-1 pb-2 font-mono text-[12px]">
+          <pre className="px-0 pt-1 pb-2 font-mono text-xs">
             {result.length ? result.map((r, i) => (
               <div key={i} className="px-3" style={{ boxShadow: `inset 3px 0 0 ${r.from === 'base' ? 'var(--gs-faint)' : `var(--gs-${r.from})`}`, background: r.from === 'base' ? undefined : `color-mix(in srgb, var(--gs-${r.from}) 8%, transparent)` }}>
                 {r.line || ' '}
@@ -320,7 +320,7 @@ function SidePanel({ side, label, lines, taken, onTake }: { side: 'ours' | 'thei
       title={taken ? `${side === 'ours' ? 'Your' : 'Their'} lines are in the result` : `Take ${side === 'ours' ? 'your' : 'their'} lines`}
       className={clsx('min-w-0 text-left', side === 'theirs' && 'border-l border-line')}
       style={{ background: `color-mix(in srgb, var(--gs-${side}) ${taken ? 16 : 5}%, transparent)`, boxShadow: taken ? `inset 0 0 0 2px var(--gs-${side})` : undefined }}>
-      <div className="flex items-center gap-2 px-3 py-1 font-sans text-[11px]">
+      <div className="flex items-center gap-2 px-3 py-1 font-sans text-2xs">
         <span className={clsx('rounded px-1 font-bold text-white', side === 'ours' ? 'bg-ours' : 'bg-theirs')}>{side === 'ours' ? 'A' : 'B'}</span>
         <span className="min-w-0 flex-1 truncate font-semibold text-muted">{side === 'ours' ? 'Yours' : 'Theirs'} ({label})</span>
         <span className={clsx('shrink-0', taken ? 'font-semibold' : 'text-faint')} style={taken ? { color: `var(--gs-${side})` } : undefined}>{taken ? '✓ in result' : 'Click to take'}</span>

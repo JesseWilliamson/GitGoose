@@ -49,7 +49,7 @@ export function FileView({ view, target, mode }: { view: RepoView; target: DiffT
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col" data-testid="file-view">
       <div className="flex h-10 shrink-0 items-center gap-3 border-b border-line bg-panel px-3">
-        <div className="min-w-0 flex-1 truncate text-[13px]">
+        <div className="min-w-0 flex-1 truncate text-sm">
           <span className="text-faint">{dir}</span><span className="font-semibold">{name}</span>
           <span className="ml-2 text-xs text-muted">{where}</span>
         </div>
@@ -480,7 +480,7 @@ function HistoryPane({ view, path }: { view: RepoView; path: string }) {
             updateRepo(view.id, { selected: { kind: 'commit', hash: c.hash }, center: { kind: 'file', target: { kind: 'commit', hash: c.hash, path }, mode: 'diff' } })
             void ensureLoaded(view.id, c.hash)
           }}
-          className="flex w-full items-center gap-3 border-b border-line/50 px-4 py-2 text-left text-[13px] hover:bg-hover">
+          className="flex w-full items-center gap-3 border-b border-line/50 px-4 py-2 text-left text-sm hover:bg-hover">
           <span className="font-mono text-xs text-faint">{shortHash(c.hash)}</span>
           <span className="min-w-0 flex-1 truncate">{c.subject}</span>
           <span className="text-xs text-muted">{c.authorName}</span>
@@ -522,7 +522,7 @@ function BlamePane({ view, path, rev }: { view: RepoView; path: string; rev?: st
           return (
             <div key={vi.key} style={{ position: 'absolute', top: 0, left: 0, minWidth: '100%', height: lineH, lineHeight: `${lineH}px`, transform: `translateY(${vi.start}px)` }}
               className={clsx('flex whitespace-pre', first && vi.index > 0 && 'border-t border-line/50')}>
-              <span className="sticky left-0 flex w-[300px] shrink-0 items-center gap-2 pr-2 font-sans text-[11px]"
+              <span className="sticky left-0 flex w-[300px] shrink-0 items-center gap-2 pr-2 font-sans text-2xs"
                 style={{ background: `color-mix(in srgb, ${heat} 14%, var(--gs-panel))` }}>
                 <span className="h-full w-1 shrink-0" style={{ background: heat }} data-testid="blame-heat" data-heat={h} />
                 {first && (

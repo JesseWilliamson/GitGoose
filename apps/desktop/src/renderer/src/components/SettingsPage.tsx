@@ -90,7 +90,7 @@ export function SettingsPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="settings-page">
       <div className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-panel px-4">
-        <h1 className="text-[15px] font-semibold">Settings</h1>
+        <h1 className="text-base font-semibold">Settings</h1>
         <div className="flex-1" />
         <button onClick={() => useStore.setState({ page: null })} title="Close (Esc)" className="rounded p-1 text-muted hover:bg-hover hover:text-fg" data-testid="settings-close">
           <X size={16} />
@@ -101,11 +101,11 @@ export function SettingsPage() {
           <div className="relative p-3">
             <Search size={13} className="pointer-events-none absolute top-1/2 left-5.5 -translate-y-1/2 text-faint" />
             <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search settings"
-              className="h-8 bg-bg pl-7 text-[13px] md:text-[13px] dark:bg-bg" data-testid="settings-search" />
+              className="h-input bg-bg pl-7 text-sm md:text-sm dark:bg-bg" data-testid="settings-search" />
           </div>
           {sections.map((s) => (
             <button key={s} onClick={() => jump(s)} data-testid={`settings-nav-${s}`} aria-current={section === s ? 'true' : undefined}
-              className={clsx('block w-full px-4 py-1.5 text-left text-[13px]', section === s ? 'bg-select text-fg' : 'text-muted hover:bg-hover hover:text-fg')}>
+              className={clsx('block w-full px-4 py-1.5 text-left text-sm', section === s ? 'bg-select text-fg' : 'text-muted hover:bg-hover hover:text-fg')}>
               {s}
             </button>
           ))}
@@ -118,7 +118,7 @@ export function SettingsPage() {
               const Panel = SECTION_PANELS[s]
               return (
                 <section key={s} data-section={s} className="mt-6 scroll-mt-6">
-                  <h2 className="flex h-7 items-center border-b border-line text-[11px] font-semibold tracking-wide text-muted uppercase">{s}</h2>
+                  <h2 className="flex h-7 items-center border-b border-line text-2xs font-semibold tracking-wide text-muted uppercase">{s}</h2>
                   {shown.filter((v) => v.spec.section === s).map((v) => (
                     <SettingRow key={v.key} k={v.key} spec={v.spec} value={settings[v.key]} />
                   ))}

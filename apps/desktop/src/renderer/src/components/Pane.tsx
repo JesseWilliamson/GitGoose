@@ -68,7 +68,7 @@ function TabStrip({ slot, state }: { slot: Slot; state: SlotState }) {
   }
 
   return (
-    <div ref={strip} className={clsx('relative flex h-7 shrink-0 items-stretch border-b border-line bg-bg/40', drop && 'bg-accent/10')}
+    <div ref={strip} className={clsx('relative flex h-strip shrink-0 items-stretch border-b border-line bg-bg/40', drop && 'bg-accent/10')}
       data-testid={`tabs-${slot}`}
       onDragOver={(e) => {
         if (!e.dataTransfer.types.includes(PANE_MIME)) return
@@ -106,7 +106,7 @@ function Tab({ pane, slot, tabbed, active }: { pane: PaneId; slot: Slot; tabbed:
       }}
       onDragEnd={() => usePaneDrag.setState({ dragging: null })}
       onClick={() => changeLayout((l) => activatePane(l, pane))}
-      className={clsx('group/tab flex min-w-0 cursor-default items-center gap-1 pr-1 pl-2 text-[11px] font-semibold tracking-wide uppercase',
+      className={clsx('group/tab flex min-w-0 cursor-default items-center gap-1 pr-1 pl-2 text-2xs font-semibold tracking-wide uppercase',
         tabbed && 'border-r border-line',
         tabbed && active ? 'bg-panel text-fg shadow-[inset_0_-2px_0_var(--color-accent)]' : 'text-muted hover:text-fg')}>
       <span className="truncate">{PANE_TITLES[pane]}</span>

@@ -249,7 +249,7 @@ export function Sidebar({ view }: { view: RepoView }) {
           onKeyDown={(e) => { if (e.key === 'Escape' && filter) { e.preventDefault(); setFilter('') } }}
           placeholder="Filter branches and tags"
           data-testid="sidebar-filter"
-          className="h-7 w-full rounded-md border border-line bg-bg px-2 text-xs outline-none focus:border-accent"
+          className="h-input w-full rounded-md border border-line bg-bg px-2 text-xs outline-none focus:border-accent"
         />
         <div className="mt-1.5 flex items-center gap-1">
           <AddMenu view={view} />
@@ -310,7 +310,7 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
   onCursor: (key: string) => void
 }) {
   const style: React.CSSProperties = { position: 'absolute', top: 0, left: 0, right: 0, height: rowHeight(row), transform: `translateY(${top}px)` }
-  const base = clsx('flex cursor-default items-center gap-1.5 pr-3 text-[13px]', cursor ? 'bg-select' : 'hover:bg-hover')
+  const base = clsx('flex cursor-default items-center gap-1.5 pr-3 text-sm', cursor ? 'bg-select' : 'hover:bg-hover')
   /** Rows without a menu of their own: no menu opens (the list's menu would say "Nothing here"). */
   const noMenu = (e: React.MouseEvent) => e.preventDefault()
   const id = look.repoId
@@ -323,11 +323,11 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
           className={clsx('flex items-center pr-2', cursor && 'bg-select')}
           onContextMenu={menu ? () => useStore.setState({ menu: { kind: 'section', section: menu } }) : noMenu}>
           <button onClick={() => { onCursor(row.key); onToggle(row.key) }} style={{ paddingLeft: 8 }}
-            className="flex h-full min-w-0 flex-1 items-center gap-1.5 text-[12px] font-semibold text-muted hover:text-fg">
+            className="flex h-full min-w-0 flex-1 items-center gap-1.5 text-xs font-semibold text-muted hover:text-fg">
             {row.open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
             {ICONS[row.section]}
             <span className="flex-1 truncate text-left">{row.title}</span>
-            {row.section !== 'workspace' && <span className="text-[11px] font-normal text-faint">{row.count}</span>}
+            {row.section !== 'workspace' && <span className="text-2xs font-normal text-faint">{row.count}</span>}
           </button>
           {row.section === 'remotes' && <SmallButton label="Add remote" onClick={() => addRemote(id)}><Plus size={13} /></SmallButton>}
           {row.section === 'worktrees' && <SmallButton label="Add worktree" onClick={() => addWorktree(id)}><Plus size={13} /></SmallButton>}
@@ -350,8 +350,8 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
           {row.open !== undefined ? (row.open ? <ChevronDown size={12} className="-ml-3.5 shrink-0" /> : <ChevronRight size={12} className="-ml-3.5 shrink-0" />) : null}
           <span className="shrink-0">{w.icon}</span>
           <span className="min-w-0 flex-1 truncate">{w.label}</span>
-          {row.item === 'working-copy' && changes > 0 && <span className="text-[11px] text-faint">{changes}</span>}
-          {row.item === 'stashes' && prefs?.stashCount !== false && <span className="text-[11px] text-faint" data-testid="stash-count">{row.count}</span>}
+          {row.item === 'working-copy' && changes > 0 && <span className="text-2xs text-faint">{changes}</span>}
+          {row.item === 'stashes' && prefs?.stashCount !== false && <span className="text-2xs text-faint" data-testid="stash-count">{row.count}</span>}
           {row.item === 'pulls' && (
             <SmallButton label="Refresh pull requests" title="Refresh pull requests (asks GitHub)" onClick={(e) => { e.stopPropagation(); void loadPulls(id) }}>
               <RefreshCw size={11} className={view.pullsLoading ? 'animate-spin' : ''} />
@@ -371,7 +371,7 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
           {row.open ? <ChevronDown size={12} className="shrink-0" /> : <ChevronRight size={12} className="shrink-0" />}
           <Folder size={12} className="shrink-0" />
           <span className="min-w-0 flex-1 truncate">{row.name}</span>
-          <span className="text-[11px] text-faint">{row.count}</span>
+          <span className="text-2xs text-faint">{row.count}</span>
         </div>
       )
     case 'remote': {
@@ -384,7 +384,7 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
             {row.open ? <ChevronDown size={12} className="shrink-0" /> : <ChevronRight size={12} className="shrink-0" />}
             <Cloud size={12} className="shrink-0" />
             <span className={clsx('min-w-0 flex-1 truncate text-left', hidden && 'text-faint line-through')}>{row.remote}</span>
-            <span className="text-[11px] font-normal text-faint">{row.count}</span>
+            <span className="text-2xs font-normal text-faint">{row.count}</span>
           </button>
         </div>
       )
@@ -403,7 +403,7 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
           title={`${s.message}\n${relativeTime(s.date)}\nClick to see its changes, double-click to pop`}
           className={clsx(base, (selected || cursor) && 'bg-select')}>
           <span className="min-w-0 flex-1 truncate">{stashLabel(s.message)}</span>
-          <span className="text-[10px] text-faint">{relativeTime(s.date)}</span>
+          <span className="text-2xs text-faint">{relativeTime(s.date)}</span>
         </div>
       )
     }
@@ -416,7 +416,7 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
           onContextMenu={() => useStore.setState({ menu: { kind: 'pull', number: p.number } })}
           title={`#${p.number} ${p.title}\n${p.author} wants to merge ${p.branch} into ${p.base}\nDouble-click to check it out`}
           className={base}>
-          <span className="shrink-0 text-[11px] text-faint">#{p.number}</span>
+          <span className="shrink-0 text-2xs text-faint">#{p.number}</span>
           <span className="min-w-0 flex-1 truncate">{p.title}</span>
           {p.draft && <Badge>draft</Badge>}
           {p.fromFork && <Badge title="From a fork">fork</Badge>}
@@ -437,9 +437,9 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
           onContextMenu={() => useStore.setState({ menu: { kind: 'worktree', path: w.path } })}
           title={`${w.path}${w.current ? '\nThis tab' : '\nDouble-click to open it in a tab'}`}
           className={clsx(base, w.current && 'font-semibold')}>
-          {w.current && <span className="-ml-4 w-3 text-[10px] text-accent">✓</span>}
+          {w.current && <span className="-ml-4 w-3 text-2xs text-accent">✓</span>}
           <span className="min-w-0 flex-1 truncate">{w.branch ?? `detached at ${w.head?.slice(0, 7) ?? '?'}`}</span>
-          <span className="max-w-24 truncate text-[10px] text-faint">{folder}</span>
+          <span className="max-w-24 truncate text-2xs text-faint">{folder}</span>
           {w.locked !== undefined && <Badge title={w.locked || undefined}>locked</Badge>}
           {w.prunable && <Badge title={w.prunable}>missing</Badge>}
         </div>
@@ -472,7 +472,7 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
       return (
         <div style={{ ...style, paddingLeft: pad(1) }} data-testid="lfs-pattern" onClick={() => onCursor(row.key)}
           onContextMenu={() => useStore.setState({ menu: { kind: 'lfs-pattern', pattern: row.pattern.pattern } })}
-          title={`From ${row.pattern.source}`} className={clsx(base, 'font-mono text-[12px]')}>
+          title={`From ${row.pattern.source}`} className={clsx(base, 'font-mono text-xs')}>
           <span className="min-w-0 flex-1 truncate">{row.pattern.pattern}</span>
           {row.pattern.lockable && <Badge title="Lockable: checked out read-only until you lock it">lockable</Badge>}
         </div>
@@ -522,9 +522,9 @@ function RefRow({ row, style, cursor, look, onClick, onDoubleClick }: {
   const tracking = r.upstream ? `Tracks ${r.upstream.replace(/^refs\/remotes\//, '')}${fetched}` : ''
   // Tower's badge order: ↑n ↓n, gone, merged, stale, worktree, #PR, local only.
   const badges: ReactNode[] = []
-  if ((r.ahead ?? 0) > 0) badges.push(<span key="ahead" className="text-[10px] text-add" title={`${r.ahead} to push. ${tracking}`}>↑{r.ahead}</span>)
-  if ((r.behind ?? 0) > 0) badges.push(<span key="behind" className="text-[10px] text-warn" title={`${r.behind} to pull. ${tracking}`}>↓{r.behind}</span>)
-  if (r.upstreamGone) badges.push(<span key="gone" className="text-[10px] text-faint" title="Upstream deleted on the remote">gone</span>)
+  if ((r.ahead ?? 0) > 0) badges.push(<span key="ahead" className="text-2xs text-add" title={`${r.ahead} to push. ${tracking}`}>↑{r.ahead}</span>)
+  if ((r.behind ?? 0) > 0) badges.push(<span key="behind" className="text-2xs text-warn" title={`${r.behind} to pull. ${tracking}`}>↓{r.behind}</span>)
+  if (r.upstreamGone) badges.push(<span key="gone" className="text-2xs text-faint" title="Upstream deleted on the remote">gone</span>)
   if (r.kind === 'local' && !head) {
     if (look.merged.has(r.shortName)) badges.push(<Badge key="merged" title={`Already in ${look.headBranch ?? 'HEAD'}: safe to delete`}>merged</Badge>)
     if (look.stale && isStale(r)) badges.push(<Badge key="stale" title="No commits for 90 days">stale</Badge>)
@@ -547,9 +547,9 @@ function RefRow({ row, style, cursor, look, onClick, onDoubleClick }: {
       data-section={sectionName(row.section)}
       data-upstream={r.upstream ?? ''}
       title={`${r.name}${tracking ? `\n${tracking}` : ''}\n${r.kind === 'tag' ? 'Click to show it in the graph' : 'Click to show its history, double-click to check out'}`}
-      className={clsx('group flex cursor-default items-center gap-1.5 pr-3 text-[13px]', cursor ? 'bg-select' : 'hover:bg-hover', head && 'font-semibold')}
+      className={clsx('group flex cursor-default items-center gap-1.5 pr-3 text-sm', cursor ? 'bg-select' : 'hover:bg-hover', head && 'font-semibold')}
     >
-      {head && <span className="-ml-4 w-3 text-[10px] text-accent">✓</span>}
+      {head && <span className="-ml-4 w-3 text-2xs text-accent">✓</span>}
       <span className={clsx('min-w-[4.5rem] flex-1 truncate', out && 'text-faint line-through decoration-faint/50')} data-testid="ref-label">{row.label}</span>
       {/* Badges give way before the branch name does: the name is what you are looking for. They
           wrap onto a second line that is cut off, so a badge that does not fit disappears whole
@@ -578,7 +578,7 @@ function SmallButton({ label, title, onClick, children }: { label: string; title
 }
 
 function Badge({ title, children }: { title?: string; children: ReactNode }) {
-  return <span title={title} className="rounded bg-hover px-1 text-[10px] text-faint">{children}</span>
+  return <span title={title} className="rounded bg-hover px-1 text-2xs text-faint">{children}</span>
 }
 
 /** The + below the sidebar: everything new that the sidebar lists. */

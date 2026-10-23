@@ -1,8 +1,54 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
+/*
+ * THE SCALE. Every size in the renderer comes from here; a number that is not in this list is a
+ * bug, not a style (docs/ui-audit.md has the reasoning).
+ *
+ *   Type      text-2xs 11   captions, badges, hints, counts
+ *             text-xs  12   secondary text, labels, tabs, tooltips
+ *             text-sm  13   the body size: rows, buttons, inputs, menu items
+ *             text-base 15  titles (a view's heading, a dialog's title, a Markdown h1)
+ *             Weights: normal, medium (tabs, labels), semibold (titles). Nothing else.
+ *   Space     a 4 px grid: Tailwind's 1 is 4 px, so p-1 p-2 p-3 p-4 p-6 p-8 are 4 8 12 16 24 32.
+ *   Radius    rounded-sm 4 (chips, small buttons)   rounded-md 6 (inputs, buttons, cards)
+ *             rounded-lg 8 (popovers, dialogs)
+ *   Height    h-row 24 / h-row-lg 28   list rows, menu items, small buttons
+ *             h-input 28               inputs, selects and buttons in a form or a bar
+ *             h-toolbar 40   h-tabbar 36 (the title bar)   h-strip 28 (a pane's tab strip)   h-statusbar 24
+ */
+
 /* shadcn's `dark:` variants follow our theme switch (data-theme on <html>), not a `.dark` class. */
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+@theme {
+  --spacing: 4px;
+
+  --text-2xs: 11px;
+  --text-2xs--line-height: normal;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-sm--line-height: normal;
+  --text-base: 15px;
+  --text-base--line-height: 1.4;
+  /* The scale stops at 15: Tailwind's larger sizes are the same. */
+  --text-lg: 15px;
+  --text-lg--line-height: 1.4;
+  --text-xl: 15px;
+  --text-xl--line-height: 1.4;
+
+  --spacing-row: 24px;
+  --spacing-row-lg: 28px;
+  --spacing-input: 28px;
+  --spacing-toolbar: 40px;
+  --spacing-tabbar: 36px;
+  --spacing-strip: 28px;
+  --spacing-statusbar: 24px;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+}
 
 /*
  * Theme tokens. Components use these through Tailwind utilities like bg-panel, text-muted,
@@ -59,14 +105,9 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --radius-sm: calc(var(--radius) - 2px);
-  --radius-md: var(--radius);
-  --radius-lg: calc(var(--radius) + 2px);
-  --radius-xl: calc(var(--radius) + 4px);
 }
 
 :root {
-  --radius: 0.375rem;
   --background: var(--gs-bg);
   --foreground: var(--gs-fg);
   --card: var(--gs-raised);
@@ -183,7 +224,7 @@ textarea,
 
 /* The tab bar row is the title bar (keep in step with TITLE_BAR_HEIGHT in main/windowState.ts). */
 :root {
-  --titlebar-h: 36px;
+  --titlebar-h: var(--spacing-tabbar);
 }
 
 /* macOS: leave room for the traffic lights and let the tab bar drag the window. */

@@ -40,7 +40,7 @@ export function ReflogView({ view }: { view: RepoView }) {
       <div className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-panel px-4">
         <History size={18} className="text-muted" />
         <div className="min-w-0 flex-1">
-          <div className="text-[14px] font-semibold">Reflog</div>
+          <div className="text-base font-semibold">Reflog</div>
           <div className="truncate text-xs text-muted">
             {lostCount ? `${lostCount} commit${lostCount === 1 ? ' is' : 's are'} reachable only from here: restore ${lostCount === 1 ? 'it' : 'them'} as a branch to keep ${lostCount === 1 ? 'it' : 'them'}.` : 'Nothing is lost.'}
           </div>
@@ -60,15 +60,15 @@ export function ReflogView({ view }: { view: RepoView }) {
                 onClick={() => select(e)}
                 onDoubleClick={() => (e.lost ? restore(view.id, e) : void showInGraph(e))}
                 data-testid="reflog-row" data-hash={e.hash}
-                className={clsx('flex h-8 cursor-default items-center gap-3 border-b border-line/50 px-4 text-[13px]', selected === e.hash ? 'bg-select' : 'hover:bg-hover')}
+                className={clsx('flex h-8 cursor-default items-center gap-3 border-b border-line/50 px-4 text-sm', selected === e.hash ? 'bg-select' : 'hover:bg-hover')}
               >
-                <span className="w-20 shrink-0 font-mono text-[11px] text-faint">HEAD@{'{'}{e.index}{'}'}</span>
-                <span className={clsx('w-28 shrink-0 truncate text-[11px] font-medium', ACTION_COLOR[e.action.split(' ')[0]!] ?? 'text-muted')}>{e.action}</span>
+                <span className="w-20 shrink-0 font-mono text-2xs text-faint">HEAD@{'{'}{e.index}{'}'}</span>
+                <span className={clsx('w-28 shrink-0 truncate text-2xs font-medium', ACTION_COLOR[e.action.split(' ')[0]!] ?? 'text-muted')}>{e.action}</span>
                 <span className="min-w-0 flex-1 truncate">{e.message || e.subject}</span>
-                {e.lost && <span className="rounded bg-warn/15 px-1.5 text-[10px] font-medium text-warn" title="No branch or tag reaches this commit">lost</span>}
-                {e.branchHint && <span className="text-[11px] text-faint" title={`The tip of ${e.branchHint} when you left it`}>was {e.branchHint}</span>}
-                <span className="w-16 shrink-0 font-mono text-[11px] text-faint">{e.hash.slice(0, 7)}</span>
-                <span className="w-24 shrink-0 text-right text-[11px] text-faint">{relativeTime(e.date)}</span>
+                {e.lost && <span className="rounded bg-warn/15 px-1.5 text-2xs font-medium text-warn" title="No branch or tag reaches this commit">lost</span>}
+                {e.branchHint && <span className="text-2xs text-faint" title={`The tip of ${e.branchHint} when you left it`}>was {e.branchHint}</span>}
+                <span className="w-16 shrink-0 font-mono text-2xs text-faint">{e.hash.slice(0, 7)}</span>
+                <span className="w-24 shrink-0 text-right text-2xs text-faint">{relativeTime(e.date)}</span>
               </div>
             </ContextMenu.Trigger>
             <CM.Content>

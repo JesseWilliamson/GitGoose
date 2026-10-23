@@ -65,9 +65,9 @@ export function FileRow({ path, oldPath, kind, selected, onClick, actions, stats
       onDragStart={drag ? (e) => startDrag(e.dataTransfer, drag) : undefined}
       title={oldPath ? `${oldPath} → ${path}` : path}
       style={tree ? { paddingLeft: 12 + (depth ?? 0) * 14 + 16 } : undefined}
-      className={clsx('group flex h-6 cursor-default items-center gap-2 px-3 text-[13px]', selected ? 'bg-select' : 'hover:bg-hover')}
+      className={clsx('group flex h-row cursor-default items-center gap-2 px-3 text-sm', selected ? 'bg-select' : 'hover:bg-hover')}
     >
-      <span className={clsx('w-3 shrink-0 text-center font-mono text-[11px] font-bold', b.cls)} title={b.title}>{b.letter}</span>
+      <span className={clsx('w-3 shrink-0 text-center font-mono text-2xs font-bold', b.cls)} title={b.title}>{b.letter}</span>
       <span className="min-w-0 flex-1 truncate">
         <span>{name}</span>
         {dir && !tree && <span className="ml-1.5 text-xs text-faint">{dir}</span>}
@@ -128,11 +128,11 @@ export function FileListView<T>({ items, pathOf, filter, renderFile, folderActio
       ) : (
         <div key={`dir:${r.path}`} onClick={() => toggle(r.path)} data-testid={testId ? `${testId}-folder` : undefined} data-path={r.path}
           style={{ paddingLeft: 12 + r.depth * 14 }}
-          className="group flex h-6 cursor-default items-center gap-1.5 pr-3 text-[13px] hover:bg-hover">
+          className="group flex h-row cursor-default items-center gap-1.5 pr-3 text-sm hover:bg-hover">
           {collapsed.has(r.path) ? <ChevronRight size={12} className="text-faint" /> : <ChevronDown size={12} className="text-faint" />}
           <Folder size={13} className="shrink-0 text-faint" />
           <span className="min-w-0 flex-1 truncate">{r.name}</span>
-          <span className="text-[11px] text-faint">{r.files.length}</span>
+          <span className="text-2xs text-faint">{r.files.length}</span>
           {folderActions && <span className="hidden shrink-0 items-center gap-1 group-hover:flex" onClick={(e) => e.stopPropagation()}>{folderActions(r.files)}</span>}
         </div>
       ))}
@@ -148,7 +148,7 @@ export function FileListTools({ filter, onFilter }: { filter: string; onFilter: 
       <Search size={12} className="ml-1 shrink-0 text-faint" />
       <input value={filter} onChange={(e) => onFilter(e.target.value)} placeholder="Filter files" data-testid="file-filter"
         onKeyDown={(e) => { if (e.key === 'Escape') onFilter('') }}
-        className="h-6 min-w-0 flex-1 bg-transparent px-1 text-[12px] outline-none" />
+        className="h-6 min-w-0 flex-1 bg-transparent px-1 text-xs outline-none" />
       <button onClick={() => void saveSettings({ fileTree: !tree })} title={tree ? 'Show as a list' : 'Show as a tree'} aria-label={tree ? 'Show as a list' : 'Show as a tree'}
         data-testid="file-tree-toggle" className="rounded p-1 text-faint hover:bg-hover hover:text-fg">
         {tree ? <List size={13} /> : <ListTree size={13} />}
