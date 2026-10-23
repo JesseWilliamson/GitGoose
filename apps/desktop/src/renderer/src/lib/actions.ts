@@ -1,4 +1,5 @@
 import { parseGitHubRemote, type DiffTarget, type GraphFilter, type PullMode, type Ref, type RepoSnapshot, type ResetMode, type Worktree } from '@gitgoose/shared'
+import { addDropped } from './aiContext'
 import { api, toUiError, type UiError } from './api'
 import type { DropPlan } from './dnd'
 import { withPushChecks } from './pushchecks'
@@ -961,6 +962,7 @@ export function performDrop(id: string, plan: DropPlan): void {
     case 'apply-file':
       return void run(id, plan.label, () => api.applyFileFrom(id, op.rev, op.paths, { stash: op.stash }), { success: `Applied ${op.paths.length === 1 ? op.paths[0] : `${op.paths.length} files`}` })
     case 'stash-files': return void stashWith(id, { paths: op.paths })
+    case 'ai-context': return addDropped(id, op.source)
   }
 }
 

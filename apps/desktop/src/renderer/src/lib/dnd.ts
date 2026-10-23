@@ -100,6 +100,8 @@ export type DropTarget =
   | { kind: 'row'; hash: string; where: 'above' | 'onto' | 'below' }
   /** The graph's uncommitted-changes row. */
   | { kind: 'wip' }
+  /** The AI panel: whatever is dropped becomes a context chip (lib/aiContext.ts). */
+  | { kind: 'ai' }
 
 // ------------------------------------------------------------------ what happens
 
@@ -132,6 +134,8 @@ export type DropOp =
   | { op: 'stash-apply'; index: number; pop: boolean }
   | { op: 'apply-file'; rev: string; paths: string[]; stash: boolean }
   | { op: 'stash-files'; paths: string[] }
+  /** Attach it to the next AI message (nothing in the repository changes). */
+  | { op: 'ai-context'; source: DragSource }
 
 export interface DropPlan {
   /** What the badge says: exactly what will happen. */
@@ -166,6 +170,8 @@ const splitRemote = (r: Ref): [string, string] => {
  * alternative do the same with Alt as without.
  */
 export function dropPlan(ctx: DropContext, source: DragSource, target: DropTarget, { alt = false } = {}): DropPlan | null {
+  // The AI panel takes anything the graph, sidebar and file lists can drag, and changes nothing.
+  if (target.kind === 'ai') return { label: `Add ${describeSource(source)} to the AI conversation`, op: { op: 'ai-context', source } }
   switch (source.kind) {
     case 'ref':
       return source.ref.kind === 'local' ? localBranch(ctx, source.ref, target, alt)
@@ -180,6 +186,16 @@ export function dropPlan(ctx: DropContext, source: DragSource, target: DropTarge
         : { label: `Apply ${source.ref}`, op: { op: 'stash-apply', index: source.index, pop: false } }
     case 'files':
       return fileDrop(source, target)
+  }
+}
+
+/** "commit a1b2c3d", "3 commits", "branch main", "tag v1", "stash@{0}", "2 files". */
+function describeSource(source: DragSource): string {
+  switch (source.kind) {
+    case 'ref': return `${source.ref.kind === 'tag' ? 'tag' : 'branch'} ${source.ref.shortName}`
+    case 'commits': return source.hashes.length === 1 ? `commit ${sha(source.hashes[0]!)}` : `${source.hashes.length} commits`
+    case 'stash': return source.ref
+    case 'files': return source.paths.length === 1 ? source.paths[0]! : `${source.paths.length} files`
   }
 }
 
