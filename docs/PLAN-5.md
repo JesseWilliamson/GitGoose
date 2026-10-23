@@ -26,6 +26,7 @@ through `GitRunner`, the two performance rules, the definition of done) apply to
 | 6 | AI pane: context chips, drag in, actions from the pane | 2 | 1 |
 | 7 | UI audit and redesign | 3 | 4, 5, 6, 8 |
 | 8 | Settings page: one grid | 2 | 1 |
+| 9 | Custom title bar on every platform | 1 | – |
 
 Wave 1 PRs touch disjoint files and merge in any order. Wave 2 starts from main after wave 1.
 Wave 3 is the polish pass over everything and comes last so it does not fight the others.
@@ -294,6 +295,35 @@ edge.
 **Tests.** `e2e/settings.spec.ts` passes unchanged (ids and labels stay); one new assertion:
 every control in the Appearance section has the same left `x` and the same width (read bounding
 boxes of the control column's children).
+
+## 9. Custom title bar on every platform
+
+**Why.** Jesse: "use a custom title bar." The window is frameless only on macOS
+(`titleBarStyle: 'hiddenInset'`, the tab bar row is the title bar); Windows and Linux show the
+native frame and the native menu bar above the app's own chrome, two title rows instead of one.
+
+**What** (`main/index.ts`, `main/ipc.ts`, `packages/shared/src/api.ts`, `components/TabBar.tsx`,
+`styles.css`):
+
+- `titleBarStyle: 'hidden'` everywhere (`hiddenInset` stays on macOS so the traffic lights sit
+  in the tab bar row). On Windows, `titleBarOverlay` with our colours (the native controls keep
+  Snap Layouts); on Linux, controls drawn by the renderer (minimise, maximise/restore, close)
+  through three IPC methods plus a `windowState` event for maximised/unmaximised. The overlay
+  colours follow the theme (`win.setTitleBarOverlay` when the setting changes).
+- The tab bar row is the drag region (`.drag`) with every control `.no-drag`; its height is the
+  title bar height (36 px) on all platforms, with the macOS traffic-light inset on the left and
+  the controls' width reserved on the right on Windows and Linux.
+- The application menu: on macOS unchanged. On Windows and Linux the native menu bar is hidden
+  (`autoHideMenuBar`, Alt still shows it) and a menu button (☰) at the left of the tab bar pops
+  the same application menu (`Menu.popup`) at the pointer, so every command and shortcut stays
+  reachable with the mouse.
+- Double-clicking the empty tab bar maximises/restores (macOS follows the system preference).
+- `e2e/window.spec.ts`: the tab bar reports the drag region, the controls minimise/maximise/close
+  on Linux (xvfb), the menu button opens a menu with "File". The window-size memory test stays.
+
+**The idea to notice.** Two kinds of frameless window: the OS still draws its controls
+(`titleBarOverlay`) or the app draws them. The first keeps OS behaviours (Snap Layouts, the
+window menu); the second works everywhere. Use the first where it exists.
 
 ## How the PRs are run
 
