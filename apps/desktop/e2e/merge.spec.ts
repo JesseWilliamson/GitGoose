@@ -47,7 +47,8 @@ test('three panes: non-conflicting changes start applied; taking both sides of a
 test('three panes: start from the ancestor, apply all, undo an apply, ignore both sides', async () => {
   const { r, file } = mergeRepo()
   const { app, page } = await launch(r.dir)
-  await page.getByTestId('merge-start').selectOption('base')
+  await page.getByTestId('merge-start').click()
+  await page.getByRole('option', { name: 'The common ancestor' }).click()
   await expect(result(page)).not.toContainText('ours 2')
   await expect(page.getByTestId('apply-non-conflicting')).toHaveText('Apply non-conflicting (3)')
   await page.getByTestId('apply-non-conflicting').click()
@@ -73,7 +74,8 @@ test('three panes: start from the ancestor, apply all, undo an apply, ignore bot
 test('three panes: markers start blocks saving until removed; typing in a conflict resolves it', async () => {
   const { r, file } = mergeRepo()
   const { app, page } = await launch(r.dir)
-  await page.getByTestId('merge-start').selectOption('markers')
+  await page.getByTestId('merge-start').click()
+  await page.getByRole('option', { name: "Git's merge (with markers)" }).click()
   await expect(result(page)).toContainText('<<<<<<<')
   await result(page).locator('.cm-line', { hasText: 'theirs 14' }).click()
   await page.keyboard.press('End')

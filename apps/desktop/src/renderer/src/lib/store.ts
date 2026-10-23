@@ -87,15 +87,6 @@ export interface RepoView {
   line: { hash: string } | null
 }
 
-/** Toasts are for outcomes that need nothing from the user: successes and notes. */
-export interface Toast {
-  id: number
-  kind: 'info' | 'success'
-  title: string
-  detail?: string
-  action?: { label: string; run: () => void }
-}
-
 export interface Choice {
   label: string
   variant?: 'primary' | 'danger' | 'default'
@@ -180,7 +171,6 @@ interface State {
   repos: Record<string, RepoView>
   prompt: { promptId: number; message: string; secret: boolean } | null
   dialog: Dialog | null
-  toasts: Toast[]
   attentions: Attention[]
   /** The omni search, open with this text in the box ("> " for commands only), or closed. */
   omni: { query: string } | null
@@ -201,7 +191,6 @@ export const useStore = create<State>(() => ({
   repos: {},
   prompt: null,
   dialog: null,
-  toasts: [],
   attentions: [],
   omni: null,
   settingsQuery: '',
@@ -811,18 +800,8 @@ export async function boot(): Promise<void> {
 
 // ------------------------------------------------------------------ toasts
 
-let nextToast = 1
-
-export function toast(t: Omit<Toast, 'id'>, ms = 5000): number {
-  const id = nextToast++
-  set((s) => ({ toasts: [...s.toasts.slice(-4), { ...t, id }] }))
-  if (ms > 0) setTimeout(() => dismissToast(id), ms)
-  return id
-}
-
-export function dismissToast(id: number): void {
-  set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }))
-}
+export { toast, dismissToast, setToastPresenter } from './toastBus'
+export type { Toast } from './toast-types'
 
 let nextAttention = 1
 

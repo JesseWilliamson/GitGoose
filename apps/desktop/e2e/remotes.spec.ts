@@ -39,8 +39,8 @@ test('add, rename, re-point and remove a remote from the sidebar; removing is un
   await remoteHeader(page, 'mirror').click({ button: 'right' })
   await item(page, 'Remove mirror').click()
   await expect(remoteHeader(page, 'mirror')).toHaveCount(0)
-  // The newest toast: older ones' Undo is refused once something newer happened.
-  await page.getByTestId('toast-action').filter({ hasText: 'Undo' }).last().click()
+  // The newest toast (listed first): older ones' Undo is refused once something newer happened.
+  await page.getByTestId('toast-action').filter({ hasText: 'Undo' }).first().click()
   await expect(remoteHeader(page, 'mirror')).toBeVisible()
   expect(r.git('config', 'remote.mirror.url').trim()).toBe(other)
   expect(r.git('config', 'remote.mirror.pushurl').trim()).toBe('/tmp/push-here.git')

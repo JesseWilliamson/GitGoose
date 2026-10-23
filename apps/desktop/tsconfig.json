@@ -1,0 +1,9 @@
+{
+  // Not used to compile (tsconfig.node.json and tsconfig.web.json are): tools that look for a
+  // plain tsconfig.json, like the shadcn CLI, find the renderer's `@/` alias here.
+  "files": [],
+  "references": [{ "path": "./tsconfig.node.json" }, { "path": "./tsconfig.web.json" }],
+  "compilerOptions": {
+    "paths": { "@/*": ["./src/renderer/src/*"] }
+  }
+}
