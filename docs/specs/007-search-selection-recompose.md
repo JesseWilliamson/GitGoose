@@ -37,8 +37,9 @@ Shift-click and Shift+arrow flicker the graph, so it is a toggle only.)
   continues the lane, the line came in from a fork and the walk stops. This is git's own
   definition of a branch's path (`--first-parent`), drawn the way the lane layout draws it.
 - **How it shows**: `GraphList` maps list positions to log rows through a `Uint32Array`; no
-  relayout, no array per frame. Rows draw only the line, in their colour, nodes in their lanes,
-  turning where the line changes lane. Pages that load while it is on extend it downward (the walk
+  relayout, no array per frame. Rows draw only the line, in their colour, all in the first lane
+  (a branch is a path; the lane is only where the full graph had room for it), and the graph
+  column shrinks to match. Pages that load while it is on extend it downward (the walk
   runs again per page; near the end of the line the list keeps loading until the next first
   parent arrives). The uncommitted-changes row shows only when HEAD is on the line.
 - **Nothing moves under the pointer**: the cursor row keeps its screen position when the graph
