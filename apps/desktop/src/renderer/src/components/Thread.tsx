@@ -9,8 +9,7 @@ import { applyArtifact } from '../lib/artifacts'
 import { validateMermaid } from '../lib/mermaid'
 import { sendMessage, stopThread } from '../lib/thread'
 import { Markdown } from './Markdown'
-import { ModelPicker } from './ModelPicker'
-import { PromptButton } from './PromptPanel'
+import { AiTargetButton } from './AiTargetButton'
 import { MermaidDiagram } from './MermaidDiagram'
 import { Button, Spinner } from './ui'
 
@@ -34,18 +33,21 @@ export interface ThreadTestIds {
   agent?: string
 }
 
-export function Thread({ thread, repoId, testids = {}, placeholder, hint, hideFeature, className, above, context, onSent }: {
+export function Thread({ thread, repoId, testids = {}, placeholder, hint, hintTitle, hideFeature, className, above, actions, context, onSent }: {
   thread: AiThread
   repoId: string
   testids?: ThreadTestIds
-  /** Shown just above the composer (the AI panel's context chips and actions). */
+  /** Inside the composer's box, above the text (the AI panel's context chips). */
   above?: ReactNode
+  /** In the composer's footer, left of the area's target button (the AI panel's actions menu). */
+  actions?: ReactNode
   /** Context chips to send with the next message (main renders them); `onSent` runs after a message went out. */
   context?: AiContextRef[]
   onSent?: () => void
   placeholder?: string
-  /** Shown while the thread has no turns. */
+  /** Shown (centred, short) while the thread has no turns; `hintTitle` is the longer explanation on hover. */
   hint?: string
+  hintTitle?: string
   /** Leave the feature's own exchange out entirely (the Explain box shows the answer above). */
   hideFeature?: boolean
   className?: string
@@ -77,7 +79,13 @@ export function Thread({ thread, repoId, testids = {}, placeholder, hint, hideFe
   return (
     <div className={clsx('flex min-h-0 flex-col', className)} data-testid={testids.root ?? 'thread'} data-thread={thread.id}>
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2 text-sm" data-testid="thread-turns">
-        {!turns.length && hint && <p className="text-xs text-muted-foreground/70">{hint}</p>}
+        {!turns.length && hint && (
+          // The empty state: one short centred line, with the icon the AI wears everywhere else.
+          <div className="flex min-h-full flex-col items-center justify-center gap-2 px-4 text-center text-xs text-muted-foreground" data-testid="thread-empty" title={hintTitle}>
+            <Sparkles size={18} className="text-muted-foreground/70" />
+            <p className="max-w-60 leading-relaxed">{hint}</p>
+          </div>
+        )}
         {turns.map((t, i) => (t.role === 'user'
           ? <UserTurn key={t.id} turn={t} testid={testids.user ?? 'thread-user'} />
           : <AgentTurn key={t.id} turn={t} thread={thread} repoId={repoId} testid={testids.agent ?? 'thread-agent'} retry={t === last ? retry : undefined}
@@ -92,25 +100,31 @@ export function Thread({ thread, repoId, testids = {}, placeholder, hint, hideFe
           {thread.commands?.length ? <>Commands: {thread.commands.map((c) => `/${c}`).join(' ')}</> : null}
         </div>
       )}
-      {above}
-      <div className="flex shrink-0 items-center justify-end border-t border-border px-2 pt-1.5">
-        {/* The area's pick: a change applies from the next message (main moves the conversation if needed). */}
-        <ModelPicker area={areaOfAnchor(thread.anchor)} />
-        <PromptButton area={areaOfAnchor(thread.anchor)} className="ml-1" />
-      </div>
-      <div className="flex shrink-0 gap-2 p-2 pt-1.5">
-        <textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} data-testid={testids.input ?? 'thread-input'}
-          placeholder={placeholder ?? 'Ask a follow-up (Enter sends, Shift+Enter for a new line)'}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-              e.preventDefault()
-              void send()
-            }
-          }}
-          className="min-w-0 flex-1 resize-none rounded-md border border-border bg-background px-2 py-1 text-sm outline-none focus:border-primary" />
-        {running
-          ? <Button onClick={() => stopThread(thread.id)} data-testid="thread-stop" title="Stop the answer"><Square size={12} /> Stop</Button>
-          : <Button variant="primary" disabled={!text.trim() || sending} onClick={() => void send()} data-testid={testids.send ?? 'thread-send'} title="Send (Enter)"><Send size={12} /> Send</Button>}
+      {/* The composer is one box: what is attached (above), what is written, and a footer with the
+          area's tools at the left and the one primary action at the right. Everything that belongs
+          to the next message is inside the same border; nothing stacks as a separate bar. */}
+      <div className="shrink-0 p-2 pt-0">
+        <div className="rounded-lg border border-border bg-background transition-colors focus-within:border-primary">
+          {above}
+          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} data-testid={testids.input ?? 'thread-input'}
+            placeholder={placeholder ?? 'Ask a follow-up (Enter sends, Shift+Enter for a new line)'}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                void send()
+              }
+            }}
+            className="block w-full resize-none bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground/70" />
+          <div className="flex items-center gap-1 px-1.5 pb-1.5">
+            {actions}
+            {/* The area's pick: a change applies from the next message (main moves the conversation if needed). */}
+            <AiTargetButton area={areaOfAnchor(thread.anchor)} />
+            <span className="flex-1" />
+            {running
+              ? <Button size="sm" onClick={() => stopThread(thread.id)} data-testid="thread-stop" aria-label="Stop" title="Stop the answer"><Square size={12} /> Stop</Button>
+              : <Button size="sm" variant="primary" className="size-7 px-0 has-[>svg]:px-0" disabled={!text.trim() || sending} onClick={() => void send()} data-testid={testids.send ?? 'thread-send'} aria-label="Send" title="Send (Enter)"><Send size={13} /></Button>}
+          </div>
+        </div>
       </div>
     </div>
   )

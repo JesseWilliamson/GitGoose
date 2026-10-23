@@ -5,7 +5,7 @@ import { DropdownMenu } from 'radix-ui'
 import { useRef, useState, type DragEvent } from 'react'
 import { PANE_MIME, changeLayout, usePaneDrag } from '../lib/panes'
 import { useSetting, type RepoView } from '../lib/store'
-import { AiChatPanel } from './AiChatPanel'
+import { AiChatActions, AiChatPanel } from './AiChatPanel'
 import { DetailPanel } from './DetailPanel'
 import { Sidebar } from './Sidebar'
 import { DM } from './ui'
@@ -35,7 +35,7 @@ export function SlotView({ slot, view }: { slot: Slot; view: RepoView }) {
   for (const p of built.current) if (!st.panes.includes(p)) built.current.delete(p)
   return (
     <div className="flex h-full min-h-0 flex-col bg-card" data-testid={`slot-${slot}`}>
-      <TabStrip slot={slot} state={st} />
+      <TabStrip slot={slot} state={st} view={view} />
       {st.panes.filter((p) => built.current.has(p)).map((p) => (
         <div key={p} className={clsx('min-h-0 flex-1 flex-col', p === st.active ? 'flex' : 'hidden')} data-pane={p}>
           <PaneBody pane={p} view={view} />
@@ -45,7 +45,7 @@ export function SlotView({ slot, view }: { slot: Slot; view: RepoView }) {
   )
 }
 
-function TabStrip({ slot, state }: { slot: Slot; state: SlotState }) {
+function TabStrip({ slot, state, view }: { slot: Slot; state: SlotState; view: RepoView }) {
   const strip = useRef<HTMLDivElement>(null)
   /** Where a dragged tab would land: its index among the other tabs, and the x of the bar that shows it. */
   const [drop, setDrop] = useState<{ index: number; x: number } | null>(null)
@@ -68,7 +68,7 @@ function TabStrip({ slot, state }: { slot: Slot; state: SlotState }) {
   }
 
   return (
-    <div ref={strip} className={clsx('relative flex h-strip shrink-0 items-stretch border-b border-border bg-background/40', drop && 'bg-primary/10')}
+    <div ref={strip} className={clsx('relative flex h-strip shrink-0 items-stretch border-b border-border bg-card', drop && 'bg-primary/10')}
       data-testid={`tabs-${slot}`}
       onDragOver={(e) => {
         if (!e.dataTransfer.types.includes(PANE_MIME)) return
@@ -89,12 +89,17 @@ function TabStrip({ slot, state }: { slot: Slot; state: SlotState }) {
       {state.panes.map((p) => (
         <Tab key={p} pane={p} slot={slot} tabbed={tabbed} active={state.active === p} />
       ))}
+      {/* The `right` slot: the active pane's own actions (the AI pane's New and History). */}
+      <div className="ml-auto flex shrink-0 items-center pr-1.5" data-testid={`tabs-${slot}-actions`}><PaneActions pane={state.active} view={view} /></div>
       {drop && <div className="pointer-events-none absolute inset-y-0 w-0.5 bg-primary" style={{ left: drop.x }} />}
     </div>
   )
 }
 
 function Tab({ pane, slot, tabbed, active }: { pane: PaneId; slot: Slot; tabbed: boolean; active: boolean }) {
+  // The ⋯ menu is opened by its button, by a right-click on the tab (one menu, two ways in), and
+  // stays in the DOM while hidden: it only fades in when the tab is hovered or the menu is open.
+  const [menuOpen, setMenuOpen] = useState(false)
   return (
     <div draggable data-pane-tab={pane} data-testid={`pane-tab-${pane}`} data-active={active || undefined}
       title={`${PANE_TITLES[pane]}: drag to move`}
@@ -106,24 +111,25 @@ function Tab({ pane, slot, tabbed, active }: { pane: PaneId; slot: Slot; tabbed:
       }}
       onDragEnd={() => usePaneDrag.setState({ dragging: null })}
       onClick={() => changeLayout((l) => activatePane(l, pane))}
-      className={clsx('group/tab flex min-w-0 cursor-default items-center gap-1 pr-1 pl-2 text-2xs font-semibold tracking-wide uppercase',
-        tabbed && 'border-r border-border',
-        tabbed && active ? 'bg-card text-foreground shadow-[inset_0_-2px_0_var(--primary)]' : 'text-muted-foreground hover:text-foreground')}>
+      onContextMenu={(e) => { e.preventDefault(); setMenuOpen(true) }}
+      // 2 px bottom border on every tab (transparent unless active) so choosing a tab moves nothing.
+      className={clsx('group/tab flex min-w-0 cursor-default items-center gap-1 border-b-2 pr-1 pl-3 text-xs font-medium',
+        tabbed && active ? 'border-primary text-foreground' : tabbed ? 'border-transparent text-muted-foreground hover:text-foreground' : 'border-transparent text-foreground')}>
       <span className="truncate">{PANE_TITLES[pane]}</span>
-      <PaneMenu pane={pane} slot={slot} />
+      <PaneMenu pane={pane} slot={slot} open={menuOpen} onOpenChange={setMenuOpen} />
     </div>
   )
 }
 
-function PaneMenu({ pane, slot }: { pane: PaneId; slot: Slot }) {
+function PaneMenu({ pane, slot, open, onOpenChange }: { pane: PaneId; slot: Slot; open: boolean; onOpenChange: (open: boolean) => void }) {
   return (
     // React events bubble out of a portal to the component that rendered it: without this stop, a
     // click on a menu item would also reach the tab and activate it (with a stale layout).
     <span className="flex items-center" onClick={(e) => e.stopPropagation()}>
-      <DropdownMenu.Root>
+      <DropdownMenu.Root open={open} onOpenChange={onOpenChange}>
         <DropdownMenu.Trigger asChild>
           <button aria-label={`${PANE_TITLES[pane]} pane menu`} data-testid={`pane-menu-${pane}`}
-            className="rounded p-0.5 text-muted-foreground/70 opacity-60 hover:bg-accent hover:text-foreground hover:opacity-100 data-[state=open]:opacity-100">
+            className="rounded-sm p-0.5 text-muted-foreground opacity-0 group-hover/tab:opacity-100 hover:bg-accent hover:text-foreground focus:opacity-100 data-[state=open]:opacity-100">
             <Ellipsis size={13} />
           </button>
         </DropdownMenu.Trigger>
@@ -137,6 +143,14 @@ function PaneMenu({ pane, slot }: { pane: PaneId; slot: Slot }) {
       </DropdownMenu.Root>
     </span>
   )
+}
+
+/** What the active pane puts at the right end of its strip: its own few actions, as icon buttons. */
+function PaneActions({ pane, view }: { pane: PaneId | null; view: RepoView }) {
+  switch (pane) {
+    case 'ai': return <AiChatActions view={view} />
+    default: return null
+  }
 }
 
 /**

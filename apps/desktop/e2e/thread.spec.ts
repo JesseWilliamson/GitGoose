@@ -53,7 +53,7 @@ test('the AI panel: follow-ups continue the conversation; Shift+Enter is a new l
   await chat(page, 'still there?')
   await expect(lastReply(panel)).toHaveText('Turn 3. You said: still there?.')
   // A new conversation starts from nothing.
-  await panel.getByTestId('ai-chat-new').click()
+  await page.getByTestId('ai-chat-new').click()
   await chat(page, 'fresh')
   await expect(lastReply(panel)).toHaveText('Turn 1. You said: fresh.')
   await app.close()
