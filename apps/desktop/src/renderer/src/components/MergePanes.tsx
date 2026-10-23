@@ -11,7 +11,7 @@ import {
 } from '../lib/mergeState'
 import { choose } from '../lib/store'
 import { Button } from './ui'
-import { OptionSelect } from './ui/select'
+import { OptionSelect } from './OptionSelect'
 
 /**
  * Three-pane merge, laid out like GitKraken's: yours and theirs side by side on top, the result
@@ -357,7 +357,7 @@ export default function MergePanes({ base, ours, theirs, labels, onSave }: Merge
       <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-2 border-b border-line bg-panel px-3 py-1 text-xs">
         <label className="flex items-center gap-1.5 text-muted">
           Start from
-          <OptionSelect value={start} onChange={(v) => changeStart(v as StartFrom)} data-testid="merge-start" aria-label="Start from" className="h-6 px-1.5 text-xs"
+          <OptionSelect value={start} onChange={(v) => changeStart(v as StartFrom)} data-testid="merge-start" aria-label="Start from" className="px-1.5 text-xs data-[size=default]:h-6"
             options={[
               { value: 'non-conflicting', label: 'Non-conflicting changes applied' },
               { value: 'base', label: 'The common ancestor' },

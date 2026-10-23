@@ -4,7 +4,7 @@ import { RotateCcw, Search, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 import { COMMANDS, comboOf, conflicts, formatCombo } from '../lib/keys'
 import { saveSettings, useStore } from '../lib/store'
-import { OptionSelect } from './ui/select'
+import { OptionSelect } from './OptionSelect'
 import { AiPanel } from './AiPanel'
 
 /**

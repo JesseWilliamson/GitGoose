@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { toast as sonner } from 'sonner'
-import { Button } from '../components/ui/button'
+import { Button } from '../components/ui'
 import type { Toast, ToastPresenter } from './toast-types'
 
 /**

@@ -1,6 +1,5 @@
 import { DEFAULT_LAYOUT, setCollapsed, type Settings } from '@gitgoose/shared'
 import { useEffect } from 'react'
-import { Toaster } from 'sonner'
 import { applyPatchFile, applyPatchFromClipboard, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, redo, showHistory, showWorkingCopy, stash, undo } from '../lib/actions'
 import { comboOf, keymap } from '../lib/keys'
 import { goBack, goForward, installMouseNavigation, installNavigation } from '../lib/navigation'
@@ -16,7 +15,8 @@ import { AiDialogs } from './AiDialogs'
 import { StatusBar } from './StatusBar'
 import { TabBar } from './TabBar'
 import { Toolbar } from './Toolbar'
-import { TooltipProvider } from './ui/tooltip'
+import { Toaster } from '@/components/ui/sonner'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { Welcome } from './Welcome'
 import { toggleSlot } from './Workspace'
 import { Workspace } from './Workspace'
@@ -137,7 +137,7 @@ export function App() {
   const ready = useStore((s) => s.settings !== null)
   const page = useStore((s) => s.page)
   return (
-    <TooltipProvider>
+    <TooltipProvider delayDuration={400}>
     <div className="flex h-full flex-col">
       <TabBar />
       <AttentionBar />

@@ -205,8 +205,11 @@ test('a menu item that cannot run is greyed out and says why on hover', async ()
   const item = page.getByRole('menuitem', { name: 'Check out this commit (detached)' })
   await expect(item).toHaveAttribute('aria-disabled', 'true')
   await expect(item).toHaveAttribute('aria-description', 'This is HEAD')
-  await item.hover()
-  await expect(page.getByRole('tooltip').first()).toHaveText('This is HEAD')
+  // shadcn items are pointer-events: none when disabled; the tooltip hangs on the wrapper around them.
+  const at = (await item.boundingBox())!
+  await page.mouse.move(at.x + 20, at.y + at.height / 2, { steps: 8 })
+  await page.mouse.move(at.x + 60, at.y + at.height / 2, { steps: 8 })
+  await expect(page.getByRole('tooltip').first()).toHaveText('This is HEAD', { timeout: 10_000 })
   // Clicking it does nothing: still on main, menu open.
   await item.click({ force: true })
   expect(r.git('rev-parse', '--abbrev-ref', 'HEAD').trim()).toBe('main')

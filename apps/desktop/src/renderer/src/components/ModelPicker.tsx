@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react'
 import { setAreaTarget } from '../lib/ai'
 import { api, toUiError } from '../lib/api'
 import { singleFlight } from '../lib/singleFlight'
-import { OptionSelect, type SelectOption } from './ui/select'
+import { OptionSelect, type SelectOption } from './OptionSelect'
 import { reportError, saveSettings, setSettingEntry, useStore } from '../lib/store'
 
 /**
@@ -69,7 +69,7 @@ export function ModelPicker({ area, defaults, className, onPicked, agentsOnly }:
   // Settings → AI's default for the API is a model, not "whatever": no blank entry there.
   const blank = !(defaults && target.provider === 'anthropic')
   const stale = !!list.list?.at && Date.now() - list.list.at > STALE_MS
-  const select = 'h-6 min-w-0 max-w-44 flex-1 px-1.5 text-xs'
+  const select = 'min-w-0 max-w-44 flex-1 px-1.5 text-xs data-[size=default]:h-6'
 
   const whoOptions: SelectOption[] = [
     { value: 'default', label: `Default (${targetLabel({ ...base, model: undefined })})` },

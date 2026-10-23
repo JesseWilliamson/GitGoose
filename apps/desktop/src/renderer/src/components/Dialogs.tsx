@@ -9,7 +9,7 @@ import { api } from '../lib/api'
 import { withPushChecks } from '../lib/pushchecks'
 import { setting, toast, useStore } from '../lib/store'
 import { Button, Modal, TextField } from './ui'
-import { OptionSelect } from './ui/select'
+import { OptionSelect } from './OptionSelect'
 import { ModelPicker } from './ModelPicker'
 import { PromptButton } from './PromptPanel'
 
@@ -228,7 +228,7 @@ function CreatePullDialog({ repoId, branch, close }: { repoId: string; branch: s
         </label>
         <div className="flex items-center gap-3 text-[13px]">
           <label className="flex items-center gap-2">Into
-            <OptionSelect value={base} onChange={setBase} aria-label="Base branch" className="h-7 px-2"
+            <OptionSelect value={base} onChange={setBase} aria-label="Base branch" className="px-2 data-[size=default]:h-7"
               options={(bases.length ? bases : [base]).map((b) => ({ value: b, label: b }))} />
           </label>
         </div>
@@ -351,7 +351,7 @@ function PushRulesDialog({ repoId, close }: { repoId: string; close: () => void 
             <div className="mb-1 flex gap-2">
               <input value={c.name} onChange={(e) => edit(i, { name: e.target.value })} placeholder="Name (e.g. No debug logging)" aria-label="Check name"
                 className="h-7 min-w-0 flex-1 rounded-md border border-line bg-bg px-2 text-[13px] outline-none focus:border-accent" />
-              <OptionSelect value={c.mode} onChange={(v) => edit(i, { mode: v as PushCheck['mode'] })} aria-label="When it fails" className="h-7 px-2"
+              <OptionSelect value={c.mode} onChange={(v) => edit(i, { mode: v as PushCheck['mode'] })} aria-label="When it fails" className="px-2 data-[size=default]:h-7"
                 options={[{ value: 'warn', label: 'Warn' }, { value: 'block', label: 'Block' }]} />
               <Button size="sm" variant="ghost" onClick={() => setMine((m) => m!.filter((_, n) => n !== i))}>Remove</Button>
             </div>

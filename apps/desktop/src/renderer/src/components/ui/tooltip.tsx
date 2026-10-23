@@ -1,40 +1,56 @@
-import { Tooltip as RTooltip } from 'radix-ui'
-import { useEffect, useState, type ComponentProps, type ReactNode } from 'react'
-import { cn } from '../../lib/cn'
+"use client"
 
-export const TooltipProvider = ({ children }: { children: ReactNode }) => (
-  <RTooltip.Provider delayDuration={400} skipDelayDuration={200}>{children}</RTooltip.Provider>
-)
-export const Tooltip = RTooltip.Root
-export const TooltipTrigger = RTooltip.Trigger
+import * as React from "react"
+import { cn } from "@/lib/utils"
+import { Tooltip as TooltipPrimitive } from "radix-ui"
 
-export function TooltipContent({ className, sideOffset = 6, ...props }: ComponentProps<typeof RTooltip.Content>) {
+function TooltipProvider({
+  delayDuration = 0,
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Provider>) {
   return (
-    <RTooltip.Portal>
-      <RTooltip.Content sideOffset={sideOffset}
-        className={cn('z-[60] max-w-72 rounded-md border border-line bg-raised px-2 py-1 text-xs text-fg shadow-lg shadow-black/30', className)} {...props} />
-    </RTooltip.Portal>
+    <TooltipPrimitive.Provider
+      data-slot="tooltip-provider"
+      delayDuration={delayDuration}
+      {...props}
+    />
   )
 }
 
-/**
- * A tooltip around one element: `<WithTooltip text="Push"><button/></WithTooltip>`. No text, no tooltip.
- * It closes on any press anywhere: while a Radix menu is open the page's pointer events are off,
- * so the trigger would never see its pointer leave and the tooltip would sit on top of the menu.
- */
-export function WithTooltip({ text, children, side, delay }: { text?: string; children: ReactNode; side?: 'top' | 'bottom' | 'left' | 'right'; delay?: number }) {
-  const [open, setOpen] = useState(false)
-  useEffect(() => {
-    if (!open) return
-    const close = () => setOpen(false)
-    window.addEventListener('pointerdown', close, true)
-    return () => window.removeEventListener('pointerdown', close, true)
-  }, [open])
-  if (!text) return <>{children}</>
+function Tooltip({
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Root>) {
+  return <TooltipPrimitive.Root data-slot="tooltip" {...props} />
+}
+
+function TooltipTrigger({
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
+  return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />
+}
+
+function TooltipContent({
+  className,
+  sideOffset = 0,
+  children,
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Content>) {
   return (
-    <Tooltip open={open} onOpenChange={setOpen} delayDuration={delay}>
-      <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent side={side}>{text}</TooltipContent>
-    </Tooltip>
+    <TooltipPrimitive.Portal>
+      <TooltipPrimitive.Content
+        data-slot="tooltip-content"
+        sideOffset={sideOffset}
+        className={cn(
+          "z-50 w-fit origin-(--radix-tooltip-content-transform-origin) animate-in rounded-md bg-foreground px-3 py-1.5 text-xs text-balance text-background fade-in-0 zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
+          className
+        )}
+        {...props}
+      >
+        {children}
+        <TooltipPrimitive.Arrow className="z-50 size-2.5 translate-y-[calc(-50%_-_2px)] rotate-45 rounded-[2px] bg-foreground fill-foreground" />
+      </TooltipPrimitive.Content>
+    </TooltipPrimitive.Portal>
   )
 }
+
+export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider }
