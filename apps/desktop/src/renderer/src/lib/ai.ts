@@ -1,8 +1,8 @@
-import { AI_AUTH_REQUIRED, type AgentAuthMethod, type AiPermissionRequest, type AiResult, type AiTask, type RecomposeProposal, type ReviewScope, type ThreadAnchor } from '@gitgoose/shared'
+import { AI_AUTH_REQUIRED, defaultTarget, requestWords, type AgentAuthMethod, type AiArea, type AiPermissionRequest, type AiResult, type AiTarget, type AiTask, type PromptKind, type PromptText, type RecomposeProposal, type ReviewScope, type ThreadAnchor } from '@gitgoose/shared'
 import { create } from 'zustand'
 import { dropJob, finishJob, onJobReady, parkJob, registerJob, sweepJobs } from './aiJobs'
 import { api, toUiError } from './api'
-import { attention, choose, reportError, toast, updateRepo, useStore } from './store'
+import { attention, choose, reportError, setSettingEntry, toast, updateRepo, useStore } from './store'
 
 /**
  * Renderer side of the AI features. `startAi` does the asking (set up? agreed? logged in?) and
@@ -13,7 +13,7 @@ export interface AiUi {
   /** "Send this to …?" before the first request to a provider. */
   consent: { label: string; what: string; resolve: (ok: boolean) => void } | null
   /** The agent wants a login. */
-  login: { agent: string; methods: AgentAuthMethod[]; repoId: string | null; resolve: (ok: boolean) => void } | null
+  login: { agent: string; methods: AgentAuthMethod[]; repoId: string | null; target?: AiTarget; resolve: (ok: boolean) => void } | null
   /** Tool calls waiting for an answer, oldest first. */
   permissions: AiPermissionRequest[]
   /** A streamed answer shown in a modal: only an error explained with no repository open (see explainFailure). */
@@ -89,6 +89,66 @@ const WHAT: Record<AiTask['kind'], string> = {
   'push-checks': "the commits you are pushing (their messages and diff) and the repository's pre-push rules",
 }
 
+/** Which area a task belongs to: each area remembers its own model pick. */
+export function areaOf(kind: AiTask['kind']): AiArea {
+  switch (kind) {
+    case 'commit-message': return 'commit'
+    case 'explain-commit': return 'explain'
+    case 'explain-error': return 'error'
+    case 'resolve-conflict': return 'conflict'
+    case 'review': case 'fix-finding': return 'review'
+    case 'assess-impact': return 'impact'
+    case 'recompose': case 'walkthrough': case 'ask': case 'push-checks': return kind
+  }
+}
+
+/** The area a conversation about `anchor` belongs to (the AI panel's free threads are "chat"). */
+export function areaOfAnchor(anchor: ThreadAnchor): AiArea {
+  switch (anchor.kind) {
+    case 'review': case 'changestack': return 'review'
+    case 'free': return 'chat'
+    case 'task': return areaOf(anchor.task)
+    default: return anchor.kind
+  }
+}
+
+/** What an area uses now: its own pick, else Settings → AI. Null when AI is off. */
+export function areaTarget(area: AiArea): AiTarget | null {
+  const s = useStore.getState().settings
+  if (!s || s.aiProvider === 'off') return null
+  const picked = s.aiAreaTargets[area]
+  // Resolving a conflict needs an agent (it edits the file): an API pick saved there is ignored.
+  if (area === 'conflict' && picked?.provider === 'anthropic') return defaultTarget(s)
+  return picked ?? defaultTarget(s)
+}
+
+/** Remember an area's pick; null goes back to following Settings → AI. */
+export function setAreaTarget(area: AiArea, target: AiTarget | null): Promise<void> {
+  return setSettingEntry('aiAreaTargets', area, target)
+}
+
+/**
+ * Prompt panels' drafts, the moment they are typed (null: reset to the default). Saving is
+ * async: a request started right after the panel closes would otherwise read the settings from
+ * before the save and send the old words. A draft is dropped once its own save has landed.
+ */
+const drafts = new Map<PromptKind, PromptText | null>()
+
+export function publishDraft(kind: PromptKind, text: PromptText | null): void {
+  drafts.set(kind, text)
+}
+
+/** The save of `text` landed: the settings say it now (unless a newer draft came meanwhile). */
+export function draftSaved(kind: PromptKind, text: PromptText | null): void {
+  if (drafts.has(kind) && drafts.get(kind) === text) drafts.delete(kind)
+}
+
+/** The words a request of `kind` sends now: the panel's draft, else what is saved. */
+export function wordsFor(kind: PromptKind): PromptText | undefined {
+  const s = useStore.getState().settings
+  return s ? requestWords(kind, s, drafts.has(kind) ? drafts.get(kind) : undefined) : undefined
+}
+
 function openSettings(): void {
   useStore.setState({ page: 'settings' })
 }
@@ -103,10 +163,15 @@ export interface AiRun {
  * `before` runs once the provider is set up and agreed to, just before the request: for questions
  * that only make sense when the request will really happen (which linters a review may run).
  */
-export function startAi(repoId: string | null, task: AiTask, onText?: (text: string) => void, opts: { before?: () => Promise<void>; keepThread?: boolean; onThread?: (threadId: string) => void } = {}): AiRun {
+export function startAi(repoId: string | null, task: AiTask, onText?: (text: string) => void, opts: { before?: () => Promise<void>; keepThread?: boolean; onThread?: (threadId: string) => void; target?: AiTarget } = {}): AiRun {
   const requestId = crypto.randomUUID()
+  // Decided once, up front: changing the picker mid-request applies to the next one.
+  const target = opts.target ?? areaTarget(areaOf(task.kind)) ?? undefined
+  // The words the area's Prompt panel shows (its edit, else Settings', else built-in): sent as
+  // they are, so what the panel showed is what goes.
+  const prompt = wordsFor(task.kind)
   const done = (async (): Promise<AiResult | null> => {
-    if (!(await ensureAi(WHAT[task.kind]))) return null
+    if (!(await ensureAi(WHAT[task.kind], target))) return null
     await opts.before?.()
     if (onText) textListeners.set(requestId, onText)
     if (opts.onThread) threadListeners.set(requestId, opts.onThread)
@@ -114,7 +179,7 @@ export function startAi(repoId: string | null, task: AiTask, onText?: (text: str
       let redact = false
       for (let attempt = 0; ; attempt++) {
         try {
-          const o = { ...(redact ? { redact } : {}), ...(opts.keepThread ? { keepThread: true } : {}) }
+          const o = { ...(redact ? { redact } : {}), ...(opts.keepThread ? { keepThread: true } : {}), ...(target ? { target } : {}), ...(prompt ? { prompt } : {}) }
           return await api.aiRun(requestId, repoId ?? '', task, Object.keys(o).length ? o : undefined)
         } catch (e) {
           const err = e as { code?: string; message?: string }
@@ -125,7 +190,7 @@ export function startAi(repoId: string | null, task: AiTask, onText?: (text: str
             continue
           }
           if (err.code !== AI_AUTH_REQUIRED || attempt > 0) throw e
-          if (!(await askLogin(repoId))) return null
+          if (!(await askLogin(repoId, target))) return null
         }
       }
     } finally {
@@ -140,8 +205,8 @@ export function startAi(repoId: string | null, task: AiTask, onText?: (text: str
  * Before anything is sent: is a provider set up, and has the user agreed to send `what` to it?
  * False when they have to do something first (already reported or asked).
  */
-export async function ensureAi(what: string): Promise<boolean> {
-  const status = await api.aiStatus()
+export async function ensureAi(what: string, target?: AiTarget): Promise<boolean> {
+  const status = await api.aiStatus(target)
   if (status.provider === 'off' || !status.ready) {
     attention({
       title: status.provider === 'off' ? 'AI features are off' : `Finish setting up ${status.label}`,
@@ -153,15 +218,15 @@ export async function ensureAi(what: string): Promise<boolean> {
   if (!status.consented) {
     const ok = await new Promise<boolean>((resolve) => useAi.setState({ consent: { label: status.label, what, resolve } }))
     if (!ok) return false
-    await api.aiConsent()
+    await api.aiConsent(target)
   }
   return true
 }
 
 /** The agent needs a login: show its methods. True once the user says they have logged in. */
-export async function askLogin(repoId: string | null): Promise<boolean> {
-  const info = await api.aiAgentInfo()
-  return new Promise<boolean>((resolve) => useAi.setState({ login: { agent: info.name, methods: info.authMethods, repoId, resolve } }))
+export async function askLogin(repoId: string | null, target?: AiTarget): Promise<boolean> {
+  const info = await api.aiAgentInfo(target)
+  return new Promise<boolean>((resolve) => useAi.setState({ login: { agent: info.name, methods: info.authMethods, repoId, ...(target ? { target } : {}), resolve } }))
 }
 
 /** What a conversation about each anchor sends, for the consent notice. */

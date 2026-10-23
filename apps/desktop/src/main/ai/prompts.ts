@@ -1,12 +1,20 @@
 import type { Repo } from '@gitgoose/git'
 import { addedLines, carryOver, codeContextInfo, contextBudget, textKey, describeHunks, globToRegExp, hunkKey, numberedDiff, onlyChanged, redactSecrets, renderCodeContext, reviewableLines, secretFindings, walkthroughHunks, type AddedLines, type ReviewableLines } from '@gitgoose/git'
-import type { AiTask, ArtifactKind, ImpactResult, LinterRun, ReviewContextInfo, ReviewFinding, ReviewLearning, ReviewProfile, ThreadAnchor, WalkthroughResult } from '@gitgoose/shared'
+import {
+  DEFAULT_PROMPTS, joinPrompt, renderTemplate,
+  type AiTask, type ArtifactKind, type ImpactResult, type LinterRun, type PromptKind, type PromptParts, type PromptText, type ReviewContextInfo, type ReviewFinding,
+  type ReviewLearning, type ReviewProfile, type ThreadAnchor, type WalkthroughResult,
+} from '@gitgoose/shared'
 import { join } from 'node:path'
 
 /**
  * The prompts. Each one embeds exactly the text the feature needs (a diff, an error), asks for a
  * short answer in plain text, and says which tools are off limits. That last part is a request,
  * not a guarantee: the guarantee is the permission modal and the file-access rules in acp.ts.
+ *
+ * The words (system, instructions, answer format) live in @gitgoose/shared's DEFAULT_PROMPTS,
+ * so the user can read and edit them; this file builds the context and puts the parts together
+ * (compose). Every case returns its parts too: the Prompt panel shows exactly what is sent.
  *
  * Git output here is read by a model, not parsed by us, so human-readable formats are fine.
  */
@@ -27,6 +35,8 @@ const PROFILE_ASK: Record<ReviewProfile, string> = {
 export interface BuiltPrompt {
   system: string
   prompt: string
+  /** What the prompt was made of (the Prompt panel shows these). */
+  parts: PromptParts
   /** For resolve-conflict: the one file the agent may write (absolute). */
   writable?: string
   /** For recompose: the range and its units, to turn the answer into a proposal. */
@@ -67,7 +77,6 @@ export function describeUnit(u: RecomposeInfo['units'][number], maxLines: number
   return [head, ...lines.slice(0, maxLines), ...(lines.length > maxLines ? [`… ${lines.length - maxLines} more lines`] : [])].join('\n')
 }
 
-const NO_TOOLS = 'Answer from the text below. Do not run commands or edit files.'
 
 export function truncate(text: string, max = MAX_DIFF_CHARS): string {
   if (text.length <= max) return text
@@ -83,12 +92,35 @@ async function git(repo: Repo, args: string[], pathspecs = false): Promise<strin
 /** What the caller knows that the repository does not: the learnings saved for it. */
 export interface PromptContext {
   learnings?: ReviewLearning[]
+  /** The words to use for a prompt (the user's edits); blank parts and no answer: the built-in ones. */
+  words?: (kind: PromptKind) => PromptText | undefined
   /** The review's lint pass (main/ai/linters.ts): run what the user allowed on these files. */
   lint?: (paths: string[], texts: Map<string, string>, lines: AddedLines) => Promise<{ findings: ReviewFinding[]; runs: LinterRun[]; report: string[] }>
 }
 
+/** The words a prompt of `kind` uses: the edited parts, blank ones falling back to the built-in words. */
+function wordsOf(kind: PromptKind, ctx: PromptContext): { system: string; template: string } {
+  const def = DEFAULT_PROMPTS[kind]
+  const words = ctx.words?.(kind)
+  return {
+    system: words?.system.trim() ? words.system : def.system,
+    template: words?.instructions.trim() ? words.instructions : def.instructions,
+  }
+}
+
+/**
+ * One prompt from its parts: the words in use (filled in with `vars`), the fixed answer format,
+ * and the context. Blank edited parts fall back to the built-in words.
+ */
+export function compose(kind: PromptKind, ctx: PromptContext, vars: Record<string, string>, context: string, note?: string): Pick<BuiltPrompt, 'system' | 'prompt' | 'parts'> {
+  const def = DEFAULT_PROMPTS[kind]
+  const { system, template } = wordsOf(kind, ctx)
+  const parts: PromptParts = { kind, system, template, instructions: renderTemplate(template, vars), format: def.format, context, ...(note ? { note } : {}) }
+  return { system, prompt: joinPrompt(parts), parts }
+}
+
 export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: PromptContext = {}): Promise<BuiltPrompt> {
-  if (task.kind === 'explain-error') return explainError(task)
+  if (task.kind === 'explain-error') return explainError(task, ctx)
   if (!maybeRepo) throw new Error('Open a repository first.')
   const repo = maybeRepo
   switch (task.kind) {
@@ -96,36 +128,18 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: Pro
       const diff = await git(repo, ['diff', '--cached', '--no-color', '--no-ext-diff', '-M', '--', '.', ...NOISE], true)
       if (!diff.trim()) throw new Error('Nothing is staged. Stage some changes first.')
       const recent = await git(repo, ['log', '-n', '12', '--format=%s']).catch(() => '')
-      return {
-        system: 'You write git commit messages.',
-        prompt: [
-          'Write a git commit message for the staged changes below.',
-          'First line: a summary in the imperative mood, at most 72 characters. If the recent subjects below follow a convention (like "feat:" or "fix(scope):"), follow it too.',
-          'Then, only if the reason for the change is not obvious from the summary, a blank line and a short body wrapped at 72 characters.',
-          'Reply with the commit message only: no code fences, no commentary.',
-          NO_TOOLS,
-          '',
-          'Recent commit subjects:',
-          recent.trim() || '(none)',
-          '',
-          'Staged diff:',
-          truncate(diff),
-        ].join('\n'),
-      }
+      return compose('commit-message', ctx, {}, [
+        'Recent commit subjects:',
+        recent.trim() || '(none)',
+        '',
+        'Staged diff:',
+        truncate(diff),
+      ].join('\n'))
     }
     case 'explain-commit': {
       if (!/^[0-9a-f]{4,64}$/i.test(task.hash)) throw new Error('Not a commit hash')
       const show = await git(repo, ['show', '--no-color', '--no-ext-diff', '-M', '--stat', '--patch', '--format=fuller', task.hash, '--', '.', ...NOISE], true)
-      return {
-        system: 'You explain code changes to a teammate.',
-        prompt: [
-          'Explain what this commit does and why, for a teammate reviewing it.',
-          'Three to six sentences of plain text, then one line starting "Watch out:" if anything looks risky. No headings, no lists unless the commit is a list of unrelated changes.',
-          NO_TOOLS,
-          '',
-          truncate(show),
-        ].join('\n'),
-      }
+      return compose('explain-commit', ctx, {}, truncate(show))
     }
     case 'recompose': {
       const info = await repo.recomposeInfo(task.hashes)
@@ -140,22 +154,14 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: Pro
         units = info.units.map((u) => describeUnit(u, maxLines)).join('\n\n')
       }
       return {
-        system: 'You organise code changes into clear git commits.',
         recompose: info,
-        prompt: [
-          `Reorganise ${info.list.length === 1 ? 'this commit' : `these ${info.list.length} commits`} into a clean series of commits a reviewer can follow: each commit one logical change, in an order where each builds on the ones before (for example: refactors first, then the feature, then tests and docs).`,
-          'The changes are cut into numbered pieces below. Assign every piece to exactly one commit; a piece cannot be split. Pieces of the same file may go to different commits.',
-          'Write each message the way the original commits are written (same conventions, such as "feat:" prefixes): a summary line under 72 characters, then a blank line and a short body only when the reason is not obvious.',
-          'Answer with JSON only, no prose and no code fence, in exactly this shape, commits oldest first:',
-          '{"commits": [{"message": "summary\\n\\noptional body", "units": ["U1", "U4"]}]}',
-          NO_TOOLS,
-          '',
+        ...compose('recompose', ctx, { commits: info.list.length === 1 ? 'this commit' : `these ${info.list.length} commits` }, [
           'The original commits, oldest first:',
           ...info.messages.map((m) => `- ${m.subject}${m.body ? `\n  ${m.body.split('\n').join('\n  ')}` : ''}`),
           '',
           'The pieces:',
           units,
-        ].join('\n'),
+        ].join('\n')),
       }
     }
     case 'review': {
@@ -172,9 +178,13 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: Pro
         ...(learnings.length ? ['Learnings: this team told earlier reviews these things are fine or preferred. Do not flag what they allow:',
           ...learnings.map((l) => `- ${l.text}${l.path ? ` (for ${l.path})` : ''}`), ''] : []),
       ]
-      const contextKey = textKey(guidance.join('\n'))
+      const words = wordsOf('review', ctx)
+      // The words in use are part of the key too: a review prompt edited since the last review
+      // asks for something else, so the old findings say nothing about the new question.
+      const contextKey = textKey(JSON.stringify([words.system, words.template, guidance.join('\n')]))
       // A re-review sends only the hunks that changed, and carries the rest of the last review
-      // over; unless the guidance changed (a new learning, an edited CLAUDE.md): then all of it.
+      // over; unless the guidance or the prompt changed (a new learning, an edited CLAUDE.md,
+      // edited review words): then all of it.
       const previous = task.previous?.contextKey === contextKey ? task.previous : undefined
       const again = previous ? onlyChanged(input.files, new Set(previous.hunkKeys)) : null
       const carried = previous ? carryOver(previous.findings, (p) => input.texts.get(p) ?? null) : null
@@ -206,7 +216,16 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: Pro
           rendered.text, '']
         : []
       return {
-        system: 'You are a careful senior engineer reviewing a code change.',
+        ...compose('review', ctx, { label: input.label, profile: PROFILE_ASK[task.profile] }, [
+          ...guidance,
+          ...already,
+          ...intent,
+          ...environment,
+          ...(again ? [`This is a re-review: only the ${files.length === 1 ? 'piece' : 'pieces'} that changed since the last review ${files.length === 1 ? 'is' : 'are'} shown.`, ''] : []),
+          'The change:',
+          diff,
+          ...(input.skipped.length ? [`(Not shown, over the size limit: ${input.skipped.join(', ')})`] : []),
+        ].join('\n'), ctx.lint ? undefined : 'Linter findings are added here when the review is sent (the linters run then).'),
         review: {
           lines, texts: input.texts, label: input.label, head: input.head, base: input.base, skipped: input.skipped,
           context: {
@@ -219,25 +238,6 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: Pro
           local: [...secrets, ...linted.findings].map((f) => ({ ...f, original: input.texts.get(f.path)?.split(/\r?\n/).slice(f.startLine - 1, f.endLine) })),
           hunkKeys: allKeys, contextKey, incremental, skipModel: !!again && !files.length,
         },
-        prompt: [
-          `Review this change (${input.label}).`,
-          PROFILE_ASK[task.profile],
-          'Each finding must point at lines that exist after the change: use the line numbers shown at the left of the diff (lines marked + are new; lines marked - are gone and have no number). Only comment on the files and lines shown.',
-          'For a local fix, give "suggestion": the exact replacement text for lines startLine..endLine (complete lines, no diff markers). Leave it out when the fix is not local.',
-          'Severity: critical (breaks things or leaks data), major (a real bug or risk), minor (worth fixing), nit (taste).',
-          'Answer with JSON only, no prose and no code fence, in exactly this shape:',
-          '{"summary": "two or three sentences on what the change does and its overall quality", "findings": [{"path": "src/a.ts", "startLine": 12, "endLine": 14, "type": "bug|security|performance|maintainability|style|docs|tests", "severity": "critical|major|minor|nit", "title": "short", "message": "what is wrong and why, in plain words", "suggestion": "optional replacement lines"}]}',
-          NO_TOOLS,
-          '',
-          ...guidance,
-          ...already,
-          ...intent,
-          ...environment,
-          ...(again ? [`This is a re-review: only the ${files.length === 1 ? 'piece' : 'pieces'} that changed since the last review ${files.length === 1 ? 'is' : 'are'} shown.`, ''] : []),
-          'The change:',
-          diff,
-          ...(input.skipped.length ? [`(Not shown, over the size limit: ${input.skipped.join(', ')})`] : []),
-        ].join('\n'),
       }
     }
     case 'walkthrough': {
@@ -256,22 +256,13 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: Pro
         text = describeHunks(input.files, hunks, maxLines)
       }
       return {
-        system: 'You explain code changes so a reviewer understands them quickly.',
         walkthrough: { scope: task.scope, label: input.label, head: input.head, base: input.base, hunks, history, skipped: input.skipped },
-        prompt: [
-          `Write a walkthrough of this change (${input.label}) for the person about to review it.`,
-          'The change is cut into pieces [H1], [H2], … already in reading order (contracts, implementation, tests, config, docs).',
-          'Answer with JSON only, no prose and no code fence, in exactly this shape:',
-          '{"summary": "what the change does and why, 3-6 sentences", "effort": 1-5 (1 trivial, 5 needs a long careful review), "effortWhy": "one short reason", "groups": [{"title": "short", "description": "one or two sentences", "files": ["paths from the change"]}], "hunks": {"H1": "one line on what this piece does"}, "sequence": null or {"participants": ["A", "B"], "messages": [{"from": "A", "to": "B", "label": "call or event"}]}}',
-          'Groups gather files by purpose (a feature, a refactor, its tests). Give a one-line summary for every piece that is not just imports or formatting.',
-          'Add a sequence only when the change adds or alters a flow between components (calls, requests, events); keep it under 8 participants and 20 messages. Otherwise "sequence": null.',
-          NO_TOOLS,
-          '',
+        ...compose('walkthrough', ctx, { label: input.label }, [
           ...(history.length ? ['Recent commits that touched these files, newest first:', ...history.map((h) => `- ${h.subject}`), ''] : []),
           ...(around ? ['Around the change (from the code graph; not part of the change):', around, ''] : []),
           'The pieces:',
           text,
-        ].join('\n'),
+        ].join('\n')),
       }
     }
     case 'push-checks': {
@@ -279,25 +270,17 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: Pro
       if (!out.commits.length) throw new Error('There is nothing to push.')
       const input = await repo.reviewInput({ kind: 'outgoing', branch: task.branch })
       return {
-        system: "You check code changes against a team's rules before they are pushed.",
         pushChecks: { lines: reviewableLines(input.files) },
-        prompt: [
-          `Judge whether this push (${input.label}) follows each rule below.`,
-          'For each rule answer "pass" (the push follows it), "fail" (the push breaks it) or "inconclusive" (what is shown is not enough to tell). Judge only what this push changes, not the rest of the codebase. A rule about something the push does not touch passes.',
-          'For a failure, give the lines that show it as evidence, using the line numbers at the left of the diff. A rule about commit messages needs no evidence lines.',
-          'Answer with JSON only, no prose and no code fence, in exactly this shape:',
-          '{"results": [{"id": "C1", "verdict": "pass|fail|inconclusive", "reason": "one or two plain sentences", "evidence": [{"path": "src/a.ts", "line": 12}]}]}',
-          NO_TOOLS,
-          '',
+        ...compose('push-checks', ctx, { label: input.label }, [
           'The rules:',
-          ...task.checks.map((c, i) => `[C${i + 1}] ${c.name}: ${c.instructions.replace(/\s*\n\s*/g, ' ')}`),
+            ...task.checks.map((c, i) => `[C${i + 1}] ${c.name}: ${c.instructions.replace(/\s*\n\s*/g, ' ')}`),
           '',
           'The commits, newest first:',
           ...out.commits.map((c) => `- ${c.subject}${c.body ? `\n  ${truncate(c.body, 600).replace(/\n/g, '\n  ')}` : ''}`),
           '',
           numberedDiff(input.files, (p) => input.texts.get(p) ?? null, (p, t) => repo.definitionsOf(p, t)),
           ...(input.skipped.length ? [`(Not shown, over the size limit: ${input.skipped.join(', ')}. Say "inconclusive" for rules that depend on them.)`] : []),
-        ].join('\n'),
+        ].join('\n')),
       }
     }
     case 'assess-impact': {
@@ -306,15 +289,8 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: Pro
       const input = await repo.reviewInput(task.scope)
       const changed = impact.symbols.map((s) => `- ${s.kind} ${s.name} (${s.path}:${s.line}) ${s.change}`).join('\n')
       return {
-        system: 'You assess the blast radius of code changes.',
         impact,
-        prompt: [
-          `This change (${input.label}) touches the definitions listed below. Their uses outside the change are numbered C1, C2, ….`,
-          'Say which of those uses could break or behave differently because of the change, and why. Cite only the numbered uses; do not invent others. Leave out uses that are fine.',
-          'Answer with JSON only, no prose and no code fence, in exactly this shape:',
-          '{"summary": "one or two sentences on the overall risk", "risks": [{"id": "C3", "why": "what could go wrong there"}]}',
-          NO_TOOLS,
-          '',
+        ...compose('assess-impact', ctx, { label: input.label }, [
           'Changed definitions:',
           changed,
           '',
@@ -323,20 +299,14 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: Pro
           '',
           'The change:',
           truncate(numberedDiff(input.files, (p) => input.texts.get(p) ?? null, (p, t) => repo.definitionsOf(p, t)), 40_000),
-        ].join('\n'),
+        ].join('\n')),
       }
     }
     case 'ask': {
       if (task.path.includes('\0') || task.path.startsWith('/') || task.path.split(/[\\/]/).includes('..')) throw new Error('Bad path')
       const c = await repo.askContext(task.rev, task.path, task.startLine, task.endLine)
       const where = `${task.path}, lines ${task.startLine}-${task.endLine}${task.rev ? ` at commit ${task.rev.slice(0, 7)}` : ' (working tree)'}`
-      return {
-        system: 'You explain code to a teammate, plainly and precisely.',
-        prompt: [
-          'Answer the question about the selected lines below. Use the context given: the enclosing definition, the definitions of names the lines use, and their history. Say so when the context does not settle something, rather than guessing.',
-          'Plain text, short paragraphs; quote code in backticks. No headings.',
-          NO_TOOLS,
-          '',
+      return compose('ask', ctx, {}, [
           `Selected (${where}):`,
           '```',
           c.lines.join('\n'),
@@ -348,8 +318,7 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: Pro
           ...(task.earlier.length ? ['', 'The conversation so far:', ...task.earlier.map((m) => `${m.role === 'user' ? 'Question' : 'Answer'}: ${m.text}`)] : []),
           '',
           `Question: ${task.question}`,
-        ].join('\n'),
-      }
+        ].join('\n'))
     }
     case 'fix-finding': {
       const f = task.finding
@@ -365,56 +334,33 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: Pro
         ...(f.suggestion ? ['', 'A suggested replacement for those lines:', f.suggestion] : []),
       ].join('\n')
       return {
-        system: 'You fix code review findings with the smallest correct change.',
         writable: file,
         fix: { path: f.path, before: content },
-        prompt: [
-          'Fix this code review finding.',
+        ...compose('fix-finding', ctx, {}, [
           issue,
-          '',
-          'Change only what the fix needs, keep the style of the file, and do not touch unrelated code.',
-          'If you can edit files: write the whole fixed file back with your file-writing tool, then reply with one sentence on what you changed. Edit only this file. Do not run commands.',
-          'If you cannot edit files: reply with one sentence on what you changed, then the whole fixed file in one fenced code block.',
           '',
           'The file as it is now:',
           '```',
           content,
           '```',
-        ].join('\n'),
+        ].join('\n')),
       }
     }
     case 'resolve-conflict': {
       if (task.path.includes('\0') || task.path.startsWith('/') || task.path.split(/[\\/]/).includes('..')) throw new Error('Bad path')
       const file = join(repo.path, task.path)
-      return {
-        system: 'You resolve git merge conflicts.',
-        writable: file,
-        prompt: [
-          'Resolve the merge conflict in the file below.',
-          `File: ${file}`,
-          'Read it, combine both sides so that the intent of each change survives (when they truly cannot both hold, prefer the one that keeps the code working, and say so), and write the whole resolved file back with your file-writing tool.',
-          'Remove every conflict marker. Edit only this file. Do not run commands.',
-          'Then reply with one or two sentences on what you chose.',
-        ].join('\n'),
-      }
+      return { writable: file, ...compose('resolve-conflict', ctx, {}, `File: ${file}`) }
     }
   }
 }
 
-function explainError(task: Extract<AiTask, { kind: 'explain-error' }>): BuiltPrompt {
-  return {
-    system: 'You help people use git.',
-    prompt: [
-      'A git operation in a desktop git client failed. In two to five sentences of plain words, say what went wrong and the most likely fix.',
-      'If a git command would help, give it on its own line. Do not suggest anything that loses work without saying so.',
-      NO_TOOLS,
-      '',
-      `What failed: ${task.title}`,
-      '',
-      "Git's output:",
-      truncate(task.detail, 8_000),
-    ].join('\n'),
-  }
+function explainError(task: Extract<AiTask, { kind: 'explain-error' }>, ctx: PromptContext): BuiltPrompt {
+  return compose('explain-error', ctx, {}, [
+    `What failed: ${task.title}`,
+    '',
+    "Git's output:",
+    truncate(task.detail, 8_000),
+  ].join('\n'))
 }
 
 /** Models sometimes wrap a commit message in a code fence anyway. */
@@ -473,17 +419,18 @@ export function artifactProtocol(anchor: ThreadAnchor, afterFeature: boolean): s
   ].join('\n')
 }
 
-/** What the conversation's feature knew: the start of a thread opened without the feature's own request, and of a replay. */
-export async function anchorContext(repo: Repo, anchor: ThreadAnchor): Promise<string> {
+/**
+ * What the conversation's feature knew: the start of a thread opened without the feature's own request, and of a replay.
+ * `systemApart`: the caller sends the system prompt on its own (the API); an agent gets it at the top of the text.
+ */
+export async function anchorContext(repo: Repo, anchor: ThreadAnchor, ctx: PromptContext = {}, systemApart = false): Promise<string> {
   switch (anchor.kind) {
     case 'free': {
       const head = (await git(repo, ['log', '-n', '1', '--format=%h %s', 'HEAD']).catch(() => '')).trim()
       const branch = (await git(repo, ['symbolic-ref', '--short', '-q', 'HEAD']).catch(() => '')).trim()
-      return [
-        'You are helping someone with their git repository, in GitGoose (a desktop git client).',
-        `Repository: ${repo.path.split(/[\\/]/).pop()}. HEAD: ${branch ? `${branch} at ` : 'detached at '}${head || '(no commits yet)'}.`,
-        'You may read files in the repository; ask before anything else. Do not change files or run commands unless the user asks.',
-      ].join('\n')
+      // The AI panel's words (prompt "chat"), then where we are.
+      const built = compose('chat', ctx, {}, `Repository: ${repo.path.split(/[\\/]/).pop()}. HEAD: ${branch ? `${branch} at ` : 'detached at '}${head || '(no commits yet)'}.`)
+      return systemApart ? built.prompt : `${built.system}\n\n${built.prompt}`
     }
     case 'review':
     case 'walkthrough':
@@ -517,7 +464,7 @@ export async function anchorContext(repo: Repo, anchor: ThreadAnchor): Promise<s
       return [`This conversation is about commit ${anchor.hash.slice(0, 7)}:`, truncate(show)].join('\n')
     }
     case 'ask': {
-      const built = await buildPrompt(repo, { kind: 'ask', rev: anchor.rev === 'worktree' ? null : anchor.rev, path: anchor.path, startLine: anchor.lines[0], endLine: anchor.lines[1], question: '(see the conversation)', earlier: [] })
+      const built = await buildPrompt(repo, { kind: 'ask', rev: anchor.rev === 'worktree' ? null : anchor.rev, path: anchor.path, startLine: anchor.lines[0], endLine: anchor.lines[1], question: '(see the conversation)', earlier: [] }, ctx)
       return built.prompt.slice(0, built.prompt.lastIndexOf('\nQuestion:'))
     }
     case 'error':

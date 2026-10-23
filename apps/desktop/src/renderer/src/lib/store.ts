@@ -740,6 +740,26 @@ export async function saveSettings(patch: Partial<Settings>): Promise<void> {
   applyTheme(settings)
 }
 
+/** Settings that are maps the renderer changes one entry at a time. */
+type MapSetting = 'aiAreaTargets' | 'aiPromptEdits' | 'aiPrompts' | 'aiAgentModel'
+let mapQueue: Promise<void> = Promise.resolve()
+
+/**
+ * Set one entry of a map setting (null removes it). A patch replaces the whole map, so two saves
+ * started together (two prompts edited, two areas picking a model) would each read the same old
+ * map and the second would write the first's change away. Queued instead: each one reads the
+ * map only when its turn comes, after the one before it has landed.
+ */
+export function setSettingEntry(key: MapSetting, entry: string, value: unknown): Promise<void> {
+  const run = mapQueue.then(async () => {
+    const { [entry]: _old, ...rest } = (get().settings?.[key] ?? {}) as Record<string, unknown>
+    await saveSettings({ [key]: value === null ? rest : { ...rest, [entry]: value } } as Partial<Settings>)
+  })
+  // One failed save must not stop the ones queued after it (the caller still hears about it).
+  mapQueue = run.catch(() => {})
+  return run
+}
+
 let booted = false
 export async function boot(): Promise<void> {
   if (booted) return

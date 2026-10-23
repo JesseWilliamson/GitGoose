@@ -1,18 +1,19 @@
 import type { Repo } from '@gitgoose/git'
 import {
-  agentCommandLine, agentLabel, commandArgv, reduceThread, transcript,
-  type AgentInfo, type AgentPreset, type AiArtifactResult, type AiPermissionAsk, type AiPermissionRequest, type AiResult, type AiRunOptions, type AiStatus, type AiTask,
+  commandArgv, defaultTarget, effectivePrompt, openingPromptKind, reduceThread, systemPromptKind, targetCommandLine, targetKey, targetLabel, transcript,
+  type PromptKind, type PromptPreview, type PromptText,
+  type AgentInfo, type AiArtifactResult, type AiModelList, type AiPermissionAsk, type AiPermissionRequest, type AiResult, type AiRunOptions, type AiStatus, type AiTarget, type AiTask,
   type AiThread, type AiUpdate, type ArtifactKind, type GitGooseEvent, type PermissionAnswer, type ReviewProfile, type Settings, type ThreadAnchor,
 } from '@gitgoose/shared'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
-import { AcpAgent, type PermissionAsk, type PromptHooks } from './acp'
-import { anthropicChat } from './anthropic'
+import { AcpAgent, type PermissionAsk, type PromptHooks, type SessionModels } from './acp'
+import { anthropicChat, anthropicModels } from './anthropic'
 import type { SecretFile } from './keyStore'
 import { extractJson, locateSecret, redactSecrets, repairPlan, scanSecrets, verifyFindings, verifyPushChecks, verifySequence, verifyWalkthrough } from '@gitgoose/git'
 import { lintForReview } from './linters'
 import {
-  ANCHOR_ARTIFACTS, anchorContext, anchorOf, anchorTask, artifactProtocol, buildPrompt, cleanCommitMessage, featureLabel, openingMessage, replayMessage, type BuiltPrompt,
+  ANCHOR_ARTIFACTS, anchorContext, type PromptContext, anchorOf, anchorTask, artifactProtocol, buildPrompt, cleanCommitMessage, featureLabel, openingMessage, replayMessage, type BuiltPrompt,
 } from './prompts'
 
 /**
@@ -59,6 +60,20 @@ export function guardTurn(text: string, redact: boolean): string {
   return checkSecrets(text, redact) ? redactSecrets(text).text : text
 }
 
+/**
+ * The same check for one turn over the API. The API keeps no session, so a turn sends the whole
+ * conversation again: the system prompt, every earlier exchange, and the new message. All of it
+ * is scanned together (one refusal lists everything) and, when redacting, all of it is redacted.
+ * Earlier exchanges matter: a thread reopened from disk rebuilds its first message with the
+ * context as it is now, which this turn would be the first to send.
+ */
+export function guardApiTurn(system: string, history: { user: string; agent: string }[], text: string, redact: boolean): { system: string; history: { user: string; agent: string }[]; text: string } {
+  const outgoing = [system, ...history.flatMap((h) => [h.user, h.agent]), text].join('\n\n')
+  if (!checkSecrets(outgoing, redact)) return { system, history, text }
+  const r = (s: string) => redactSecrets(s).text
+  return { system: r(system), history: history.map((h) => ({ user: r(h.user), agent: r(h.agent) })), text: r(text) }
+}
+
 /** True when there are hits and the user chose to send them redacted; throws when they did not. */
 function checkSecrets(outgoing: string, redact: boolean): boolean {
   const hits = scanSecrets(outgoing)
@@ -97,12 +112,24 @@ interface ThreadRec {
   keep: boolean
   /** The ACP session; null until the first turn, and gone when the agent restarts. */
   sessionId: string | null
+  /** Which agent process (its command line) holds the session; null with no session. */
+  agentLine: string | null
+  /** Who the conversation is with: set by each turn (a thread can move to another agent, or model). */
+  target: AiTarget | null
   /** The session has had the conversation's opening (context and artifact protocol). */
   primed: boolean
   /** What was actually exchanged, oldest first (the first message carries the context). null: not rebuilt yet. */
   history: { user: string; agent: string }[] | null
+  /**
+   * The history's first message went to the API, which takes the system prompt apart from the
+   * messages, so the message itself lacks it. Any agent session told this history later (after
+   * a move, or after that agent restarts) needs the system prompt put back in front.
+   */
+  systemApart: boolean
   /** The API mode's system prompt. */
   system: string
+  /** The words the latest send brought for this conversation's opening (the AI panel's, Ask's). */
+  prompt?: PromptText
   /** What the feature saw, for checking artifacts with the feature's own verifier. */
   built: BuiltPrompt | null
   task: AiTask | null
@@ -132,53 +159,82 @@ interface PendingPermission {
 }
 
 export class AiService {
-  readonly agent: AcpAgent
+  /**
+   * One agent process per command line. Each AI area can pick its own agent, so several may run;
+   * a thread's session lives in exactly one of them (ThreadRec.agentLine).
+   */
+  private agents = new Map<string, AcpAgent>()
+  /** Command lines with something in flight outside a thread (listing models, Test): not pruned meanwhile. */
+  private pinned = new Map<string, number>()
   private requests = new Map<string, { cancel: () => void }>()
   private permissions = new Map<number, PendingPermission>()
   private nextPermission = 1
-  /** The agent command the running process was started with (restart when it changes). */
-  private agentCommand = ''
   private threads = new Map<string, ThreadRec>()
 
-  constructor(private deps: AiServiceDeps) {
-    this.agent = new AcpAgent(() => {
-      const argv = commandArgv(this.commandLine(), {})
-      return { command: argv[0] ?? '', args: argv.slice(1) }
-    })
+  constructor(private deps: AiServiceDeps) {}
+
+  /** Settings → AI's agent (what Test starts; tests count its starts). */
+  get agent(): AcpAgent {
+    return this.agentFor(this.commandLine())
   }
 
+  private agentFor(line: string): AcpAgent {
+    let agent = this.agents.get(line)
+    if (!agent) {
+      agent = new AcpAgent(() => {
+        const argv = commandArgv(line, {})
+        return { command: argv[0] ?? '', args: argv.slice(1) }
+      }, { onModels: (m) => this.rememberModels(line, m) })
+      this.agents.set(line, agent)
+    }
+    return agent
+  }
+
+  /** Settings → AI's agent command line (whatever the provider). */
   private commandLine(): string {
     const s = this.deps.settings()
-    return agentCommandLine(s.aiAgent as AgentPreset, s.aiAgentCommand)
+    return targetCommandLine({ provider: 'agent', agent: s.aiAgent as AiTarget['agent'], agentCommand: s.aiAgentCommand })
   }
 
-  /** What the user agreed to: a provider, and for agents the exact command. */
-  private consentKey(): string {
+  /**
+   * A target with its blanks filled from settings; null when AI is off. Omitted: Settings → AI.
+   * An empty model means the default for that provider: the API's model setting, or the default
+   * model chosen for that agent (none: the agent's own default, which needs nothing set).
+   */
+  private target(t?: AiTarget | null): AiTarget | null {
     const s = this.deps.settings()
-    if (s.aiProvider === 'agent') return `agent:${this.commandLine()}`
-    if (s.aiProvider === 'anthropic') return 'anthropic'
-    return ''
+    if (s.aiProvider === 'off') return null
+    if (!t) return defaultTarget(s)
+    if (t.provider === 'anthropic') return { provider: 'anthropic', model: t.model || s.anthropicModel || 'claude-opus-5-5' }
+    const agent = t.agent ?? 'claude'
+    const base: AiTarget = { provider: 'agent', agent, ...(agent === 'custom' ? { agentCommand: t.agentCommand ?? '' } : {}) }
+    const model = t.model || s.aiAgentModel[targetKey(base)]
+    return model ? { ...base, model } : base
   }
 
-  status(): AiStatus {
+  status(t?: AiTarget): AiStatus {
     const s = this.deps.settings()
-    const key = this.consentKey()
+    const target = this.target(t)
     const hasApiKey = !!this.deps.apiKey.get()
+    const keyInMemoryOnly = hasApiKey && !this.deps.apiKey.persisted()
+    if (!target) return { provider: 'off', label: 'AI', ready: false, consented: false, hasApiKey, keyInMemoryOnly }
+    // Consent is to a process, not a model: switching models within an agent asks nothing new.
     return {
-      provider: s.aiProvider,
-      label: s.aiProvider === 'anthropic' ? 'Anthropic API' : agentLabel(s.aiAgent as AgentPreset, s.aiAgentCommand),
-      ready: s.aiProvider === 'agent' ? !!this.commandLine() : s.aiProvider === 'anthropic' ? hasApiKey : false,
-      consented: !!key && s.aiConsent.includes(key),
+      provider: target.provider,
+      label: targetLabel({ ...target, model: undefined }),
+      ready: target.provider === 'agent' ? !!targetCommandLine(target) : hasApiKey,
+      consented: s.aiConsent.includes(targetKey(target)),
       hasApiKey,
-      keyInMemoryOnly: hasApiKey && !this.deps.apiKey.persisted(),
+      keyInMemoryOnly,
     }
   }
 
-  consent(): AiStatus {
-    const key = this.consentKey()
+  consent(t?: AiTarget): AiStatus {
+    const target = this.target(t)
     const s = this.deps.settings()
+    const key = target ? targetKey(target) : ''
     if (key && !s.aiConsent.includes(key)) this.deps.setSettings({ aiConsent: [...s.aiConsent, key] })
-    return this.status()
+    return this.status(t)
   }
 
   setApiKey(key: string | null): AiStatus {
@@ -186,34 +242,144 @@ export class AiService {
     return this.status()
   }
 
-  /** Settings changed: an agent started with an old command is stopped (the next use restarts). */
+  /**
+   * Settings changed: stop agents nothing can reach any more (a custom command that was edited,
+   * an area that picked another agent). An agent with a session, the default one, any area's
+   * pick, and one busy listing models all stay.
+   */
   onSettings(): void {
-    if (this.agentCommand && this.agentCommand !== this.commandLine()) {
-      this.agent.stop()
-      this.agentCommand = ''
+    this.prune()
+  }
+
+  /**
+   * Stop every agent process nothing can reach: not the default, not an area's pick, holding no
+   * session and not pinned. Run when settings change, and whenever one of those holds ends (a
+   * session closes, a pin is released), or a process on an abandoned command line lives on.
+   */
+  private prune(): void {
+    const s = this.deps.settings()
+    const keep = new Set<string>([this.commandLine()])
+    for (const t of Object.values(s.aiAreaTargets)) if (t?.provider === 'agent') keep.add(targetCommandLine(t))
+    for (const rec of this.threads.values()) if (rec.agentLine) keep.add(rec.agentLine)
+    for (const [line, agent] of this.agents) {
+      if (keep.has(line) || this.pinned.has(line) || agent.sessionCount() > 0) continue
+      agent.stop()
+      this.agents.delete(line)
     }
   }
 
-  /** Start the agent and report who it is (Settings → AI → Test). The user clicked, so this may spawn. */
-  async agentInfo(): Promise<AgentInfo> {
-    this.onSettings()
-    this.agentCommand = this.commandLine()
-    return this.agent.info()
+  /** Run `work` with an agent that may not be pruned meanwhile. */
+  private async withAgent<T>(line: string, work: (agent: AcpAgent) => Promise<T>): Promise<T> {
+    this.pinned.set(line, (this.pinned.get(line) ?? 0) + 1)
+    try {
+      return await work(this.agentFor(line))
+    } finally {
+      const n = (this.pinned.get(line) ?? 1) - 1
+      if (n) this.pinned.set(line, n)
+      else {
+        this.pinned.delete(line)
+        this.prune()
+      }
+    }
   }
 
-  async authenticate(methodId: string): Promise<void> {
-    await this.agent.authenticate(methodId)
+  /** The command line of a target that must be an agent (Test, login, Load models). */
+  private agentLineOf(t?: AiTarget): string {
+    const target = t ? this.target(t) : null
+    const line = target ? targetCommandLine(target) : this.commandLine()
+    if (target?.provider === 'anthropic') throw new AiError('The Anthropic API is not an agent.', 'ai-unsupported')
+    if (!line) throw new AiError('Set the agent command in Settings → AI.', 'ai-setup')
+    return line
   }
 
-  /** Off, not set up, or not agreed to: nothing may be sent. */
-  private ready(): AiStatus {
-    const st = this.status()
+  /** Start the agent and report who it is (Settings → AI → Test, and logins). The user clicked, so this may spawn. */
+  async agentInfo(t?: AiTarget): Promise<AgentInfo> {
+    return this.withAgent(this.agentLineOf(t), (agent) => agent.info())
+  }
+
+  async authenticate(methodId: string, t?: AiTarget): Promise<void> {
+    await this.withAgent(this.agentLineOf(t), (agent) => agent.authenticate(methodId))
+  }
+
+  /**
+   * The models a target can use. Nothing is started: an agent's come from its last session
+   * (settings aiAgentModels); the API's from GET /v1/models, when there is a key.
+   */
+  async models(t: AiTarget): Promise<AiModelList> {
+    const s = this.deps.settings()
+    const target = this.target(t) ?? t
+    if (target.provider === 'anthropic') {
+      const defaultModel = s.anthropicModel
+      const apiKey = this.deps.apiKey.get()
+      if (!apiKey) return { models: [], defaultModel, known: false, error: 'Add an Anthropic API key in Settings → AI.' }
+      try {
+        return { models: await anthropicModels({ apiKey, baseURL: this.deps.anthropicBaseURL, fetch: this.deps.fetch }), defaultModel, known: true }
+      } catch (e) {
+        return { models: [], defaultModel, known: false, error: (e as Error).message }
+      }
+    }
+    const cached = s.aiAgentModels[targetKey(target)]
+    if (!cached) return { models: [], known: false }
+    const { at: _at, ...list } = cached
+    return list
+  }
+
+  /** "Load models": start the agent, open a session (that lists them), close it. No content is sent. */
+  async loadModels(t: AiTarget): Promise<AiModelList> {
+    await this.withAgent(this.agentLineOf(t), async (agent) => {
+      const sessionId = await agent.openSession(tmpdir())
+      agent.closeSession(sessionId)
+    })
+    return this.models(t)
+  }
+
+  /** Keep what a new session said about models, for pickers (written only when it changed). */
+  private rememberModels(line: string, m: SessionModels | null): void {
+    const key = `agent:${line}`
+    const list: AiModelList = m ? { models: m.options, defaultModel: m.current, known: true } : { models: [], known: true, fixed: true }
+    const all = this.deps.settings().aiAgentModels
+    const old = all[key]
+    if (old && JSON.stringify({ ...old, at: 0 }) === JSON.stringify({ ...list, at: 0 })) return
+    this.deps.setSettings({ aiAgentModels: { ...all, [key]: { ...list, at: Date.now() } } })
+  }
+
+  /** Off, not set up, or not agreed to: nothing may be sent. Returns the target with its blanks filled. */
+  private ready(t?: AiTarget | null): AiTarget {
+    const st = this.status(t ?? undefined)
     if (st.provider === 'off') throw new AiError('AI features are off. Turn them on in Settings → AI.', 'ai-off')
     if (!st.ready) {
       throw new AiError(st.provider === 'anthropic' ? 'Add an Anthropic API key in Settings → AI.' : 'Set the agent command in Settings → AI.', 'ai-setup')
     }
     if (!st.consented) throw new AiError(`You have not agreed to send content to ${st.label} yet.`, 'ai-consent')
-    return st
+    return this.target(t)!
+  }
+
+  /**
+   * The words for prompts: `override` (what the area's Prompt panel shows) for the request's own
+   * kind, else the area's saved edit, Settings → AI's, or the built-in ones. The answer format is
+   * not in PromptText at all, so no edit can reach it.
+   */
+  private words(kind?: PromptKind, override?: PromptText): PromptContext['words'] {
+    return (k) => (k === kind && override ? override : effectivePrompt(k, this.deps.settings()))
+  }
+
+  /** The words a conversation opens with: what its send brought (the panel's, unsaved too), else the saved ones. */
+  private openingWords(rec: ThreadRec): PromptContext['words'] {
+    return this.words(openingPromptKind(rec.thread.anchor), rec.prompt)
+  }
+
+  /**
+   * What a task would send, without sending anything (the Prompt panel). The same builder as a
+   * real request, so the panel cannot drift from what goes out; only the review's linters are
+   * left out (they run programs, which waits for the real request).
+   */
+  async preview(repoId: string, task: AiTask, prompt?: PromptText): Promise<PromptPreview> {
+    const repo = task.kind === 'explain-error' && !repoId ? null : this.deps.repo(repoId)
+    const built = await buildPrompt(repo, task, {
+      words: this.words(task.kind, prompt),
+      learnings: repo ? this.deps.settings().reviewLearnings[repo.path] : undefined,
+    })
+    return built.parts
   }
 
   /**
@@ -223,17 +389,18 @@ export class AiService {
    * result keeps chatting in the same session (AiResult.threadId).
    */
   async run(requestId: string, repoId: string, task: AiTask, opts: AiRunOptions = {}): Promise<AiResult> {
-    const st = this.ready()
+    const target = this.ready(opts.target)
     // Explaining an error needs no repository (it may have happened with none open).
     const repo = task.kind === 'explain-error' && !repoId ? null : this.deps.repo(repoId)
     const settings = this.deps.settings()
     const built = await buildPrompt(repo, task, {
+      words: this.words(task.kind, opts.prompt),
       learnings: repo ? settings.reviewLearnings[repo.path] : undefined,
       lint: repo ? (paths, texts, lines) => lintForReview(repo.path, this.deps.settings(), paths, texts, lines) : undefined,
     })
     // A re-review where nothing changed: the last review stands, no need to ask anyone.
     if (task.kind === 'review' && built.review?.skipModel) return { text: '', review: toReview(task, built, '{"summary": "", "findings": []}') }
-    if (st.provider === 'anthropic' && task.kind === 'resolve-conflict') {
+    if (target.provider === 'anthropic' && task.kind === 'resolve-conflict') {
       throw new AiError('Resolving a conflict needs an agent (it edits the file). The API key mode only writes text.', 'ai-unsupported')
     }
     guardSecrets(built, opts.redact === true)
@@ -268,12 +435,14 @@ export class AiService {
       },
     }
     try {
-      const out = await this.outgoing(rec, built.prompt + protocol, `${built.system}\n\n${built.prompt}${protocol}`)
+      const out = await this.outgoing(rec, target, built.prompt + protocol, `${built.system}\n\n${built.prompt}${protocol}`)
       const res = await this.turn(rec, requestId, out, { text: featureLabel(task, built), feature: featureLabel(task, built) }, legacy)
       if (res.stopReason === 'cancelled') throw new AiError('Stopped.', 'ai-cancelled')
       return { ...result(res.text, { proposal }), ...(keep ? { threadId: rec.thread.id } : {}) }
     } finally {
-      if (!keep) this.dispose(rec)
+      // Kept, but it failed before its first turn (a model the agent does not offer, a refusal):
+      // the caller got no threadId and can never close it, so it ends here like a one-shot.
+      if (!keep || !rec.thread.turns.length) this.dispose(rec)
       else this.persist(rec)
     }
   }
@@ -303,9 +472,11 @@ export class AiService {
    * secret in the text) refuses here, before the turn begins.
    */
   async sendThread(threadId: string, text: string, opts: AiRunOptions = {}): Promise<string> {
-    this.ready()
     const rec = this.threads.get(threadId)
+    // The area's pick, or else whoever the thread was last with, or else the default.
+    const target = this.ready(opts.target ?? rec?.thread.target)
     if (!rec) throw new AiError('This conversation is closed. Open it again.', 'ai-thread-gone')
+    if (opts.prompt) rec.prompt = opts.prompt
     if (rec.active || rec.starting) throw new AiError('The AI is still answering. Wait for it, or stop it.', 'ai-busy')
     const message = text.trim()
     if (!message) throw new AiError('Write a message first.', 'ai-empty')
@@ -313,7 +484,7 @@ export class AiService {
     rec.starting = true
     let out: Outgoing
     try {
-      out = await this.outgoing(rec, message, undefined, opts.redact === true)
+      out = await this.outgoing(rec, target, message, undefined, opts.redact === true)
     } finally {
       rec.starting = false
     }
@@ -411,9 +582,9 @@ export class AiService {
       ? { ...saved, repoId, turns: saved.turns.map((t) => (t.status === 'running' ? { ...t, status: 'error', error: { message: 'GitGoose closed before the answer finished.' } } : t)) }
       : { id: randomUUID(), repoId, anchor, title: '', turns: [], createdAt: now, updatedAt: now, head }
     const rec: ThreadRec = {
-      thread, repoId, path: repo?.path ?? null, cwd: repo?.path ?? tmpdir(), keep, sessionId: null, primed: false,
+      thread, repoId, path: repo?.path ?? null, cwd: repo?.path ?? tmpdir(), keep, sessionId: null, agentLine: null, target: saved?.target ?? null, primed: false,
       // A thread from disk is told its history again from its transcript, when it needs a session.
-      history: saved ? null : [], system: '', built: null, task: null, active: null, starting: false, open: false, idle: null,
+      history: saved ? null : [], systemApart: false, system: '', built: null, task: null, active: null, starting: false, open: false, idle: null,
     }
     this.threads.set(thread.id, rec)
     return rec
@@ -425,30 +596,36 @@ export class AiService {
    * session that is still there gets just the message; one the agent can load is loaded; a new
    * session is told the conversation so far. The API keeps no session, so it gets everything.
    */
-  private async outgoing(rec: ThreadRec, message: string, opening?: string, redact = false): Promise<Outgoing> {
-    const anthropic = this.deps.settings().aiProvider === 'anthropic'
+  private async outgoing(rec: ThreadRec, target: AiTarget, message: string, opening?: string, redact = false): Promise<Outgoing> {
+    this.moveTo(rec, target)
+    const anthropic = target.provider === 'anthropic'
     const history = await this.historyOf(rec)
     const first = async (): Promise<string> => opening ?? await this.opening(rec, message)
     if (anthropic) {
       // The API takes the system prompt on its own: a feature's opening is its message as given.
       const logical = history.length || opening !== undefined ? message : await first()
-      const text = guardTurn(logical, redact)
-      if (!rec.system) rec.system = 'You help people understand and change the code in their git repository.'
-      // The API gets the whole conversation every time: a history rebuilt from disk carries the
-      // anchor's context again, so it goes through the same secret check as the new message.
-      const messages = [...history.flatMap((h) => [{ role: 'user' as const, content: guardTurn(h.user, redact) }, { role: 'assistant' as const, content: guardTurn(h.agent, redact) }]), { role: 'user' as const, content: text }]
+      // Everything that leaves is checked, every turn: the system prompt (an Ask's, set by
+      // opening(), or the chat's), the conversation so far, and the new message.
+      const guarded = guardApiTurn(rec.system || this.openingWords(rec)!('chat')!.system, history, logical, redact)
+      rec.system = guarded.system
+      const text = guarded.text
+      const messages = [...guarded.history.flatMap((h) => [{ role: 'user' as const, content: h.user }, { role: 'assistant' as const, content: h.agent }]), { role: 'user' as const, content: text }]
+      // This turn opens the conversation, without the system prompt in its text.
+      if (!history.length) rec.systemApart = true
       return { text, logical: text, messages }
     }
-    this.onSettings()
-    this.agentCommand = this.commandLine()
-    if (rec.sessionId && !this.agent.hasSession(rec.sessionId)) {
+    const line = targetCommandLine(target)
+    // Set before anything awaits, so pruning sees this agent is in use.
+    rec.agentLine = line
+    const agent = this.agentFor(line)
+    if (rec.sessionId && !agent.hasSession(rec.sessionId)) {
       // The agent restarted. If it can load sessions, the conversation carries on where it was.
       const old = rec.sessionId
       rec.sessionId = null
       rec.primed = false
-      if (history.length && (await this.agent.canLoad())) {
+      if (history.length && (await agent.canLoad())) {
         try {
-          await this.agent.loadSession(old, rec.cwd)
+          await agent.loadSession(old, rec.cwd)
           rec.sessionId = old
           rec.primed = true
         } catch {
@@ -457,32 +634,89 @@ export class AiService {
       }
     }
     if (!rec.sessionId) {
-      rec.sessionId = await this.agent.openSession(rec.cwd)
+      rec.sessionId = await agent.openSession(rec.cwd)
       rec.primed = false
     }
+    await this.applyModel(agent, rec.sessionId, target)
     if (rec.primed) {
       const text = guardTurn(message, redact)
       return { text, logical: text }
     }
     if (!history.length) {
+      // An agent's opening carries the system prompt in its text.
+      rec.systemApart = false
       const text = guardTurn(await first(), redact)
       return { text, logical: text }
     }
-    return { text: guardTurn(replayMessage(history, message), redact), logical: guardTurn(message, redact) }
+    // A history that began with the API lacks its system prompt: it goes first, in every agent session told it.
+    const told = rec.systemApart && rec.system && history[0] ? [{ ...history[0], user: `${rec.system}\n\n${history[0].user}` }, ...history.slice(1)] : history
+    return { text: guardTurn(replayMessage(told, message), redact), logical: guardTurn(message, redact) }
+  }
+
+  /**
+   * The turn is for `target`. Another process (another agent, or the API) cannot use this
+   * session: it is closed, and the new one is told the conversation so far like after a restart
+   * without session/load. Only a model change keeps the session (applyModel switches it).
+   */
+  private moveTo(rec: ThreadRec, target: AiTarget): void {
+    const moved = !rec.target || targetKey(rec.target) !== targetKey(target) || (rec.target.model ?? '') !== (target.model ?? '')
+    if (rec.target && targetKey(rec.target) !== targetKey(target)) this.leaveSession(rec)
+    rec.target = target
+    // The thread records who it is with now (a view's picker starts there when it is reopened).
+    if (moved) this.update(rec, '', { kind: 'meta', target })
+  }
+
+  /**
+   * Put the session on the target's model. A model the user picked must exist, or the turn is
+   * refused before it starts (ai-model). "Default" after an earlier pick goes back to the
+   * agent's own default, when we know what that was.
+   */
+  private async applyModel(agent: AcpAgent, sessionId: string, target: AiTarget): Promise<void> {
+    const offered = agent.models(sessionId)
+    if (!target.model) {
+      const fallback = this.deps.settings().aiAgentModels[targetKey(target)]?.defaultModel
+      if (offered && fallback && offered.current !== fallback && offered.options.some((o) => o.id === fallback)) await agent.setModel(sessionId, fallback)
+      return
+    }
+    try {
+      await agent.setModel(sessionId, target.model)
+    } catch (e) {
+      throw new AiError((e as Error).message, 'ai-model')
+    }
+  }
+
+  private leaveSession(rec: ThreadRec): void {
+    const left = rec.sessionId && rec.agentLine
+    if (left) this.agents.get(rec.agentLine!)?.closeSession(rec.sessionId!)
+    rec.sessionId = null
+    rec.agentLine = null
+    rec.primed = false
+    // That may have been the last thing keeping its agent: stop it if nothing else needs it.
+    if (left) this.prune()
+  }
+
+  /** "Codex · GPT-5": the session's model as the agent reports it, or the API's. */
+  private byLabel(rec: ThreadRec): string {
+    const target = rec.target
+    if (!target) return ''
+    if (target.provider === 'anthropic') return targetLabel(target)
+    const m = rec.sessionId && rec.agentLine ? this.agents.get(rec.agentLine)?.models(rec.sessionId) : null
+    return targetLabel({ ...target, model: m?.current ?? target.model }, m?.options)
   }
 
   /** The first message of a conversation that starts with the user's words: the anchor's context, the protocol, the message. */
   private async opening(rec: ThreadRec, message: string): Promise<string> {
     const repo = this.deps.repo(rec.repoId)
     const anchor = rec.thread.anchor
+    // The API takes the system prompt on its own; an agent gets it at the top of the text.
+    const api = rec.target?.provider === 'anthropic'
     if (anchor.kind === 'ask') {
       // Ask's own prompt, with the question in it: the lines, their function, definitions, history.
-      const built = await buildPrompt(repo, { kind: 'ask', rev: anchor.rev === 'worktree' ? null : anchor.rev, path: anchor.path, startLine: anchor.lines[0], endLine: anchor.lines[1], question: message, earlier: [] })
+      const built = await buildPrompt(repo, { kind: 'ask', rev: anchor.rev === 'worktree' ? null : anchor.rev, path: anchor.path, startLine: anchor.lines[0], endLine: anchor.lines[1], question: message, earlier: [] }, { words: this.openingWords(rec) })
       rec.system = built.system
-      const api = this.deps.settings().aiProvider === 'anthropic'
       return `${api ? '' : `${built.system}\n\n`}${built.prompt}\n\n${artifactProtocol(anchor, false)}`
     }
-    return openingMessage(await anchorContext(repo, anchor), anchor, message)
+    return openingMessage(await anchorContext(repo, anchor, { words: this.openingWords(rec) }, api), anchor, message)
   }
 
   /** The conversation as exchanged. A thread from disk rebuilds it: its transcript, with the anchor's context in front. */
@@ -491,8 +725,15 @@ export class AiService {
     const past = transcript(rec.thread)
     if (past.length) {
       const anchor = rec.thread.anchor
-      const context = anchor.kind === 'task' ? '' : await anchorContext(this.deps.repo(rec.repoId), anchor).catch(() => '')
+      // As the opening was: an agent's first message carries the system prompt, the API's does not.
+      const context = anchor.kind === 'task' ? '' : await anchorContext(this.deps.repo(rec.repoId), anchor, { words: this.openingWords(rec) }, rec.target?.provider === 'anthropic').catch(() => '')
       past[0] = { ...past[0]!, user: [context, artifactProtocol(anchor, false), past[0]!.user].filter(Boolean).join('\n\n') }
+      // Rebuilt the way the API was told it, without the system prompt.
+      rec.systemApart = rec.target?.provider === 'anthropic'
+      // And that system prompt is not saved with the thread: give the conversation its own again
+      // (an Ask's, a review's), not the chat's that the API path would otherwise fall back to.
+      const kind = systemPromptKind(anchor)
+      if (!rec.system && kind) rec.system = this.openingWords(rec)!(kind)!.system
     }
     rec.history = past
     return past
@@ -511,7 +752,9 @@ export class AiService {
     if (rec.idle) clearTimeout(rec.idle)
     rec.idle = null
     const emit = (update: AiUpdate) => this.update(rec, requestId, update)
-    emit({ kind: 'turn', text: user.text, at: Date.now(), ...(user.feature ? { feature: user.feature } : {}) })
+    const by = this.byLabel(rec)
+    const sent = sentText(rec, out, user.text)
+    emit({ kind: 'turn', text: user.text, at: Date.now(), ...(user.feature ? { feature: user.feature } : {}), ...(by ? { by } : {}), ...(sent ? { sent } : {}) })
     // Saved from the start, so a conversation is in the AI panel's history while its answer streams.
     this.persist(rec)
     try {
@@ -521,7 +764,7 @@ export class AiService {
         try {
           text = await anthropicChat({
             apiKey: this.deps.apiKey.get()!,
-            model: this.deps.settings().anthropicModel || 'claude-opus-5-5',
+            model: rec.target?.model || this.deps.settings().anthropicModel || 'claude-opus-5-5',
             maxTokens: this.deps.settings().anthropicMaxTokens,
             system: rec.system,
             messages: out.messages,
@@ -540,7 +783,7 @@ export class AiService {
           stopReason = 'cancelled'
         }
       } else {
-        const res = await this.agent.prompt(rec.sessionId!, out.text, {
+        const res = await this.agents.get(rec.agentLine!)!.prompt(rec.sessionId!, out.text, {
           ...legacy,
           onUpdate: (u) => emit(u),
           onPermission: (ask) => this.askPermission(rec, requestId, ask, !!legacy),
@@ -608,7 +851,7 @@ export class AiService {
     const { rec, ask } = p.thread
     const pick = (...kinds: string[]) => kinds.map((k) => ask.options.find((o) => o.kind === k)).find(Boolean)?.optionId ?? null
     const optionId = answer === 'deny' ? pick('reject_once', 'reject_always') : answer === 'once' ? pick('allow_once', 'allow_always') : pick('allow_always', 'allow_once')
-    if (answer === 'session' && rec.sessionId && optionId) this.agent.rememberAllow(rec.sessionId, ask)
+    if (answer === 'session' && rec.sessionId && optionId && rec.agentLine) this.agents.get(rec.agentLine)?.rememberAllow(rec.sessionId, ask)
     this.update(rec, p.requestId, { kind: 'permission-answered', permissionId, answer })
     p.resolve(optionId)
   }
@@ -659,14 +902,13 @@ export class AiService {
     rec.active?.abort.abort()
     if (rec.idle) clearTimeout(rec.idle)
     rec.idle = null
-    if (rec.sessionId) this.agent.closeSession(rec.sessionId)
-    rec.sessionId = null
+    this.leaveSession(rec)
     this.threads.delete(rec.thread.id)
   }
 
   /** Threads that hold a session now (tests). */
   liveThreads(): string[] {
-    return [...this.threads.values()].filter((r) => r.sessionId && this.agent.hasSession(r.sessionId)).map((r) => r.thread.id)
+    return [...this.threads.values()].filter((r) => r.sessionId && r.agentLine && this.agents.get(r.agentLine)?.hasSession(r.sessionId)).map((r) => r.thread.id)
   }
 
   cancel(requestId: string): void {
@@ -681,8 +923,20 @@ export class AiService {
 
   stop(): void {
     for (const rec of [...this.threads.values()]) this.dispose(rec)
-    this.agent.stop()
+    for (const agent of this.agents.values()) agent.stop()
+    this.agents.clear()
   }
+}
+
+/**
+ * What a turn really sent, for its "Sent" view; undefined when it is just what the user typed.
+ * The API's system prompt is separate from the messages, so it is shown first, on the first turn.
+ */
+function sentText(rec: ThreadRec, out: Outgoing, shown: string): string | undefined {
+  const api = !!out.messages
+  const first = api && out.messages!.length === 1
+  const text = first && rec.system ? `[System prompt]\n${rec.system}\n\n[Message]\n${out.text}` : out.text
+  return text.trim() === shown.trim() ? undefined : text
 }
 
 /**
@@ -698,6 +952,8 @@ export function compact(thread: AiThread): AiThread {
     turns: thread.turns.slice(-200).map((t) => ({
       ...t,
       blocks: t.blocks.map((b) => (b.type === 'text' || b.type === 'thought' ? { ...b, text: cut(b.text, t.feature ? 8_000 : 40_000) } : b)),
+      // What was sent can be a whole diff: enough to read what was asked, not a second copy of the repository.
+      ...(t.sent ? { sent: cut(t.sent, 20_000) } : {}),
     })),
   }
 }
