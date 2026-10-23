@@ -154,15 +154,16 @@ describe('lineEdges', () => {
       { part: 'bottom', from: 1, to: 0, color: 1 },
     ],
   }
-  it('draws only the line, in the row\'s own lane, and keeps HEAD\'s dashed line', () => {
-    expect(lineEdges(row, 1, 5, true)).toEqual([
-      { part: 'pass', from: 2, to: 2, color: 2, pending: true },
-      { part: 'top', from: 1, to: 1, color: 1 },
-      { part: 'bottom', from: 1, to: 1, color: 1 },
+  it('draws only the line, in lane 0 whatever the row\'s lane, and keeps HEAD\'s dashed line there too', () => {
+    const deep: Row = { ...row, lane: 3, color: 4 }
+    expect(lineEdges(deep, 3, 5, true)).toEqual([
+      { part: 'pass', from: 0, to: 0, color: 2, pending: true },
+      { part: 'top', from: 0, to: 0, color: 4 },
+      { part: 'bottom', from: 0, to: 0, color: 4 },
     ])
   })
-  it('turns in from the child\'s lane, in the child\'s colour, and ends at the top and bottom of the line', () => {
-    expect(lineEdges(row, 2, 5, false).filter((e) => !e.pending)).toEqual([{ part: 'top', from: 2, to: 1, color: 5 }])
+  it('keeps the child\'s colour where the line changed lane, and ends at the top and bottom of the line', () => {
+    expect(lineEdges(row, 2, 5, false).filter((e) => !e.pending)).toEqual([{ part: 'top', from: 0, to: 0, color: 5 }])
     expect(lineEdges(row, -1, 0, false).filter((e) => !e.pending)).toEqual([])
   })
 })

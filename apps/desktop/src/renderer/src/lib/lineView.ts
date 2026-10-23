@@ -87,15 +87,18 @@ export function lineIndexOf(line: Uint32Array, row: number): number {
 
 /**
  * The edges of a row while the graph shows only one line: nothing of the other lines, just the
- * line itself in the row's colour. The node keeps its lane, so the line stays where it was drawn.
- * `above` is the lane of the line's row above (its child on the line), or -1 at the top of the
- * line; where that lane differs, the line turns into this node the way the full graph draws it
- * (a 'top' edge down the child's lane, then across). `below` is whether the line goes on down (the
- * commit has a parent). HEAD's dashed line to the "uncommitted changes" row is kept as it was.
+ * line itself in the row's colour, all in lane 0: a branch is a path, the lane is only where the
+ * full graph had room for it, and with the other branches hidden there is nothing to indent past
+ * (the node is drawn in lane 0 too, see GraphCell). The colour is kept, so the line still looks
+ * like the branch it is. `above` says whether the line has a row above this one (its child on the
+ * line); its colour is `aboveColor`, used when the line changed colour on the way. `below` is
+ * whether the line goes on down (the commit has a parent). HEAD's dashed line to the "uncommitted
+ * changes" row is kept, moved to lane 0 with the rest.
  */
 export function lineEdges(row: Row, above: number, aboveColor: number, below: boolean): Edge[] {
-  const out = row.edges.filter((e) => e.pending)
-  if (above >= 0) out.push({ part: 'top', from: above, to: row.lane, color: above === row.lane ? row.color : aboveColor })
-  if (below) out.push({ part: 'bottom', from: row.lane, to: row.lane, color: row.color })
+  const out: Edge[] = []
+  for (const e of row.edges) if (e.pending) out.push({ ...e, from: 0, to: 0 })
+  if (above >= 0) out.push({ part: 'top', from: 0, to: 0, color: above === row.lane ? row.color : aboveColor })
+  if (below) out.push({ part: 'bottom', from: 0, to: 0, color: row.color })
   return out
 }
