@@ -1,5 +1,5 @@
 import { Repo } from '@gitgoose/git'
-import { fakeAnthropic, makeFixture, tempDir, type FakeAnthropic } from '@gitgoose/fixtures'
+import { FAKE_MODELS, fakeAnthropic, makeFixture, tempDir, type FakeAnthropic } from '@gitgoose/fixtures'
 import { defaultSettings, type GitGooseEvent, type Settings } from '@gitgoose/shared'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { SecretFile } from './keyStore'
 import { buildPrompt, cleanCommitMessage, MAX_DIFF_CHARS } from './prompts'
 import { AiService, compact, previewOf } from './service'
-import { reduceThread, type AiThread, type AiUpdate } from '@gitgoose/shared'
+import { reduceThread, targetCommandLine, targetKey, type AiTarget, type AiThread, type AiUpdate, type ThreadAnchor } from '@gitgoose/shared'
 
 const FAKE = join(import.meta.dirname, '../../../e2e/fake-agent.mjs')
 const memoryKeychain = { secure: () => true, encrypt: (s: string) => Buffer.from(s), decrypt: (b: Buffer) => b.toString() }
@@ -151,6 +151,8 @@ describe('threads', () => {
     await ended(t.events, await t.ai.sendThread(thread.id, 'first'))
     await ended(t.events, await t.ai.sendThread(thread.id, 'second'))
     const [one, two] = readFileSync(log, 'utf8').split('\n---\n')
+    // An agent has no separate system prompt: the AI panel's goes at the top of the first message.
+    expect(one!.startsWith('You help people understand and change the code in their git repository.\n\n')).toBe(true)
     expect(one).toContain('HEAD: main at')
     expect(one).toContain('```json:commit-message')
     expect(one!.trim().endsWith('first')).toBe(true)
@@ -337,6 +339,60 @@ describe('secret scan before sending', () => {
     const sent = JSON.stringify(api.requests[0])
     expect(sent).toContain('[REDACTED GitHub token]')
     expect(sent).not.toContain(TOKEN)
+  })
+
+  it('a thread reopened from disk resends its history over the API: that is scanned too, and redacted when asked', async () => {
+    const api = await fakeAnthropic(['ok'])
+    cleanup.push(() => api.close())
+    const t = await setup({ aiProvider: 'anthropic' }, api)
+    t.ai.setApiKey('sk-ant-test')
+    t.ai.consent()
+    t.r.write('config.ts', `export const token = '${TOKEN}'\n`)
+    t.r.git('add', 'config.ts')
+    t.r.git('commit', '-q', '-m', 'config')
+    const hash = t.r.git('rev-parse', 'HEAD').trim()
+    // A saved conversation about that commit; reopening it rebuilds the first message with the commit as it is.
+    const turn = (role: 'user' | 'agent', text: string) => ({ id: `r:${role[0]}`, role, requestId: 'r', blocks: [{ type: 'text' as const, text }], at: 1, ...(role === 'agent' ? { status: 'done' as const } : {}) })
+    t.ai.saveThread('x', { id: 'saved', repoId: 'x', anchor: { kind: 'explain', hash }, title: 'config', turns: [turn('user', 'what is this?'), turn('agent', 'A config file.')], createdAt: 1, updatedAt: 1, head: hash })
+    const thread = await t.ai.openThread('x', { kind: 'explain', hash }, 'saved')
+    // The new message is clean; the rebuilt history is not.
+    await expect(t.ai.sendThread(thread.id, 'and then?')).rejects.toMatchObject({ code: 'ai-secrets' })
+    expect(api.requests).toHaveLength(0)
+    await ended(t.events, await t.ai.sendThread(thread.id, 'and then?', { redact: true }))
+    const sent = JSON.stringify(api.requests[0])
+    expect(sent).not.toContain(TOKEN)
+    expect(api.requests[0]!.messages[0]!.content).toContain('[REDACTED GitHub token]')
+    expect(api.requests[0]!.messages.at(-1)!.content).toBe('and then?')
+  })
+
+  it("checks the API's separate system prompt too: a chat's and an Ask's, refused or sent redacted", async () => {
+    const api = await fakeAnthropic(['ok'])
+    cleanup.push(() => api.close())
+    const words = { system: `You know the token ${TOKEN}.`, instructions: '' }
+    const t = await setup({ aiProvider: 'anthropic', aiPrompts: { chat: words, ask: words } }, api)
+    t.ai.setApiKey('sk-ant-test')
+    t.ai.consent()
+    const anchors: ThreadAnchor[] = [{ kind: 'free' }, { kind: 'ask', rev: 'worktree', path: 'widgets.ts', lines: [1, 1], code: '' }]
+    for (const anchor of anchors) {
+      const thread = await t.ai.openThread('x', anchor)
+      const before = api.requests.length
+      // The message itself is clean: only the system prompt holds the secret.
+      await expect(t.ai.sendThread(thread.id, 'what is this?')).rejects.toMatchObject({ code: 'ai-secrets', message: expect.not.stringContaining(TOKEN) })
+      expect(api.requests).toHaveLength(before)
+      await ended(t.events, await t.ai.sendThread(thread.id, 'what is this?', { redact: true }))
+      expect(api.requests).toHaveLength(before + 1)
+      expect(api.requests.at(-1)!.system).toBe('You know the token [REDACTED GitHub token].')
+      expect(JSON.stringify(api.requests.at(-1))).not.toContain(TOKEN)
+      // The Sent view shows the system prompt as it went out; the turn is what was typed.
+      const seen = mirror(t.events, thread)
+      expect(seen.turns[0]!.blocks).toEqual([{ type: 'text', text: 'what is this?' }])
+      expect(seen.turns[0]!.sent!.startsWith('[System prompt]\nYou know the token [REDACTED GitHub token].\n\n[Message]\n')).toBe(true)
+      expect(JSON.stringify(seen)).not.toContain(TOKEN)
+      // Later turns carry the redacted system prompt, with nothing left to refuse.
+      await ended(t.events, await t.ai.sendThread(thread.id, 'and then?'))
+      expect(api.requests.at(-1)!.system).toBe('You know the token [REDACTED GitHub token].')
+      expect(api.requests.at(-1)!.messages.at(-1)!.content).toBe('and then?')
+    }
   })
 
   it('an explained failure sent redacted is kept redacted: a follow-up after the session ended cannot send the secret', async () => {
@@ -559,6 +615,36 @@ describe('prompts', () => {
     expect(again.findings).toMatchObject([{ title: 'Type the map', status: 'open' }])
     expect(again.summary).toBe('Nothing changed in the reviewed code since the last review.')
   })
+
+  it('re-reviews in full after the review words were edited, even with the code unchanged', async () => {
+    const answer = JSON.stringify({ summary: 'One nit.', findings: [{ path: 'widgets.ts', startLine: 1, endLine: 1, type: 'maintainability', severity: 'minor', title: 'Type the map', message: 'Add types.' }] })
+    const fake = await fakeAnthropic([answer])
+    cleanup.push(() => fake.close())
+    const t = await setup({ aiProvider: 'anthropic' }, fake)
+    t.ai.setApiKey('sk-test')
+    t.ai.consent()
+    const task = { kind: 'review', scope: { kind: 'staged' }, profile: 'chill' } as const
+    const first = (await t.ai.run('r1', 'x', task)).review!
+    const previous = { findings: first.findings, hunkKeys: first.hunkKeys, contextKey: first.contextKey }
+    // Blank edits fall back to the built-in words: the same prompt, so nothing new to ask.
+    const blank = (await t.ai.run('r2', 'x', { ...task, previous }, { prompt: { system: '  ', instructions: '' } })).review!
+    expect(fake.requests).toHaveLength(1)
+    expect(blank.contextKey).toBe(first.contextKey)
+    // Edited instructions: the whole change goes out again, nothing is carried over.
+    const instructions = (await t.ai.run('r3', 'x', { ...task, previous }, { prompt: { system: '', instructions: 'Review this change ({label}) for security only.' } })).review!
+    expect(fake.requests).toHaveLength(2)
+    expect(fake.requests[1]!.messages[0]!.content).toContain('Review this change (Staged changes) for security only.')
+    expect(fake.requests[1]!.messages[0]!.content).toContain('    1+| export const widgets = new Map()')
+    expect(instructions.incremental).toBeUndefined()
+    expect(instructions.contextKey).not.toBe(first.contextKey)
+    // An edited system prompt, saved in Settings → AI: the same.
+    t.ai['deps'].setSettings({ aiPrompts: { review: { system: 'You review for a bank.', instructions: '' } } })
+    const system = (await t.ai.run('r4', 'x', { ...task, previous })).review!
+    expect(fake.requests).toHaveLength(3)
+    expect(fake.requests[2]!.system).toBe('You review for a bank.')
+    expect(system.incremental).toBeUndefined()
+    expect(system.contextKey).not.toBe(first.contextKey)
+  })
 })
 
 describe('recompose previews', () => {
@@ -568,5 +654,283 @@ describe('recompose previews', () => {
     const cut = previewOf(body(300)).split('\n')
     expect(cut).toHaveLength(201)
     expect(cut.at(-1)).toBe('… 101 more lines')
+  })
+})
+
+describe('choosing who answers', () => {
+  /** Two agents: the fake twice, with different command lines (so: two processes, two consents). */
+  async function two() {
+    process.env.FAKE_AGENT_MODELS = '1'
+    cleanup.push(() => void delete process.env.FAKE_AGENT_MODELS)
+    const t = await setup()
+    const a: AiTarget = { provider: 'agent', agent: 'custom', agentCommand: t.settings.aiAgentCommand }
+    const b: AiTarget = { provider: 'agent', agent: 'custom', agentCommand: `${t.settings.aiAgentCommand} --second` }
+    t.ai.consent(a)
+    t.ai.consent(b)
+    // Not a spread: that would read the `settings` getter once and freeze it.
+    return Object.assign(t, { a, b })
+  }
+
+  it("a run uses the area's model: the session switches before the prompt, and the agent's list is kept", async () => {
+    const log = join(tempDir(), 'prompts.log')
+    process.env.FAKE_AGENT_LOG = log
+    cleanup.push(() => void delete process.env.FAKE_AGENT_LOG)
+    const t = await two()
+    await t.ai.run('m1', 'x', { kind: 'commit-message' }, { target: { ...t.a, model: 'fast' } })
+    expect(readFileSync(log, 'utf8').split('\n---\n')[0]).toBe('set model fast')
+    // Kept for pickers: the models, and the agent's own default (a new session's model).
+    expect(t.settings.aiAgentModels[targetKey(t.a)]).toMatchObject({ known: true, defaultModel: 'smart', models: [{ id: 'fast', name: 'Fake Fast' }, { id: 'smart' }] })
+  })
+
+  it('a model the agent does not offer is refused before the turn starts', async () => {
+    const t = await two()
+    await expect(t.ai.run('m2', 'x', { kind: 'commit-message' }, { target: { ...t.a, model: 'huge' } })).rejects.toMatchObject({ code: 'ai-model' })
+  })
+
+  it('listing models starts nothing until the user asks; then one session lists them', async () => {
+    const t = await two()
+    expect(await t.ai.models(t.b)).toEqual({ models: [], known: false })
+    expect(t.ai.agent.starts).toBe(0)
+    const list = await t.ai.loadModels(t.b)
+    expect(list).toMatchObject({ known: true, defaultModel: 'smart' })
+    expect(list.models.map((m) => m.id)).toEqual(['fast', 'smart'])
+    // The default agent was never started: only b was.
+    expect(t.ai.agent.starts).toBe(0)
+  })
+
+  it('consent is per agent, not per model', async () => {
+    const t = await setup()
+    t.ai.consent()
+    const base: AiTarget = { provider: 'agent', agent: 'custom', agentCommand: t.settings.aiAgentCommand }
+    expect(t.ai.status({ ...base, model: 'fast' }).consented).toBe(true)
+    expect(t.ai.status({ ...base, agentCommand: 'other-agent --acp' }).consented).toBe(false)
+  })
+
+  it('a thread switches model in place, and moves to another agent with the conversation so far', async () => {
+    const t = await two()
+    const thread = await t.ai.openThread('x', { kind: 'free' })
+    await ended(t.events, await t.ai.sendThread(thread.id, 'hello there', { target: { ...t.a, model: 'fast' } }))
+    // Same agent, other model: the same session (the fake counts turns per session).
+    await ended(t.events, await t.ai.sendThread(thread.id, 'FAKE:model', { target: { ...t.a, model: 'smart' } }))
+    let seen = mirror(t.events, thread)
+    expect(replyOf(seen)).toBe('Model: smart')
+    // Another agent: a new session there, told the conversation so far.
+    await ended(t.events, await t.ai.sendThread(thread.id, 'and now?', { target: t.b }))
+    seen = mirror(t.events, thread)
+    expect(replyOf(seen)).toBe('Turn 3. You said: and now?. (replayed 2 earlier turns)')
+    expect(seen.target).toEqual({ ...t.b })
+    // Each answer says who gave it, so the switch shows in the thread.
+    expect(seen.turns.filter((x) => x.role === 'agent').map((x) => x.by)).toEqual(['fake-agent · Fake Fast', 'fake-agent · Fake Smart', 'fake-agent · Fake Smart'])
+    // The old agent's session is closed; the thread holds only the new one.
+    expect(t.ai.liveThreads()).toEqual([thread.id])
+  })
+
+  it('a thread without a pick carries on with whoever it was last with', async () => {
+    const t = await two()
+    const thread = await t.ai.openThread('x', { kind: 'free' })
+    await ended(t.events, await t.ai.sendThread(thread.id, 'one', { target: { ...t.b, model: 'fast' } }))
+    await ended(t.events, await t.ai.sendThread(thread.id, 'FAKE:model'))
+    expect(replyOf(mirror(t.events, thread))).toBe('Model: fast')
+  })
+
+  it("the API key's models come from the API, and a run uses the picked one", async () => {
+    const api = await fakeAnthropic(['ok'])
+    cleanup.push(() => api.close())
+    const { ai } = await setup({ aiProvider: 'anthropic' }, api)
+    expect(await ai.models({ provider: 'anthropic' })).toMatchObject({ known: false })
+    ai.setApiKey('sk-ant-test')
+    ai.consent()
+    const list = await ai.models({ provider: 'anthropic' })
+    expect(list).toMatchObject({ known: true, defaultModel: 'claude-opus-5-5' })
+    expect(list.models).toEqual(FAKE_MODELS)
+    await ai.run('m3', 'x', { kind: 'explain-error', title: 'x', detail: 'y' }, { target: { provider: 'anthropic', model: 'claude-haiku-5-5' } })
+    expect(api.requests.at(-1)).toMatchObject({ model: 'claude-haiku-5-5' })
+  })
+})
+
+describe('prompts the user can read and edit', () => {
+  it("a run sends the area's words; the answer format is added whatever the edit says", async () => {
+    const log = join(tempDir(), 'prompts.log')
+    process.env.FAKE_AGENT_LOG = log
+    cleanup.push(() => void delete process.env.FAKE_AGENT_LOG)
+    const t = await setup()
+    t.ai.consent()
+    // The fake answers "commit message for" requests, so the edit keeps those words.
+    await t.ai.run('p1', 'x', { kind: 'commit-message' }, { prompt: { system: 'You are terse.', instructions: 'Write a commit message for this, in French.' } })
+    const sent = readFileSync(log, 'utf8').split('\n---\n')[0]!
+    expect(sent.startsWith('You are terse.\n\nWrite a commit message for this, in French.\nReply with the commit message only')).toBe(true)
+    expect(sent).toContain('Staged diff:')
+    expect(sent).not.toContain('imperative mood')
+  })
+
+  it('without an edit from the caller, Settings → AI and then the built-in words are used', async () => {
+    const log = join(tempDir(), 'prompts.log')
+    process.env.FAKE_AGENT_LOG = log
+    cleanup.push(() => void delete process.env.FAKE_AGENT_LOG)
+    const t = await setup({ aiPrompts: { 'commit-message': { system: '', instructions: 'Write a commit message for these changes. Settings words.' } } })
+    t.ai.consent()
+    await t.ai.run('p2', 'x', { kind: 'commit-message' })
+    const sent = readFileSync(log, 'utf8').split('\n---\n')[0]!
+    // A blank system keeps the built-in one.
+    expect(sent.startsWith('You write git commit messages.\n\nWrite a commit message for these changes. Settings words.')).toBe(true)
+  })
+
+  it('the preview is what a request would send, built without sending or starting anything', async () => {
+    const t = await setup()
+    const parts = await t.ai.preview('x', { kind: 'review', scope: { kind: 'staged' }, profile: 'quiet' }, { system: '', instructions: 'Review this change ({label}) carefully. {profile}' })
+    expect(parts.kind).toBe('review')
+    expect(parts.template).toBe('Review this change ({label}) carefully. {profile}')
+    expect(parts.instructions).toBe('Review this change (Staged changes) carefully. Report only real problems: bugs, security holes, data loss, serious performance issues (severity critical or major). If there are none, return no findings. Silence is a fine answer.')
+    expect(parts.format).toContain('"findings": [')
+    expect(parts.context).toContain('    1+| export const widgets = new Map()')
+    // Linters run programs: only for the real request, and the panel says so.
+    expect(parts.note).toContain('Linter findings are added')
+    expect(t.ai.agent.starts).toBe(0)
+  })
+
+  it('a thread keeps exactly what each turn sent, beyond what was typed', async () => {
+    const t = await setup()
+    t.ai.consent()
+    const thread = await t.ai.openThread('x', { kind: 'free' })
+    await ended(t.events, await t.ai.sendThread(thread.id, 'first'))
+    await ended(t.events, await t.ai.sendThread(thread.id, 'second'))
+    const users = mirror(t.events, thread).turns.filter((x) => x.role === 'user')
+    // The first message carried the AI panel's words and where we are; the second was just typed.
+    expect(users[0]!.sent).toContain('You are helping someone with their git repository')
+    expect(users[0]!.sent).toContain('HEAD: main at')
+    expect(users[0]!.sent!.trim().endsWith('first')).toBe(true)
+    expect(users[1]!.sent).toBeUndefined()
+  })
+
+  it("the AI panel's edited system prompt opens an agent conversation; the API sends it on its own", async () => {
+    const log = join(tempDir(), 'prompts.log')
+    process.env.FAKE_AGENT_LOG = log
+    cleanup.push(() => void delete process.env.FAKE_AGENT_LOG)
+    const chat: Partial<Settings> = { aiPrompts: { chat: { system: 'You answer like a lighthouse keeper.', instructions: '' } } }
+    const t = await setup(chat)
+    t.ai.consent()
+    const thread = await t.ai.openThread('x', { kind: 'free' })
+    await ended(t.events, await t.ai.sendThread(thread.id, 'first'))
+    const sent = readFileSync(log, 'utf8').split('\n---\n')[0]!
+    expect(sent.startsWith('You answer like a lighthouse keeper.\n\nYou are helping someone with their git repository')).toBe(true)
+
+    const api = await fakeAnthropic(['ok'])
+    cleanup.push(() => api.close())
+    const a = await setup({ ...chat, aiProvider: 'anthropic' }, api)
+    a.ai.setApiKey('sk-ant-test')
+    a.ai.consent()
+    const other = await a.ai.openThread('x', { kind: 'free' })
+    await ended(a.events, await a.ai.sendThread(other.id, 'first'))
+    expect(api.requests[0]!.system).toBe('You answer like a lighthouse keeper.')
+    expect(api.requests[0]!.messages[0]!.content).not.toContain('lighthouse keeper')
+    expect(api.requests[0]!.messages[0]!.content).toContain('HEAD: main at')
+  })
+
+  it("the API's sent text shows its separate system prompt on the first turn", async () => {
+    const api = await fakeAnthropic(['ok'])
+    cleanup.push(() => api.close())
+    const t = await setup({ aiProvider: 'anthropic' }, api)
+    t.ai.setApiKey('sk-ant-test')
+    t.ai.consent()
+    const res = await t.ai.run('p3', 'x', { kind: 'explain-commit', hash: t.r.git('rev-parse', 'HEAD').trim() }, { keepThread: true })
+    const thread = await t.ai.openThread('x', { kind: 'explain', hash: '' }, res.threadId)
+    expect(thread.turns[0]!.sent!.startsWith('[System prompt]\nYou explain code changes to a teammate.\n\n[Message]\nExplain what this commit does')).toBe(true)
+  })
+})
+
+describe('replaying a conversation that began over the API', () => {
+  it('every later agent session gets the system prompt the API kept apart, not only the first', async () => {
+    const log = join(tempDir(), 'prompts.log')
+    process.env.FAKE_AGENT_LOG = log
+    cleanup.push(() => void delete process.env.FAKE_AGENT_LOG)
+    const api = await fakeAnthropic(['It adds the widget registry.'])
+    cleanup.push(() => api.close())
+    const t = await setup({ aiProvider: 'anthropic' }, api)
+    t.ai.setApiKey('sk-ant-test')
+    t.ai.consent()
+    const a: AiTarget = { provider: 'agent', agent: 'custom', agentCommand: t.settings.aiAgentCommand }
+    const b: AiTarget = { ...a, agentCommand: `${a.agentCommand} --second` }
+    t.ai.consent(a)
+    t.ai.consent(b)
+    const res = await t.ai.run('e1', 'x', { kind: 'explain-commit', hash: t.r.git('rev-parse', 'HEAD').trim() }, { keepThread: true })
+    expect(api.requests[0]!.system).toBe('You explain code changes to a teammate.')
+    const thread = await t.ai.openThread('x', { kind: 'explain', hash: '' }, res.threadId)
+    // To agent a, then on to agent b: two fresh sessions, each told the conversation so far.
+    await ended(t.events, await t.ai.sendThread(thread.id, 'one', { target: a }))
+    await ended(t.events, await t.ai.sendThread(thread.id, 'two', { target: b }))
+    // Split on the replay's own first line, not the log's "---" separator: `git show` output has "---" lines too.
+    const sent = readFileSync(log, 'utf8').split('This conversation was interrupted').slice(1)
+    expect(sent).toHaveLength(2)
+    for (const s of sent) expect(s).toContain('You explain code changes to a teammate.\n\nExplain what this commit does')
+  })
+})
+
+describe('agent processes and unsaved words', () => {
+  it('an agent nothing needs any more stops when its last session closes', async () => {
+    process.env.FAKE_AGENT_MODELS = '1'
+    cleanup.push(() => void delete process.env.FAKE_AGENT_MODELS)
+    const t = await setup()
+    // b is neither the default agent nor any area's pick: only this thread uses it.
+    const b: AiTarget = { provider: 'agent', agent: 'custom', agentCommand: `${t.settings.aiAgentCommand} --second` }
+    t.ai.consent(b)
+    const agents = t.ai['agents'] as Map<string, unknown>
+    const thread = await t.ai.openThread('x', { kind: 'free' })
+    await ended(t.events, await t.ai.sendThread(thread.id, 'hello', { target: b }))
+    // In use: kept even though settings changing would otherwise prune it.
+    t.ai.onSettings()
+    expect(agents.has(targetCommandLine(b))).toBe(true)
+    t.ai.deleteThread('x', thread.id)
+    expect(agents.has(targetCommandLine(b))).toBe(false)
+  })
+
+  it('Load models for an agent nobody picked leaves no process behind', async () => {
+    process.env.FAKE_AGENT_MODELS = '1'
+    cleanup.push(() => void delete process.env.FAKE_AGENT_MODELS)
+    const t = await setup()
+    const b: AiTarget = { provider: 'agent', agent: 'custom', agentCommand: `${t.settings.aiAgentCommand} --second` }
+    expect((await t.ai.loadModels(b)).known).toBe(true)
+    expect((t.ai['agents'] as Map<string, unknown>).has(targetCommandLine(b))).toBe(false)
+  })
+
+  it("a conversation opens with the words its send brought, saved or not", async () => {
+    const log = join(tempDir(), 'prompts.log')
+    process.env.FAKE_AGENT_LOG = log
+    cleanup.push(() => void delete process.env.FAKE_AGENT_LOG)
+    const t = await setup({ aiPromptEdits: { chat: { system: '', instructions: 'Saved words.' } } })
+    t.ai.consent()
+    const thread = await t.ai.openThread('x', { kind: 'free' })
+    await ended(t.events, await t.ai.sendThread(thread.id, 'first', { prompt: { system: '', instructions: 'Words on screen, not saved yet.' } }))
+    const sent = readFileSync(log, 'utf8')
+    expect(sent).toContain('Words on screen, not saved yet.')
+    expect(sent).not.toContain('Saved words.')
+  })
+})
+
+describe('a conversation reopened from disk over the API', () => {
+  it("speaks with its own system prompt again (an Ask's, as edited), not the chat's", async () => {
+    const api = await fakeAnthropic(['ok'])
+    cleanup.push(() => api.close())
+    const t = await setup({ aiProvider: 'anthropic', aiPrompts: { ask: { system: 'You are the Ask helper.', instructions: '' } } }, api)
+    t.ai.setApiKey('sk-ant-test')
+    t.ai.consent()
+    const turn = (role: 'user' | 'agent', text: string) => ({ id: `r:${role[0]}`, role, requestId: 'r', blocks: [{ type: 'text' as const, text }], at: 1, ...(role === 'agent' ? { status: 'done' as const } : {}) })
+    const anchor = { kind: 'ask' as const, rev: 'worktree', path: 'widgets.ts', lines: [1, 1] as [number, number], code: '' }
+    t.ai.saveThread('x', { id: 'asked', repoId: 'x', anchor, title: 'q', turns: [turn('user', 'what is this?'), turn('agent', 'A map.')], createdAt: 1, updatedAt: 1, head: '' })
+    const thread = await t.ai.openThread('x', anchor, 'asked')
+    await ended(t.events, await t.ai.sendThread(thread.id, 'and why?'))
+    expect(api.requests[0]!.system).toBe('You are the Ask helper.')
+  })
+})
+
+describe('a kept run that never started', () => {
+  it('closes its session when it fails before the first turn (here, a model the agent does not offer)', async () => {
+    process.env.FAKE_AGENT_MODELS = '1'
+    cleanup.push(() => void delete process.env.FAKE_AGENT_MODELS)
+    const t = await setup()
+    t.ai.consent()
+    const target: AiTarget = { provider: 'agent', agent: 'custom', agentCommand: t.settings.aiAgentCommand, model: 'huge' }
+    await expect(t.ai.run('k1', 'x', { kind: 'review', scope: { kind: 'staged' }, profile: 'chill' }, { keepThread: true, target })).rejects.toMatchObject({ code: 'ai-model' })
+    expect(t.ai.liveThreads()).toEqual([])
+    expect(t.ai.agent.sessionCount()).toBe(0)
   })
 })

@@ -3,10 +3,13 @@ import { runningTurn } from '@gitgoose/shared'
 import clsx from 'clsx'
 import { Brain, Check, ChevronRight, Circle, CircleAlert, CircleDot, FileDiff, Hammer, RotateCcw, Send, ShieldQuestion, Sparkles, Square } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { areaOfAnchor } from '../lib/ai'
 import { api } from '../lib/api'
 import { applyArtifact } from '../lib/artifacts'
 import { sendMessage, stopThread } from '../lib/thread'
 import { Markdown } from './Markdown'
+import { ModelPicker } from './ModelPicker'
+import { PromptButton } from './PromptPanel'
 import { SequenceSvg } from './SequenceSvg'
 import { Button, Spinner } from './ui'
 
@@ -68,9 +71,10 @@ export function Thread({ thread, repoId, testids = {}, placeholder, hint, hideFe
     <div className={clsx('flex min-h-0 flex-col', className)} data-testid={testids.root ?? 'thread'} data-thread={thread.id}>
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2 text-[13px]" data-testid="thread-turns">
         {!turns.length && hint && <p className="text-xs text-faint">{hint}</p>}
-        {turns.map((t) => (t.role === 'user'
+        {turns.map((t, i) => (t.role === 'user'
           ? <UserTurn key={t.id} turn={t} testid={testids.user ?? 'thread-user'} />
-          : <AgentTurn key={t.id} turn={t} thread={thread} repoId={repoId} testid={testids.agent ?? 'thread-agent'} retry={t === last ? retry : undefined} />))}
+          : <AgentTurn key={t.id} turn={t} thread={thread} repoId={repoId} testid={testids.agent ?? 'thread-agent'} retry={t === last ? retry : undefined}
+              by={t.by && t.by !== previousBy(turns, i) ? t.by : undefined} />))}
         <div ref={end} />
       </div>
       {(thread.mode || !!thread.commands?.length) && (
@@ -81,7 +85,12 @@ export function Thread({ thread, repoId, testids = {}, placeholder, hint, hideFe
           {thread.commands?.length ? <>Commands: {thread.commands.map((c) => `/${c}`).join(' ')}</> : null}
         </div>
       )}
-      <div className="flex shrink-0 gap-2 border-t border-line p-2">
+      <div className="flex shrink-0 items-center justify-end border-t border-line px-2 pt-1.5">
+        {/* The area's pick: a change applies from the next message (main moves the conversation if needed). */}
+        <ModelPicker area={areaOfAnchor(thread.anchor)} />
+        <PromptButton area={areaOfAnchor(thread.anchor)} repoId={repoId} task={null} className="ml-1" />
+      </div>
+      <div className="flex shrink-0 gap-2 p-2 pt-1.5">
         <textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} data-testid={testids.input ?? 'thread-input'}
           placeholder={placeholder ?? 'Ask a follow-up (Enter sends, Shift+Enter for a new line)'}
           onKeyDown={(e) => {
@@ -99,15 +108,49 @@ export function Thread({ thread, repoId, testids = {}, placeholder, hint, hideFe
   )
 }
 
+/** Who answered the agent turn before turns[i] ('' for the first). */
+function previousBy(turns: AiTurn[], i: number): string {
+  for (let j = i - 1; j >= 0; j--) if (turns[j]!.role === 'agent') return turns[j]!.by ?? ''
+  return ''
+}
+
 function textOf(turn: AiTurn): string {
   return turn.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('')
 }
 
 function UserTurn({ turn, testid }: { turn: AiTurn; testid: string }) {
+  // "Sent": exactly what went out, when that is more than what was typed (the first message
+  // carries the context and instructions; a replay, the conversation so far). Local state is
+  // enough: turns are keyed by id, so it survives every streamed update.
+  const [showSent, setShowSent] = useState(false)
+  const toggle = turn.sent ? (
+    <button className="shrink-0 rounded px-1 text-[11px] font-normal text-faint hover:bg-hover hover:text-fg" data-testid="thread-sent-toggle"
+      title="Show exactly what was sent" onClick={() => setShowSent(!showSent)}>{showSent ? 'Hide sent' : 'Sent'}</button>
+  ) : null
+  const sent = showSent && turn.sent ? (
+    <pre className="selectable mt-1 max-h-72 overflow-auto rounded-md border border-line/60 bg-bg/60 p-2 font-mono text-[11px] font-normal whitespace-pre-wrap text-muted" data-testid="thread-sent">{turn.sent}</pre>
+  ) : null
   if (turn.feature) {
-    return <div className="mt-2 flex items-center gap-1.5 text-xs text-faint" data-testid="thread-feature"><Sparkles size={11} /> {turn.feature}</div>
+    return (
+      <div className="mt-2">
+        {/* The toggle sits beside the label, not in it: the label reads as the feature's name alone. */}
+        <div className="flex items-center gap-1.5 text-xs text-faint">
+          <span className="flex items-center gap-1.5" data-testid="thread-feature"><Sparkles size={11} /> {turn.feature}</span>
+          {toggle}
+        </div>
+        {sent}
+      </div>
+    )
   }
-  return <div className="selectable mt-3 font-semibold whitespace-pre-wrap" data-testid={testid}>{textOf(turn)}</div>
+  return (
+    <div className="mt-3">
+      <div className="flex items-start gap-1.5">
+        <div className="selectable min-w-0 flex-1 font-semibold whitespace-pre-wrap" data-testid={testid}>{textOf(turn)}</div>
+        {toggle}
+      </div>
+      {sent}
+    </div>
+  )
 }
 
 /**
@@ -117,12 +160,15 @@ function UserTurn({ turn, testid }: { turn: AiTurn; testid: string }) {
  */
 const PROSE_FEATURES = new Set<AiThread['anchor']['kind']>(['explain', 'error', 'conflict'])
 
-function AgentTurn({ turn, thread, repoId, testid, retry }: { turn: AiTurn; thread: AiThread; repoId: string; testid: string; retry?: () => void }) {
+function AgentTurn({ turn, thread, repoId, testid, retry, by }: { turn: AiTurn; thread: AiThread; repoId: string; testid: string; retry?: () => void; by?: string }) {
   const [raw, setRaw] = useState(false)
+  // Shown where the speaker changes (the first answer, and after a switch).
+  const who = by ? <div className="mt-1 text-[11px] text-faint" data-testid="thread-by">{by}</div> : null
   if (turn.feature && !PROSE_FEATURES.has(thread.anchor.kind)) {
     // The feature's own answer (JSON the view has already turned into its result).
     return (
       <div className="mt-0.5 text-xs text-faint" data-testid="thread-feature-answer">
+        {who}
         {turn.status === 'running' ? <span className="flex items-center gap-1.5"><Spinner /> Working on it…</span>
           : turn.status === 'error' ? <span className="text-del">{turn.error?.message}</span>
           : <>Answered; the result is shown in its own view. <button className="hover:text-fg" onClick={() => setRaw(!raw)}>{raw ? 'Hide' : 'Show'} the raw answer</button></>}
@@ -133,6 +179,7 @@ function AgentTurn({ turn, thread, repoId, testid, retry }: { turn: AiTurn; thre
   const empty = !turn.blocks.length
   return (
     <div className="mt-1">
+      {who}
       <div data-testid={testid} data-status={turn.status}>
         {turn.blocks.map((b, i) => <BlockView key={i} b={b} thread={thread} repoId={repoId} />)}
         {empty && turn.status === 'running' && <span className="flex items-center gap-2 text-muted"><Spinner /> Thinking…</span>}

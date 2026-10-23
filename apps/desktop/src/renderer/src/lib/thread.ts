@@ -1,7 +1,7 @@
-import { AI_AUTH_REQUIRED, reduceThread, type AiThread, type AiUpdate, type ThreadAnchor } from '@gitgoose/shared'
+import { AI_AUTH_REQUIRED, openingPromptKind, reduceThread, type AiThread, type AiUpdate, type ThreadAnchor } from '@gitgoose/shared'
 import { useEffect, useState } from 'react'
 import { create } from 'zustand'
-import { askLogin, askToRedact, ensureAi, onAiThread, useAi, whatFor } from './ai'
+import { areaOfAnchor, areaTarget, askLogin, askToRedact, ensureAi, onAiThread, useAi, whatFor, wordsFor } from './ai'
 import { forgetExplanationThread } from './explain'
 import { api, toUiError } from './api'
 import { reportError, updateRepo } from './store'
@@ -91,11 +91,17 @@ export function useThread(repoId: string, anchor: ThreadAnchor, threadId: string
 export async function sendMessage(threadId: string, text: string): Promise<boolean> {
   const thread = useThreads.getState().threads[threadId]
   if (!thread || !text.trim()) return false
-  if (!(await ensureAi(whatFor(thread.anchor)))) return false
+  // The area's picker decides who answers; main moves the conversation if that changed.
+  const target = areaTarget(areaOfAnchor(thread.anchor)) ?? undefined
+  if (!(await ensureAi(whatFor(thread.anchor), target))) return false
   let redact = false
   for (let attempt = 0; ; attempt++) {
     try {
-      await api.aiThreadSend(threadId, text, redact ? { redact } : undefined)
+      // A conversation that opens with words of its own (the AI panel's, Ask's) sends the ones on screen.
+      const kind = openingPromptKind(thread.anchor)
+      const prompt = kind ? wordsFor(kind) : undefined
+      const opts = { ...(redact ? { redact } : {}), ...(target ? { target } : {}), ...(prompt ? { prompt } : {}) }
+      await api.aiThreadSend(threadId, text, Object.keys(opts).length ? opts : undefined)
       return true
     } catch (e) {
       const err = toUiError(e)
@@ -105,7 +111,7 @@ export async function sendMessage(threadId: string, text: string): Promise<boole
         continue
       }
       if (err.code === AI_AUTH_REQUIRED && attempt === 0) {
-        if (!(await askLogin(thread.repoId))) return false
+        if (!(await askLogin(thread.repoId, target))) return false
         continue
       }
       reportError('Could not send', e)

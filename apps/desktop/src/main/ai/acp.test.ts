@@ -2,7 +2,7 @@ import { tempDir } from '@gitgoose/fixtures'
 import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { AcpAgent, AgentAuthError, allInside, SessionGoneError, type AgentUpdate, type PermissionAsk } from './acp'
+import { AcpAgent, AgentAuthError, allInside, modelsOf, SessionGoneError, type AgentUpdate, type PermissionAsk } from './acp'
 
 const FAKE = join(import.meta.dirname, '../../../e2e/fake-agent.mjs')
 const agents: AcpAgent[] = []
@@ -210,4 +210,40 @@ describe('allInside', () => {
     expect(await allInside(dir, [join(dir, '..', 'x')])).toBe(false)
     expect(await allInside(dir, ['relative/path'])).toBe(false)
   })
+
+  it('reads the model option from config options: category "model", groups flattened, in order', () => {
+    expect(modelsOf(undefined)).toBeNull()
+    expect(modelsOf([{ id: 'mode', name: 'Mode', category: 'mode', type: 'select', currentValue: 'ask', options: [{ value: 'ask', name: 'Ask' }] }])).toBeNull()
+    const m = modelsOf([
+      { id: 'thinking', name: 'Thinking', category: 'thought_level', type: 'select', currentValue: 'low', options: [{ value: 'low', name: 'Low' }] },
+      { id: 'm', name: 'Model', category: 'model', type: 'select', currentValue: 'b', options: [
+        { group: 'one', name: 'One', options: [{ value: 'a', name: 'A' }] },
+        { group: 'two', name: 'Two', options: [{ value: 'b', name: 'B', description: 'bee' }] },
+      ] },
+    ])
+    expect(m).toEqual({ configId: 'm', current: 'b', options: [{ id: 'a', name: 'A' }, { id: 'b', name: 'B', description: 'bee' }] })
+  })
+
+  it("lists a session's models, switches them with session/set_config_option, and refuses one it does not offer", async () => {
+    const heard: unknown[] = []
+    const a = new AcpAgent(() => ({ command: process.execPath, args: [FAKE], env: { FAKE_AGENT_MODELS: '1' } }), { onModels: (m) => heard.push(m) })
+    agents.push(a)
+    const id = await a.openSession(tempDir())
+    expect(a.models(id)).toMatchObject({ configId: 'model', current: 'smart', options: [{ id: 'fast' }, { id: 'smart' }] })
+    // A new session's model is the agent's default, which is what a picker's "Default" means.
+    expect(heard).toEqual([a.models(id)])
+    await a.setModel(id, 'fast')
+    expect(a.models(id)!.current).toBe('fast')
+    expect((await a.prompt(id, 'FAKE:model', { onPermission: deny })).text).toBe('Model: fast')
+    await expect(a.setModel(id, 'huge')).rejects.toThrow('does not offer the model "huge"')
+    expect(a.models(id)!.current).toBe('fast')
+  })
+
+  it('an agent without a model option has none to set', async () => {
+    const a = fake()
+    const id = await a.openSession(tempDir())
+    expect(a.models(id)).toBeNull()
+    await expect(a.setModel(id, 'fast')).rejects.toThrow('does not let GitGoose choose its model')
+  })
 })
+

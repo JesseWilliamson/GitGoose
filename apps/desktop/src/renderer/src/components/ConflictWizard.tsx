@@ -3,12 +3,14 @@ import clsx from 'clsx'
 import { ArrowLeft, CheckCircle2, CircleAlert, ExternalLink, GitMerge, Sparkles, Wrench } from 'lucide-react'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { openInEditor, openMergeTool, run } from '../lib/actions'
-import { cancelAi, conflictJobKey, resolveWithAgent } from '../lib/ai'
+import { areaTarget, cancelAi, conflictJobKey, resolveWithAgent } from '../lib/ai'
 import { useRunningJob } from '../lib/aiJobs'
 import { api } from '../lib/api'
 import { opName, sentence, splitPath } from '../lib/format'
-import { reportError, updateRepo, useSetting, type RepoView } from '../lib/store'
+import { reportError, updateRepo, useSetting, useStore, type RepoView } from '../lib/store'
 import { Button, Spinner } from './ui'
+import { ModelPicker } from './ModelPicker'
+import { PromptButton } from './PromptPanel'
 
 const ResultEditor = lazy(() => import('./ResultEditor'))
 const MergePanes = lazy(() => import('./MergePanes'))
@@ -117,7 +119,12 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
   const blocks = segments.filter((s) => s.kind === 'conflict')
   const allChosen = blocks.length > 0 && blocks.every((_, i) => choices[i])
   const preferred = useSetting('mergeView')
-  const agentOn = useSetting('aiProvider') === 'agent'
+  // The picker shows whenever AI is on, so someone whose default is the API can still pick an
+  // agent here; Ask AI shows when what this area would use is an agent (only an agent can edit
+  // the file). Subscribed to settings so a pick shows Ask AI at once.
+  const aiOn = useSetting('aiProvider') !== 'off'
+  useStore((s) => s.settings)
+  const agentOn = aiOn && areaTarget('conflict')?.provider === 'agent'
   /** The AI request working on this file, while it runs (a job, so leaving and coming back still shows it). */
   const asking = useRunningJob(conflictJobKey(view.id, file.path))?.id ?? null
   /** Per-file override of the setting, from the header toggle. */
@@ -164,6 +171,7 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
             <i className="size-2 rounded-sm bg-theirs" /> {versions.theirs === null ? 'Keep deleted (theirs)' : 'Take theirs'}
           </button>
         </div>
+        {aiOn && versions.merged !== null && <><ModelPicker area="conflict" agentsOnly /><PromptButton area="conflict" repoId={view.id} task={{ kind: 'resolve-conflict', path: file.path }} /></>}
         {agentOn && versions.merged !== null && (
           <Button size="sm" onClick={askAi} data-testid="ai-resolve" title={asking ? 'Stop' : 'Ask your AI agent to propose a resolution (you review it before anything is written)'}>
             {asking ? <><Spinner /> Stop</> : <><Sparkles size={12} /> Ask AI</>}

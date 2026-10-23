@@ -13,6 +13,8 @@ export default defineConfig({
   // Three at a time on Linux CI (four cores); one on macOS and Windows, where the app is slow to
   // start and the runners are smaller; by hand, Playwright's default (half the cores).
   workers: process.env.CI ? (process.platform === 'linux' ? 3 : 1) : undefined,
-  reporter: [['list']],
+  // On CI, also as GitHub annotations: a failure then shows on the pull request itself, with its
+  // message and line, for anyone who cannot open the job log.
+  reporter: process.env.CI ? [['list'], ['github']] : [['list']],
   use: { trace: 'retain-on-failure' },
 })

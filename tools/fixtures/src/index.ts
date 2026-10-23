@@ -274,4 +274,4 @@ export function removeFixture(dir: string): void {
 
 export { makeDevRepo, CONFLICT_BRANCH, CONFLICT_BRANCHES, type DevRepoInfo, type DevRepoOptions } from './devrepo'
 export { fakeGitHub, FAKE_AVATAR_PNG, type FakeGitHub, type FakeGitHubOptions } from './fakeGitHub'
-export { fakeAnthropic, type FakeAnthropic } from './fakeAnthropic'
+export { FAKE_MODELS, fakeAnthropic, type FakeAnthropic } from './fakeAnthropic'

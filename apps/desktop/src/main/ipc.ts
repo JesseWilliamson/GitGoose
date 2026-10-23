@@ -95,8 +95,11 @@ export function createHandlers(
       await shell.openExternal(url)
     },
 
-    aiStatus: async () => ai.status(),
-    aiConsent: async () => ai.consent(),
+    aiStatus: async (target) => ai.status(target),
+    aiConsent: async (target) => ai.consent(target),
+    aiModels: (target) => ai.models(target),
+    aiLoadModels: (target) => ai.loadModels(target),
+    aiPromptPreview: (repoId, task, prompt) => ai.preview(repoId, task, prompt),
     aiRun: async (requestId, repoId, task, opts) => {
       // Review, walkthrough and ask read the code graph for context. The tree they need is
       // usually indexed already (HEAD, the index, the working tree); a commit costs only its
@@ -129,8 +132,8 @@ export function createHandlers(
       await shell.openExternal(url)
     },
     aiRespondPermission: async (id, optionId) => ai.respondPermission(id, optionId),
-    aiAgentInfo: () => ai.agentInfo(),
-    aiAuthenticate: (methodId) => ai.authenticate(methodId),
+    aiAgentInfo: (target) => ai.agentInfo(target),
+    aiAuthenticate: (methodId, target) => ai.authenticate(methodId, target),
     aiSetApiKey: async (key) => ai.setApiKey(key),
     openPath: async (path) => {
       const err = await shell.openPath(path)
