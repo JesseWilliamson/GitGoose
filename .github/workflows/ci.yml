@@ -7,12 +7,18 @@ on:
   # On demand too (there is no nightly: a quiet day costs nothing).
   workflow_dispatch:
 
+# Jobs run on Blacksmith runners (runs-on: blacksmith-*), not GitHub-hosted ones. The workflows
+# are unchanged otherwise: Blacksmith only supplies the machines, and its cache sits behind the
+# standard actions/cache and actions/setup-node. The Linux runners match ubuntu-latest's 4 vCPUs so
+# the bench budgets keep meaning the same thing. Windows is in public beta there; macOS costs
+# 20 Linux minutes a minute, so it stays off the per-change path (see e2e-desktop.yml).
+# If a job queues forever, the Blacksmith GitHub App is not installed on this repository.
 jobs:
   test:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [blacksmith-4vcpu-ubuntu-2404, blacksmith-6vcpu-macos-latest, blacksmith-4vcpu-windows-2025]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -38,11 +44,11 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: playwright-${{ matrix.os }}
+          name: playwright-${{ runner.os }}
           path: apps/desktop/test-results/
 
   bench:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [blacksmith-6vcpu-macos-latest, blacksmith-4vcpu-windows-2025]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -39,5 +39,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: playwright-${{ matrix.os }}
+          name: playwright-${{ runner.os }}
           path: apps/desktop/test-results/
