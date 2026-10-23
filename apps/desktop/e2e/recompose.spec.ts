@@ -175,13 +175,14 @@ test('squashing in the review, and refusing a selection that is not a range', as
   const { r, C1, C3 } = setup()
   const { app, page } = await launch(r.dir)
   await page.evaluate((p) => window.gitgoose.setSettings(p as never), AGENT)
-  // C1 and C3 do not follow each other: main refuses before asking the AI anything.
+  // C1 and C3 do not follow each other: the item is greyed with the reason, so the AI is never asked.
   await row(page, C3).click()
   await row(page, C1).click({ modifiers: ['ControlOrMeta'] })
   await row(page, C1).click({ button: 'right' })
-  await page.getByRole('menuitem', { name: 'Recompose with AI…' }).click()
-  await expect(page.getByTestId('recompose-error')).toContainText('follow each other')
-  await page.getByRole('button', { name: 'Close' }).click()
+  const recompose = page.getByRole('menuitem', { name: 'Recompose with AI…' })
+  await expect(recompose).toHaveAttribute('aria-disabled', 'true')
+  await expect(recompose).toHaveAttribute('aria-description', /follow each other/)
+  await page.keyboard.press('Escape')
 
   // One commit can be split too; squash the proposal back into one: Shift-click both proposed
   // commits, then the right-click menu. (A plain click first: while both stay selected, the

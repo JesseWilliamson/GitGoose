@@ -23,7 +23,7 @@ test('drop a commit from the menu, then undo it', async () => {
   await app.close()
 })
 
-test('move a commit up and down from the menu; the root commit is not offered', async () => {
+test('move a commit up and down from the menu; the root commit is offered greyed, with the reason', async () => {
   const { r, B } = setup()
   const { app, page } = await launch(r.dir)
   await row(page, B).click({ button: 'right' })
@@ -35,7 +35,7 @@ test('move a commit up and down from the menu; the root commit is not offered', 
   await expect.poll(() => subjects(r)).toEqual(['D', 'C', 'B', 'A', 'root'])
   const root = r.git('rev-list', '--max-parents=0', 'HEAD').trim()
   await row(page, root).click({ button: 'right' })
-  await expect(page.getByRole('menu')).not.toContainText('Drop commit')
+  await expect(page.getByRole('menuitem', { name: 'Drop commit' })).toHaveAttribute('aria-disabled', 'true')
   await page.keyboard.press('Escape')
   await app.close()
 })

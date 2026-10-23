@@ -53,6 +53,12 @@ per repository in settings (`sidebar`), so it survives a restart.
 
 ### Context menus
 
+An action that cannot run is shown greyed with the reason in a tooltip (and as the item's
+`aria-description`); only real alternates are swapped (Pin / Unpin, Show / Hide in the graph,
+Push / Publish, Lock / Unlock). The reasons are pure functions in `lib/menuRules.ts` (one per
+conditional action, `undefined` when allowed), tested in `menuRules.test.ts` and shared with the
+AI pane. The lists below name everything a menu can offer; some items are greyed in some states.
+
 - **Local branch**: Check out; Check out in a new worktree…; Create branch from…; Merge into HEAD,
   Merge options ▸, Rebase HEAD onto it; Pull (HEAD's branch); Fast-forward (only behind); Push, or
   Publish to <remote> (no upstream); Force push with lease…; Push to <remote>…; Track ▸; Stop

@@ -135,9 +135,12 @@ export const CM = {
   ),
   Separator: () => <ContextMenuSeparator />,
   Label: ({ children }: { children: ReactNode }) => <ContextMenuLabel className="truncate py-1 text-[11px] font-normal text-faint">{children}</ContextMenuLabel>,
-  Sub: ({ label, children }: { label: string; children: ReactNode }) => (
+  /** `reason` greys the whole submenu out (its trigger), for when none of its items could run. */
+  Sub: ({ label, children, reason }: { label: string; children: ReactNode; reason?: string }) => (
     <ContextMenuSub>
-      <ContextMenuSubTrigger className={itemText}>{label}</ContextMenuSubTrigger>
+      <Reason reason={reason}>
+        <ContextMenuSubTrigger className={itemText} disabled={!!reason} aria-description={reason}>{label}</ContextMenuSubTrigger>
+      </Reason>
       <ContextMenuSubContent>{children}</ContextMenuSubContent>
     </ContextMenuSub>
   ),
