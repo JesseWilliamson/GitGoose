@@ -1,7 +1,7 @@
 import type { BlameLine, Commit, DiffTarget, FileDiff, HunkSelection, ReviewFinding } from '@gitgoose/shared'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import clsx from 'clsx'
-import { ChevronDown, ExternalLink, MessageCircleQuestion, X } from 'lucide-react'
+import { Ellipsis, MessageCircleQuestion, X } from 'lucide-react'
 import { DropdownMenu } from 'radix-ui'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AskPanel } from './AskPanel'
@@ -20,7 +20,7 @@ import { tokenize, type Tokens } from '../lib/highlight'
 import { heatByCommit, heatColor } from '../lib/heat'
 import { avatarSrc } from '../lib/avatar'
 import { codeLineHeight, ensureLoaded, reportError, saveSettings, updateRepo, useSetting, type FileMode, type RepoView } from '../lib/store'
-import { Button, DM, Spinner } from './ui'
+import { Button, DM, Segmented, Spinner } from './ui'
 import { modName } from '../lib/keys'
 import { findingsFor } from '../lib/review'
 import { askAbout } from '../lib/ask'
@@ -40,7 +40,7 @@ export function FileView({ view, target, mode }: { view: RepoView; target: DiffT
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) close()
+      if (e.key === 'Escape' && !e.defaultPrevented && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) close()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -50,34 +50,17 @@ export function FileView({ view, target, mode }: { view: RepoView; target: DiffT
     <div className="flex min-h-0 min-w-0 flex-1 flex-col" data-testid="file-view">
       <div className="flex h-10 shrink-0 items-center gap-3 border-b border-border bg-card px-3">
         <div className="min-w-0 flex-1 truncate text-sm">
-          <span className="text-muted-foreground/70">{dir}</span><span className="font-semibold">{name}</span>
+          <span className="text-hint">{dir}</span><span className="font-semibold">{name}</span>
           <span className="ml-2 text-xs text-muted-foreground">{where}</span>
         </div>
-        {rev && <RevisionMenu view={view} rev={rev} path={target.path} />}
-        {mode === 'diff' && target.kind !== 'untracked' && (
-          <Button size="sm" variant="ghost" onClick={() => void openDiffTool(view.id, target)} title="Open in your external diff tool (Settings → Diff)" data-testid="open-diff-tool">
-            <ExternalLink size={12} /> Diff tool
-          </Button>
-        )}
         {mode === 'diff' && (
-          <div className="flex rounded-md border border-border p-0.5 text-xs" role="group" aria-label="Diff layout">
-            {(['unified', 'split'] as const).map((l) => (
-              <button key={l} onClick={() => void saveSettings({ diffLayout: l })} data-testid={`layout-${l}`} aria-pressed={layout === l}
-                className={clsx('rounded px-2 py-0.5', layout === l ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground')}>
-                {l === 'unified' ? 'Unified' : 'Split'}
-              </button>
-            ))}
-          </div>
+          <Segmented label="Diff layout" value={layout} onChange={(l) => void saveSettings({ diffLayout: l })} testId={(l) => `layout-${l}`}
+            options={[{ value: 'unified', label: 'Unified' }, { value: 'split', label: 'Split' }]} />
         )}
-        <div className="flex rounded-md border border-border p-0.5 text-xs">
-          {(['diff', 'history', 'blame'] as const).map((m) => (
-            <button key={m} onClick={() => setMode(m)}
-              className={clsx('rounded px-2 py-0.5 capitalize', mode === m ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground')}>
-              {m}
-            </button>
-          ))}
-        </div>
-        <button onClick={close} title="Close (Esc)" className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"><X size={16} /></button>
+        <Segmented label="View" value={mode} onChange={setMode} testId={(m) => `mode-${m}`}
+          options={[{ value: 'diff', label: 'Diff' }, { value: 'history', label: 'History' }, { value: 'blame', label: 'Blame' }]} />
+        <FileMenu view={view} target={target} mode={mode} rev={rev} />
+        <button onClick={close} title="Close (Esc)" aria-label="Close" className="no-drag flex size-row-lg items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><X size={16} /></button>
       </div>
       {mode === 'diff' && <DiffPane view={view} target={target} />}
       {mode === 'history' && <HistoryPane view={view} path={target.path} />}
@@ -240,8 +223,8 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
   })
   useEffect(() => virt.measure(), [lineH, wrap, split, virt])
 
-  if (diff === undefined) return <div className="flex flex-1 items-center justify-center text-muted-foreground/70"><Spinner /></div>
-  if (diff === null) return <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground/70">No changes to show</div>
+  if (diff === undefined) return <div className="flex flex-1 items-center justify-center text-hint"><Spinner /></div>
+  if (diff === null) return <div className="flex flex-1 items-center justify-center text-sm text-hint">No changes to show</div>
 
   // Line and hunk staging work on the diff as shown; with whitespace hidden, the patch would
   // carry changes the user never saw, so it is switched off (whole-file staging still works).
@@ -327,9 +310,9 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
       {asImage ? (
         <ImageDiff repoId={view.id} target={target} path={target.path} />
       ) : diff.binary ? (
-        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground/70">Binary file</div>
+        <div className="flex flex-1 items-center justify-center text-sm text-hint">Binary file</div>
       ) : diff.hunks.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground/70">{diff.change === 'added' ? 'Empty file' : 'Only the file mode changed'}</div>
+        <div className="flex flex-1 items-center justify-center text-sm text-hint">{diff.change === 'added' ? 'Empty file' : 'Only the file mode changed'}</div>
       ) : (
         <div ref={scrollRef} className="selectable min-h-0 flex-1 overflow-auto" style={CODE_STYLE} data-testid="diff-lines"
           onMouseDownCapture={(e) => {
@@ -350,7 +333,7 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
               const hunk = diff.hunks[it.hunk]!
               if (it.kind === 'hunk') {
                 return (
-                  <div key={vi.key} ref={wrap ? virt.measureElement : undefined} data-index={vi.index} style={style} className="flex items-center gap-2 border-y border-border/50 bg-card pr-3 pl-2 text-muted-foreground/70">
+                  <div key={vi.key} ref={wrap ? virt.measureElement : undefined} data-index={vi.index} style={style} className="flex items-center gap-2 border-y border-border/50 bg-card pr-3 pl-2 text-hint">
                     <span className="sticky left-2 truncate">@@ -{hunk.oldStart},{hunk.oldLines} +{hunk.newStart},{hunk.newLines} @@ {hunk.section}</span>
                     {editable && (
                       <span className="sticky right-3 ml-auto flex gap-1 font-sans">
@@ -378,7 +361,7 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
                       className={clsx('flex w-1/2 min-w-0 whitespace-pre-wrap break-all', side === 'right' && 'border-l border-border',
                         l.kind === '+' && 'bg-add-bg', l.kind === '-' && 'bg-del-bg', l.kind !== ' ' && editable && 'cursor-pointer',
                         selected && 'ring-1 ring-primary ring-inset brightness-125')}>
-                      <span className={clsx('relative w-10 shrink-0 pr-1 text-right text-muted-foreground/70', selected && 'bg-select')}>
+                      <span className={clsx('relative w-10 shrink-0 pr-1 text-right text-hint', selected && 'bg-select')}>
                         {side === 'right' && marker(findingAt(l.newNo))}
                         {side === 'left' ? (l.oldNo ?? '') : (l.newNo ?? '')}
                       </span>
@@ -403,7 +386,7 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
                   title={target.kind !== 'commit' ? 'Double-click to open in your editor at this line' : undefined}
                   className={clsx('flex', wrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre', line.kind === '+' && 'bg-add-bg', line.kind === '-' && 'bg-del-bg',
                     line.kind !== ' ' && editable && 'cursor-pointer', selected && 'ring-1 ring-primary ring-inset brightness-125')}>
-                  <span className={clsx('sticky left-0 flex w-[84px] shrink-0 self-stretch bg-background text-right text-muted-foreground/70', selected && 'bg-select')}>
+                  <span className={clsx('sticky left-0 flex w-[84px] shrink-0 self-stretch bg-background text-right text-hint', selected && 'bg-select')}>
                     {line.kind !== '-' && marker(findingAt(line.newNo))}
                     <span className="w-9 pr-1">{line.oldNo ?? ''}</span>
                     <span className="w-9 pr-1">{line.newNo ?? ''}</span>
@@ -439,23 +422,39 @@ function LineText({ text, tokens, ranges, kind, noNewline }: {
         <span key={k} style={{ color: s.color }} data-changed={s.changed || undefined}
           className={s.changed ? (kind === '+' ? 'rounded-sm bg-add/30' : 'rounded-sm bg-destructive/30') : undefined}>{s.text}</span>
       ))}
-      {noNewline && <span className="ml-2 text-muted-foreground/70" title="No newline at end of file">⏎̸</span>}
+      {noNewline && <span className="ml-2 text-hint" title="No newline at end of file">⏎̸</span>}
     </>
   )
 }
 
-/** Restore, open or save the file as it is at a revision. */
-function RevisionMenu({ view, rev, path }: { view: RepoView; rev: string; path: string }) {
+/**
+ * The file's less-used actions in one menu: what can be done with this version of it (open it,
+ * save it, restore it; only when the view is at a revision) and the external diff tool. Hidden
+ * when there is nothing in it.
+ */
+function FileMenu({ view, target, mode, rev }: { view: RepoView; target: DiffTarget; mode: FileMode; rev: string | undefined }) {
+  const path = target.path
+  const diffTool = mode === 'diff' && target.kind !== 'untracked'
+  if (!rev && !diffTool) return null
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
-        <Button size="sm" variant="ghost" data-testid="revision-menu">This version <ChevronDown size={12} /></Button>
+        <button aria-label="File actions" title="File actions" data-testid="file-menu"
+          className="no-drag flex size-row-lg items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground">
+          <Ellipsis size={16} />
+        </button>
       </DropdownMenu.Trigger>
       <DM.Content align="end">
-        <DM.Item onSelect={() => void api.openFileAt(view.id, rev, path).catch((e) => reportError('Could not open the file', e))}>Open this version</DM.Item>
-        <DM.Item onSelect={() => void api.saveFileAt(view.id, rev, path).catch((e) => reportError('Could not save the file', e))}>Save this version as…</DM.Item>
-        <DM.Separator />
-        <DM.Item onSelect={() => void restoreFileFrom(view.id, path, rev)}>{view.stashes.some((s) => s.hash === rev) ? 'Take this file from the stash' : 'Restore the working copy to this version'}</DM.Item>
+        {rev && (
+          <>
+            <DM.Label>This version</DM.Label>
+            <DM.Item testId="revision-open" onSelect={() => void api.openFileAt(view.id, rev, path).catch((e) => reportError('Could not open the file', e))}>Open this version</DM.Item>
+            <DM.Item testId="revision-save" onSelect={() => void api.saveFileAt(view.id, rev, path).catch((e) => reportError('Could not save the file', e))}>Save this version as…</DM.Item>
+            <DM.Item testId="revision-restore" onSelect={() => void restoreFileFrom(view.id, path, rev)}>{view.stashes.some((s) => s.hash === rev) ? 'Take this file from the stash' : 'Restore the working copy to this version'}</DM.Item>
+          </>
+        )}
+        {rev && diffTool && <DM.Separator />}
+        {diffTool && <DM.Item testId="open-diff-tool" title="Open in your external diff tool (Settings → Diff)" onSelect={() => void openDiffTool(view.id, target)}>Open in diff tool</DM.Item>}
       </DM.Content>
     </DropdownMenu.Root>
   )
@@ -470,10 +469,10 @@ function HistoryPane({ view, path }: { view: RepoView; path: string }) {
     setCommits(null)
     api.fileHistory(view.id, path).then(setCommits, (e) => reportError('Could not load history', e))
   }, [view.id, path])
-  if (!commits) return <div className="flex flex-1 items-center justify-center text-muted-foreground/70"><Spinner /></div>
+  if (!commits) return <div className="flex flex-1 items-center justify-center text-hint"><Spinner /></div>
   return (
     <div className="min-h-0 flex-1 overflow-y-auto" data-testid="file-history">
-      {commits.length === 0 && <div className="p-4 text-sm text-muted-foreground/70">No commits touch this file yet.</div>}
+      {commits.length === 0 && <div className="p-4 text-sm text-hint">No commits touch this file yet.</div>}
       {commits.map((c) => (
         <button key={c.hash}
           onClick={() => {
@@ -481,10 +480,10 @@ function HistoryPane({ view, path }: { view: RepoView; path: string }) {
             void ensureLoaded(view.id, c.hash)
           }}
           className="flex w-full items-center gap-3 border-b border-border/50 px-4 py-2 text-left text-sm hover:bg-accent">
-          <span className="font-mono text-xs text-muted-foreground/70">{shortHash(c.hash)}</span>
+          <span className="font-mono text-xs text-hint">{shortHash(c.hash)}</span>
           <span className="min-w-0 flex-1 truncate">{c.subject}</span>
           <span className="text-xs text-muted-foreground">{c.authorName}</span>
-          <span className="w-24 text-right text-xs text-muted-foreground/70">{formatDate(c.authorDate, dateFormat)}</span>
+          <span className="w-24 text-right text-xs text-hint">{formatDate(c.authorDate, dateFormat)}</span>
         </button>
       ))}
     </div>
@@ -508,7 +507,7 @@ function BlamePane({ view, path, rev }: { view: RepoView; path: string; rev?: st
   useEffect(() => virt.measure(), [lineH, virt])
   const heats = useMemo(() => heatByCommit(lines ?? []), [lines])
   const avatars = useSetting('avatars')
-  if (!lines) return <div className="flex flex-1 items-center justify-center text-muted-foreground/70"><Spinner /></div>
+  if (!lines) return <div className="flex flex-1 items-center justify-center text-hint"><Spinner /></div>
   return (
     <div ref={scrollRef} className="selectable min-h-0 flex-1 overflow-auto" style={CODE_STYLE} data-testid="blame">
       <div style={{ height: virt.getTotalSize(), position: 'relative' }} className="w-max min-w-full">
@@ -531,14 +530,14 @@ function BlamePane({ view, path, rev }: { view: RepoView; path: string; rev?: st
                     <span data-testid="blame-avatar" className="flex shrink-0">
                       <Avatar name={l.author} email={l.email} src={avatarSrc(l.email, avatars)} size={Math.min(16, lineH - 2)} />
                     </span>
-                    <span className="font-mono text-muted-foreground/70">{shortHash(l.hash)}</span>
+                    <span className="font-mono text-hint">{shortHash(l.hash)}</span>
                     <span className="min-w-0 flex-1 truncate">{l.summary}</span>
-                    <span className="text-muted-foreground/70">{l.author.split(' ')[0]}</span>
-                    <span className="text-muted-foreground/70">{relativeTime(l.date)}</span>
+                    <span className="text-hint">{l.author.split(' ')[0]}</span>
+                    <span className="text-hint">{relativeTime(l.date)}</span>
                   </button>
                 )}
               </span>
-              <span className="w-10 shrink-0 pr-2 text-right text-muted-foreground/70">{l.lineNo}</span>
+              <span className="w-10 shrink-0 pr-2 text-right text-hint">{l.lineNo}</span>
               <span className="pr-4">{l.text}</span>
             </div>
           )

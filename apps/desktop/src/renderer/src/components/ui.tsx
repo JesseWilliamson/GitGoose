@@ -70,11 +70,17 @@ export function WithTooltip({ text, children, side, delay }: { text?: string; ch
 }
 
 /**
- * An icon-only toolbar button. The label is its accessible name and (unless a richer title is
- * given) its tooltip, so screen readers and tests still see "Push", not an arrow.
+ * The one toolbar button: 28 px tall (h-row-lg), a 16 px icon, optionally a count beside the icon
+ * (commits to pull or push) and optionally text after it (the Undo chip). The label is its
+ * accessible name and (unless a richer title is given) its tooltip, so screen readers and tests
+ * still see "Push", not an arrow.
  */
-export function ToolbarButton({ icon, label, onClick, disabled, title, badge, className }: {
-  icon: ReactNode; label: string; onClick?: () => void; disabled?: boolean; title?: string; badge?: ReactNode; className?: string
+export function ToolbarButton({ icon, label, onClick, disabled, title, count, children, className }: {
+  icon: ReactNode; label: string; onClick?: () => void; disabled?: boolean; title?: string
+  /** A number shown beside the icon when it is more than zero. */
+  count?: number
+  /** Text after the icon (and the count). */
+  children?: ReactNode; className?: string
 }) {
   return (
     <WithTooltip text={title ?? label} side="bottom">
@@ -82,12 +88,34 @@ export function ToolbarButton({ icon, label, onClick, disabled, title, badge, cl
         onClick={onClick}
         disabled={disabled}
         aria-label={label}
-        className={cn('no-drag relative flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-40', className)}
+        className={cn('no-drag flex h-row-lg min-w-row-lg shrink-0 items-center justify-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-40', className)}
       >
         {icon}
-        {badge}
+        {!!count && count > 0 && <span className="font-medium text-primary tabular-nums" data-testid="toolbar-count">{count}</span>}
+        {children}
       </button>
     </WithTooltip>
+  )
+}
+
+/**
+ * A segmented control: a few options side by side, one of them chosen. The one style for every
+ * "pick one of these views" (the diff layout, the diff / history / blame tabs). Each option is a
+ * button with aria-pressed, so it is found by its name and keeps the keyboard behaviour of a button.
+ */
+export function Segmented<T extends string>({ value, onChange, options, label, testId }: {
+  value: T; onChange: (v: T) => void; label: string; testId?: (v: T) => string
+  options: { value: T; label: string }[]
+}) {
+  return (
+    <div role="group" aria-label={label} className="no-drag inline-flex h-row-lg shrink-0 items-center gap-0.5 rounded-md border border-border bg-background p-0.5">
+      {options.map((o) => (
+        <button key={o.value} type="button" onClick={() => onChange(o.value)} aria-pressed={value === o.value} data-testid={testId?.(o.value)}
+          className={cn('h-full rounded-sm px-2 text-xs', value === o.value ? 'bg-accent font-medium text-foreground' : 'text-muted-foreground hover:text-foreground')}>
+          {o.label}
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -95,12 +123,25 @@ export function Spinner({ className }: { className?: string }) {
   return <span className={cn('inline-block size-3 animate-spin rounded-full border-2 border-current border-t-transparent', className)} />
 }
 
-export function SectionHeader({ children, right }: { children: ReactNode; right?: ReactNode }) {
+/** The look of every section header: sentence case, 12 px medium, muted. Not uppercase: it is a label, not a shout. */
+export const sectionHeaderClass = 'text-xs font-medium text-muted-foreground'
+
+/**
+ * The one section header. `count` is a muted suffix ("Unstaged 3"), `right` is a slot for the
+ * section's own actions, `as` lets a heading be a real heading for screen readers, and
+ * `className` adjusts the padding where a header sits in a narrower surface.
+ */
+export function SectionHeader({ children, count, right, as: Tag = 'div', className }: {
+  children: ReactNode; count?: number | string; right?: ReactNode; as?: 'div' | 'h2' | 'h3'; className?: string
+}) {
   return (
-    <div className="flex h-row-lg items-center justify-between px-3 text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
-      <span className="truncate">{children}</span>
+    <Tag className={cn('flex h-row-lg items-center justify-between gap-2 px-3', sectionHeaderClass, className)}>
+      <span className="truncate">
+        {children}
+        {count !== undefined && <span className="ml-1.5 font-normal text-hint">{count}</span>}
+      </span>
       {right}
-    </div>
+    </Tag>
   )
 }
 
@@ -134,7 +175,7 @@ export const CM = {
     </Reason>
   ),
   Separator: () => <ContextMenuSeparator />,
-  Label: ({ children }: { children: ReactNode }) => <ContextMenuLabel className="truncate py-1 text-2xs font-normal text-muted-foreground/70">{children}</ContextMenuLabel>,
+  Label: ({ children }: { children: ReactNode }) => <ContextMenuLabel className="truncate py-1 text-2xs font-normal text-hint">{children}</ContextMenuLabel>,
   /** `reason` greys the whole submenu out (its trigger), for when none of its items could run. */
   Sub: ({ label, children, reason }: { label: string; children: ReactNode; reason?: string }) => (
     <ContextMenuSub>
@@ -164,7 +205,7 @@ export const DM = {
     </DropdownMenuCheckboxItem>
   ),
   Separator: () => <DropdownMenuSeparator />,
-  Label: ({ children }: { children: ReactNode }) => <DropdownMenuLabel className="py-1 text-2xs font-normal text-muted-foreground/70">{children}</DropdownMenuLabel>,
+  Label: ({ children }: { children: ReactNode }) => <DropdownMenuLabel className="py-1 text-2xs font-normal text-hint">{children}</DropdownMenuLabel>,
   Sub: ({ label, children }: { label: string; children: ReactNode }) => (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger className={itemText}>{label}</DropdownMenuSubTrigger>
@@ -173,28 +214,54 @@ export const DM = {
   ),
 }
 
-export function Modal({ open, onClose, title, children, width = 440, tall = false, onEscapeKeyDown }: {
-  open: boolean; onClose: () => void; title: string; children: ReactNode; width?: number
+/**
+ * One width per kind of dialog: `sm` 400 (a question, a prompt, one field), `md` 520 (a form, a
+ * list, a message with detail), `lg` 720 (something with code or a diff in it), `xl` 1120 (an
+ * editor, only the recompose workbench). The rhythm is on the 4 px grid: the title is text-base
+ * semibold, 12 px to the body, the body's blocks are 12 px apart (space-y-3), and the footer, with
+ * `ModalFooter`, sits 16 px under the body with its buttons at the right, the primary one last.
+ * Esc closes (Radix); Enter in a form submits it, and `onEnter` does the same for a dialog that
+ * has no form (it is not called from a text area or a button, where Enter means something else).
+ */
+export const MODAL_WIDTH = { sm: 400, md: 520, lg: 720, xl: 1120 } as const
+export type ModalSize = keyof typeof MODAL_WIDTH
+
+export function Modal({ open, onClose, title, children, size = 'sm', tall = false, onEscapeKeyDown, onEnter }: {
+  open: boolean; onClose: () => void; title: string; children: ReactNode; size?: ModalSize
   /** A big dialog (a whole editor): placed near the top so it has the height. */
   tall?: boolean
   /** Esc closes the dialog unless this calls preventDefault (to end something inside it first). */
   onEscapeKeyDown?: (e: KeyboardEvent) => void
+  /** Enter runs the dialog's primary action, for a dialog without a form. */
+  onEnter?: () => void
 }) {
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent
         showCloseButton={false}
         onEscapeKeyDown={onEscapeKeyDown}
-        style={{ width }}
+        onKeyDown={onEnter ? (e) => {
+          if (e.key !== 'Enter' || e.defaultPrevented || e.shiftKey) return
+          if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLButtonElement || e.target instanceof HTMLAnchorElement) return
+          e.preventDefault()
+          onEnter()
+        } : undefined}
+        data-size={size}
+        style={{ width: MODAL_WIDTH[size] }}
         // shadcn centres a dialog and caps it at sm:max-w-lg; ours sit near the top and choose their width.
         className={cn('block max-w-[94vw] translate-y-0 gap-0 p-4 sm:max-w-[94vw]', tall ? 'top-[5vh]' : 'top-[18%]')}
       >
-        <DialogTitle className="mb-3 text-base leading-normal">{title}</DialogTitle>
+        <DialogTitle className="mb-3 text-base leading-normal font-semibold">{title}</DialogTitle>
         <DialogDescription className="sr-only">{title}</DialogDescription>
-        {children}
+        <div className="space-y-3">{children}</div>
       </DialogContent>
     </Dialog>
   )
+}
+
+/** The buttons at the bottom of a dialog: right-aligned, the primary one last (put a left-hand tool first with `mr-auto`). */
+export function ModalFooter({ children, className }: { children: ReactNode; className?: string }) {
+  return <div className={cn('flex flex-wrap items-center justify-end gap-2 pt-1', className)}>{children}</div>
 }
 
 export function TextField({ label, className, ...props }: InputHTMLAttributes<HTMLInputElement> & { label?: string }) {

@@ -7,6 +7,6 @@
     "paths": { "@/*": ["./src/renderer/src/*"] }
   },
   "include": ["src/renderer/src", "src/preload/types.d.ts"],
-  // These run real git through @gitgoose/fixtures (Node), so tsconfig.node.json checks them.
-  "exclude": ["src/renderer/src/lib/lineView.test.ts", "src/renderer/src/lib/store.test.ts"]
+  // These run real git through @gitgoose/fixtures (Node), or read a file (hint.test.ts), so tsconfig.node.json checks them.
+  "exclude": ["src/renderer/src/lib/lineView.test.ts", "src/renderer/src/lib/store.test.ts", "src/renderer/src/lib/hint.test.ts"]
 }

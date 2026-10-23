@@ -59,17 +59,17 @@ export function CommandLogView({ view }: { view: RepoView }) {
         <Button variant="ghost" onClick={() => updateRepo(view.id, { center: { kind: 'graph' } })}>Back to graph</Button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto font-mono text-xs">
-        {shown.length === 0 && <div className="p-4 font-sans text-xs text-muted-foreground/70">Nothing yet{reads ? '' : ' (reads are hidden)'}.</div>}
+        {shown.length === 0 && <div className="p-4 font-sans text-xs text-hint">Nothing yet{reads ? '' : ' (reads are hidden)'}.</div>}
         {shown.map((r) => {
           const failed = r.code !== null && r.code !== 0
           const cmd = `git ${r.args.map((a) => (/[\s"'$`\\]/.test(a) ? JSON.stringify(a) : a)).join(' ')}`
           return (
             <div key={r.id} className="border-b border-border/50" data-testid="command-row" data-failed={failed || undefined}>
               <div onClick={() => setOpen(open === r.id ? null : r.id)} className="flex h-7 cursor-default items-center gap-3 px-4 hover:bg-accent">
-                <span className="w-16 shrink-0 text-muted-foreground/70">{new Date(r.start).toLocaleTimeString([], { hour12: false })}</span>
+                <span className="w-16 shrink-0 text-hint">{new Date(r.start).toLocaleTimeString([], { hour12: false })}</span>
                 <span className={clsx('min-w-0 flex-1 truncate', failed && 'text-destructive')} title={cmd}>{cmd}</span>
-                <span className="w-16 shrink-0 text-right text-muted-foreground/70">{r.durationMs === null ? 'running' : `${r.durationMs} ms`}</span>
-                <span className={clsx('w-8 shrink-0 text-right', failed ? 'text-destructive' : 'text-muted-foreground/70')} title="Exit code">{r.code ?? ''}</span>
+                <span className="w-16 shrink-0 text-right text-hint">{r.durationMs === null ? 'running' : `${r.durationMs} ms`}</span>
+                <span className={clsx('w-8 shrink-0 text-right', failed ? 'text-destructive' : 'text-hint')} title="Exit code">{r.code ?? ''}</span>
               </div>
               {open === r.id && (
                 <div className="bg-background px-4 py-2">

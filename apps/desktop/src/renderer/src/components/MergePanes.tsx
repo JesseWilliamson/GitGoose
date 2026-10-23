@@ -391,7 +391,7 @@ export default function MergePanes({ base, ours, theirs, labels, onSave }: Merge
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex shrink-0 items-center gap-2 border-b border-border bg-card px-3 py-1 text-2xs">
             <span className="font-semibold text-foreground">Result</span>
-            <span className="text-muted-foreground/70">editable · lines show where they came from:</span>
+            <span className="text-hint">editable · lines show where they came from:</span>
             <span className="flex items-center gap-1 text-muted-foreground"><i className="size-2 rounded-sm bg-ours" /> yours</span>
             <span className="flex items-center gap-1 text-muted-foreground"><i className="size-2 rounded-sm bg-theirs" /> theirs</span>
             <span className="flex items-center gap-1 text-muted-foreground"><i className="size-2 rounded-sm bg-add" /> by hand</span>

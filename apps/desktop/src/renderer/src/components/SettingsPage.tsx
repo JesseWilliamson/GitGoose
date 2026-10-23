@@ -10,7 +10,7 @@ import { saveSettings, useStore } from '../lib/store'
 import { OptionSelect } from './OptionSelect'
 import { AiPanel } from './AiPanel'
 import { SettingsRow, SwitchSlot } from './SettingsRow'
-import { Kbd } from './ui'
+import { Kbd, SectionHeader } from './ui'
 
 /**
  * The settings page, generated from the SETTINGS table in packages/shared/src/settings.ts.
@@ -99,7 +99,7 @@ export function SettingsPage() {
       <div className="flex min-h-0 flex-1">
         <nav className="flex w-56 shrink-0 flex-col border-r border-border bg-card">
           <div className="relative p-3">
-            <Search size={13} className="pointer-events-none absolute top-1/2 left-5.5 -translate-y-1/2 text-muted-foreground/70" />
+            <Search size={13} className="pointer-events-none absolute top-1/2 left-5.5 -translate-y-1/2 text-hint" />
             <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search settings"
               className="h-input bg-background pl-7 text-sm md:text-sm dark:bg-background" data-testid="settings-search" />
           </div>
@@ -113,12 +113,12 @@ export function SettingsPage() {
         {/* The bottom padding lets the last sections scroll up to the top, where the nav picks them. */}
         <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-8 pb-[50vh]" data-testid="settings-scroll">
           <div className="mx-auto max-w-[960px]">
-            {sections.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground/70">No settings match “{query}”.</p>}
+            {sections.length === 0 && <p className="py-8 text-center text-sm text-hint">No settings match “{query}”.</p>}
             {sections.map((s) => {
               const Panel = SECTION_PANELS[s]
               return (
                 <section key={s} data-section={s} className="mt-6 scroll-mt-6">
-                  <h2 className="flex h-7 items-center border-b border-border text-2xs font-semibold tracking-wide text-muted-foreground uppercase">{s}</h2>
+                  <SectionHeader as="h2" className="h-8 border-b border-border px-0">{s}</SectionHeader>
                   {shown.filter((v) => v.spec.section === s).map((v) => (
                     <SettingRow key={v.key} k={v.key} spec={v.spec} value={settings[v.key]} />
                   ))}
@@ -140,7 +140,7 @@ function SettingRow({ k, spec, value }: { k: SettingKey; spec: Visible['spec']; 
   return (
     <SettingsRow testid={`setting-${k}`} label={spec.label} description={spec.description}
       labelExtra={modified && (
-        <button onClick={() => set(spec.default)} title="Reset to default" className="text-muted-foreground/70 hover:text-primary" data-testid={`reset-${k}`}>
+        <button onClick={() => set(spec.default)} title="Reset to default" className="text-hint hover:text-primary" data-testid={`reset-${k}`}>
           <RotateCcw size={11} />
         </button>
       )}>

@@ -82,7 +82,7 @@ export function Thread({ thread, repoId, testids = {}, placeholder, hint, hintTi
         {!turns.length && hint && (
           // The empty state: one short centred line, with the icon the AI wears everywhere else.
           <div className="flex min-h-full flex-col items-center justify-center gap-2 px-4 text-center text-xs text-muted-foreground" data-testid="thread-empty" title={hintTitle}>
-            <Sparkles size={18} className="text-muted-foreground/70" />
+            <Sparkles size={18} className="text-hint" />
             <p className="max-w-60 leading-relaxed">{hint}</p>
           </div>
         )}
@@ -94,7 +94,7 @@ export function Thread({ thread, repoId, testids = {}, placeholder, hint, hintTi
       </div>
       {(thread.mode || !!thread.commands?.length) && (
         // What the agent says about itself (ACP current_mode_update, available_commands_update).
-        <div className="shrink-0 truncate border-t border-border px-3 py-0.5 text-2xs text-muted-foreground/70" data-testid="thread-meta"
+        <div className="shrink-0 truncate border-t border-border px-3 py-0.5 text-2xs text-hint" data-testid="thread-meta"
           title={thread.commands?.length ? 'Slash commands the agent offers: type one as your message' : undefined}>
           {thread.mode && <>Mode: {thread.mode}</>}{thread.mode && thread.commands?.length ? ' · ' : ''}
           {thread.commands?.length ? <>Commands: {thread.commands.map((c) => `/${c}`).join(' ')}</> : null}
@@ -114,7 +114,7 @@ export function Thread({ thread, repoId, testids = {}, placeholder, hint, hintTi
                 void send()
               }
             }}
-            className="block w-full resize-none bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground/70" />
+            className="block w-full resize-none bg-transparent px-3 py-2 text-sm outline-none placeholder:text-hint" />
           <div className="flex items-center gap-1 px-1.5 pb-1.5">
             {actions}
             {/* The area's pick: a change applies from the next message (main moves the conversation if needed). */}
@@ -146,7 +146,7 @@ function UserTurn({ turn, testid }: { turn: AiTurn; testid: string }) {
   // enough: turns are keyed by id, so it survives every streamed update.
   const [showSent, setShowSent] = useState(false)
   const toggle = turn.sent ? (
-    <button className="shrink-0 rounded px-1 text-2xs font-normal text-muted-foreground/70 hover:bg-accent hover:text-foreground" data-testid="thread-sent-toggle"
+    <button className="shrink-0 rounded px-1 text-2xs font-normal text-hint hover:bg-accent hover:text-foreground" data-testid="thread-sent-toggle"
       title="Show exactly what was sent" onClick={() => setShowSent(!showSent)}>{showSent ? 'Hide sent' : 'Sent'}</button>
   ) : null
   const sent = showSent && turn.sent ? (
@@ -156,7 +156,7 @@ function UserTurn({ turn, testid }: { turn: AiTurn; testid: string }) {
     return (
       <div className="mt-2">
         {/* The toggle sits beside the label, not in it: the label reads as the feature's name alone. */}
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground/70">
+        <div className="flex items-center gap-1.5 text-xs text-hint">
           <span className="flex items-center gap-1.5" data-testid="thread-feature"><Sparkles size={11} /> {turn.feature}</span>
           {toggle}
         </div>
@@ -185,11 +185,11 @@ const PROSE_FEATURES = new Set<AiThread['anchor']['kind']>(['explain', 'error', 
 function AgentTurn({ turn, thread, repoId, testid, retry, by }: { turn: AiTurn; thread: AiThread; repoId: string; testid: string; retry?: () => void; by?: string }) {
   const [raw, setRaw] = useState(false)
   // Shown where the speaker changes (the first answer, and after a switch).
-  const who = by ? <div className="mt-1 text-2xs text-muted-foreground/70" data-testid="thread-by">{by}</div> : null
+  const who = by ? <div className="mt-1 text-2xs text-hint" data-testid="thread-by">{by}</div> : null
   if (turn.feature && !PROSE_FEATURES.has(thread.anchor.kind)) {
     // The feature's own answer (JSON the view has already turned into its result).
     return (
-      <div className="mt-0.5 text-xs text-muted-foreground/70" data-testid="thread-feature-answer">
+      <div className="mt-0.5 text-xs text-hint" data-testid="thread-feature-answer">
         {who}
         {turn.status === 'running' ? <span className="flex items-center gap-1.5"><Spinner /> Working on it…</span>
           : turn.status === 'error' ? <span className="text-destructive">{turn.error?.message}</span>
@@ -206,7 +206,7 @@ function AgentTurn({ turn, thread, repoId, testid, retry, by }: { turn: AiTurn; 
         {turn.blocks.map((b, i) => <BlockView key={i} b={b} thread={thread} repoId={repoId} />)}
         {empty && turn.status === 'running' && <span className="flex items-center gap-2 text-muted-foreground"><Spinner /> Thinking…</span>}
       </div>
-      {turn.status === 'cancelled' && <div className="mt-1 text-xs text-muted-foreground/70" data-testid="thread-stopped">Stopped.</div>}
+      {turn.status === 'cancelled' && <div className="mt-1 text-xs text-hint" data-testid="thread-stopped">Stopped.</div>}
       {turn.status === 'error' && <div className="mt-1 flex items-start gap-1 text-xs text-destructive whitespace-pre-wrap" data-testid="thread-error"><CircleAlert size={12} className="mt-px shrink-0" /> {turn.error?.message}</div>}
       {retry && <Button size="sm" variant="ghost" className="mt-1" onClick={retry} data-testid="thread-retry"><RotateCcw size={11} /> Try again</Button>}
     </div>
@@ -237,7 +237,7 @@ function Thought({ text }: { text: string }) {
 }
 
 const STATUS_ICON: Record<AiToolCall['status'], ReactNode> = {
-  pending: <Circle size={11} className="text-muted-foreground/70" />,
+  pending: <Circle size={11} className="text-hint" />,
   in_progress: <Spinner className="size-3" />,
   completed: <Check size={11} className="text-add" />,
   failed: <CircleAlert size={11} className="text-destructive" />,
@@ -252,10 +252,10 @@ function ToolCard({ tool }: { tool: AiToolCall }) {
     <div className="my-1.5 rounded-md border border-border bg-card text-xs" data-testid="tool-card" data-status={tool.status} data-kind={tool.kind}>
       <button className="flex w-full items-center gap-2 px-2 py-1 text-left" onClick={() => setOpen(!open)}>
         {STATUS_ICON[tool.status]}
-        <Hammer size={11} className="text-muted-foreground/70" />
+        <Hammer size={11} className="text-hint" />
         <span className="min-w-0 flex-1 truncate font-medium" data-testid="tool-title">{tool.title}</span>
-        <span className="text-muted-foreground/70">{tool.kind}</span>
-        <ChevronRight size={11} className={clsx('text-muted-foreground/70 transition-transform', open && 'rotate-90')} />
+        <span className="text-hint">{tool.kind}</span>
+        <ChevronRight size={11} className={clsx('text-hint transition-transform', open && 'rotate-90')} />
       </button>
       {open && (
         <div className="border-t border-border px-2 py-1.5">
@@ -284,10 +284,10 @@ function DiffBox({ path, oldText, newText }: { path: string; oldText: string | n
     <div className="mt-1 overflow-hidden rounded border border-border" data-testid="tool-diff">
       <div className="flex items-center gap-1 border-b border-border bg-background px-1.5 py-0.5 font-mono text-2xs text-muted-foreground"><FileDiff size={11} /> {path.split(/[\\/]/).pop()}{oldText === null && ' (new file)'}</div>
       <pre className="selectable max-h-60 overflow-auto font-mono text-2xs leading-[1.45]">
-        {head > 0 && <div className="px-1.5 text-muted-foreground/70">… {head} unchanged line{head === 1 ? '' : 's'}</div>}
+        {head > 0 && <div className="px-1.5 text-hint">… {head} unchanged line{head === 1 ? '' : 's'}</div>}
         {removed.map((l, i) => <div key={`r${i}`} className="bg-del-bg px-1.5 text-destructive">-{l}</div>)}
         {added.map((l, i) => <div key={`a${i}`} className="bg-add-bg px-1.5 text-add">+{l}</div>)}
-        {tail > 0 && <div className="px-1.5 text-muted-foreground/70">… {tail} unchanged line{tail === 1 ? '' : 's'}</div>}
+        {tail > 0 && <div className="px-1.5 text-hint">… {tail} unchanged line{tail === 1 ? '' : 's'}</div>}
       </pre>
     </div>
   )
@@ -299,7 +299,7 @@ function PlanCard({ entries }: { entries: AiPlanEntry[] }) {
       <div className="mb-1 font-semibold text-muted-foreground">Plan</div>
       {entries.map((e, i) => (
         <div key={i} className="flex items-center gap-1.5" data-status={e.status}>
-          {e.status === 'completed' ? <Check size={11} className="text-add" /> : e.status === 'in_progress' ? <CircleDot size={11} className="text-primary" /> : <Circle size={11} className="text-muted-foreground/70" />}
+          {e.status === 'completed' ? <Check size={11} className="text-add" /> : e.status === 'in_progress' ? <CircleDot size={11} className="text-primary" /> : <Circle size={11} className="text-hint" />}
           <span className={clsx(e.status === 'completed' && 'text-muted-foreground line-through')}>{e.content}</span>
         </div>
       ))}
@@ -326,7 +326,7 @@ function PermissionCard({ p }: { p: AiPermissionAsk }) {
       <div className="mt-1">{p.title}</div>
       {p.paths.length > 0 && <div className="mt-0.5 font-mono text-2xs break-all text-muted-foreground">{p.paths.join('\n')}</div>}
       {p.answer ? (
-        <div className="mt-1.5 text-muted-foreground/70" data-testid="permission-answer">{ANSWERED[p.answer]}</div>
+        <div className="mt-1.5 text-hint" data-testid="permission-answer">{ANSWERED[p.answer]}</div>
       ) : (
         <div className="mt-2 flex flex-wrap gap-1.5">
           <Button size="sm" disabled={busy} onClick={() => answer('deny')} data-testid="thread-permission-deny">Deny</Button>
@@ -368,7 +368,7 @@ function ArtifactCard({ threadId, repoId, kind, json }: { threadId: string; repo
       {!checked ? <div className="mt-1 flex items-center gap-1.5 text-muted-foreground"><Spinner /> Checking it…</div> : <ArtifactSummary a={checked} />}
       {checked && checked.kind !== 'problem' && checked.kind !== 'diagram' && (
         <div className="mt-2">
-          {applied ? <span className="text-muted-foreground/70" data-testid="artifact-applied">Applied</span>
+          {applied ? <span className="text-hint" data-testid="artifact-applied">Applied</span>
             : <Button size="sm" variant="primary" onClick={() => setApplied(applyArtifact(repoId, checked))} data-testid="artifact-apply">Apply</Button>}
         </div>
       )}

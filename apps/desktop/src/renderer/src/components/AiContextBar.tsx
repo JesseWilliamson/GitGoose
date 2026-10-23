@@ -116,14 +116,14 @@ export function AiContextChips({ view, chips, sentKeys }: { view: RepoView; chip
           <Badge key={c.key} variant="outline" data-testid="ai-context-chip" data-kind={c.kind} data-selection={c.fromSelection || undefined} data-sent={sent ? 'true' : undefined}
             title={sent ? `${c.title} (already in this conversation, not sent again)` : c.title}
             className={clsx('h-row max-w-full rounded-sm border-border bg-card py-0 pr-0.5 pl-1.5 text-2xs font-normal', sent ? 'text-muted-foreground' : 'text-foreground')}>
-            <Icon size={11} className={clsx('shrink-0', sent ? 'text-muted-foreground/70' : 'text-primary')} />
+            <Icon size={11} className={clsx('shrink-0', sent ? 'text-hint' : 'text-primary')} />
             <span className="min-w-0 truncate" data-testid="ai-context-chip-label">{c.label}</span>
             <button onClick={() => removeChip(view.id, c)} aria-label={`Remove ${c.label}`} title="Do not send this" data-testid="ai-context-chip-remove"
               className="shrink-0 rounded-sm p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"><X size={10} /></button>
           </Badge>
         )
       })}
-      <span className="text-muted-foreground/70" data-testid="ai-context-hint">
+      <span className="text-hint" data-testid="ai-context-hint">
         {pending ? 'Sent with your next message' : chips.length ? 'In this conversation already' : 'Drop commits, branches, stashes or files here to add them'}
       </span>
     </div>
@@ -143,7 +143,7 @@ export function AiActionsMenu({ view, chips }: { view: RepoView; chips: ContextC
       <DropdownMenu.Trigger asChild>
         <button data-testid="ai-actions" title="What the AI can do with the attached context"
           className="inline-flex h-row shrink-0 items-center gap-1 rounded-md px-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground">
-          <Zap size={12} /> Actions <ChevronDown size={10} className="text-muted-foreground/70" />
+          <Zap size={12} /> Actions <ChevronDown size={10} className="text-hint" />
         </button>
       </DropdownMenu.Trigger>
       <DM.Content align="start">

@@ -47,3 +47,29 @@ test('clones a repository', async () => {
   await expect(page.getByTestId('sidebar')).toContainText('origin')
   await app.close()
 })
+
+test('recent repositories are the main list: folder name, path, one click to open; actions and shortcuts around it', async () => {
+  const r = makeFixture('linear')
+  const { app, page } = await launch()
+  const welcome = page.getByTestId('welcome')
+  // Nothing opened yet: a line that says so, and the three ways to start.
+  await expect(page.getByTestId('welcome-empty')).toBeVisible()
+  await expect(page.getByTestId('recent-repo')).toHaveCount(0)
+  for (const name of ['Open', 'Clone', 'New']) await expect(welcome.getByRole('button', { name, exact: true })).toBeVisible()
+  // The shortcuts are a muted footer line.
+  await expect(page.getByTestId('welcome-shortcuts')).toContainText('search')
+
+  await pickReturns(app, r.dir)
+  await welcome.getByRole('button', { name: 'Open', exact: true }).click()
+  await expect(page.getByTestId('commit-row')).toHaveCount(5)
+  await page.keyboard.press('ControlOrMeta+w')
+
+  const row = page.getByTestId('recent-repo')
+  await expect(row).toHaveCount(1)
+  await expect(row).toContainText(realpathSync.native(r.dir).split(/[\\/]/).pop()!)
+  await expect(row).toContainText(realpathSync.native(r.dir))
+  await expect(page.getByTestId('welcome-empty')).toHaveCount(0)
+  await row.click()
+  await expect(page.getByTestId('commit-row')).toHaveCount(5)
+  await app.close()
+})

@@ -51,8 +51,8 @@ export function ReflogView({ view }: { view: RepoView }) {
         <Button variant="ghost" onClick={() => updateRepo(view.id, { center: { kind: 'graph' } })}>Back to graph</Button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {entries === null && <div className="p-4 text-xs text-muted-foreground/70">Reading the reflog…</div>}
-        {entries?.length === 0 && <div className="p-4 text-xs text-muted-foreground/70">HEAD has not moved yet.</div>}
+        {entries === null && <div className="p-4 text-xs text-hint">Reading the reflog…</div>}
+        {entries?.length === 0 && <div className="p-4 text-xs text-hint">HEAD has not moved yet.</div>}
         {shown.map((e) => (
           <ContextMenu.Root key={e.index}>
             <ContextMenu.Trigger asChild>
@@ -62,13 +62,13 @@ export function ReflogView({ view }: { view: RepoView }) {
                 data-testid="reflog-row" data-hash={e.hash}
                 className={clsx('flex h-8 cursor-default items-center gap-3 border-b border-border/50 px-4 text-sm', selected === e.hash ? 'bg-select' : 'hover:bg-accent')}
               >
-                <span className="w-20 shrink-0 font-mono text-2xs text-muted-foreground/70">HEAD@{'{'}{e.index}{'}'}</span>
+                <span className="w-20 shrink-0 font-mono text-2xs text-hint">HEAD@{'{'}{e.index}{'}'}</span>
                 <span className={clsx('w-28 shrink-0 truncate text-2xs font-medium', ACTION_COLOR[e.action.split(' ')[0]!] ?? 'text-muted-foreground')}>{e.action}</span>
                 <span className="min-w-0 flex-1 truncate">{e.message || e.subject}</span>
                 {e.lost && <span className="rounded bg-warn/15 px-1.5 text-2xs font-medium text-warn" title="No branch or tag reaches this commit">lost</span>}
-                {e.branchHint && <span className="text-2xs text-muted-foreground/70" title={`The tip of ${e.branchHint} when you left it`}>was {e.branchHint}</span>}
-                <span className="w-16 shrink-0 font-mono text-2xs text-muted-foreground/70">{e.hash.slice(0, 7)}</span>
-                <span className="w-24 shrink-0 text-right text-2xs text-muted-foreground/70">{relativeTime(e.date)}</span>
+                {e.branchHint && <span className="text-2xs text-hint" title={`The tip of ${e.branchHint} when you left it`}>was {e.branchHint}</span>}
+                <span className="w-16 shrink-0 font-mono text-2xs text-hint">{e.hash.slice(0, 7)}</span>
+                <span className="w-24 shrink-0 text-right text-2xs text-hint">{relativeTime(e.date)}</span>
               </div>
             </ContextMenu.Trigger>
             <CM.Content>

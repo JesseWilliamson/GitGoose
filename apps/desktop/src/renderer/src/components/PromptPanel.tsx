@@ -11,7 +11,7 @@ import { draftSaved, publishDraft } from '../lib/ai'
 import { reportError, setSettingEntry, useStore } from '../lib/store'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SettingsRow } from './SettingsRow'
-import { Button } from './ui'
+import { Button, sectionHeaderClass } from './ui'
 
 /**
  * The prompt's editable words, where they are used. The "Prompt" button beside an area's model
@@ -117,17 +117,17 @@ export function PromptEditor({ kind, value, onChange, source, onReset, resetLabe
   return (
     <div data-testid={`prompt-editor-${kind}`}>
       <div className="mb-2 flex items-center gap-2 text-xs">
-        <span className="flex-1 text-muted-foreground/70" data-testid="prompt-source">{SOURCE_LABEL[source]}</span>
+        <span className="flex-1 text-hint" data-testid="prompt-source">{SOURCE_LABEL[source]}</span>
         {onReset && <Button size="sm" variant="ghost" onClick={onReset} data-testid="prompt-reset"><RotateCcw size={11} /> {resetLabel}</Button>}
       </div>
-      <label className="mb-1 block text-2xs font-semibold tracking-wide text-muted-foreground uppercase">System</label>
+      <label className={clsx(sectionHeaderClass, 'mb-1 block')}>System</label>
       <textarea value={value.system} onChange={(e) => onChange({ ...value, system: e.target.value })} rows={2} spellCheck={false}
         className={clsx(area, 'mb-3')} data-testid="prompt-system" />
-      <label className="mb-1 block text-2xs font-semibold tracking-wide text-muted-foreground uppercase">Instructions</label>
+      <label className={clsx(sectionHeaderClass, 'mb-1 block')}>Instructions</label>
       <textarea value={value.instructions} onChange={(e) => onChange({ ...value, instructions: e.target.value })} rows={Math.min(12, value.instructions.split('\n').length + 2)} spellCheck={false}
         className={area} data-testid="prompt-instructions" />
       {vars.length > 0 && (
-        <p className="mt-1 text-2xs text-muted-foreground/70">
+        <p className="mt-1 text-2xs text-hint">
           Filled in when sent: {vars.map(([name, what], i) => <span key={name}>{i ? ', ' : ''}<code className="text-muted-foreground">{`{${name}}`}</code> ({what})</span>)}.
         </p>
       )}

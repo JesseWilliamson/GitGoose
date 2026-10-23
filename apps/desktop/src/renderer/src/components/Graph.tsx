@@ -336,7 +336,7 @@ function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
                 const row = log.rows[r]
                 if (!commit || !row) {
                   return (
-                    <div key="loading" style={style} className="flex items-center gap-2 px-3 text-xs text-muted-foreground/70">
+                    <div key="loading" style={style} className="flex items-center gap-2 px-3 text-xs text-hint">
                       <Spinner /> Loading history…
                     </div>
                   )
@@ -380,7 +380,7 @@ function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
 /** The compact layout's column titles, over the same fixed widths as the rows. */
 function CompactHeader({ look, clipped }: { look: RowLook; clipped: boolean }) {
   return (
-    <div className="flex h-7 shrink-0 items-center border-b border-border bg-card text-2xs font-semibold tracking-wide whitespace-nowrap text-muted-foreground/70 uppercase"
+    <div className="flex h-7 shrink-0 items-center border-b border-border bg-card text-2xs font-semibold tracking-wide whitespace-nowrap text-hint uppercase"
       data-testid="graph-header">
       {look.cols.refsW > 0 && <div style={{ width: look.cols.refsW }} className="shrink-0 truncate px-3">Branch / Tag</div>}
       <div style={{ width: look.graphW }} className="shrink-0 truncate px-1" title={clipped ? 'Lanes past the eighth are not drawn' : undefined}>
@@ -630,7 +630,7 @@ const CommitRow = memo(function CommitRow(props: {
             {formatDate(commit.authorDate, look.dateFormat)}
           </div>
         )}
-        {look.cols.sha && <div style={{ width: SHA_W }} className="shrink-0 px-2 font-mono text-xs text-muted-foreground/70" data-testid="row-sha">{shortHash(commit.hash)}</div>}
+        {look.cols.sha && <div style={{ width: SHA_W }} className="shrink-0 px-2 font-mono text-xs text-hint" data-testid="row-sha">{shortHash(commit.hash)}</div>}
         <div className="w-3 shrink-0" />
       </div>
     )
@@ -662,10 +662,10 @@ const CommitRow = memo(function CommitRow(props: {
             <span className="min-w-0 max-w-64 shrink truncate text-muted-foreground" data-testid="row-author" title={authorsTitle}>{authors}</span>
             {marks(3)}
             <span className="min-w-0 flex-1" />
-            <span className="shrink-0 text-muted-foreground/70" data-testid="row-date">{formatDate(commit.authorDate, look.dateFormat)}</span>
+            <span className="shrink-0 text-hint" data-testid="row-date">{formatDate(commit.authorDate, look.dateFormat)}</span>
           </div>
           <div className="flex min-w-0 items-center gap-2 leading-4">
-            <span className="shrink-0 font-mono text-xs text-muted-foreground/70" data-testid="row-sha">{shortHash(commit.hash)}</span>
+            <span className="shrink-0 font-mono text-xs text-hint" data-testid="row-sha">{shortHash(commit.hash)}</span>
             <span className={clsx('min-w-0 flex-1 truncate', props.stash && 'text-muted-foreground italic')}>{subject}</span>
           </div>
         </div>

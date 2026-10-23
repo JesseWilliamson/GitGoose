@@ -14,7 +14,7 @@ import { toast, updateRepo, useStore } from '../lib/store'
 import { useThread } from '../lib/thread'
 import { AiTargetButton } from './AiTargetButton'
 import { Thread } from './Thread'
-import { Button, CM, DM, Modal, Spinner } from './ui'
+import { Button, CM, DM, Modal, ModalFooter, SectionHeader, Spinner } from './ui'
 
 /**
  * Recompose with AI: the AI proposes a new set of commits for the selected
@@ -104,34 +104,34 @@ export function RecomposeDialog() {
     recomposeWithAi(state.repoId, state.hashes)
   }
   return (
-    <Modal open onClose={hide} title={`${title} with AI`} width={state.proposal ? 1120 : 560} tall={!!state.proposal}
+    <Modal open onClose={hide} title={`${title} with AI`} size={state.proposal ? 'xl' : 'md'} tall={!!state.proposal}
       onEscapeKeyDown={(e) => {
         // Esc ends what is in progress first (typing a message; a drag cancels itself, see
         // Review); only from rest does it close the dialog.
         const a = document.activeElement
         if (a instanceof HTMLTextAreaElement || a instanceof HTMLInputElement) { a.blur(); e.preventDefault() }
       }}>
-      <div data-testid="recompose-dialog" className="text-sm">
+      <div data-testid="recompose-dialog" className="space-y-3 text-sm">
         {state.proposal ? (
           <Review key={state.requestId ?? 'review'} repoId={state.repoId} proposal={state.proposal} close={discard} threadId={state.threadId} incoming={state.incoming} />
         ) : state.error ? (
           <>
             <div className="flex items-start gap-2 text-destructive" data-testid="recompose-error"><CircleAlert size={15} className="mt-px shrink-0" /> {state.error}</div>
-            <div className="mt-4 flex items-center justify-end gap-2">
+            <ModalFooter>
               <AiTargetButton area="recompose" className="mr-auto" />
               <Button onClick={discard}>Close</Button>
               <Button variant="primary" onClick={() => recomposeWithAi(state.repoId, state.hashes)}>Try again</Button>
-            </div>
+            </ModalFooter>
           </>
         ) : (
           <>
             <div className="flex items-center gap-2 text-muted-foreground"><Spinner /> Asking the AI how to split these changes into commits…</div>
-            <p className="mt-2 text-xs text-muted-foreground/70">You can close this; the plan waits in the status bar.</p>
-            <div className="mt-4 flex items-center justify-end gap-2">
+            <p className="text-xs text-hint">You can close this; the plan waits in the status bar.</p>
+            <ModalFooter>
               <AiTargetButton area="recompose" onPicked={restart} className="mr-auto" />
               <Button onClick={discard} data-testid="recompose-stop">Stop</Button>
               <Button variant="primary" onClick={hide} data-testid="recompose-hide">Close</Button>
-            </div>
+            </ModalFooter>
           </>
         )}
       </div>
@@ -459,12 +459,10 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
         <div className="flex w-80 shrink-0 flex-col border-r border-border bg-card" data-testid="recompose-commits-column">
           {/* One line, never wrapping: a hint that changed the header's height would move the rows
               under the pointer mid-drag and flip the drop target back and forth. */}
-          <div className="flex items-center gap-2 px-3 pt-2 pb-1 text-2xs font-semibold tracking-wide whitespace-nowrap text-muted-foreground/70 uppercase">
-            <span className="shrink-0">Commits</span>
-            <span className="min-w-0 flex-1 truncate text-right font-normal normal-case tracking-normal">
+          <SectionHeader className="whitespace-nowrap"
+            right={<span className="min-w-0 truncate font-normal text-hint">
               {draggingUnit ? <span className="text-primary">drop on a commit, or above for a new one</span> : `${draft.length}, oldest at the bottom`}
-            </span>
-          </div>
+            </span>}>Commits</SectionHeader>
           <ContextMenu.Root>
             <ContextMenu.Trigger asChild>
               {/* Focusable, so a click or drag on a row keeps focus in the dialog and Ctrl+Z still reaches it. */}
@@ -491,11 +489,11 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
                         isSlot && 'drag-placeholder',
                         target ? 'border-primary bg-primary/15' : pickedSet.has(i) ? 'border-primary bg-primary/10' : 'border-transparent hover:bg-accent',
                         !c.units.length && !target && 'border-dashed border-destructive/50')}>
-                      <GripVertical size={13} className="mt-0.5 shrink-0 text-muted-foreground/70 opacity-0 group-hover:opacity-100" />
-                      <span className="mt-px w-4 shrink-0 text-right font-mono text-2xs text-muted-foreground/70">{i + 1}</span>
+                      <GripVertical size={13} className="mt-0.5 shrink-0 text-hint opacity-0 group-hover:opacity-100" />
+                      <span className="mt-px w-4 shrink-0 text-right font-mono text-2xs text-hint">{i + 1}</span>
                       <div className="min-w-0 flex-1">
-                        <div className={clsx('truncate', !c.message.trim() && 'text-muted-foreground/70 italic')} data-testid="recompose-title">{c.message.split('\n')[0] || 'No message yet'}</div>
-                        <div className="mt-0.5 flex gap-2 text-2xs text-muted-foreground/70">
+                        <div className={clsx('truncate', !c.message.trim() && 'text-hint italic')} data-testid="recompose-title">{c.message.split('\n')[0] || 'No message yet'}</div>
+                        <div className="mt-0.5 flex gap-2 text-2xs text-hint">
                           {c.units.length ? <><span>{files} {files === 1 ? 'file' : 'files'}</span><span className="text-add">+{stats.add}</span><span className="text-destructive">−{stats.del}</span></>
                             : <span className="text-destructive">No changes</span>}
                         </div>
@@ -532,10 +530,7 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
             dragged: nothing here takes a drop. */}
         {current && (
           <div className={clsx('flex min-w-0 flex-1 flex-col transition-opacity', draggingUnit && 'opacity-40')} data-testid="recompose-hunks-column">
-            <div className="flex items-center px-3 pt-2 pb-1 text-2xs font-semibold tracking-wide text-muted-foreground/70 uppercase">
-              <span className="flex-1">Hunks</span>
-              <span className="font-normal normal-case tracking-normal">{current.units.length} in commit {sel + 1}</span>
-            </div>
+            <SectionHeader right={<span className="font-normal text-hint">{current.units.length} in commit {sel + 1}</span>}>Hunks</SectionHeader>
             <div className="border-b border-border px-3 pb-3">
               <textarea key={sel} value={current.message} onChange={(e) => update((d) => editMessage(d, sel, e.target.value), `message:${sel}`)}
                 rows={Math.max(2, Math.min(6, current.message.split('\n').length))} placeholder={`Message for commit ${sel + 1} (first line is the summary)`}
@@ -544,7 +539,7 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
             </div>
             <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3" data-testid="recompose-units">
               {current.units.length === 0 && (
-                <div className="rounded-md border border-dashed border-border p-6 text-center text-xs text-muted-foreground/70">
+                <div className="rounded-md border border-dashed border-border p-6 text-center text-xs text-hint">
                   No hunks yet. Open another commit and drag its hunks onto this one in the list, or use "Move to" on a hunk.
                 </div>
               )}
@@ -562,7 +557,7 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
       </div>
 
       <div className="mt-3 flex items-center gap-3">
-        <p className="flex min-w-0 flex-1 items-center gap-1 text-xs text-muted-foreground/70">
+        <p className="flex min-w-0 flex-1 items-center gap-1 text-xs text-hint">
           {wrongBranch ? (
             <span className="flex items-center gap-1 text-destructive" data-testid="recompose-wrong-branch"><CircleAlert size={12} className="shrink-0" /> This plan is for {proposal.branch}, but {headBranch ?? 'no branch'} is checked out. Check out {proposal.branch} to create these commits.</span>
           ) : problems.length ? (
@@ -604,9 +599,9 @@ function UnitCard({ unit, draft, here, slot, onPointerDown, onMove }: {
     <div className={clsx('overflow-hidden rounded-md border border-border bg-background', slot && 'drag-placeholder')} data-testid="recompose-unit" data-unit={unit.id}
       onPointerDown={onPointerDown}>
       <div className="flex cursor-grab items-center gap-2 border-b border-border bg-card px-2 py-1 text-xs select-none">
-        <GripVertical size={12} className="shrink-0 text-muted-foreground/70" />
-        <span className="min-w-0 flex-1 truncate font-mono text-xs"><span className="text-muted-foreground/70">{dir}</span>{name}</span>
-        {unit.binary ? <span className="text-muted-foreground/70">binary</span> : <><span className="text-add">+{unit.added}</span><span className="text-destructive">−{unit.removed}</span></>}
+        <GripVertical size={12} className="shrink-0 text-hint" />
+        <span className="min-w-0 flex-1 truncate font-mono text-xs"><span className="text-hint">{dir}</span>{name}</span>
+        {unit.binary ? <span className="text-hint">binary</span> : <><span className="text-add">+{unit.added}</span><span className="text-destructive">−{unit.removed}</span></>}
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild>
             <button className="rounded px-1.5 py-0.5 text-muted-foreground hover:bg-accent hover:text-foreground" data-testid="recompose-move">Move to…</button>
@@ -624,12 +619,12 @@ function UnitCard({ unit, draft, here, slot, onPointerDown, onMove }: {
       {unit.preview ? (
         <pre className="selectable max-h-72 overflow-auto py-1 font-mono text-2xs leading-[1.45]">
           {unit.preview.split('\n').map((l, i) => (
-            <div key={i} className={clsx('px-2', l.startsWith('+') ? 'bg-add-bg text-add' : l.startsWith('-') ? 'bg-del-bg text-destructive' : l.startsWith('@@') ? 'text-primary' : l.startsWith('…') ? 'text-muted-foreground/70 italic' : 'text-muted-foreground')}>
+            <div key={i} className={clsx('px-2', l.startsWith('+') ? 'bg-add-bg text-add' : l.startsWith('-') ? 'bg-del-bg text-destructive' : l.startsWith('@@') ? 'text-primary' : l.startsWith('…') ? 'text-hint italic' : 'text-muted-foreground')}>
               {l || ' '}
             </div>
           ))}
         </pre>
-      ) : <div className="px-2 py-1.5 text-xs text-muted-foreground/70">{unit.binary ? 'A binary file.' : 'The whole file (a mode change, or an empty file).'}</div>}
+      ) : <div className="px-2 py-1.5 text-xs text-hint">{unit.binary ? 'A binary file.' : 'The whole file (a mode change, or an empty file).'}</div>}
     </div>
   )
 }
