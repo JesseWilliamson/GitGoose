@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseQuery, rankAll, rankEntries, type OmniEntry } from './omni'
+import { commitSub, parseQuery, rankAll, rankEntries, splitPath, type OmniEntry } from './omni'
 
 const cmd = (title: string): OmniEntry => ({ kind: 'command', key: title, title })
 const branch = (title: string, sub = 'local'): OmniEntry => ({ kind: 'branch', key: `refs/heads/${title}`, title, sub })
@@ -38,5 +38,28 @@ describe('omni ranking', () => {
   it('reads ">" as "commands only"', () => {
     expect(parseQuery('> pull', 'all')).toEqual({ query: 'pull', scope: 'command' })
     expect(parseQuery('pull', 'file')).toEqual({ query: 'pull', scope: 'file' })
+  })
+})
+
+describe('what a file result shows', () => {
+  it('splits a path into the name and its folder, moving the highlight with it', () => {
+    // "pric" matched in the folder, "tax" in the name: src/pricing/taxRate.ts
+    const p = splitPath('src/pricing/taxRate.ts', [[4, 8], [12, 15]])
+    expect(p.name).toBe('taxRate.ts')
+    expect(p.dir).toBe('src/pricing/')
+    expect(p.nameRanges).toEqual([[0, 3]])
+    expect(p.dirRanges).toEqual([[4, 8]])
+  })
+
+  it('has no folder for a file at the top, and clips a match that crosses the slash', () => {
+    expect(splitPath('README.md', [[0, 6]])).toMatchObject({ name: 'README.md', dir: '', nameRanges: [[0, 6]], dirRanges: [] })
+    // "ing/ta": the end of the folder and the start of the name
+    const p = splitPath('src/pricing/taxRate.ts', [[8, 14]])
+    expect(p.dirRanges).toEqual([[8, 12]])
+    expect(p.nameRanges).toEqual([[0, 2]])
+  })
+
+  it('says a commit by its hash and date', () => {
+    expect(commitSub('a1b2c3d', '2 days ago')).toBe('a1b2c3d · 2 days ago')
   })
 })

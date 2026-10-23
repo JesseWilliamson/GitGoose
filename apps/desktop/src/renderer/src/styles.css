@@ -313,11 +313,6 @@ textarea,
   user-select: none !important;
 }
 
-/* cmdk */
-[cmdk-item][data-selected='true'] {
-  background: var(--gs-select);
-}
-
 /* Behind image diffs: shows where an image is transparent. */
 .checkerboard {
   background-color: var(--background);
