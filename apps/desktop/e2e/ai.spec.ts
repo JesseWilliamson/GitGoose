@@ -233,7 +233,9 @@ test('in a chat, each message can show exactly what was sent', async () => {
 async function optionTexts(page: Page, trigger: Locator): Promise<string[]> {
   await trigger.click()
   const texts = await page.getByRole('option').allTextContents()
-  await page.keyboard.press('Escape')
+  // Close with the trigger, not Escape: Escape would also leave the Settings page.
+  await trigger.click({ force: true })
+  await expect(page.getByRole('listbox')).toHaveCount(0)
   return texts
 }
 
