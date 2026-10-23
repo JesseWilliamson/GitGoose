@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { AiThread, AiToolCall, AiUpdate } from './ai'
+import type { AiThread, AiToolCall, AiTurn, AiUpdate } from './ai'
 import { askToThread, reduceThread, splitArtifacts, threadToAsk, transcript, turnText } from './thread'
 
 const empty = (): AiThread => ({ id: 't1', repoId: 'r', anchor: { kind: 'free' }, title: '', turns: [], createdAt: 0, updatedAt: 0, head: 'abc' })
@@ -83,7 +83,17 @@ describe('splitArtifacts', () => {
     expect(splitArtifacts('```ts\nconst a = 1\n```')).toEqual([{ type: 'text', text: '```ts\nconst a = 1\n```' }])
     expect(splitArtifacts('```json:recipe\n{}\n```')).toEqual([{ type: 'text', text: '```json:recipe\n{}\n```' }])
     expect(splitArtifacts('```json:findings\n{"findings": []}\n```')).toEqual([{ type: 'artifact', artifact: 'findings', json: '{"findings": []}' }])
+    expect(splitArtifacts('```json:diagram\n{}\n```')).toEqual([{ type: 'text', text: '```json:diagram\n{}\n```' }])
     expect(splitArtifacts('')).toEqual([{ type: 'text', text: '' }])
+  })
+})
+
+describe('mermaid diagrams', () => {
+  it('a ```mermaid block is a diagram artifact and goes back as a ```mermaid fence', () => {
+    const reply = 'It works like this.\n\n```mermaid\nsequenceDiagram\n  A->>B: hi\n```'
+    const blocks = splitArtifacts(reply)
+    expect(blocks).toEqual([{ type: 'text', text: 'It works like this.' }, { type: 'artifact', artifact: 'diagram', json: 'sequenceDiagram\n  A->>B: hi' }])
+    expect(turnText({ blocks } as AiTurn)).toBe(reply)
   })
 })
 

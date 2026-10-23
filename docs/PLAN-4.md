@@ -1,4 +1,4 @@
-# Plan 4: Tower's sidebar and drag-and-drop, a calmer graph, conversational AI, Change Stack, dsviz
+# Plan 4: Tower's sidebar and drag-and-drop, a calmer graph, conversational AI, Change Stack, Mermaid diagrams
 
 Jesse's brief (October 2026), in his words, with what each item turns into:
 
@@ -15,7 +15,7 @@ Jesse's brief (October 2026), in his words, with what each item turns into:
 | "remove the month headers from the tree" | delete them from the two-line layout too | 1 |
 | "allow chatting with agents in the reviews and explanations and recompose and other ai features" | long-lived ACP sessions, a chat thread under every AI result, tool calls and permissions shown inline | 5 |
 | "allow using copilot as an acp agent" | a GitHub Copilot preset (`copilot --acp`), with its auth and permission quirks handled | 5 |
-| "use the diagrambuilder library, write a skill for using it, and extend it to meet the needs of gitgoose" | dsviz as a dependency, a `dsviz` skill in both repos, new families (git graph, DAG layout, diff) and a JSON spec the model can emit | 6 |
+| "use the diagrambuilder library, write a skill for using it, and extend it to meet the needs of gitgoose" (later decided: use Mermaid instead; dsviz is being stripped) | the model writes Mermaid, GitGoose checks it with `mermaid.parse` and draws it with the `mermaid` package in the app's colours; no dsviz, no skill | 6 |
 
 Rules that carry over from PLAN.md and the ADRs, and that every prompt repeats: the renderer never
 blocks; cost follows what is on screen; every write goes through `exclusive()` and records undo when
@@ -26,8 +26,8 @@ fail without it.
 
 How to run this plan: `docs/PLAN-4-prompts.md` has one prompt per phase, in order. Each prompt is
 self-contained (it names the files, the design, the tests and the definition of done) and is meant
-for a fresh Opus session in the GitGoose checkout (phases 6a and 6b run in the DiagramBuilder
-checkout). Run them in order; 1 → 2 → 3 are independent of 4; 5 before 7; 6 before 7.
+for a fresh Opus session in the GitGoose checkout (phase 6a is dropped; 6b is Mermaid in
+the GitGoose checkout). Run them in order; 1 → 2 → 3 are independent of 4; 5 before 7; 6 before 7.
 
 ---
 
@@ -51,17 +51,17 @@ Read before touching anything; several asks are partly shipped.
 - **Log order** is hard-coded to `--date-order` in `LogStream.start()` (`packages/git/src/log.ts`).
 - **AI**: one-shot ACP sessions per request (spec 006, deliberately), text-only streaming, a modal
   permission queue, a pseudo-chat Ask panel that re-sends its transcript each turn, a JSON
-  sequence diagram drawn by `lib/sequence.ts`. Presets: Claude, Codex, Gemini, custom
+  sequence diagram drawn (now by Mermaid, phase 6). Presets: Claude, Codex, Gemini, custom
   (`AGENT_PRESETS` in `packages/shared/src/ai.ts`, duplicated as the `aiAgent` choice in
   `settings.ts`).
 - **CodeRabbit-style features** from PLAN-3 Part B: review with verified findings, apply/fix,
   learnings, incremental re-review, walkthrough with effort and sequence diagram, reading order,
   ask-about-lines, impact, linters, secret scan, pre-push checks. Change Stack builds on all of
   them; it does not replace them.
-- **dsviz** (`/home/user/DiagramBuilder`, npm `dsviz` 2.1.0): framework-free SVG scene library
-  with a keyed tween renderer, `<Diagram>` for React, families `ds/plot/prob/geom/sched/mem/uml/sys`,
-  `toSVG` for static output, injected styles, dark mode via `.dark`. No JSON spec, no auto-layout
-  (class/state/architecture/graph need x/y), graph nodes are circles only, no git-graph family.
+- **Diagrams** today: the walkthrough's sequence diagram, hand-drawn from a small JSON shape
+  (`lib/sequence.ts`). Phase 6 replaces it with Mermaid (the library DiagramBuilder/dsviz was
+  considered and dropped: it is being stripped, and Mermaid already has the diagram kinds the
+  model writes well).
 
 ---
 
@@ -467,9 +467,9 @@ its view is open (plus a 10-minute idle grace), and every AI feature produces a 
   `AskThread` migrates into this (one-time settings migration, test it).
 - **Artifacts in chat.** Features that produce structured results keep producing them: the system
   prompt for each anchor says "when you revise the <findings | plan | diagram | commit message | walkthrough>,
-  send the whole thing again in one fenced block tagged ```json:findings (etc.); otherwise answer in
-  prose". The renderer parses tagged blocks, runs the *same verifier* as the one-shot path
-  (`verifyFindings`, `repairPlan`, `verifyWalkthrough`, `fromSpec` for diagrams), and shows an
+  send the whole thing again in one fenced block tagged ```json:findings (etc.; a diagram is a
+  ```mermaid block); otherwise answer in prose". The renderer parses tagged blocks, runs the *same verifier* as the one-shot path
+  (`verifyFindings`, `repairPlan`, `verifyWalkthrough`, `mermaid.parse` for diagrams), and shows an
   artifact card with **Apply** (findings merge into the Review view marked "from chat"; a plan
   replaces the recompose editor's state as one undo step; a commit message replaces the draft,
   undoable; a diagram renders inline). Nothing silently changes behind the user.
@@ -509,8 +509,9 @@ its view is open (plus a 10-minute idle grace), and every AI feature produces a 
   and opening or loading the session all refuse before anything is in the thread.
 - The Markdown subset is `lib/markdown.ts` (pure, unit-tested) plus `components/Markdown.tsx`,
   not one `lib/markdown.tsx`: renderer tests cannot import modules that touch `window`.
-- `json:diagram` artifacts are the walkthrough's sequence diagram (checked by `verifySequence`)
-  until phase 6 brings dsviz and `fromSpec`. `json:commit-message` is offered by the AI panel.
+- `json:diagram` artifacts were the walkthrough's sequence diagram (checked by `verifySequence`)
+  until phase 6; they are now ```mermaid blocks (see 6b). `json:commit-message` is offered by the
+  AI panel.
 - Spec 007 had no Ask section; it has one now, pointing to spec 006.
 - The chat rails in Review, Walkthrough and Impact open from a **Chat** button: at the default
   window size a permanent 320 px rail would leave the findings too narrow.
@@ -546,61 +547,45 @@ why the one-shot features collapse into special cases rather than staying separa
 
 ---
 
-## Phase 6: dsviz in GitGoose, a skill, and the extensions GitGoose needs
+## Phase 6: Mermaid diagrams in GitGoose
 
-dsviz lives in `/home/user/DiagramBuilder` and is published to npm as `dsviz` (2.1.0, ESM, per-file
-build, zero runtime deps in the core, React optional). GitGoose takes it as a dependency (the brief
-asks for it; still, the prompt tells Opus to say so in the PR text).
+Decision (Jesse): GitGoose draws diagrams with **Mermaid**, not with dsviz (the DiagramBuilder
+library, which is being stripped, JSON `DiagramSpec` included). The model writes a fenced
+```mermaid block; Mermaid already covers what the model draws well: sequence, state,
+flowchart/architecture, `gitGraph`, ER and class diagrams. Adding `mermaid` as a dependency is the
+decision; still, the prompt tells Opus to say so in the PR text, with the renderer bundle size.
 
-### 6a. In DiagramBuilder: the skill and the extensions (publish as 2.2.0, additive)
+### 6a. Not applicable
 
-**The skill** `.claude/skills/dsviz/SKILL.md` (+ `references/api.md`, `references/spec.md`,
-`references/recipes.md`), following the skill-creator conventions: when to use it (any diagram in a
-React app or any SVG export), the three ways to draw (a family function, a `Scene` by hand, a JSON
-`DiagramSpec`), the theme contract (`--dv-*`, `.dark`, `injectStyles`), the rules (layouts never
-style; ids stable across frames so tweens work; estimate text, never measure), the family cheat-sheet
-with signatures, and recipes: sequence from a call trace, architecture with zones, a DAG with the
-layered layout, a git graph, a before/after array. Kept under 500 lines; the references hold the
-long tables. The same folder is copied into GitGoose (`.claude/skills/dsviz/`) so GitGoose agents
-load it; the copy is a build step (`pnpm sync:skill`), not a fork.
+This was "in DiagramBuilder: the skill and the extensions" (a `DiagramSpec` with `validateSpec` /
+`fromSpec` / `describeSpec`, a layered DAG layout, a tidy tree layout, a git-graph family, a
+`dsviz` skill copied into this repo). None of it is built: Mermaid brings its own layouts and
+diagram kinds. There is no `dsviz` skill in this repository to remove (nothing was ever copied),
+and no skill replaces it: the diagram syntax the model needs is Mermaid's, and the prompt carries
+one short example.
 
-**Extensions** (each with tests in `tests/`, a demo in `site/demos`, an entry in the guide):
+### 6b. In GitGoose: Mermaid
 
-1. `spec.ts`: `DiagramSpec` (discriminated on `type`: `sequence | class | state | architecture |
-   graph | git | array | table | code`), `validateSpec(x): { ok, errors[] }` with precise messages
-   (hand-written, no deps), `fromSpec(spec, opts): Scene`, `describeSpec(spec): string` (alt text:
-   "Sequence diagram, 3 participants, 5 messages: …"). This is what a model emits and what GitGoose
-   verifies, in the same spirit as `verifyFindings`.
-2. `layout/layered.ts`: a Sugiyama-lite DAG layout (longest-path layering, barycenter ordering, a
-   few sweeps, straight or elbow connectors) used by `ds.graph` (`layout: 'layered' | 'circle'`),
-   `sys.architecture` and `uml.classDiagram` when a node has no `x/y`. Deterministic for a given
-   input order (tests assert exact positions on small graphs and invariants on random DAGs: no
-   overlaps, edges point downward or rightward).
-3. `layout/tidy.ts`: Reingold–Tilford for n-ary trees (`ds.tree`), closing the listed gap;
-   `binaryTree` can opt in.
-4. `ds.graph`: rect nodes sized to their label (`shape: 'rect' | 'circle'`), node `kind` →
-   `role: 'node-<kind>'` so stylesheets can colour "changed / upstream / downstream / test" nodes.
-5. `git.graph(commits, refs, opts)`: a commit graph family (lanes by the same first-parent rule as
-   GitGoose's layout, nodes, curved edges, branch and tag labels, tones per lane; a `highlight` set).
-   Used for "what this rebase does" pictures and for the Change Stack overview.
-6. `uml.sequence`: notes, `alt` else-dividers, per-message `tone`, `activate: false`.
-7. `code.block(lines, { highlight, language? })`: a monospace block with line numbers and
-   highlighted ranges, for pointing at lines in an explanation.
-8. Renderer: text crossfade on label change (listed gap); `<Diagram injectStyles>`; controls stop
-   re-injecting their stylesheet on every render; `toSVG` gets `theme: 'light' | 'dark'`.
-
-### 6b. In GitGoose
-
-- `components/DiagramView.tsx`: wraps `<Diagram>`, maps `--dv-surface/fg/muted/font/mono` onto
-  GitGoose tokens, sets `.dark` from the theme, offers Copy as SVG / Save as SVG and PNG (via
-  `toSVG` and a canvas), and renders `describeSpec` as the `aria-label`.
-- Replace `lib/sequence.ts` + the walkthrough's SVG with `fromSpec({type:'sequence'})`; the model's
-  walkthrough answer carries `diagrams: DiagramSpec[]` validated by `validateSpec` (invalid ones are
-  listed under "dropped", like findings).
-- Chat (phase 5) renders ```json:diagram blocks as diagram artifacts; the Explain prompt may ask
-  for one diagram when the commit changes a flow.
-- Impact view: the blast-radius picture (changed definition → uses → tests) with `ds.graph` layered.
-- `docs/learn/09-layered-layout.md`: exercise: implement `layout/layered.ts` from its tests.
+- **Validate** with `mermaid.parse` (`validateMermaid(src): Promise<{ ok: true } | { ok: false;
+  message }>` in `lib/mermaid.ts`). It never throws to the user: an invalid diagram is reported
+  like any other verification failure, with the parser's own message (in a chat card as a problem,
+  in the walkthrough in place of the diagram). It runs in the renderer, because parsing needs a
+  DOM (Mermaid sanitizes labels with DOMPurify); the unit test therefore runs under happy-dom.
+  Main only keeps what is cheap and DOM-free: a string, trimmed, of sane size (`verifyMermaid`).
+- **Render** with the `mermaid` npm package in `components/MermaidDiagram.tsx`: `mermaid.render`
+  with a fresh id per render, `securityLevel: 'strict'` (labels are encoded, no click handlers),
+  `startOnLoad: false`, loaded with a dynamic import so the graph's first paint does not pay for it.
+  Themed from the app's tokens: the `--gs-*` colours and `--lane-N` become `themeVariables`
+  (theme `base`), drawn again when the theme changes.
+- **Walkthrough**: the model's answer carries `"diagram": null | "<mermaid source>"` (it replaces
+  the `sequence` JSON); `lib/sequence.ts` and its SVG component are deleted.
+- **Chat** (phase 5): ```mermaid blocks become diagram artifacts, parsed by the card and drawn
+  inline; ```json:diagram is no longer a format. The Explain prompt may ask for one diagram when
+  the commit changes a flow, and says which Mermaid kind to use, with one short example.
+- **Impact view**: the blast-radius picture (changed definition → uses → tests) as a Mermaid
+  flowchart with classes for changed / upstream / downstream / test nodes. Open.
+- Copy as SVG / Save as SVG and PNG from `MermaidDiagram` stay possible later; they are not part
+  of this phase.
 
 ---
 
@@ -628,8 +613,8 @@ branch since its fork point (a PR, when the branch has one). Opened from the Rev
 | CodeRabbit | GitGoose |
 |---|---|
 | Overview: intent, risk, dependencies, architecture impact, behaviour, uncertainties | the same six, from one AI call over the diff + commit messages + code context, each item citing hunk ids; "Needs author context" when the model marks it uncertain |
-| Change cohorts → ordered layers → line-range anchors, per-layer summary | `layers[] { id, title, intent, hunks: hunkId[], summary, risk: low/med/high, dependsOn: layerId[], diagram?: DiagramSpec }`; verified: every hunk id exists, every hunk appears exactly once (leftovers into "Other changes"), no cycles |
-| Diagrams (sequence, state, ER) | dsviz specs (phase 6): sequence, state, architecture, git |
+| Change cohorts → ordered layers → line-range anchors, per-layer summary | `layers[] { id, title, intent, hunks: hunkId[], summary, risk: low/med/high, dependsOn: layerId[], diagram?: string (Mermaid) }`; verified: every hunk id exists, every hunk appears exactly once (leftovers into "Other changes"), no cycles, the diagram parses with `mermaid.parse` (otherwise it is dropped with the parser's message) |
+| Diagrams (sequence, state, ER) | Mermaid (phase 6): sequence, state, flowchart/architecture, gitGraph, ER |
 | Blast Radius | the Impact view's data drawn as a layered graph (changed / upstream / downstream / tests), "Open in layer" from a node |
 | Architecture Impact | a before/after architecture diagram when the model can produce one from the code context; otherwise the layer dependency graph |
 | Needs your attention: Blockers / High priority / Pending / Advisory | review findings bucketed by severity and profile; "Pending" = findings not yet looked at |
@@ -666,12 +651,12 @@ branch since its fork point (a PR, when the branch has one). Opened from the Rev
 ## Order and status
 
 1 → 2 → 3 (graph) can run first, in a day each. 4 is the largest UI piece and independent of AI.
-5a → 5b, then 6a (DiagramBuilder) → 6b, then 7, which needs 5 and 6.
+5a → 5b, then 6b (Mermaid; 6a is dropped), then 7, which needs 5 and 6.
 
 - [x] 1a blue selection · [x] 1b no month headers · [x] 1c double-click checks out · [x] 1d topological order
 - [x] 2 straight lanes
 - [x] 3 line view
 - [x] 4a sidebar · [x] 4b drag-and-drop matrix
 - [x] 5a threads · [ ] 5b Copilot
-- [ ] 6a dsviz skill + extensions (2.2.0) · [ ] 6b dsviz in GitGoose
+- [x] ~~6a dsviz skill + extensions~~ not applicable (dsviz dropped) · [ ] 6b Mermaid in GitGoose (done: `mermaid.parse` check, `MermaidDiagram`, walkthrough and chat diagrams; open: the Impact flowchart)
 - [ ] 7 Change Stack

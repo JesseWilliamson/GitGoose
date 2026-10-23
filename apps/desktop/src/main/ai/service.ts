@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { AcpAgent, type PermissionAsk, type PromptHooks, type SessionModels } from './acp'
 import { anthropicChat, anthropicModels } from './anthropic'
 import type { SecretFile } from './keyStore'
-import { extractJson, locateSecret, redactSecrets, repairPlan, scanSecrets, verifyFindings, verifyPushChecks, verifySequence, verifyWalkthrough } from '@gitgoose/git'
+import { extractJson, locateSecret, redactSecrets, repairPlan, scanSecrets, verifyFindings, verifyMermaid, verifyPushChecks, verifyWalkthrough } from '@gitgoose/git'
 import { lintForReview } from './linters'
 import {
   ANCHOR_ARTIFACTS, anchorContext, type PromptContext, anchorOf, anchorTask, artifactProtocol, buildPrompt, cleanCommitMessage, featureLabel, openingMessage, replayMessage, type BuiltPrompt,
@@ -542,7 +542,7 @@ export class AiService {
   }
 
   /**
-   * Check an artifact a conversation sent (a ```json:<kind> block) with the same verifier as the
+   * Check an artifact a conversation sent (a ```json:<kind> or ```mermaid block) with the same verifier as the
    * feature's first answer, against what the feature saw. Nothing is applied here: the renderer
    * shows the result and the user decides.
    */
@@ -557,8 +557,9 @@ export class AiService {
         return message ? { kind, message } : { kind: 'problem', message: 'The message is empty.' }
       }
       if (kind === 'diagram') {
-        const sequence = verifySequence(extractJson(json))
-        return sequence ? { kind, sequence } : { kind: 'problem', message: 'The diagram is not a sequence diagram GitGoose can draw.' }
+        // Parsing needs a DOM, so the card asks the renderer to parse it (lib/mermaid.ts).
+        const mermaid = verifyMermaid(json)
+        return mermaid ? { kind, mermaid } : { kind: 'problem', message: 'The diagram is empty or too long.' }
       }
       const { built, task } = await this.verification(rec)
       if (kind === 'findings' && task?.kind === 'review') {
