@@ -304,7 +304,7 @@ function PushChecksDialog({ d, close }: { d: Extract<NonNullable<ReturnType<type
         <Button variant="ghost" onClick={() => useStore.setState({ dialog: { kind: 'push-rules', repoId: d.repoId } })}>Edit checks…</Button>
         {/* For the next push: the checks above were judged already. */}
         <ModelPicker area="push-checks" />
-        <PromptButton area="push-checks" repoId={d.repoId} task={null} />
+        <PromptButton area="push-checks" />
         <span className="flex-1" />
         <Button autoFocus onClick={close}>Cancel</Button>
         <Button variant={d.outcome === 'block' ? 'danger' : 'primary'} onClick={() => { close(); d.onPush() }} data-testid="push-anyway">

@@ -156,7 +156,7 @@ function OutputDialog() {
           <span className="flex items-center gap-1 text-[11px] text-faint"><Sparkles size={11} /> AI-written; check it before acting on it.</span>
           <div className="flex items-center gap-2">
             <ModelPicker area="error" />
-            <PromptButton area="error" repoId={null} task={null} />
+            <PromptButton area="error" />
             {o.requestId && <Button onClick={() => cancelAi(o.requestId!)}>Stop</Button>}
             <Button variant="primary" onClick={close}>Close</Button>
           </div>

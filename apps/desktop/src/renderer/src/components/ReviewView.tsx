@@ -51,7 +51,7 @@ export function ReviewView({ view }: { view: RepoView }) {
           </div>
         </div>
         <ModelPicker area="review" />
-        <PromptButton area="review" repoId={view.id} task={{ kind: 'review', scope: r.scope, profile: r.profile }} />
+        <PromptButton area="review" />
         {r.requestId ? <Button onClick={() => stopReview(view.id)}><Spinner /> Stop</Button>
           : <Button onClick={() => startReview(view.id, r.scope, { incremental: true })} title="Only what changed since this review is sent again">Review again</Button>}
         {result && <RailToggle kind="review" />}

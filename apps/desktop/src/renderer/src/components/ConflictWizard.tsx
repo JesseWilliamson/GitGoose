@@ -171,7 +171,7 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
             <i className="size-2 rounded-sm bg-theirs" /> {versions.theirs === null ? 'Keep deleted (theirs)' : 'Take theirs'}
           </button>
         </div>
-        {aiOn && versions.merged !== null && <><ModelPicker area="conflict" agentsOnly /><PromptButton area="conflict" repoId={view.id} task={{ kind: 'resolve-conflict', path: file.path }} /></>}
+        {aiOn && versions.merged !== null && <><ModelPicker area="conflict" agentsOnly /><PromptButton area="conflict" /></>}
         {agentOn && versions.merged !== null && (
           <Button size="sm" onClick={askAi} data-testid="ai-resolve" title={asking ? 'Stop' : 'Ask your AI agent to propose a resolution (you review it before anything is written)'}>
             {asking ? <><Spinner /> Stop</> : <><Sparkles size={12} /> Ask AI</>}
