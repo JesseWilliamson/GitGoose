@@ -120,7 +120,7 @@ export function RecomposeDialog() {
             <div className="flex items-start gap-2 text-del" data-testid="recompose-error"><CircleAlert size={15} className="mt-px shrink-0" /> {state.error}</div>
             <div className="mt-4 flex items-center justify-end gap-2">
               <ModelPicker area="recompose" />
-              <PromptButton area="recompose" repoId={state.repoId} task={{ kind: 'recompose', hashes: state.hashes }} className="mr-auto" />
+              <PromptButton area="recompose" className="mr-auto" />
               <Button onClick={discard}>Close</Button>
               <Button variant="primary" onClick={() => recomposeWithAi(state.repoId, state.hashes)}>Try again</Button>
             </div>
@@ -131,7 +131,7 @@ export function RecomposeDialog() {
             <p className="mt-2 text-xs text-faint">You can close this; the plan waits in the status bar.</p>
             <div className="mt-4 flex items-center justify-end gap-2">
               <ModelPicker area="recompose" onPicked={restart} />
-              <PromptButton area="recompose" repoId={state.repoId} task={{ kind: 'recompose', hashes: state.hashes }} className="mr-auto" />
+              <PromptButton area="recompose" className="mr-auto" />
               <Button onClick={discard} data-testid="recompose-stop">Stop</Button>
               <Button variant="primary" onClick={hide} data-testid="recompose-hide">Close</Button>
             </div>
