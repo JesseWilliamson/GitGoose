@@ -374,7 +374,7 @@ test("recompose asks the area's model, and its chat can switch models", async ()
   // The list came from the session that answered: no "Load models…" needed.
   await expect(model).toHaveText('Fake Fast')
   await model.click()
-  await expect(page.getByRole('option')).toHaveText(['Default (Fake Smart)', 'Fake Fast', 'Fake Smart'])
+  await expect(page.getByRole('option')).toHaveText(['Default (Fake Smart)', 'Fake Fast', 'Fake Smart', 'Refresh models…'])
   await expect(chat.getByTestId('thread-by').first()).toHaveText('fake-agent · Fake Fast')
 
   await page.getByRole('option', { name: 'Fake Smart', exact: true }).click()

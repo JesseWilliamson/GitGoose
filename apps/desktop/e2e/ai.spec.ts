@@ -1,5 +1,5 @@
 import { fakeAnthropic, makeFixture, tempDir } from '@gitgoose/fixtures'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { launch } from './app'
@@ -226,5 +226,60 @@ test('in a chat, each message can show exactly what was sent', async () => {
   await panel.getByTestId('thread-sent-toggle').click()
   await expect(panel.getByTestId('thread-sent')).toContainText('You are helping someone with their git repository')
   await expect(panel.getByTestId('thread-sent')).toContainText('HEAD: main at')
+  await app.close()
+})
+
+/** The texts of a Select's options: open it, read the list, close it again. */
+async function optionTexts(page: Page, trigger: Locator): Promise<string[]> {
+  await trigger.click()
+  const texts = await page.getByRole('option').allTextContents()
+  await page.keyboard.press('Escape')
+  return texts
+}
+
+test("the API's model list is asked for once, and reopening Settings does not ask again", async () => {
+  const api = await fakeAnthropic()
+  const r = makeFixture('linear')
+  const { app, page } = await launch(r.dir, { GITGOOSE_ANTHROPIC_BASE_URL: api.url })
+  await set(page, { aiProvider: 'anthropic' })
+  await page.getByTestId('toolbar').getByRole('button', { name: 'Settings' }).click()
+  await page.getByTestId('ai-api-key').fill('sk-ant-e2e')
+  await page.getByRole('button', { name: 'Save' }).click()
+  const model = page.getByTestId('ai-panel').getByTestId('model-picker-model')
+  // Nothing is known, so nothing was asked: the setting's model id and the offer to load.
+  await expect.poll(() => optionTexts(page, model)).toEqual(['claude-opus-5-5', 'Load models…'])
+  expect(api.modelRequests).toBe(0)
+  await model.click()
+  await page.getByRole('option', { name: 'Load models…' }).click()
+  await expect.poll(() => optionTexts(page, model)).toEqual(['Claude Opus 5.5', 'Claude Haiku 5.5', 'Refresh models…'])
+  expect(api.modelRequests).toBe(1)
+  // Main kept the list with the time it was fetched; the picker reads it from there.
+  expect((await page.evaluate(() => window.gitgoose.getSettings())).aiApiModels?.models).toHaveLength(2)
+  await page.getByTestId('settings-close').click()
+  await page.getByTestId('toolbar').getByRole('button', { name: 'Settings' }).click()
+  await expect.poll(() => optionTexts(page, model)).toEqual(['Claude Opus 5.5', 'Claude Haiku 5.5', 'Refresh models…'])
+  expect(api.modelRequests).toBe(1)
+  await app.close()
+  await api.close()
+})
+
+test("an agent's model list survives a restart: the picker offers Refresh, not Load models…", async () => {
+  const r = makeFixture('linear')
+  const profile = tempDir('gitgoose-profile-')
+  const env = { GITGOOSE_USER_DATA: profile, FAKE_AGENT_MODELS: '1' }
+  let { app, page } = await launch(r.dir, env)
+  await set(page, AGENT)
+  await page.getByTestId('toolbar').getByRole('button', { name: 'Settings' }).click()
+  let model = page.getByTestId('ai-panel').getByTestId('model-picker-model')
+  await expect.poll(() => optionTexts(page, model)).toEqual(['Default model', 'Load models…'])
+  await model.click()
+  await page.getByRole('option', { name: 'Load models…' }).click()
+  await expect.poll(() => optionTexts(page, model)).toEqual(['Default (Fake Smart)', 'Fake Fast', 'Fake Smart', 'Refresh models…'])
+  await app.close()
+
+  ;({ app, page } = await launch(r.dir, env))
+  await page.getByTestId('toolbar').getByRole('button', { name: 'Settings' }).click()
+  model = page.getByTestId('ai-panel').getByTestId('model-picker-model')
+  await expect.poll(() => optionTexts(page, model)).toEqual(['Default (Fake Smart)', 'Fake Fast', 'Fake Smart', 'Refresh models…'])
   await app.close()
 })

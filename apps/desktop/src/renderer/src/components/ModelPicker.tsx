@@ -6,6 +6,7 @@ import clsx from 'clsx'
 import { useEffect, useRef, useState } from 'react'
 import { setAreaTarget } from '../lib/ai'
 import { api, toUiError } from '../lib/api'
+import { singleFlight } from '../lib/singleFlight'
 import { OptionSelect, type SelectOption } from './ui/select'
 import { reportError, saveSettings, setSettingEntry, useStore } from '../lib/store'
 
@@ -17,7 +18,9 @@ import { reportError, saveSettings, setSettingEntry, useStore } from '../lib/sto
  * Model lists. An ACP agent only lists its models inside a session (config option "model"), so
  * main keeps the list from the agent's last session; until there is one, "Load models…" starts
  * the agent to ask (the user clicked, as with Settings → Test). The API's list is a network call,
- * so it too waits for "Load models…", and is then kept while the app runs.
+ * so it too waits for "Load models…". Main keeps both kinds in settings (so they survive a
+ * restart) and never refreshes one on its own; once a list is known the select offers "Refresh
+ * models…" instead, and says so when the list is over a day old.
  */
 export function ModelPicker({ area, defaults, className, onPicked, agentsOnly }: {
   area?: AiArea
@@ -65,6 +68,7 @@ export function ModelPicker({ area, defaults, className, onPicked, agentsOnly }:
   const defaultName = blankId ? offered.find((m) => m.id === blankId)?.name ?? blankId : null
   // Settings → AI's default for the API is a model, not "whatever": no blank entry there.
   const blank = !(defaults && target.provider === 'anthropic')
+  const stale = !!list.list?.at && Date.now() - list.list.at > STALE_MS
   const select = 'h-6 max-w-44 px-1.5 text-xs'
 
   const whoOptions: SelectOption[] = [
@@ -76,7 +80,7 @@ export function ModelPicker({ area, defaults, className, onPicked, agentsOnly }:
   const modelOptions: SelectOption[] = [
     list.list?.fixed ? { value: '', label: 'Chosen by the agent' } : blank ? { value: '', label: defaultName ? `Default (${defaultName})` : 'Default model' } : null,
     ...models.map((m) => ({ value: m.id, label: m.name, title: m.description })),
-    !list.list?.known ? { value: LOAD, label: list.loading ? 'Loading…' : 'Load models…' } : null,
+    !list.list?.fixed ? { value: LOAD, label: list.loading ? 'Loading…' : list.list?.known ? (stale ? 'Refresh models… (list is over a day old)' : 'Refresh models…') : 'Load models…' } : null,
   ].filter((o): o is SelectOption => o !== null)
 
   return (
@@ -100,17 +104,20 @@ export function ModelPicker({ area, defaults, className, onPicked, agentsOnly }:
 
 const LOAD = '\u0000load'
 
+/** A list older than this is still shown, but marked: refreshing is the user's call. */
+const STALE_MS = 24 * 3600 * 1000
+
 function whoValue(t: AiTarget): string {
   return t.provider === 'anthropic' ? 'anthropic' : `agent:${t.agent ?? 'claude'}`
 }
 
-/** The API's list, once loaded, for the rest of the app's run (by key, so one fetch serves every picker). */
-const apiLists = new Map<string, AiModelList>()
+/** Loads in flight, by target key, shared by every picker on screen (main guards the same, for other windows). */
+const loads = new Map<string, Promise<AiModelList>>()
 
-/** A target's models: the agent's cached list (main reads it from settings), or the API's once loaded. */
+/** A target's models: the list main has saved (an agent's or the API's), or what "Load models…" brings. */
 function useModels(target: AiTarget | null): { list: AiModelList | null; loading: boolean; error: string | null; load: () => Promise<void> } {
   const key = target ? targetKey(target) : ''
-  const cache = useStore((s) => (target?.provider === 'agent' ? s.settings?.aiAgentModels[key] : undefined))
+  const cache = useStore((s) => (target?.provider === 'agent' ? s.settings?.aiAgentModels[key] : target?.provider === 'anthropic' ? s.settings?.aiApiModels : undefined))
   // "Who answers" can change while a fetch is pending, and the old target's list must never stand
   // in for the new one's, so associate results with their target key and discard stale completions.
   const [held, setHeld] = useState<{ key: string; list: AiModelList | null }>({ key: '', list: null })
@@ -123,8 +130,7 @@ function useModels(target: AiTarget | null): { list: AiModelList | null; loading
     current.current = key
     setError(null)
     if (!target) return setHeld({ key, list: null })
-    // Nothing here starts an agent or calls the network: agents read the cache, the API waits for "Load models…".
-    if (target.provider === 'anthropic') return setHeld({ key, list: apiLists.get(key) ?? null })
+    // Nothing here starts an agent or calls the network: main answers from its saved lists.
     let stale = false
     void api.aiModels(target).then(
       (next) => !stale && setHeld({ key, list: next }),
@@ -142,9 +148,7 @@ function useModels(target: AiTarget | null): { list: AiModelList | null; loading
     setLoadingKey(forKey)
     setError(null)
     try {
-      const next = target.provider === 'anthropic' ? await api.aiModels(target) : await api.aiLoadModels(target)
-      // The API's list is cached by its own key, so it serves that target later even if stale now.
-      if (target.provider === 'anthropic' && next.known) apiLists.set(forKey, next)
+      const next = await singleFlight(loads, forKey, () => api.aiLoadModels(target))
       if (current.current !== forKey) return
       setHeld({ key: forKey, list: next })
       if (next.error) setError(next.error)
