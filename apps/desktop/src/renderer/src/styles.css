@@ -118,6 +118,11 @@ textarea,
   user-select: text;
 }
 
+/* The tab bar row is the title bar (keep in step with TITLE_BAR_HEIGHT in main/windowState.ts). */
+:root {
+  --titlebar-h: 36px;
+}
+
 /* macOS: leave room for the traffic lights and let the tab bar drag the window. */
 .drag {
   -webkit-app-region: drag;
