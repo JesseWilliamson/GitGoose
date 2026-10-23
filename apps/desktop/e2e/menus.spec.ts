@@ -1,4 +1,4 @@
-import { initRepo } from '@gitgoose/fixtures'
+import { initRepo, tempDir } from '@gitgoose/fixtures'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { launch } from './app'
 
@@ -84,5 +84,66 @@ test('the checked-out branch cannot be deleted, and says why; another branch can
   await expect(async () => { await page.keyboard.press('Escape'); await expect(page.getByRole('menu')).toHaveCount(0, { timeout: 500 }) }).toPass()
   await page.locator('[data-testid="ref-pill"][data-ref="refs/heads/side"]').first().click({ button: 'right' })
   await expect(page.getByRole('menuitem', { name: 'Delete side' })).not.toHaveAttribute('aria-disabled', 'true')
+  await app.close()
+})
+
+test('Recompose works on the root commit, but drop and move cannot (greyed)', async () => {
+  const r = initRepo()
+  const root = r.commit('root', { 'a.txt': 'a\n' })
+  r.commit('second', { 'b.txt': 'b\n' })
+  const { app, page } = await launch(r.dir)
+  await page.evaluate(() => window.gitgoose.setSettings({ aiProvider: 'agent', aiAgent: 'custom', aiAgentCommand: 'true' } as never))
+  await page.locator(`[data-testid="commit-row"][data-hash="${root}"]`).getByText('root', { exact: true }).click({ button: 'right' })
+  await expect(page.getByRole('menuitem', { name: 'Split with AI…' })).not.toHaveAttribute('aria-disabled', 'true')
+  await expect(page.getByRole('menuitem', { name: 'Drop commit' })).toHaveAttribute('aria-disabled', 'true')
+  await app.close()
+})
+
+test('what does not exist here is left out, not greyed: no remote, no remote actions or pull request', async () => {
+  const { r } = mergedRepo()
+  const { app, page } = await launch(r.dir)
+  await page.locator('[data-testid="ref-pill"][data-ref="refs/heads/side"]').first().click({ button: 'right' })
+  await expect(page.getByRole('menuitem', { name: 'Delete side' })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: 'More remote actions' })).toHaveCount(0)
+  await expect(page.getByRole('menuitem', { name: 'Create pull request…' })).toHaveCount(0)
+  await expect(page.getByRole('menuitem', { name: /^Publish / })).toHaveCount(0)
+  await app.close()
+})
+
+test('the fullest menus fit the window without scrolling', async () => {
+  const bare = tempDir('bare')
+  const r = initRepo()
+  r.commit('base', { 'a.txt': 'a\n' })
+  r.git('init', '-q', '--bare', bare)
+  r.git('remote', 'add', 'origin', 'https://github.com/x/y.git')
+  r.git('config', 'remote.origin.pushurl', bare)
+  r.commit('two', { 'b.txt': 'b\n' })
+  r.git('push', '-q', '-u', 'origin', 'main')
+  r.git('fetch', '-q', bare, '+refs/heads/*:refs/remotes/origin/*')
+  r.checkout('-b', 'dev')
+  r.commit('dev work', { 'd.txt': 'd\n' })
+  r.git('branch', '--set-upstream-to=origin/main', 'dev')
+  r.checkout('main')
+  r.commit('three', { 'c.txt': 'c\n' })
+  const { app, page } = await launch(r.dir)
+  // AI on and everything editable: every conditional item is present.
+  await page.evaluate(() => window.gitgoose.setSettings({ aiProvider: 'agent', aiAgent: 'custom', aiAgentCommand: 'true' } as never))
+  const fits = async () => {
+    const m = await page.evaluate(() => { const el = document.querySelector('[role="menu"]') as HTMLElement; return { client: el.clientHeight, scroll: el.scrollHeight, win: window.innerHeight } })
+    expect(m.scroll, `menu content ${m.scroll}px in a ${m.client}px menu (window ${m.win}px)`).toBeLessThanOrEqual(m.client)
+  }
+  const close = () => expect(async () => { await page.keyboard.press('Escape'); await expect(page.getByRole('menu')).toHaveCount(0, { timeout: 400 }) }).toPass()
+  await page.locator('[data-testid="ref-pill"][data-ref="refs/heads/dev"]').first().click({ button: 'right' })
+  await fits()
+  await close()
+  await page.locator('[data-testid="ref-pill"][data-ref="refs/heads/main"]').first().click({ button: 'right' })
+  await fits()
+  await close()
+  await page.locator('[data-testid="commit-row"]', { hasText: 'three' }).first().getByText('three', { exact: true }).click({ button: 'right' })
+  await fits()
+  await close()
+  // A branch tip: the branch's actions come first (one submenu), then the commit's.
+  await page.locator('[data-testid="commit-row"]', { hasText: 'dev work' }).first().getByText('dev work', { exact: true }).click({ button: 'right' })
+  await fits()
   await app.close()
 })

@@ -22,9 +22,11 @@ test('right-clicking the commit at a branch tip offers the branch actions too', 
   const tip = r.git('rev-parse', 'wip').trim()
   // On the message, not the pill: the pill has always had its own branch menu.
   await page.locator(`[data-testid="commit-row"][data-hash="${tip}"]`).getByText('F', { exact: true }).click({ button: 'right' })
+  // The branch's own actions are one submenu at the top (a long menu would scroll).
+  await page.getByRole('menuitem', { name: 'Branch wip' }).press('ArrowRight')
   await expect(page.getByRole('menuitem', { name: 'Rebase main onto wip' })).toBeVisible()
   await expect(page.getByRole('menuitem', { name: 'Revert this commit' })).toBeVisible()
-  await page.getByRole('menuitem', { name: 'Merge wip into main' }).click()
+  await page.getByRole('menuitem', { name: 'Merge wip into main' }).press('Enter')
   await expect(page.getByTestId('commit-row').first()).toContainText('Merge')
   expect(r.git('log', '-1', '--format=%P').trim().split(' ')).toHaveLength(2)
   await app.close()

@@ -79,6 +79,20 @@ describe('recompose', () => {
   it('refuses commits with a gap between them', () => {
     expect(whyNotRecompose(v, [c3, c1])).toMatch(/follow each other/)
   })
+  it('also takes the root commit when the branch reaches it without a merge', () => {
+    const root = H('0')
+    const map = { [root]: [], [c1]: [root], [c2]: [c1], [c3]: [c2] }
+    expect(whyNotRecompose(v, [root], parents(map))).toBeUndefined()
+    expect(whyNotRecompose(v, [c1, root], parents(map))).toBeUndefined()
+    // a gap: root and c2 do not follow each other
+    expect(whyNotRecompose(v, [root, c2], parents(map))).toMatch(/follow each other/)
+    // a single-commit repository: HEAD is the root
+    expect(whyNotRecompose(view({ hash: root, editable: [] }), [root], parents({ [root]: [] }))).toBeUndefined()
+    // a root below a merge is not on the editable line
+    expect(whyNotRecompose(v, [root], parents({ [root]: [], [c1]: [merge] }))).toMatch(/newer than its last merge/)
+    // the backend cannot drop or move a root: still greyed
+    expect(whyNotEdit(v, root)).toMatch(/last merge/)
+  })
   it('needs a branch', () => {
     expect(whyNotRecompose(view({ branch: null, editable: [] }), [c1])).toMatch(/Check out a branch first/)
   })

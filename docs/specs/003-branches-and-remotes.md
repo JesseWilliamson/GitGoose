@@ -53,11 +53,16 @@ per repository in settings (`sidebar`), so it survives a restart.
 
 ### Context menus
 
-An action that cannot run is shown greyed with the reason in a tooltip (and as the item's
-`aria-description`); only real alternates are swapped (Pin / Unpin, Show / Hide in the graph,
-Push / Publish, Lock / Unlock). The reasons are pure functions in `lib/menuRules.ts` (one per
-conditional action, `undefined` when allowed), tested in `menuRules.test.ts` and shared with the
-AI pane. The lists below name everything a menu can offer; some items are greyed in some states.
+An action that cannot run *right now because of state* (this is HEAD, a merge commit, nothing to
+push, already up to date, no upstream yet, AI turned off, nothing staged) is shown greyed with the
+reason in a tooltip (and as the item's `aria-description`). An action whose *subject does not exist
+in this repository* is left out: no remotes means no Push to… / Fetch all / Track a remote branch,
+no GitHub remote means no Create pull request…, no separate push URL means no "push to the fetch
+URL again". Real alternates are swapped (Pin / Unpin, Show / Hide in the graph, Push / Publish,
+Lock / Unlock). The reasons are pure functions in `lib/menuRules.ts` (one per conditional action,
+`undefined` when allowed), tested in `menuRules.test.ts` and shared with the AI pane. The point of
+greying is to teach the rule, so a menu must still fit a 1024×640 window without scrolling. The
+lists below name everything a menu can offer; some items are greyed in some states.
 
 - **Local branch**: Check out; Check out in a new worktree…; Create branch from…; Merge into HEAD,
   Merge options ▸, Rebase HEAD onto it; Pull (HEAD's branch); Fast-forward (only behind); Push, or

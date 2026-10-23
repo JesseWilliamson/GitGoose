@@ -2,7 +2,7 @@ import { initRepo, tempDir } from '@gitgoose/fixtures'
 import { expect, test, type ElectronApplication } from '@playwright/test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { launch, useClipboardLock } from './app'
+import { launch, pickFromSubmenu, useClipboardLock } from './app'
 
 // These tests read and write the system clipboard, which every running test shares.
 useClipboardLock()
@@ -23,7 +23,7 @@ test('save a commit as a patch file, then apply it from the clipboard as a commi
   const dir = tempDir('gitgoose-patches-')
   await answerDialogs(app, dir)
   await row(page, one).click({ button: 'right' })
-  await page.getByRole('menuitem', { name: 'Save as patch file…' }).click()
+  await pickFromSubmenu(page, 'Copy and save', 'Save as patch file…')
   await expect.poll(() => readdirSync(dir)).toEqual(['0001-add-b.patch'])
 
   r.git('reset', '-q', '--hard', root)

@@ -19,14 +19,14 @@ import {
   firstReason, whyNotAi, whyNotCheckout, whyNotCherryPick, whyNotClearPushUrl, whyNotCompareChain, whyNotCompareTwo, whyNotCompareWithHead, whyNotCreatePull,
   whyNotDeleteBranch, whyNotEdit, whyNotEditMany, whyNotFastForward, whyNotFetchAll, whyNotFixupStaged, whyNotForcePush, whyNotHideInGraph, whyNotHideRemoteTagMarks,
   whyNotMakeHeadTrack, whyNotMergeOrRebase, whyNotMoveDown, whyNotMoveUp, whyNotNewWorktreeFor, whyNotOpenSubmodule, whyNotOpenWorktree, whyNotPull, whyNotPush,
-  whyNotRecompose, whyNotRemoveWorktree, whyNotSquash, whyNotStopTracking, whyNotTrackAsLocal, whyNotTrackRemote, whyNotUseRemote,
+  whyNotRecompose, whyNotRemoveWorktree, whyNotSquash, whyNotStopTracking, whyNotTrackAsLocal, whyNotTrackRemote,
 } from '../lib/menuRules'
 
 /** One item per remote: a plain item when there is only one remote, a submenu when there are several. */
 function PerRemote({ view, label, onPick, danger }: { view: RepoView; label: (remote: string) => string; onPick: (remote: string) => void; danger?: boolean }): ReactNode {
   const names = remoteNames(view)
-  // No remote: still there, greyed, so the user learns the action exists and what it needs.
-  if (names.length === 0) return <CM.Item danger={danger} reason={whyNotUseRemote(view)} onSelect={() => {}}>{label('a remote')}</CM.Item>
+  // No remote at all: there is nothing to name, so the item does not exist (not greyed).
+  if (names.length === 0) return null
   if (names.length === 1) return <CM.Item danger={danger} onSelect={() => onPick(names[0]!)}>{label(names[0]!)}</CM.Item>
   return (
     <CM.Sub label={label('…').replace(/ …$/, '')}>
@@ -104,14 +104,15 @@ export function GraphMenu({ repoId }: { repoId: string }) {
         <CM.Item onSelect={() => void compareSinceFork(repoId, snap.head.hash!, r.name)}>What {name} changed since it forked from {headName}</CM.Item>
       </CM.Sub>
     )
+    // One submenu: they are the rarely used ones, and a menu that scrolls hides its own rules.
     const graphItems = (
-      <>
+      <CM.Sub label="In the graph">
         <CM.Item onSelect={() => void revealInHistory(repoId, r.hash)}>Reveal in History</CM.Item>
         {hidden ? <CM.Item onSelect={() => showInGraph(repoId, r.name)}>Show in the graph</CM.Item>
           : <CM.Item reason={whyNotHideInGraph(snap, r)} onSelect={() => hideInGraph(repoId, r.name)}>Hide in the graph</CM.Item>}
         {soloed ? <CM.Item onSelect={() => unsoloInGraph(repoId, r.name)}>Stop soloing {name}</CM.Item>
           : <CM.Item onSelect={() => soloInGraph(repoId, r.name)}>{snap.filter.solo.length ? `Solo ${name} too` : `Solo ${name} (show only it)`}</CM.Item>}
-      </>
+      </CM.Sub>
     )
     const mergeWhy = whyNotMergeOrRebase(snap, r)
     const mergeItems = (
@@ -138,20 +139,26 @@ export function GraphMenu({ repoId }: { repoId: string }) {
           <CM.Item onSelect={() => newBranch(repoId, r.name)}>Create branch from {name}…</CM.Item>
           <CM.Separator />{mergeItems}
           <CM.Separator />
-          <CM.Item reason={whyNotPull(snap, r)} onSelect={() => void pull(repoId)}>Pull{r.upstream ? ` ${shortRef(r.upstream)}` : ''}</CM.Item>
-          <CM.Item reason={whyNotFastForward(snap, r)} onSelect={() => void fastForward(repoId, name)}>Fast-forward {name}{r.upstream ? ` to ${shortRef(r.upstream)}` : ''}</CM.Item>
+          {isHead && <CM.Item reason={whyNotPull(snap, r)} onSelect={() => void pull(repoId)}>Pull{r.upstream ? ` ${shortRef(r.upstream)}` : ''}</CM.Item>}
+          {!isHead && r.upstream && <CM.Item reason={whyNotFastForward(snap, r)} onSelect={() => void fastForward(repoId, name)}>Fast-forward {name} to {shortRef(r.upstream)}</CM.Item>}
           {r.upstream && !r.upstreamGone
             ? <CM.Item reason={whyNotPush(r)} onSelect={() => (isHead ? push(repoId) : void pushBranch(repoId, name))}>Push {name}</CM.Item>
             : <PerRemote view={view} label={(n) => `Publish ${name} to ${n}`} onPick={(n) => void publishBranch(repoId, name, n)} />}
-          <CM.Item danger reason={whyNotForcePush(r)} onSelect={() => forcePushBranch(repoId, name)}>Force push {name} with lease…</CM.Item>
-          <PerRemote view={view} label={(n) => `Push to ${n}…`} onPick={(n) => pushTo(repoId, name, n)} />
-          <CM.Sub label={r.upstream ? 'Track another remote branch' : 'Track a remote branch'} reason={whyNotTrackRemote(view)}>
-            {tracking.map((t) => <CM.Item key={t.name} onSelect={() => void setUpstream(repoId, name, t.name)}>{t.shortName}</CM.Item>)}
-            <CM.Separator />
-            <CM.Item onSelect={() => ask(`Track a remote branch with ${name}`, 'Remote branch', 'Track', (u) => void setUpstream(repoId, name, u.trim()), { placeholder: `origin/${name}` })}>Other…</CM.Item>
-          </CM.Sub>
-          <CM.Item reason={whyNotStopTracking(r)} onSelect={() => void setUpstream(repoId, name, null)}>Stop tracking{r.upstream ? ` ${shortRef(r.upstream)}` : ''}</CM.Item>
-          <CM.Item reason={whyNotCreatePull(view)} onSelect={() => createPull(repoId, name)}>Create pull request…</CM.Item>
+          {remoteNames(view).length > 0 && (
+            <CM.Sub label="More remote actions">
+            {remoteNames(view).length > 0 && <CM.Item danger reason={whyNotForcePush(r)} onSelect={() => forcePushBranch(repoId, name)}>Force push {name} with lease…</CM.Item>}
+            <PerRemote view={view} label={(n) => `Push to ${n}…`} onPick={(n) => pushTo(repoId, name, n)} />
+            {!whyNotTrackRemote(view) && (
+              <CM.Sub label={r.upstream ? 'Track another remote branch' : 'Track a remote branch'}>
+                {tracking.map((t) => <CM.Item key={t.name} onSelect={() => void setUpstream(repoId, name, t.name)}>{t.shortName}</CM.Item>)}
+                <CM.Separator />
+                <CM.Item onSelect={() => ask(`Track a remote branch with ${name}`, 'Remote branch', 'Track', (u) => void setUpstream(repoId, name, u.trim()), { placeholder: `origin/${name}` })}>Other…</CM.Item>
+              </CM.Sub>
+            )}
+            {r.upstream && <CM.Item reason={whyNotStopTracking(r)} onSelect={() => void setUpstream(repoId, name, null)}>Stop tracking {shortRef(r.upstream)}</CM.Item>}
+            </CM.Sub>
+          )}
+          {!whyNotCreatePull(view) && <CM.Item onSelect={() => createPull(repoId, name)}>Create pull request…</CM.Item>}
           <CM.Separator />
           {compareItem}
           <CM.Item reason={aiWhy} onSelect={() => startReview(repoId, { kind: 'branch', branch: name })}>Review {name} with AI</CM.Item>
@@ -228,7 +235,7 @@ export function GraphMenu({ repoId }: { repoId: string }) {
             <CM.Separator />
             <CM.Item onSelect={() => editRemoteUrl(repoId, name)}>Edit URL…</CM.Item>
             <CM.Item onSelect={() => editRemoteUrl(repoId, name, true)}>{remote.pushUrl ? 'Edit push URL…' : 'Use a different URL for pushing…'}</CM.Item>
-            <CM.Item reason={whyNotClearPushUrl(remote)} onSelect={() => void clearPushUrl(repoId, name)}>Push to the fetch URL again</CM.Item>
+            {!whyNotClearPushUrl(remote) && <CM.Item onSelect={() => void clearPushUrl(repoId, name)}>Push to the fetch URL again</CM.Item>}
             <CM.Item onSelect={() => renameRemote(repoId, name)}>Rename {name}…</CM.Item>
             <CM.Item onSelect={() => copy(remote.fetchUrl, 'Copied URL')}>Copy URL</CM.Item>
             <CM.Separator />
@@ -245,7 +252,7 @@ export function GraphMenu({ repoId }: { repoId: string }) {
     return (
       <CM.Content>
         <CM.Label>{w.path}</CM.Label>
-        <CM.Item reason={whyNotOpenWorktree(w)} onSelect={() => void openRepo(w.path)}>Open in a new tab</CM.Item>
+        {!w.current && <CM.Item reason={whyNotOpenWorktree(w)} onSelect={() => void openRepo(w.path)}>Open in a new tab</CM.Item>}
         <CM.Item disabled={!!w.prunable} onSelect={() => void api.revealPath(w.path)}>Reveal in file manager</CM.Item>
         <CM.Item onSelect={() => copy(w.path, 'Copied path')}>Copy path</CM.Item>
         {!w.main && (
@@ -255,7 +262,7 @@ export function GraphMenu({ repoId }: { repoId: string }) {
               ? <CM.Item onSelect={() => void lockWorktree(repoId, w.path, true)}>Lock (keep it when its folder is missing)</CM.Item>
               : <CM.Item onSelect={() => void lockWorktree(repoId, w.path, false)}>Unlock</CM.Item>}
             {w.prunable ? <CM.Item onSelect={() => void pruneWorktrees(repoId)}>Forget missing worktrees</CM.Item>
-              : <CM.Item danger reason={whyNotRemoveWorktree(w)} onSelect={() => removeWorktree(repoId, w.path)}>Remove worktree</CM.Item>}
+              : !whyNotRemoveWorktree(w) && <CM.Item danger onSelect={() => removeWorktree(repoId, w.path)}>Remove worktree</CM.Item>}
           </>
         )}
       </CM.Content>
@@ -341,7 +348,7 @@ export function GraphMenu({ repoId }: { repoId: string }) {
       return (
         <CM.Content>
           <CM.Item onSelect={() => addRemote(repoId)}>Add remote…</CM.Item>
-          <CM.Item reason={whyNotFetchAll(view)} onSelect={() => void fetchAll(repoId)}>Fetch all</CM.Item>
+          {!whyNotFetchAll(view) && <CM.Item onSelect={() => void fetchAll(repoId)}>Fetch all</CM.Item>}
         </CM.Content>
       )
     }
@@ -349,7 +356,8 @@ export function GraphMenu({ repoId }: { repoId: string }) {
       <CM.Content>
         <PerRemote view={view} label={(n) => `Push all tags to ${n}`} onPick={(n) => void pushTags(repoId, n, null)} />
         <PerRemote view={view} label={(n) => `Check which tags are on ${n}`} onPick={(n) => void checkRemoteTags(repoId, n)} />
-        <CM.Item reason={whyNotHideRemoteTagMarks(view.remoteTags)} onSelect={() => updateRepo(repoId, { remoteTags: null })}>Hide the "local only" marks</CM.Item>
+        {!whyNotHideRemoteTagMarks(view.remoteTags) && <CM.Item onSelect={() => updateRepo(repoId, { remoteTags: null })}>Hide the "local only" marks</CM.Item>}
+        {remoteNames(view).length === 0 && <CM.Label>No remotes</CM.Label>}
       </CM.Content>
     )
   }
@@ -377,8 +385,10 @@ export function GraphMenu({ repoId }: { repoId: string }) {
       <CM.Content>
         <CM.Label>{n} commits selected</CM.Label>
         <CM.Item onSelect={() => void cherryPickMany(repoId, menu.hashes)}>Cherry-pick {n} commits onto {headName}</CM.Item>
-        <CM.Item reason={whyNotCompareTwo(menu.hashes)} onSelect={() => compare(repoId, menu.hashes[1]!, menu.hashes[0]!)}>Compare the two</CM.Item>
-        <CM.Item reason={whyNotCompareChain(base)} onSelect={() => compare(repoId, base!, menu.hashes[0]!, `before ${shortHash(menu.hashes[n - 1]!)}`, shortHash(menu.hashes[0]!))}>Compare before and after all {n}</CM.Item>
+        {!whyNotCompareTwo(menu.hashes) && <CM.Item onSelect={() => compare(repoId, menu.hashes[1]!, menu.hashes[0]!)}>Compare the two</CM.Item>}
+        {!whyNotCompareChain(base) && (
+          <CM.Item onSelect={() => compare(repoId, base!, menu.hashes[0]!, `before ${shortHash(menu.hashes[n - 1]!)}`, shortHash(menu.hashes[0]!))}>Compare before and after all {n}</CM.Item>
+        )}
         <CM.Separator />
         <CM.Item onSelect={() => void copyCommits(repoId, menu.hashes, 'diff')}>Copy as diff</CM.Item>
         <CM.Item onSelect={() => void copyCommits(repoId, menu.hashes, 'patch')}>Copy as patch</CM.Item>
@@ -405,8 +415,9 @@ export function GraphMenu({ repoId }: { repoId: string }) {
     <CM.Content>
       {tip && (
         <>
-          <CM.Label>Branch {shortRef(tip)}</CM.Label>
-          <BranchActions repoId={repoId} r={tip} />
+          <CM.Sub label={`Branch ${shortRef(tip)}`}>
+            <BranchActions repoId={repoId} r={tip} />
+          </CM.Sub>
           <CM.Separator />
         </>
       )}
@@ -425,9 +436,11 @@ export function GraphMenu({ repoId }: { repoId: string }) {
       <CM.Item reason={whyNotMoveUp(view, hash)} onSelect={() => { const at = view.editable.indexOf(hash); void moveCommits(repoId, [hash], view.editable[at - 1]!, 'above') }}>Move commit up</CM.Item>
       <CM.Item reason={whyNotMoveDown(view, hash)} onSelect={() => { const at = view.editable.indexOf(hash); void moveCommits(repoId, [hash], view.editable[at + 1]!, 'below') }}>Move commit down</CM.Item>
       <CM.Item reason={editWhy} onSelect={() => void reword(repoId, hash)}>Reword…</CM.Item>
-      <CM.Item reason={whyNotSquash(view, hash)} onSelect={() => void squashCommit(repoId, hash, 'squash')}>Squash into the commit below</CM.Item>
-      <CM.Item reason={whyNotSquash(view, hash)} onSelect={() => void squashCommit(repoId, hash, 'fixup')}>Fixup into the commit below (drop this message)</CM.Item>
-      <CM.Item reason={whyNotFixupStaged(view, hash)} onSelect={() => void fixupInto(repoId, hash)}>Fixup staged changes into this commit</CM.Item>
+      <CM.Sub label="Squash and fixup" reason={editWhy}>
+        <CM.Item reason={whyNotSquash(view, hash)} onSelect={() => void squashCommit(repoId, hash, 'squash')}>Squash into the commit below</CM.Item>
+        <CM.Item reason={whyNotSquash(view, hash)} onSelect={() => void squashCommit(repoId, hash, 'fixup')}>Fixup into the commit below (drop this message)</CM.Item>
+        <CM.Item reason={whyNotFixupStaged(view, hash)} onSelect={() => void fixupInto(repoId, hash)}>Fixup staged changes into this commit</CM.Item>
+      </CM.Sub>
       <CM.Item danger reason={editWhy} onSelect={() => void dropCommits(repoId, [hash])}>Drop commit</CM.Item>
       <CM.Item reason={firstReason(aiWhy, whyNotRecompose(view, [hash], parentsOf))} onSelect={() => recomposeWithAi(repoId, [hash])}>Split with AI…</CM.Item>
       <CM.Item reason={aiWhy} onSelect={() => startReview(repoId, { kind: 'commits', hashes: [hash] })}>Review this commit with AI</CM.Item>
@@ -444,10 +457,12 @@ export function GraphMenu({ repoId }: { repoId: string }) {
         <CM.Item onSelect={() => void reset(repoId, hash, 'hard')}>Hard: discard changes</CM.Item>
       </CM.Sub>
       <CM.Separator />
-      <CM.Item onSelect={() => void copyCommits(repoId, [hash], 'patch')}>Copy as patch</CM.Item>
-      <CM.Item onSelect={() => void savePatches(repoId, [hash])}>Save as patch file…</CM.Item>
-      <CM.Item onSelect={() => copy(hash, 'Copied SHA')}>Copy SHA</CM.Item>
-      {commit && <CM.Item onSelect={() => copy(commit.subject, 'Copied message')}>Copy message</CM.Item>}
+      <CM.Sub label="Copy and save">
+        <CM.Item onSelect={() => void copyCommits(repoId, [hash], 'patch')}>Copy as patch</CM.Item>
+        <CM.Item onSelect={() => void savePatches(repoId, [hash])}>Save as patch file…</CM.Item>
+        <CM.Item onSelect={() => copy(hash, 'Copied SHA')}>Copy SHA</CM.Item>
+        {commit && <CM.Item onSelect={() => copy(commit.subject, 'Copied message')}>Copy message</CM.Item>}
+      </CM.Sub>
     </CM.Content>
   )
 }

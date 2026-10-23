@@ -71,6 +71,18 @@ export function whyNotFixupStaged(view: RuleView, hash: string): Why {
   return staged ? undefined : 'Stage some changes first'
 }
 
+/** The root commit, when the current branch's first-parent line reaches it with no merge on the way. */
+function rootBelow(view: RuleView, parentsOf?: (hash: string) => string[] | undefined): string | undefined {
+  if (!parentsOf) return undefined
+  const oldest = view.editable[view.editable.length - 1]
+  if (!oldest) {
+    const head = view.snapshot.head.hash
+    return head && parentsOf(head)?.length === 0 ? head : undefined
+  }
+  const below = parentsOf(oldest)?.[0]
+  return below && parentsOf(below)?.length === 0 ? below : undefined
+}
+
 /**
  * Recompose (several commits) or Split (one) with AI: ordinary commits of the current branch that
  * follow each other, with no merge among or above them. `parentsOf` lets the rule tell a merge
@@ -79,7 +91,12 @@ export function whyNotFixupStaged(view: RuleView, hash: string): Why {
 export function whyNotRecompose(view: RuleView, hashes: string[], parentsOf?: (hash: string) => string[] | undefined): Why {
   if (!view.snapshot.head.branch) return 'Check out a branch first: recompose rewrites the current branch'
   if (parentsOf && hashes.some((h) => (parentsOf(h)?.length ?? 0) > 1)) return 'Recompose cannot include a merge commit'
-  const at = hashes.map((h) => view.editable.indexOf(h))
+  // Recompose (unlike drop and move) also takes the root commit, when the branch's first-parent
+  // line reaches it without a merge: it is the commit just below the oldest editable one.
+  const chain = [...view.editable]
+  const root = rootBelow(view, parentsOf)
+  if (root) chain.push(root)
+  const at = hashes.map((h) => chain.indexOf(h))
   if (at.some((i) => i < 0)) return 'Recompose works on commits of the current branch that are newer than its last merge'
   const sorted = [...at].sort((a, b) => a - b)
   if (sorted.some((v, i) => i > 0 && v !== sorted[i - 1]! + 1)) return 'Recompose needs commits that follow each other: select a range with Shift-click'
