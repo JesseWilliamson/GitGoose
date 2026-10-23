@@ -54,17 +54,36 @@ export function SettingsPage() {
     if (!root) return
     const order = sectionKey ? (sectionKey.split(',') as Section[]) : []
     const inBand = new Set<Section>()
-    const io = new IntersectionObserver((entries) => {
-      for (const e of entries) {
-        const s = (e.target as HTMLElement).dataset.section as Section
-        if (e.isIntersecting) inBand.add(s)
-        else inBand.delete(s)
+    let io: IntersectionObserver | null = null
+    // rootMargin percentages are relative to the root's width (per the spec), so the bottom
+    // margin is computed in pixels from the height; a resize rebuilds the observer.
+    const observe = () => {
+      io?.disconnect()
+      inBand.clear()
+      io = new IntersectionObserver((entries) => {
+        for (const e of entries) {
+          const s = (e.target as HTMLElement).dataset.section as Section
+          if (e.isIntersecting) inBand.add(s)
+          else inBand.delete(s)
+        }
+        const current = [...order].reverse().find((s) => inBand.has(s))
+        if (current) setSection(current)
+      }, { root, rootMargin: `0px 0px -${Math.round(root.clientHeight * 0.75)}px 0px` })
+      root.querySelectorAll('[data-section]').forEach((el) => io!.observe(el))
+    }
+    observe()
+    let height = root.clientHeight
+    const ro = new ResizeObserver(() => {
+      if (root.clientHeight !== height) {
+        height = root.clientHeight
+        observe()
       }
-      const current = [...order].reverse().find((s) => inBand.has(s))
-      if (current) setSection(current)
-    }, { root, rootMargin: '0px 0px -75% 0px' })
-    root.querySelectorAll('[data-section]').forEach((el) => io.observe(el))
-    return () => io.disconnect()
+    })
+    ro.observe(root)
+    return () => {
+      ro.disconnect()
+      io?.disconnect()
+    }
   }, [sectionKey])
 
   if (!settings) return null
