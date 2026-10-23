@@ -94,6 +94,12 @@ export function useClipboardLock(): void {
   test.afterEach(() => rmSync(lock, { recursive: true, force: true }))
 }
 
+/** Close the AI pane from its tab menu (the pane chrome has the Hide; the pane itself has no close button). */
+export async function hideAiPane(page: Page): Promise<void> {
+  await page.getByTestId('pane-menu-ai').click()
+  await page.getByRole('menuitem', { name: 'Hide' }).click()
+}
+
 /**
  * Drag `from` onto `to` with the mouse. Chromium starts a native drag only when the pointer
  * moves soon after the button goes down; on a loaded machine that first move can land before

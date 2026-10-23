@@ -2,7 +2,7 @@ import { fakeAnthropic, makeFixture, tempDir } from '@gitgoose/fixtures'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { launch } from './app'
+import { hideAiPane, launch } from './app'
 
 /** The fake agent (speaks real ACP over stdio), configured the way a user sets a custom agent. */
 const FAKE = join(import.meta.dirname, 'fake-agent.mjs')
@@ -86,7 +86,7 @@ test('resolving a conflict with the agent: denied leaves the file alone; allowed
   const panel = page.getByTestId('ai-chat-panel')
   await expect(panel.getByTestId('thread-feature')).toHaveText('Resolve the conflict in story.txt')
   await expect(panel.getByTestId('thread-agent')).toHaveText('Left the file as it was.')
-  await panel.getByRole('button', { name: 'Close the AI panel' }).click()
+  await hideAiPane(page)
   expect(readFileSync(join(r.dir, 'story.txt'), 'utf8')).toBe(before)
 
   await page.getByTestId('ai-resolve').click()
