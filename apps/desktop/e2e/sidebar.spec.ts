@@ -1,7 +1,7 @@
 import { initRepo, tempDir } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
-import { launch } from './app'
+import { launch, pickFromSubmenu } from './app'
 
 /**
  * main: A - B; feature/login and feature/ui/menu at A (each one commit of its own); fix at B.
@@ -125,7 +125,7 @@ test('Reveal in History jumps without filtering; the gear can make that what a c
   const { r, login, menu } = setup()
   const { app, page } = await launch(r.dir)
   await ref(page, 'refs/heads/feature/login').click({ button: 'right' })
-  await page.getByRole('menuitem', { name: 'Reveal in History' }).click()
+  await pickFromSubmenu(page, 'In the graph', 'Reveal in History')
   await expect(row(page, login)).toHaveAttribute('data-selected', 'true')
   await expect(page.getByTestId('graph-filter')).toHaveCount(0)
 

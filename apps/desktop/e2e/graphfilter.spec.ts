@@ -1,6 +1,6 @@
 import { initRepo, tempDir } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
-import { launch } from './app'
+import { launch, pickFromSubmenu } from './app'
 
 function setup() {
   const r = initRepo()
@@ -39,7 +39,7 @@ test('hide a branch with its eye button, solo another from its menu; remembered 
   await page.getByTestId('graph-filter').getByRole('button', { name: 'Show all' }).click()
   await expect(row(page, wip)).toBeVisible()
   await ref(page, 'other').click({ button: 'right' })
-  await page.getByRole('menuitem', { name: 'Solo other (show only it)' }).click()
+  await pickFromSubmenu(page, 'In the graph', 'Solo other (show only it)')
   await expect(page.getByTestId('graph-filter')).toContainText('Showing only other')
   await expect(row(page, wip)).toHaveCount(0)
   await expect(row(page, other)).toBeVisible()
