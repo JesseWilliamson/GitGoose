@@ -9,6 +9,8 @@ import { startReview } from '../lib/review'
 import { getLog, selectCommit, useStore, type RepoView } from '../lib/store'
 import { startWalkthrough } from '../lib/walkthrough'
 import { recomposeWithAi } from './RecomposeDialog'
+import { Button } from './ui'
+import { Badge } from './ui/badge'
 
 /**
  * Under the AI panel's conversation, above its composer: what the next message will carry (the
@@ -99,34 +101,39 @@ export function paneActions(view: Pick<RepoView, 'id' | 'snapshot' | 'editable'>
   ]
 }
 
-export function AiContextBar({ view, chips }: { view: RepoView; chips: ContextChip[] }) {
+export function AiContextBar({ view, chips, sentKeys }: { view: RepoView; chips: ContextChip[]; sentKeys: string[] }) {
   const aiOn = useStore((s) => (s.settings?.aiProvider ?? 'off') !== 'off')
   const actions = paneActions(view, chips, aiOn)
+  const pending = chips.filter((c) => !sentKeys.includes(c.key)).length
   return (
     <div className="shrink-0 border-t border-line px-2 pt-1.5 pb-0.5 text-[11px]" data-testid="ai-context">
       <div className="flex flex-wrap items-center gap-1">
         {chips.map((c) => {
           const Icon = ICON[c.kind]
+          const sent = sentKeys.includes(c.key)
           return (
-            <span key={c.key} data-testid="ai-context-chip" data-kind={c.kind} data-selection={c.fromSelection || undefined} title={c.title}
-              className="inline-flex max-w-full items-center gap-1 rounded-md border border-line bg-bg py-0.5 pr-0.5 pl-1.5 text-fg">
-              <Icon size={11} className="shrink-0 text-accent" />
+            <Badge key={c.key} variant="outline" data-testid="ai-context-chip" data-kind={c.kind} data-selection={c.fromSelection || undefined} data-sent={sent ? 'true' : undefined}
+              title={sent ? `${c.title} (already in this conversation, not sent again)` : c.title}
+              className={clsx('max-w-full rounded-md border-line bg-bg py-0.5 pr-0.5 pl-1.5 text-[11px] font-normal', sent ? 'text-muted' : 'text-fg')}>
+              <Icon size={11} className={clsx('shrink-0', sent ? 'text-faint' : 'text-accent')} />
               <span className="min-w-0 truncate" data-testid="ai-context-chip-label">{c.label}</span>
               <button onClick={() => removeChip(view.id, c)} aria-label={`Remove ${c.label}`} title="Do not send this" data-testid="ai-context-chip-remove"
                 className="shrink-0 rounded p-0.5 text-muted hover:bg-hover hover:text-fg"><X size={10} /></button>
-            </span>
+            </Badge>
           )
         })}
         <span className="text-faint" data-testid="ai-context-hint">
-          {chips.length ? 'Sent with your next message' : 'Drop commits, branches, stashes or files here to add them'}
+          {pending ? 'Sent with your next message' : chips.length ? 'In this conversation already' : 'Drop commits, branches, stashes or files here to add them'}
         </span>
       </div>
       <div className="mt-1 flex flex-wrap gap-1" data-testid="ai-actions">
         {actions.map((a) => (
-          <button key={a.name} disabled={!!a.why} onClick={a.run} title={a.why || a.what} data-testid={`ai-action-${a.name}`}
-            className={clsx('inline-flex items-center gap-1 rounded-md border border-line px-1.5 py-0.5', a.why ? 'cursor-default text-faint opacity-60' : 'text-fg hover:bg-hover')}>
-            <a.icon size={11} className="shrink-0" />{a.label}
-          </button>
+          // A disabled button takes no pointer events, so the tooltip is on a wrapper too.
+          <span key={a.name} title={a.why || a.what}>
+            <Button size="sm" disabled={!!a.why} onClick={a.run} title={a.why || a.what} data-testid={`ai-action-${a.name}`}>
+              <a.icon size={11} className="shrink-0" />{a.label}
+            </Button>
+          </span>
         ))}
       </div>
     </div>

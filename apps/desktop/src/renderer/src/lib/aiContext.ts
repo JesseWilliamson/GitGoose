@@ -130,6 +130,7 @@ export function useChips(view: RepoView): ContextChip[] {
 /** Something was dropped on the panel: it becomes a chip (the same thing twice is one chip). */
 export function addDropped(repoId: string, source: DragSource): void {
   const ref = sourceRef(source)
+  forgetSent(refKey(ref))
   if (!of(repoId).dropped.some((r) => refKey(r) === refKey(ref))) set(repoId, { dropped: [...of(repoId).dropped, ref] })
 }
 
@@ -140,6 +141,24 @@ export function removeChip(repoId: string, chip: ContextChip): void {
     dropped: state.dropped.filter((r) => refKey(r) !== chip.key),
     ...(chip.fromSelection ? { dismissed: chip.key } : {}),
   })
+}
+
+/**
+ * Which chips each thread already carries (thread id → chip keys). A chip whose context is in
+ * the conversation stays visible but is not sent again, so a conversation about one commit does
+ * not resend its diff every turn. A new thread starts empty; a changed selection is another key,
+ * and a ref dropped again is sent anew (`forgetSent`).
+ */
+export const useSentContext = create<Record<string, string[]>>(() => ({}))
+
+export function markSent(threadId: string, keys: string[]): void {
+  if (!keys.length) return
+  useSentContext.setState((s) => ({ [threadId]: [...new Set([...(s[threadId] ?? []), ...keys])] }))
+}
+
+/** A ref dropped again means "this, again": every thread sends it anew. */
+export function forgetSent(key: string): void {
+  useSentContext.setState((s) => Object.fromEntries(Object.entries(s).map(([id, ks]) => [id, ks.filter((k) => k !== key)])))
 }
 
 /** A message went out with the chips: the dropped ones are used up, the selection's stays. */

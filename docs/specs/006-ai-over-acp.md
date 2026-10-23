@@ -89,6 +89,11 @@ a drop target of kind `ai` in the window's drag handling (ADR-009), so the badge
 x to the AI conversation" and nothing in the repository changes. The same thing twice is one
 chip. A message sends the chips and uses up the dropped ones; the selection's chip stays while
 the selection does. A line under the chips says "Sent with your next message".
+**A chip is sent once per conversation:** once its context is in the thread, the chip stays
+visible but muted (`data-sent="true"`, "In this conversation already"), the × still removes it,
+and it is left out of the next send, so a conversation about one commit does not resend its diff
+every turn. The renderer keeps the sent keys per thread id (`useSentContext`); a new chat starts
+empty, another selection is another key, and a ref dropped again is sent anew.
 
 Chips are **references**, not text (`AiContextRef` in `packages/shared/src/ai.ts`): the renderer
 never reads git. `aiThreadSend(threadId, text, { context })` is an additive change to the

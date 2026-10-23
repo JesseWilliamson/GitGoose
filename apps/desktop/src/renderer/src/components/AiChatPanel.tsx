@@ -3,7 +3,7 @@ import { Check, History, MessagesSquare, Plus, Trash2, X } from 'lucide-react'
 import { DropdownMenu } from 'radix-ui'
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../lib/api'
-import { clearDropped, useChips } from '../lib/aiContext'
+import { clearDropped, markSent, useChips, useSentContext } from '../lib/aiContext'
 import { modName } from '../lib/keys'
 import { reportError, updateRepo, type RepoView } from '../lib/store'
 import { deleteThread, newChat, toggleChat, useThread, useThreads } from '../lib/thread'
@@ -13,6 +13,7 @@ import { Thread } from './Thread'
 import { DM, Spinner } from './ui'
 
 const FREE = { kind: 'free' } as const
+const NONE: string[] = []
 /** Items shown in the history list (most recently used first, grouped by day). */
 const HISTORY_ITEMS = 40
 
@@ -32,6 +33,9 @@ export function AiChatPanel({ view }: { view: RepoView }) {
   const thread = useThread(view.id, FREE, view.chat.threadId, (id) => updateRepo(view.id, (v) => ({ chat: { ...v.chat, threadId: id } })))
   const [history, setHistory] = useState<AiThread[] | null>(null)
   const chips = useChips(view)
+  // Chips whose context this conversation already has are shown but not sent again.
+  const sentKeys = useSentContext((s) => (thread ? s[thread.id] : undefined)) ?? NONE
+  const unsent = chips.filter((c) => !sentKeys.includes(c.key))
   const [historyOpen, setHistoryOpen] = useState(false)
   // Open, the list follows the repository: a review started from the action row (or by a menu)
   // is saved when its request starts, and shows up here without reopening.
@@ -71,7 +75,11 @@ export function AiChatPanel({ view }: { view: RepoView }) {
       {thread
         ? <Thread thread={thread} repoId={view.id} className="flex-1" placeholder="Ask about this repository (Enter sends, Shift+Enter for a new line)"
             hint="The first message sends the repository's name and current commit, and what is attached below; the agent asks before reading anything else."
-            above={<AiContextBar view={view} chips={chips} />} context={chips.map((c) => c.ref)} onSent={() => clearDropped(view.id)} />
+            above={<AiContextBar view={view} chips={chips} sentKeys={sentKeys} />} context={unsent.map((c) => c.ref)}
+            onSent={() => {
+              markSent(thread.id, unsent.map((c) => c.key))
+              clearDropped(view.id)
+            }} />
         : <div className="flex flex-1 items-center justify-center"><Spinner /></div>}
     </div>
   )

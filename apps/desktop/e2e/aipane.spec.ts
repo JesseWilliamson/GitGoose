@@ -60,23 +60,36 @@ test('the selection is a chip that goes with the message; × removes it until th
   const received = readFileSync(log, 'utf8')
   expect(received).toContain(`Context: commit ${hash.slice(0, 7)}`)
   expect(received.indexOf('Context: commit')).toBeLessThan(received.lastIndexOf('what is this'))
-  // The selection chip stays while the selection is unchanged.
+  // The selection chip stays while the selection is unchanged, now marked as already in the conversation.
   await expect(chip).toHaveCount(1)
+  await expect(chip).toHaveAttribute('data-sent', 'true')
+  await expect(panel.getByTestId('ai-context-hint')).toHaveText('In this conversation already')
 
-  // × removes it; it stays removed, and the next message carries nothing.
+  // A second message in the same thread does not resend it.
+  await panel.getByTestId('thread-input').fill('and again?')
+  await panel.getByTestId('thread-input').press('Enter')
+  await expect(panel.getByTestId('thread-agent').last()).toHaveText('Turn 2. You said: and again?.')
+  await expect(panel.getByTestId('thread-sent-toggle')).toHaveCount(1)
+  expect(readFileSync(log, 'utf8').split('Context: commit').length - 1).toBe(1)
+
+  // × removes it; it stays removed.
   await chip.getByTestId('ai-context-chip-remove').click()
   await expect(chip).toHaveCount(0)
   await expect(panel.getByTestId('ai-context-hint')).toContainText('Drop commits')
-  await panel.getByTestId('thread-input').fill('and without it?')
-  await panel.getByTestId('thread-input').press('Enter')
-  await expect(panel.getByTestId('thread-agent').last()).toHaveText('Turn 2. You said: and without it?.')
-  await expect(panel.getByTestId('thread-sent-toggle')).toHaveCount(1)
 
-  // A new selection is a new chip.
+  // Another selection is a new chip, and it is sent.
   await page.getByTestId('commit-row').nth(2).click()
   await expect(chip).toHaveCount(1)
+  await expect(chip).not.toHaveAttribute('data-sent', 'true')
   await expect(chip).toContainText('commit ')
   await expect(chip).not.toContainText(hash.slice(0, 7))
+  await panel.getByTestId('thread-input').fill('and this one?')
+  await panel.getByTestId('thread-input').press('Enter')
+  await expect(panel.getByTestId('thread-agent').last()).toHaveText('Turn 3. You said: and this one?.')
+  await expect(panel.getByTestId('thread-sent-toggle')).toHaveCount(2)
+  await panel.getByTestId('thread-sent-toggle').last().click()
+  await expect(panel.getByTestId('thread-sent').last()).toContainText('Context: commit')
+  await expect(panel.getByTestId('thread-sent').last()).not.toContainText(hash.slice(0, 7))
   await app.close()
 })
 
