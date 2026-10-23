@@ -23,7 +23,7 @@ test('drop a commit from the menu, then undo it', async () => {
   await app.close()
 })
 
-test('move a commit up and down from the menu; the root commit is not offered', async () => {
+test('move a commit up and down from the menu; the root commit is offered greyed, with the reason', async () => {
   const { r, B } = setup()
   const { app, page } = await launch(r.dir)
   await row(page, B).click({ button: 'right' })
@@ -35,7 +35,7 @@ test('move a commit up and down from the menu; the root commit is not offered', 
   await expect.poll(() => subjects(r)).toEqual(['D', 'C', 'B', 'A', 'root'])
   const root = r.git('rev-list', '--max-parents=0', 'HEAD').trim()
   await row(page, root).click({ button: 'right' })
-  await expect(page.getByRole('menu')).not.toContainText('Drop commit')
+  await expect(page.getByRole('menuitem', { name: 'Drop commit' })).toHaveAttribute('aria-disabled', 'true')
   await page.keyboard.press('Escape')
   await app.close()
 })
@@ -86,7 +86,7 @@ test('reword a commit; squash it into the one below; undo and redo', async () =>
 
   const c = r.git('rev-parse', 'HEAD~1').trim()
   await row(page, c).click({ button: 'right' })
-  await page.getByRole('menuitem', { name: 'Squash into the commit below' }).click()
+  await pickFromSubmenu(page, 'Squash and fixup', 'Squash into the commit below')
   await expect.poll(() => subjects(r)).toEqual(['D', 'B, better', 'A', 'root'])
   const squashed = r.head()
 
@@ -123,7 +123,7 @@ test('drag a commit onto another to squash it in; fixup staged changes into an o
   r.git('add', 'A.txt')
   const a = r.git('rev-parse', 'HEAD~2').trim()
   await row(page, a).click({ button: 'right' })
-  await page.getByRole('menuitem', { name: 'Fixup staged changes into this commit' }).click()
+  await pickFromSubmenu(page, 'Squash and fixup', 'Fixup staged changes into this commit')
   // Mid-rebase the branch is shorter than three commits, so HEAD~2 may not exist yet.
   await expect.poll(() => r.gitOrNull('show', 'HEAD~2:A.txt')).toBe('A fixed\n')
   expect(subjects(r)).toEqual(['C', 'B', 'A', 'root'])

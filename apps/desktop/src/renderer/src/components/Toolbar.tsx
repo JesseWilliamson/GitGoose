@@ -5,6 +5,7 @@ import { fetchAll, newBranch, pull, push, redo, stash, undo } from '../lib/actio
 import { runCommand, useSetting, useStore, type RepoView } from '../lib/store'
 import { modName, shortcutOf } from '../lib/keys'
 import { DM, Spinner, ToolbarButton } from './ui'
+import { whyNotFetchAll, whyNotForcePush, whyNotPull, whyNotPush } from '../lib/menuRules'
 
 /**
  * One slim row. Three columns: where you are and what you can do on the left, search in the
@@ -18,6 +19,7 @@ export function Toolbar({ view }: { view: RepoView }) {
   const head = snap.head.branch ? snap.refs.find((r) => r.name === `refs/heads/${snap.head.branch}`) : undefined
   const keys = useStore.getState().settings?.keybindings
   const pullMode = useSetting('pullMode')
+  const pullWhy = whyNotPull(snap, head)
   return (
     <div className="drag grid h-10 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center border-b border-line bg-panel px-2" data-testid="toolbar">
       <div className="flex min-w-0 items-center gap-0.5">
@@ -30,10 +32,10 @@ export function Toolbar({ view }: { view: RepoView }) {
             <DropdownMenu.Trigger className="-ml-1 rounded-md px-0.5 text-faint hover:bg-hover hover:text-fg" aria-label="Pull options"><ChevronDown size={11} /></DropdownMenu.Trigger>
           </div>
           <DM.Content>
-            <DM.Item onSelect={() => void pull(id, 'merge')}>Pull (merge)</DM.Item>
-            <DM.Item onSelect={() => void pull(id, 'rebase')}>Pull (rebase)</DM.Item>
-            <DM.Item onSelect={() => void pull(id, 'ff-only')}>Pull (fast-forward only)</DM.Item>
-            <DM.Item onSelect={() => void fetchAll(id)}>Fetch all</DM.Item>
+            <DM.Item reason={pullWhy} onSelect={() => void pull(id, 'merge')}>Pull (merge)</DM.Item>
+            <DM.Item reason={pullWhy} onSelect={() => void pull(id, 'rebase')}>Pull (rebase)</DM.Item>
+            <DM.Item reason={pullWhy} onSelect={() => void pull(id, 'ff-only')}>Pull (fast-forward only)</DM.Item>
+            <DM.Item reason={whyNotFetchAll(view)} onSelect={() => void fetchAll(id)}>Fetch all</DM.Item>
           </DM.Content>
         </DropdownMenu.Root>
         <DropdownMenu.Root>
@@ -43,8 +45,8 @@ export function Toolbar({ view }: { view: RepoView }) {
             <DropdownMenu.Trigger className="-ml-1 rounded-md px-0.5 text-faint hover:bg-hover hover:text-fg" aria-label="Push options"><ChevronDown size={11} /></DropdownMenu.Trigger>
           </div>
           <DM.Content>
-            <DM.Item onSelect={() => push(id)}>Push</DM.Item>
-            <DM.Item onSelect={() => push(id, true)}>Force push (with lease)…</DM.Item>
+            <DM.Item reason={whyNotPush(head)} onSelect={() => push(id)}>Push</DM.Item>
+            <DM.Item reason={whyNotForcePush(head)} onSelect={() => push(id, true)}>Force push (with lease)…</DM.Item>
           </DM.Content>
         </DropdownMenu.Root>
         <ToolbarButton icon={<RefreshCw size={16} className={clsx(view.busy === 'Fetch' && 'animate-spin')} />} label="Fetch" title="Fetch all remotes" onClick={() => void fetchAll(id)} disabled={!!view.busy} />
