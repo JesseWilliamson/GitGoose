@@ -159,3 +159,36 @@ export function readOrNull(path: string): string | null {
     return null
   }
 }
+
+/**
+ * Hover `trigger` and wait for its tooltip to say `text`. A tooltip is a timer plus a pointer
+ * event: Radix opens it 400 ms (TooltipProvider's delay) after a `pointermove` over the trigger,
+ * and on a loaded machine that move can land before the trigger is mounted, hit-testable or out
+ * from under a menu that is still settling, so nothing opens. A test should wait for the
+ * tooltip, not for a fixed time: hover, nudge the pointer (the move is what Radix listens
+ * for), wait up to 2 s (the delay plus slack) and if nothing came, leave and try again (3 tries).
+ */
+export async function expectTooltip(page: Page, trigger: Locator, text: string | RegExp): Promise<void> {
+  const tip = page.getByRole('tooltip').filter({ hasText: text }).first()
+  for (let attempt = 0; ; attempt++) {
+    // Start from a neutral point so that arriving is a real pointer enter, then walk onto the
+    // trigger in steps (several pointermoves, the event Radix opens on), then nudge twice.
+    await page.mouse.move(2, 2)
+    // force: a disabled menu item's wrapper is what has the tooltip, and a menu animating in is not "stable".
+    await trigger.scrollIntoViewIfNeeded().catch(() => {})
+    const at = (await trigger.boundingBox())!
+    const cx = at.x + at.width / 2
+    const cy = at.y + at.height / 2
+    await page.mouse.move(cx, cy, { steps: 10 })
+    for (const dx of [2, -2]) {
+      await page.waitForTimeout(100)
+      await page.mouse.move(cx + dx, cy, { steps: 2 })
+    }
+    try {
+      await expect(tip).toBeVisible({ timeout: 2000 })
+      return
+    } catch (e) {
+      if (attempt === 2) throw e
+    }
+  }
+}
