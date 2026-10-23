@@ -243,7 +243,7 @@ test('move a change to another commit or a new one; empty commits block until re
 })
 
 /** Press on `from`, move the pointer to `to` (or a point) in steps, release: a pointer drag, not an HTML5 one. */
-async function drag(page: Page, from: ReturnType<Page['locator']>, to: ReturnType<Page['locator']> | { x: number; y: number } | (() => Promise<{ x: number; y: number }>)) {
+async function drag(page: Page, from: ReturnType<Page['locator']>, to: ReturnType<Page['locator']> | { x: number; y: number } | (() => Promise<{ x: number; y: number }>), until?: () => Promise<boolean>) {
   // The previous drag may still be settling: its clone flying home (160 ms) and the rows sliding
   // into place. Row rects read mid-animation are not where the rows will be, so start from rest.
   await quiet(page)
@@ -287,11 +287,34 @@ async function drag(page: Page, from: ReturnType<Page['locator']>, to: ReturnTyp
     }
     await page.mouse.move(target.x + (i % 2), target.y, { steps: 2 })
   }
+  // Under load, a pointermove the test did not send can arrive late: the desktop's own pointer
+  // (Xvfb parks it mid-screen, shared by every app on the display) is replayed to a window when
+  // its layout changes, and the page takes it for the hand moving off the target. The page's state
+  // (`until`: what the drop will act on) is therefore checked, not assumed: move onto the target
+  // again until the state has held across two moves and a pause, then release.
+  const hold = async () => {
+    if (!until) return
+    for (let i = 0, held = 0; held < 2; i++) {
+      if (i === 25) throw new Error('the drag target did not stay lit')
+      await page.mouse.move(target.x + (i % 2), target.y, { steps: 2 })
+      await page.waitForTimeout(120)
+      if (await until().catch(() => false)) held++
+      else {
+        held = 0
+        target = await where()
+      }
+    }
+  }
+  await hold()
   // Let the page render what the last move caused, and be still, before the release: the drop
   // acts on the page's state at that moment (which row or zone is under the pointer).
   await quiet(page, false)
-  return { drop: async () => { await quiet(page, false); await page.mouse.up() } }
+  // `hold` again right before the release: the state the drop acts on is checked at that moment, not remembered.
+  return { hold, drop: async () => { await hold(); await page.mouse.move(target.x, target.y); await page.mouse.up() } }
 }
+
+/** The state a drop onto `zone` acts on: the zone is lit as the target. */
+const targeted = (page: Page, zone: ReturnType<Page['locator']>) => async () => (await zone.getAttribute('data-target', { timeout: 1000 })) === 'true'
 
 /** Wait until the app has stopped animating (and, unless mid-drag, the floating clone is gone), then one more frame. */
 async function quiet(page: Page, settled = true) {
@@ -315,12 +338,12 @@ test('drag: a hunk onto a commit, a hunk into the open space for a new commit, a
 
   // Lift the one hunk of commit 1: it leaves an empty slot behind, the hunks column dims, and
   // the commits column says where it can go. Over commit 2, that commit lights up.
-  let d = await drag(page, page.getByTestId('recompose-unit'), planned(page, 1))
+  let d = await drag(page, page.getByTestId('recompose-unit'), planned(page, 1), targeted(page, planned(page, 1)))
   await expect(page.locator('.drag-float')).toHaveCount(1)
   await expect(page.locator('[data-testid="recompose-unit"].drag-placeholder')).toHaveCount(1)
   await expect(page.getByTestId('recompose-hunks-column')).toHaveClass(/opacity-40/)
   await expect(page.getByTestId('recompose-commits-column')).toContainText('drop on a commit')
-  await expect(planned(page, 1)).toHaveAttribute('data-target', 'true')
+  await d.hold() // planned(1) is lit as the target (checked again at the release)
   await d.drop()
   await expect(page.locator('.drag-float')).toHaveCount(0)
   await expect(planned(page, 0)).toContainText('No changes')
@@ -329,8 +352,8 @@ test('drag: a hunk onto a commit, a hunk into the open space for a new commit, a
   // From commit 2, drag a hunk into the space above the newest commit: a third commit appears with it.
   await planned(page, 1).click()
   await expect(page.getByTestId('recompose-unit')).toHaveCount(3)
-  d = await drag(page, page.getByTestId('recompose-unit').last(), page.getByTestId('recompose-new-commit'))
-  await expect(page.getByTestId('recompose-new-commit')).toHaveAttribute('data-target', 'true')
+  d = await drag(page, page.getByTestId('recompose-unit').last(), page.getByTestId('recompose-new-commit'), targeted(page, page.getByTestId('recompose-new-commit')))
+  await d.hold() // the New commit zone is lit as the target (checked again at the release)
   await d.drop()
   await expect(commits).toHaveCount(3)
   await expect(page.getByTestId('recompose-unit')).toHaveCount(2)
@@ -345,15 +368,15 @@ test('drag: a hunk onto a commit, a hunk into the open space for a new commit, a
   // pointer moves. Esc mid-drag puts it back (and does not close the dialog); dropping it keeps
   // it there, selected.
   const upperEdge = async (i: number) => { const b = (await planned(page, i).boundingBox())!; return { x: b.x + b.width / 2, y: b.y + 3 } }
-  d = await drag(page, planned(page, 0), () => upperEdge(1))
+  d = await drag(page, planned(page, 0), () => upperEdge(1), async () => (await plannedTitle(page, 1).textContent()) === first)
   await expect(page.locator('[data-testid="recompose-commit"].drag-placeholder')).toHaveCount(1)
-  await expect(plannedTitle(page, 1)).toHaveText(first!)
+  await d.hold() // the dragged commit sits at index 1 (the title there is `first`)
   await page.keyboard.press('Escape')
   await page.mouse.up()
   await expect(page.locator('.drag-float')).toHaveCount(0)
   await expect(page.getByTestId('recompose-dialog')).toHaveCount(1)
   await expect(plannedTitle(page, 0)).toHaveText(first!)
-  d = await drag(page, planned(page, 0), () => upperEdge(1))
+  d = await drag(page, planned(page, 0), () => upperEdge(1), async () => (await plannedTitle(page, 1).textContent()) === first)
   await d.drop()
   await expect(plannedTitle(page, 1)).toHaveText(first!)
   await expect(planned(page, 1)).toHaveAttribute('data-selected', 'true')
