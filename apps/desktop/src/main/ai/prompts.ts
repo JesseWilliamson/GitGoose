@@ -44,7 +44,7 @@ export interface BuiltPrompt {
   /** For assess-impact: the impact found locally (the model may only cite its call sites). */
   impact?: ImpactResult
   /** For walkthrough: everything but the model's part. */
-  walkthrough?: Omit<WalkthroughResult, 'summary' | 'effort' | 'effortWhy' | 'groups' | 'sequence'>
+  walkthrough?: Omit<WalkthroughResult, 'summary' | 'effort' | 'effortWhy' | 'groups' | 'diagram'>
   /** For fix-finding: the file (relative) the proposal is for, and its text when asked. */
   fix?: { path: string; before: string }
   /** For push-checks: where evidence may point. */
@@ -246,7 +246,7 @@ export async function buildPrompt(maybeRepo: Repo | null, task: AiTask, ctx: Pro
       const hunks = walkthroughHunks(input.files, (p) => input.texts.get(p) ?? null, (p, t) => repo.definitionsOf(p, t))
       const paths = input.files.map((f) => f.path)
       const history = await repo.relatedHistory(paths, input.base ?? 'HEAD').catch(() => [])
-      // Who uses what changed, and what the new code calls: the flows a sequence diagram draws.
+      // Who uses what changed, and what the new code calls: the flows a diagram draws.
       const around = renderCodeContext(await repo.codeContext(input, { symbols: 12, callers: 4, used: 8 }), 8_000).text
       // Shrink each hunk until the list fits, as recompose does.
       let maxLines = 40
@@ -392,7 +392,7 @@ const ARTIFACT_SHAPE: Record<ArtifactKind, string> = {
   plan: 'the whole plan again, in the same JSON shape as the first answer: {"commits": [{"message": "…", "units": ["U1"]}]}, oldest first, every piece in exactly one commit',
   walkthrough: 'the whole walkthrough again, in the same JSON shape as the first answer',
   'commit-message': '{"message": "summary line under 72 characters\n\noptional body"}',
-  diagram: '{"participants": ["A", "B"], "messages": [{"from": "A", "to": "B", "label": "call or event"}]} (a sequence diagram, under 8 participants and 20 messages)',
+  diagram: 'Mermaid source, for example:\nsequenceDiagram\n  Browser->>API: POST /login\n  API-->>Browser: session cookie\nUse the kind that fits (sequenceDiagram for calls and events, stateDiagram-v2, flowchart, gitGraph, erDiagram, classDiagram); keep it small, under 8 participants or 15 nodes',
 }
 
 const ARTIFACT_NOUN: Record<ArtifactKind, string> = {
@@ -414,7 +414,7 @@ export function artifactProtocol(anchor: ThreadAnchor, afterFeature: boolean): s
     'This is a conversation: the user may ask follow-up questions.',
     afterFeature ? 'Your first answer keeps the format asked for above. After that, answer in prose.' : 'Answer in prose.',
     'Write prose as Markdown: short paragraphs, lists, `inline code` and fenced code blocks. No HTML.',
-    ...kinds.map((k) => `When you ${ARTIFACT_NOUN[k]}, send it as one fenced code block tagged \`\`\`json:${k} containing ${ARTIFACT_SHAPE[k]}. GitGoose checks it and the user decides whether to apply it.`),
+    ...kinds.map((k) => `When you ${ARTIFACT_NOUN[k]}, send it as one fenced code block tagged \`\`\`${k === 'diagram' ? 'mermaid' : `json:${k}`} containing ${ARTIFACT_SHAPE[k]}. GitGoose checks it and the user decides whether to apply it.`),
     ...(kinds.length ? ['Send such a block only when it is asked for or clearly needed; otherwise answer in prose.'] : []),
   ].join('\n')
 }

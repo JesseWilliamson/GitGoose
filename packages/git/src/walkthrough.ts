@@ -1,5 +1,5 @@
 import { enclosingDefinition, findDefinitions, type Definition } from '@gitgoose/codegraph'
-import type { FileDiff, ReadingLayer, SequenceDiagram, WalkthroughHunk } from '@gitgoose/shared'
+import type { FileDiff, ReadingLayer, WalkthroughHunk } from '@gitgoose/shared'
 
 /**
  * The deterministic half of a walkthrough: cut the change into hunks, place each in a reading
@@ -65,10 +65,10 @@ export function describeHunks(files: FileDiff[], hunks: WalkthroughHunk[], maxLi
 /**
  * Check the model's walkthrough against the change. Groups may only list files in the change
  * (files no group mentions get an "Other changes" group); hunk summaries only for real ids;
- * effort is clamped to 1-5; a sequence diagram must use its own participants and stay small.
+ * effort is clamped to 1-5; a diagram is kept as Mermaid source of a sane size (the renderer parses it).
  */
 export function verifyWalkthrough(raw: unknown, paths: string[], hunks: WalkthroughHunk[]): {
-  summary: string; effort: number; effortWhy: string; groups: { title: string; description: string; files: string[] }[]; sequence: SequenceDiagram | null
+  summary: string; effort: number; effortWhy: string; groups: { title: string; description: string; files: string[] }[]; diagram: string | null
 } {
   const o = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
   const str = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '')
@@ -89,21 +89,16 @@ export function verifyWalkthrough(raw: unknown, paths: string[], hunks: Walkthro
     if (s) h.summary = s
   }
   const effort = Math.min(5, Math.max(1, Math.round(Number(o.effort)) || 3))
-  return { summary: str(o.summary, 3000), effort, effortWhy: str(o.effortWhy, 300), groups, sequence: verifySequence(o.sequence) }
+  return { summary: str(o.summary, 3000), effort, effortWhy: str(o.effortWhy, 300), groups, diagram: verifyMermaid(o.diagram) }
 }
 
-/** A sequence diagram the model drew, kept only if it uses its own participants and stays small (also json:diagram in chat). */
-export function verifySequence(raw: unknown): SequenceDiagram | null {
-  if (!raw || typeof raw !== 'object') return null
-  const x = raw as Record<string, unknown>
-  const participants = (Array.isArray(x.participants) ? x.participants : []).filter((p): p is string => typeof p === 'string' && !!p.trim()).map((p) => p.trim().slice(0, 40))
-  const unique = [...new Set(participants)].slice(0, 8)
-  const messages = (Array.isArray(x.messages) ? x.messages : []).flatMap((m) => {
-    const y = (m && typeof m === 'object' ? m : {}) as Record<string, unknown>
-    const from = typeof y.from === 'string' ? y.from.trim() : ''
-    const to = typeof y.to === 'string' ? y.to.trim() : ''
-    const label = typeof y.label === 'string' ? y.label.trim().slice(0, 80) : ''
-    return unique.includes(from) && unique.includes(to) ? [{ from, to, label }] : []
-  }).slice(0, 24)
-  return unique.length >= 2 && messages.length ? { participants: unique, messages } : null
+/**
+ * The Mermaid source the model wrote, kept if it is a non-empty string of sane size (a fence the
+ * model wrapped around it is taken off). Whether Mermaid can parse it is the renderer's check:
+ * parsing needs a DOM, and its message is shown where the diagram would be (also ```mermaid in chat).
+ */
+export function verifyMermaid(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null
+  const src = raw.trim().replace(/^```(?:mermaid)?[ \t]*\n/, '').replace(/\n```$/, '').trim()
+  return src && src.length <= 8000 ? src : null
 }

@@ -180,7 +180,7 @@ async function answer(id, session, text, cx) {
       effort: 2, effortWhy: 'small and well tested',
       groups: [{ title: 'The fix', description: 'Corrects the arithmetic.', files: [files[0], 'invented.ts'] }],
       hunks: Object.fromEntries(pieces.map((p) => [p.id, `Piece ${p.id} of ${p.path}`])),
-      sequence: { participants: ['Caller', 'total'], messages: [{ from: 'Caller', to: 'total', label: 'total(a, b)' }, { from: 'total', to: 'Caller', label: 'a + b' }] },
+      diagram: 'sequenceDiagram\n  Caller->>total: total(a, b)\n  total-->>Caller: a + b',
     }
     const json = JSON.stringify(answer)
     for (let i = 0; i < json.length; i += 50) await say(cx, id, json.slice(i, i + 50))
