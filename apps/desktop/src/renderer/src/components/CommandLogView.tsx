@@ -47,33 +47,33 @@ export function CommandLogView({ view }: { view: RepoView }) {
   const shown = records.filter((r) => reads || !r.readOnly)
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col" data-testid="command-log">
-      <div className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-panel px-4">
-        <Terminal size={18} className="text-muted" />
+      <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-card px-4">
+        <Terminal size={18} className="text-muted-foreground" />
         <div className="min-w-0 flex-1">
-          <div className="text-[14px] font-semibold">Git command log</div>
-          <div className="truncate text-xs text-muted">Newest first. Click one to see what git printed.</div>
+          <div className="text-base font-semibold">Git command log</div>
+          <div className="truncate text-xs text-muted-foreground">Newest first. Click one to see what git printed.</div>
         </div>
-        <label className="flex items-center gap-1.5 text-xs text-muted">
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <input type="checkbox" checked={reads} onChange={(e) => setReads(e.target.checked)} /> Show reads
         </label>
         <Button variant="ghost" onClick={() => updateRepo(view.id, { center: { kind: 'graph' } })}>Back to graph</Button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto font-mono text-[12px]">
-        {shown.length === 0 && <div className="p-4 font-sans text-xs text-faint">Nothing yet{reads ? '' : ' (reads are hidden)'}.</div>}
+      <div className="min-h-0 flex-1 overflow-y-auto font-mono text-xs">
+        {shown.length === 0 && <div className="p-4 font-sans text-xs text-muted-foreground/70">Nothing yet{reads ? '' : ' (reads are hidden)'}.</div>}
         {shown.map((r) => {
           const failed = r.code !== null && r.code !== 0
           const cmd = `git ${r.args.map((a) => (/[\s"'$`\\]/.test(a) ? JSON.stringify(a) : a)).join(' ')}`
           return (
-            <div key={r.id} className="border-b border-line/50" data-testid="command-row" data-failed={failed || undefined}>
-              <div onClick={() => setOpen(open === r.id ? null : r.id)} className="flex h-7 cursor-default items-center gap-3 px-4 hover:bg-hover">
-                <span className="w-16 shrink-0 text-faint">{new Date(r.start).toLocaleTimeString([], { hour12: false })}</span>
-                <span className={clsx('min-w-0 flex-1 truncate', failed && 'text-del')} title={cmd}>{cmd}</span>
-                <span className="w-16 shrink-0 text-right text-faint">{r.durationMs === null ? 'running' : `${r.durationMs} ms`}</span>
-                <span className={clsx('w-8 shrink-0 text-right', failed ? 'text-del' : 'text-faint')} title="Exit code">{r.code ?? ''}</span>
+            <div key={r.id} className="border-b border-border/50" data-testid="command-row" data-failed={failed || undefined}>
+              <div onClick={() => setOpen(open === r.id ? null : r.id)} className="flex h-7 cursor-default items-center gap-3 px-4 hover:bg-accent">
+                <span className="w-16 shrink-0 text-muted-foreground/70">{new Date(r.start).toLocaleTimeString([], { hour12: false })}</span>
+                <span className={clsx('min-w-0 flex-1 truncate', failed && 'text-destructive')} title={cmd}>{cmd}</span>
+                <span className="w-16 shrink-0 text-right text-muted-foreground/70">{r.durationMs === null ? 'running' : `${r.durationMs} ms`}</span>
+                <span className={clsx('w-8 shrink-0 text-right', failed ? 'text-destructive' : 'text-muted-foreground/70')} title="Exit code">{r.code ?? ''}</span>
               </div>
               {open === r.id && (
-                <div className="bg-bg px-4 py-2">
-                  <pre className="selectable max-h-60 overflow-auto whitespace-pre-wrap text-muted">{r.stderr.trim() || '(nothing on stderr)'}</pre>
+                <div className="bg-background px-4 py-2">
+                  <pre className="selectable max-h-60 overflow-auto whitespace-pre-wrap text-muted-foreground">{r.stderr.trim() || '(nothing on stderr)'}</pre>
                   <Button size="sm" variant="ghost" className="mt-1 font-sans" onClick={() => copy(cmd, 'Copied command')}>Copy command</Button>
                 </div>
               )}

@@ -326,7 +326,7 @@ function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
                 const row = log.rows[r]
                 if (!commit || !row) {
                   return (
-                    <div key="loading" style={style} className="flex items-center gap-2 px-3 text-xs text-faint">
+                    <div key="loading" style={style} className="flex items-center gap-2 px-3 text-xs text-muted-foreground/70">
                       <Spinner /> Loading history…
                     </div>
                   )
@@ -370,7 +370,7 @@ function GraphList({ view, compact }: { view: RepoView; compact: boolean }) {
 /** The compact layout's column titles, over the same fixed widths as the rows. */
 function CompactHeader({ look, clipped }: { look: RowLook; clipped: boolean }) {
   return (
-    <div className="flex h-7 shrink-0 items-center border-b border-line bg-panel text-[11px] font-semibold tracking-wide whitespace-nowrap text-faint uppercase"
+    <div className="flex h-7 shrink-0 items-center border-b border-border bg-card text-2xs font-semibold tracking-wide whitespace-nowrap text-muted-foreground/70 uppercase"
       data-testid="graph-header">
       <div style={{ width: REFS_W }} className="shrink-0 truncate px-3">Branch / Tag</div>
       <div style={{ width: look.graphW }} className="shrink-0 truncate px-1" title={clipped ? 'Lanes past the eighth are not drawn' : undefined}>
@@ -394,11 +394,11 @@ function CompactHeader({ look, clipped }: { look: RowLook; clipped: boolean }) {
 function LineBar({ view, hash, hidden }: { view: RepoView; hash: string; hidden: number }) {
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-3">
-      <div className="pointer-events-auto flex min-w-0 items-center gap-2 rounded-md border border-line bg-panel px-3 py-1 text-[12px] shadow-lg" data-testid="line-bar">
+      <div className="pointer-events-auto flex min-w-0 items-center gap-2 rounded-md border border-border bg-card px-3 py-1 text-xs shadow-lg" data-testid="line-bar">
         <span className="min-w-0 truncate">
           Showing the line through <span className="font-mono">{shortHash(hash)}</span> · {hidden} {hidden === 1 ? 'commit' : 'commits'} hidden · Esc to show all
         </span>
-        <button onClick={() => setLine(view.id, null)} className="shrink-0 rounded px-1.5 font-medium text-accent hover:bg-hover">Show all</button>
+        <button onClick={() => setLine(view.id, null)} className="shrink-0 rounded px-1.5 font-medium text-primary hover:bg-accent">Show all</button>
       </div>
     </div>
   )
@@ -416,9 +416,9 @@ function WipRow({ style, view, cellW, look, selected, lane, color }: {
   const conflicts = st.filter((e) => e.kind === 'unmerged').length
   const counts = (
     <>
-      {st.length > 0 && <span className="shrink-0 rounded bg-raised px-1.5 text-[11px] not-italic">{st.length} changed</span>}
-      {staged > 0 && <span className="shrink-0 rounded bg-add-bg px-1.5 text-[11px] text-add not-italic">{staged} staged</span>}
-      {conflicts > 0 && <span className="shrink-0 rounded bg-del-bg px-1.5 text-[11px] text-del not-italic">{conflicts} conflicts</span>}
+      {st.length > 0 && <span className="shrink-0 rounded bg-popover px-1.5 text-2xs not-italic">{st.length} changed</span>}
+      {staged > 0 && <span className="shrink-0 rounded bg-add-bg px-1.5 text-2xs text-add not-italic">{staged} staged</span>}
+      {conflicts > 0 && <span className="shrink-0 rounded bg-del-bg px-1.5 text-2xs text-destructive not-italic">{conflicts} conflicts</span>}
     </>
   )
   const label = view.snapshot.head.hash ? 'Uncommitted changes' : 'No commits yet'
@@ -430,11 +430,11 @@ function WipRow({ style, view, cellW, look, selected, lane, color }: {
         data-drop-target={WIP_TARGET}
         onClick={() => updateRepo(view.id, { selected: { kind: 'wip' } })}
         data-selected={selected || undefined}
-        className={clsx('flex items-center border-b border-line/40 text-[13px]', selected ? 'bg-select' : 'hover:bg-hover')}
+        className={clsx('flex items-center border-b border-border/40 text-sm', selected ? 'bg-select' : 'hover:bg-accent')}
       >
         <div style={{ width: REFS_W }} className="shrink-0" />
         <WipCell width={cellW} hasHead={!!view.snapshot.head.hash} h={look.rowH} lane={lane} color={color} variant="avatar" />
-        <div className="flex min-w-0 flex-1 items-center gap-2 px-2 whitespace-nowrap text-muted italic">
+        <div className="flex min-w-0 flex-1 items-center gap-2 px-2 whitespace-nowrap text-muted-foreground italic">
           <span className="min-w-0 truncate">// WIP: {label.toLowerCase()}</span>
           {counts}
         </div>
@@ -449,11 +449,11 @@ function WipRow({ style, view, cellW, look, selected, lane, color }: {
       data-drop-target={WIP_TARGET}
       onClick={() => updateRepo(view.id, { selected: { kind: 'wip' } })}
       data-selected={selected || undefined}
-      className="group flex items-center text-[13px]"
+      className="group flex items-center text-sm"
     >
-      <div className={clsx('pointer-events-none absolute inset-y-0.5 right-2 rounded-md', selected ? 'bg-select' : 'group-hover:bg-hover')} style={{ left: cellW - 2 }} />
+      <div className={clsx('pointer-events-none absolute inset-y-0.5 right-2 rounded-md', selected ? 'bg-select' : 'group-hover:bg-accent')} style={{ left: cellW - 2 }} />
       <WipCell width={cellW} hasHead={!!view.snapshot.head.hash} h={look.rowH} lane={lane} color={color} />
-      <div className="relative flex h-full min-w-0 flex-1 items-center gap-2 border-b border-line/50 pr-5 pl-1 whitespace-nowrap text-muted italic">
+      <div className="relative flex h-full min-w-0 flex-1 items-center gap-2 border-b border-border/50 pr-5 pl-1 whitespace-nowrap text-muted-foreground italic">
         <span className="min-w-0 truncate">{label}</span>
         {counts}
       </div>
@@ -467,7 +467,7 @@ function WipRow({ style, view, cellW, look, selected, lane, color }: {
  */
 type BisectMark = 'good' | 'bad' | 'skip' | 'first bad'
 const BISECT_PILL: Record<BisectMark, string> = {
-  good: 'border-add/50 text-add', bad: 'border-del/50 text-del', skip: 'border-line text-muted', 'first bad': 'border-del bg-del text-white',
+  good: 'border-add/50 text-add', bad: 'border-destructive/50 text-destructive', skip: 'border-border text-muted-foreground', 'first bad': 'border-destructive bg-destructive text-white',
 }
 
 const CommitRow = memo(function CommitRow(props: {
@@ -527,10 +527,10 @@ const CommitRow = memo(function CommitRow(props: {
     <>
       {head && <HeadPill />}
       {props.bisect && (
-        <span className={clsx('flex h-[18px] shrink-0 items-center rounded border px-1.5 text-[11px] font-medium', BISECT_PILL[props.bisect])} data-testid="bisect-pill">{props.bisect}</span>
+        <span className={clsx('flex h-[18px] shrink-0 items-center rounded border px-1.5 text-2xs font-medium', BISECT_PILL[props.bisect])} data-testid="bisect-pill">{props.bisect}</span>
       )}
       {props.stash && (
-        <span className="flex h-[18px] shrink-0 items-center gap-1 rounded border border-dashed border-line px-1.5 text-[11px] text-muted" data-testid="stash-pill">
+        <span className="flex h-[18px] shrink-0 items-center gap-1 rounded border border-dashed border-border px-1.5 text-2xs text-muted-foreground" data-testid="stash-pill">
           <Archive size={10} /> {props.stash.ref}
         </span>
       )}
@@ -538,7 +538,7 @@ const CommitRow = memo(function CommitRow(props: {
         <RefPill key={p.key} pill={p} color={row.color} repoId={repoId} hash={commit.hash} />
       ))}
       {pills.length > max - Number(head) && (
-        <span className="shrink-0 rounded-[4px] bg-raised px-1.5 text-[11px] font-medium text-muted" title={pills.slice(max - Number(head)).map((p) => p.label).join('\n')}>
+        <span className="shrink-0 rounded-[4px] bg-popover px-1.5 text-2xs font-medium text-muted-foreground" title={pills.slice(max - Number(head)).map((p) => p.label).join('\n')}>
           +{pills.length - max + Number(head)}
         </span>
       )}
@@ -588,7 +588,7 @@ const CommitRow = memo(function CommitRow(props: {
     return (
       <div
         {...rowProps}
-        className={clsx('flex items-center text-[13px]', props.selected ? 'bg-select' : 'hover:bg-hover')}
+        className={clsx('flex items-center text-sm', props.selected ? 'bg-select' : 'hover:bg-accent')}
         style={{ position: 'absolute', top: 0, left: 0, right: 0, height: look.rowH, transform: `translateY(${props.top}px)` }}
       >
         {/* The branch and tag pills in a column of their own, left of the graph, with a line in
@@ -601,16 +601,16 @@ const CommitRow = memo(function CommitRow(props: {
         <GraphCell row={row} width={cellW} showPending={props.showPending} isHead={props.isHead} h={look.rowH} stash={!!commit.stash}
           author={people[0]} band refLine={labelled} lineAbove={props.lineAbove} lineAboveColor={props.lineAboveColor} lineBelow={props.lineBelow} />
         {/* No avatar here: the graph node already is one. */}
-        <div className={clsx('flex min-w-0 flex-1 items-center gap-2 px-2', props.stash && 'text-muted italic')} data-testid="row-body">
+        <div className={clsx('flex min-w-0 flex-1 items-center gap-2 px-2', props.stash && 'text-muted-foreground italic')} data-testid="row-body">
           <span className="min-w-0 flex-1 truncate" data-testid="row-subject">{subject}</span>
         </div>
-        <div style={{ width: AUTHOR_W }} className={clsx('min-w-0 shrink-0 items-center px-2 text-[12px] text-muted', COL_AUTHOR)} data-testid="row-author" title={authorsTitle}>
+        <div style={{ width: AUTHOR_W }} className={clsx('min-w-0 shrink-0 items-center px-2 text-xs text-muted-foreground', COL_AUTHOR)} data-testid="row-author" title={authorsTitle}>
           <span className="truncate">{authors}</span>
         </div>
-        <div style={{ width: look.dateW }} className={clsx('shrink-0 truncate px-2 text-[12px] text-muted tabular-nums', COL_DATE)} data-testid="row-date">
+        <div style={{ width: look.dateW }} className={clsx('shrink-0 truncate px-2 text-xs text-muted-foreground tabular-nums', COL_DATE)} data-testid="row-date">
           {formatDate(commit.authorDate, look.dateFormat)}
         </div>
-        <div style={{ width: SHA_W }} className={clsx('shrink-0 px-2 font-mono text-[12px] text-faint', COL_SHA)} data-testid="row-sha">{shortHash(commit.hash)}</div>
+        <div style={{ width: SHA_W }} className={clsx('shrink-0 px-2 font-mono text-xs text-muted-foreground/70', COL_SHA)} data-testid="row-sha">{shortHash(commit.hash)}</div>
         <div className="w-3 shrink-0" />
       </div>
     )
@@ -619,7 +619,7 @@ const CommitRow = memo(function CommitRow(props: {
   return (
     <div
       {...rowProps}
-      className="group flex items-stretch text-[13px]"
+      className="group flex items-stretch text-sm"
       style={{ position: 'absolute', top: 0, left: 0, right: 0, height: look.rowH, transform: `translateY(${props.top}px)` }}
     >
       {/* The selected row's tint: the one selection blue (bg-select, as on the WIP row, the sidebar
@@ -627,26 +627,26 @@ const CommitRow = memo(function CommitRow(props: {
           rounded block that stops short of the row's edges: consecutive selected rows stay
           distinct, and the lines on the left stay clean. */}
       <div
-        className={clsx('pointer-events-none absolute right-2 rounded-md', props.selected ? 'bg-select' : 'group-hover:bg-hover')}
+        className={clsx('pointer-events-none absolute right-2 rounded-md', props.selected ? 'bg-select' : 'group-hover:bg-accent')}
         style={{ left: cellW - 2, top: 2, bottom: 2 }}
         data-testid="row-tint"
       />
       <GraphCell row={row} width={cellW} showPending={props.showPending} isHead={props.isHead} h={look.rowH} stash={!!commit.stash}
         lineAbove={props.lineAbove} lineAboveColor={props.lineAboveColor} lineBelow={props.lineBelow} />
-      <div className="relative flex min-w-0 flex-1 items-center gap-2.5 border-b border-line/50 pr-5 pl-1" data-testid="row-body">
+      <div className="relative flex min-w-0 flex-1 items-center gap-2.5 border-b border-border/50 pr-5 pl-1" data-testid="row-body">
         <span data-testid="row-avatar" className="flex shrink-0">
           <AvatarStack people={people} size={AVATAR} max={3} />
         </span>
         <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
-          <div className="flex min-w-0 items-center gap-1.5 text-[12px] leading-4">
-            <span className="min-w-0 max-w-64 shrink truncate text-muted" data-testid="row-author" title={authorsTitle}>{authors}</span>
+          <div className="flex min-w-0 items-center gap-1.5 text-xs leading-4">
+            <span className="min-w-0 max-w-64 shrink truncate text-muted-foreground" data-testid="row-author" title={authorsTitle}>{authors}</span>
             {marks(3)}
             <span className="min-w-0 flex-1" />
-            <span className="shrink-0 text-faint" data-testid="row-date">{formatDate(commit.authorDate, look.dateFormat)}</span>
+            <span className="shrink-0 text-muted-foreground/70" data-testid="row-date">{formatDate(commit.authorDate, look.dateFormat)}</span>
           </div>
           <div className="flex min-w-0 items-center gap-2 leading-4">
-            <span className="shrink-0 font-mono text-[12px] text-faint" data-testid="row-sha">{shortHash(commit.hash)}</span>
-            <span className={clsx('min-w-0 flex-1 truncate', props.stash && 'text-muted italic')}>{subject}</span>
+            <span className="shrink-0 font-mono text-xs text-muted-foreground/70" data-testid="row-sha">{shortHash(commit.hash)}</span>
+            <span className={clsx('min-w-0 flex-1 truncate', props.stash && 'text-muted-foreground italic')}>{subject}</span>
           </div>
         </div>
       </div>
@@ -673,8 +673,8 @@ function RefPill({ pill, color, repoId, hash }: { pill: Pill; color: number; rep
       }}
       title={[pill.local?.name, ...pill.remotes.map((r) => r.name), pill.tag?.name].filter(Boolean).join('\n')}
       className={clsx(
-        'flex h-[18px] max-w-44 min-w-0 shrink cursor-grab items-center gap-1 rounded-[4px] px-1.5 text-[11px] font-semibold',
-        pill.isHead ? 'bg-accent text-accent-fg' : pill.tag ? 'bg-warn text-black' : 'text-fg',
+        'flex h-[18px] max-w-44 min-w-0 shrink cursor-grab items-center gap-1 rounded-[4px] px-1.5 text-2xs font-semibold',
+        pill.isHead ? 'bg-primary text-primary-foreground' : pill.tag ? 'bg-warn text-black' : 'text-foreground',
       )}
       // The checked-out branch is solid accent and tags solid amber, as in Tower; other branches
       // take a tint of their lane so the pill still says which line of history it sits on.
@@ -696,7 +696,7 @@ function RefPill({ pill, color, repoId, hash }: { pill: Pill; color: number; rep
 function HeadPill() {
   return (
     <span data-testid="head-pill" title="HEAD is detached here: new commits belong to no branch until you create one"
-      className="flex h-[18px] shrink-0 items-center gap-1 rounded-[4px] bg-accent px-1.5 text-[11px] font-semibold text-accent-fg">
+      className="flex h-[18px] shrink-0 items-center gap-1 rounded-[4px] bg-primary px-1.5 text-2xs font-semibold text-primary-foreground">
       <Crosshair size={10} className="shrink-0" /> HEAD
     </span>
   )
@@ -708,11 +708,11 @@ function FilterBar({ view }: { view: RepoView }) {
   if (!hidden.length && !solo.length) return null
   const name = (r: string) => r.replace(/^refs\/(heads|remotes|tags)\//, '').replace(/\/\*$/, ' (all)')
   return (
-    <div className="flex h-7 shrink-0 items-center gap-2 border-b border-line bg-accent/10 px-3 text-[12px]" data-testid="graph-filter">
+    <div className="flex h-7 shrink-0 items-center gap-2 border-b border-border bg-primary/10 px-3 text-xs" data-testid="graph-filter">
       <span className="min-w-0 flex-1 truncate">
         {solo.length ? `Showing only ${solo.map(name).join(', ')}` : `${hidden.length} hidden: ${hidden.map(name).join(', ')}`}
       </span>
-      <button onClick={() => showAllInGraph(view.id)} className="rounded px-1.5 font-medium text-accent hover:bg-hover">Show all</button>
+      <button onClick={() => showAllInGraph(view.id)} className="rounded px-1.5 font-medium text-primary hover:bg-accent">Show all</button>
     </div>
   )
 }
@@ -732,18 +732,18 @@ function BisectBar({ view }: { view: RepoView }) {
     : !b.good.length ? 'Bisecting: now mark a commit without the bug as good.'
     : `Bisecting: test the checked-out commit. ${b.remaining} left to test after it (about ${b.steps} more step${b.steps === 1 ? '' : 's'}).`
   return (
-    <div className={clsx('flex h-8 shrink-0 items-center gap-2 border-b border-line px-3 text-[12px]', b.found ? 'bg-del/10' : 'bg-warn/10')} data-testid="bisect-bar">
+    <div className={clsx('flex h-8 shrink-0 items-center gap-2 border-b border-border px-3 text-xs', b.found ? 'bg-destructive/10' : 'bg-warn/10')} data-testid="bisect-bar">
       <span className="min-w-0 flex-1 truncate">{message}</span>
       {b.found ? (
-        <button onClick={() => { updateRepo(id, { selected: { kind: 'commit', hash: b.found! } }); void ensureLoaded(id, b.found!) }} className="rounded px-1.5 font-medium text-accent hover:bg-hover">Show it</button>
+        <button onClick={() => { updateRepo(id, { selected: { kind: 'commit', hash: b.found! } }); void ensureLoaded(id, b.found!) }} className="rounded px-1.5 font-medium text-primary hover:bg-accent">Show it</button>
       ) : b.bad && b.good.length > 0 && head && (
         <>
-          <button onClick={() => void bisectMark(id, head, 'good')} className="rounded px-1.5 font-medium text-add hover:bg-hover">Good</button>
-          <button onClick={() => void bisectMark(id, head, 'bad')} className="rounded px-1.5 font-medium text-del hover:bg-hover">Bad</button>
-          <button onClick={() => void bisectMark(id, head, 'skip')} className="rounded px-1.5 font-medium text-muted hover:bg-hover" title="Cannot test this one (it does not build, say)">Skip</button>
+          <button onClick={() => void bisectMark(id, head, 'good')} className="rounded px-1.5 font-medium text-add hover:bg-accent">Good</button>
+          <button onClick={() => void bisectMark(id, head, 'bad')} className="rounded px-1.5 font-medium text-destructive hover:bg-accent">Bad</button>
+          <button onClick={() => void bisectMark(id, head, 'skip')} className="rounded px-1.5 font-medium text-muted-foreground hover:bg-accent" title="Cannot test this one (it does not build, say)">Skip</button>
         </>
       )}
-      <button onClick={() => void bisectReset(id)} className="rounded px-1.5 font-medium text-muted hover:bg-hover">Stop bisecting</button>
+      <button onClick={() => void bisectReset(id)} className="rounded px-1.5 font-medium text-muted-foreground hover:bg-accent">Stop bisecting</button>
     </div>
   )
 }

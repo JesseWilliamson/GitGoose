@@ -25,7 +25,7 @@ export function ChangeHints({ view }: { view: RepoView }) {
   if (!on || !ins || !ins.owners.length) return null
   const owners = ins.owners.slice(0, 3)
   return (
-    <div className="space-y-1 border-t border-line bg-accent/5 px-3 py-2 text-xs text-muted" data-testid="change-hints">
+    <div className="space-y-1 border-t border-border bg-primary/5 px-3 py-2 text-xs text-muted-foreground" data-testid="change-hints">
       {owners.length > 0 && (
         <div data-testid="owners">
           Changing lines by {owners.map((o) => `${o.name} (${o.lines})`).join(', ')}{ins.owners.length > 3 ? ` and ${ins.owners.length - 3} more` : ''}.

@@ -117,40 +117,54 @@ test('drop a branch on the pane: a chip; the same twice is one; it is used up by
   await app.close()
 })
 
-test('the action row: enabled by the chips, disabled with a reason; Review starts a review thread that is in the history list at once', async () => {
+test('the actions menu: enabled by the chips, disabled with a reason; Review starts a review thread that is in the history list at once', async () => {
   const r = repoWithTopic()
   const { app, page } = await launch(r.dir)
   await set(page, AGENT)
   await page.getByTestId('commit-row').nth(1).click()
   const panel = await openPane(page)
-  const action = (name: string) => panel.getByTestId(`ai-action-${name}`)
+  // The actions are one menu in the composer's footer; it is opened for each look and closed after.
+  const action = async (name: string) => {
+    if (!(await page.getByTestId(`ai-action-${name}`).isVisible())) await panel.getByTestId('ai-actions').click()
+    return page.getByTestId(`ai-action-${name}`)
+  }
+  const close = async () => {
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('ai-action-explain')).toHaveCount(0)
+  }
   // One commit: everything about commits; nothing about branches.
-  for (const name of ['explain', 'review', 'walkthrough', 'impact', 'recompose', 'cherrypick']) await expect(action(name)).toBeEnabled()
-  await expect(action('rebase')).toBeDisabled()
-  await expect(action('rebase')).toHaveAttribute('title', 'Drop a branch here')
+  for (const name of ['explain', 'review', 'walkthrough', 'impact', 'recompose', 'cherrypick']) await expect(await action(name)).toBeEnabled()
+  await expect(await action('rebase')).toBeDisabled()
+  await expect(await action('rebase')).toHaveAttribute('aria-description', 'Drop a branch here')
+  await close()
   // A branch dropped makes rebase possible. It is also what Review would take (dropped chips come
   // before the selection), so it goes again before the review.
   await dragTo(page, pill(page, 'refs/heads/topic'), panel)
-  await expect(action('rebase')).toBeEnabled()
+  await expect(await action('rebase')).toBeEnabled()
+  await close()
   await panel.locator('[data-kind="branch"]').getByTestId('ai-context-chip-remove').click()
-  await expect(action('rebase')).toBeDisabled()
+  await expect(await action('rebase')).toBeDisabled()
+  await close()
 
-  // The root commit cannot be recomposed, and the button says why; several commits make one chip.
+  // The root commit cannot be recomposed, and the menu says why; several commits make one chip.
   await page.getByTestId('commit-row').last().click()
-  await expect(action('recompose')).toBeDisabled()
-  await expect(action('recompose')).toHaveAttribute('title', 'Recompose needs non-merge commits on the current branch')
+  await expect(await action('recompose')).toBeDisabled()
+  await expect(await action('recompose')).toHaveAttribute('aria-description', 'Recompose needs non-merge commits on the current branch')
+  await close()
   await page.getByTestId('commit-row').first().click()
   await page.getByTestId('commit-row').nth(1).click({ modifiers: ['Shift'] })
   await expect(panel.getByTestId('ai-context-chip')).toHaveText(/2 commits/)
-  await expect(action('recompose')).toHaveAttribute('title', 'Recompose 2 commits')
-  await expect(action('explain')).toBeDisabled()
-  await expect(action('explain')).toHaveAttribute('title', 'Select one commit, or drop one here')
+  await expect(await action('recompose')).toHaveAttribute('title', 'Recompose 2 commits')
+  await expect(await action('explain')).toBeDisabled()
+  await expect(await action('explain')).toHaveAttribute('aria-description', 'Select one commit, or drop one here')
+  await close()
   await page.getByTestId('commit-row').nth(1).click()
 
   // Review of the selected commit: the review view opens, and the thread is in the history list.
-  await action('review').click()
+  await (await action('review')).click()
   await expect(page.getByTestId('review')).toBeVisible()
-  await panel.getByTestId('ai-chat-history').click()
+  // New and History are at the right end of the slot's tab strip, not in a header of the pane.
+  await page.getByTestId('slot-right').getByTestId('ai-chat-history').click()
   const item = page.locator('[data-testid="ai-chat-history-item"][data-kind="review"]')
   await expect(item).toHaveCount(1)
   await expect(page.getByTestId('ai-chat-history-day').first()).toContainText('Today')
@@ -170,7 +184,55 @@ test('Rebase onto… from the pane rebases the current branch onto the dropped b
   await set(page, AGENT)
   const panel = await openPane(page)
   await dragTo(page, pill(page, 'refs/heads/main'), panel)
-  await panel.getByTestId('ai-action-rebase').click()
+  await panel.getByTestId('ai-actions').click()
+  await page.getByTestId('ai-action-rebase').click()
   await expect.poll(() => r.git('log', '--format=%s', 'feature').trim().split('\n').join('|')).toBe('feature work|main moves on|root')
+  await app.close()
+})
+
+test('one header and one composer box: New and History live in the tab strip, the ⋯ shows on hover, and who answers is one button', async () => {
+  const r = repoWithTopic()
+  const { app, page } = await launch(r.dir)
+  await set(page, AGENT)
+  await page.getByTestId('commit-row').nth(1).click()
+  const panel = await openPane(page)
+  const strip = page.getByTestId('tabs-right')
+
+  // No header of its own: the pane's two buttons are the right end of the slot's strip while AI is in front.
+  await expect(strip.getByTestId('ai-chat-new')).toBeVisible()
+  await expect(strip.getByTestId('ai-chat-history')).toBeVisible()
+  await expect(panel.getByTestId('ai-chat-new')).toHaveCount(0)
+  await page.getByTestId('pane-tab-details').click()
+  await expect(page.getByTestId('ai-chat-new')).toHaveCount(0)
+  await page.getByTestId('pane-tab-ai').click()
+  // The empty state is one short line, not a paragraph.
+  await expect(panel.getByTestId('thread-empty')).toHaveText('Ask about this repository, or drop commits, branches and files here')
+
+  // The composer is one box: chips, text, actions, who answers and Send are all inside it, and it is a small part of the pane.
+  const box = panel.getByTestId('thread-input').locator('xpath=..')
+  for (const id of ['ai-context', 'ai-actions', 'thread-send']) await expect(box.getByTestId(id)).toBeVisible()
+  const target = box.locator('[data-testid^="ai-target-"]').first()
+  await expect(target).toHaveText('fake-agent · default')
+  expect((await box.boundingBox())!.height).toBeLessThan((await panel.boundingBox())!.height * 0.3)
+  // Who answers: one quiet button; the two selects and Prompt are in its popover.
+  await expect(page.getByTestId('model-picker-who')).toHaveCount(0)
+  await target.click()
+  await expect(page.getByTestId('model-picker-who')).toBeVisible()
+  await expect(page.getByTestId('model-picker-model')).toBeVisible()
+  await expect(page.locator('[data-testid^="prompt-button-"]')).toBeVisible()
+  await page.keyboard.press('Escape')
+
+  // The tab's ⋯ is there for tests and keyboards but only visible on hover, or while its menu is open.
+  const menu = page.getByTestId('pane-menu-ai')
+  await page.mouse.move(300, 300)
+  await expect(menu).toHaveCSS('opacity', '0')
+  await page.getByTestId('pane-tab-ai').hover()
+  await expect(menu).toHaveCSS('opacity', '1')
+  // A right-click on the tab opens the same menu.
+  await page.mouse.move(300, 300)
+  await page.getByTestId('pane-tab-ai').click({ button: 'right' })
+  await expect(page.getByRole('menuitem', { name: 'Hide' })).toBeVisible()
+  await expect(menu).toHaveCSS('opacity', '1')
+  await page.keyboard.press('Escape')
   await app.close()
 })

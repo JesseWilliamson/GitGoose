@@ -9,8 +9,7 @@ import { api } from '../lib/api'
 import { opName, sentence, splitPath } from '../lib/format'
 import { reportError, updateRepo, useSetting, useStore, type RepoView } from '../lib/store'
 import { Button, Spinner } from './ui'
-import { ModelPicker } from './ModelPicker'
-import { PromptButton } from './PromptPanel'
+import { AiTargetButton } from './AiTargetButton'
 
 const ResultEditor = lazy(() => import('./ResultEditor'))
 const MergePanes = lazy(() => import('./MergePanes'))
@@ -42,16 +41,16 @@ export function ConflictWizard({ view }: { view: RepoView }) {
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col" data-testid="conflicts">
-      <div className="flex h-14 shrink-0 items-center gap-3 border-b border-line bg-panel px-4">
+      <div className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-card px-4">
         <span className="flex size-8 items-center justify-center rounded-lg bg-warn/15 text-warn"><GitMerge size={17} /></span>
         <div className="min-w-0 flex-1">
-          <div className="text-[14px] font-semibold">{op ? `${sentence(opLabel)} in progress` : 'No operation in progress'}</div>
-          <div className="flex items-center gap-2 text-xs text-muted">
+          <div className="text-base font-semibold">{op ? `${sentence(opLabel)} in progress` : 'No operation in progress'}</div>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span data-testid="conflict-progress">
               {files === null ? 'Checking…' : files.length ? `${resolved.length} of ${total} ${total === 1 ? 'file' : 'files'} resolved` : 'All conflicts resolved'}
             </span>
             {total > 0 && (
-              <span className="h-1.5 w-32 overflow-hidden rounded-full bg-hover" aria-hidden>
+              <span className="h-1.5 w-32 overflow-hidden rounded-full bg-accent" aria-hidden>
                 <span className="block h-full rounded-full bg-add transition-[width]" style={{ width: `${(resolved.length / total) * 100}%` }} />
               </span>
             )}
@@ -70,21 +69,21 @@ export function ConflictWizard({ view }: { view: RepoView }) {
         )}
       </div>
       {/* The files, as tabs: conflicted first, then the ones already resolved. */}
-      <div className="flex shrink-0 items-end gap-1 overflow-x-auto border-b border-line bg-panel px-3 pt-2" role="tablist" aria-label="Files">
+      <div className="flex shrink-0 items-end gap-1 overflow-x-auto border-b border-border bg-card px-3 pt-2" role="tablist" aria-label="Files">
         {files?.map((f) => {
           const { dir, name } = splitPath(f.path)
           return (
             <button key={f.path} role="tab" aria-selected={current === f.path} onClick={() => setCurrent(f.path)} data-testid="conflict-file" title={f.path}
-              className={clsx('-mb-px flex h-8 max-w-72 shrink-0 items-center gap-1.5 rounded-t-md border px-3 text-[13px]',
-                current === f.path ? 'border-line border-b-bg bg-bg text-fg' : 'border-transparent text-muted hover:bg-hover hover:text-fg')}>
-              <CircleAlert size={13} className="shrink-0 text-del" />
-              <span className="min-w-0 truncate"><span className="text-faint">{dir}</span>{name}</span>
-              <span className="shrink-0 rounded-full bg-del/15 px-1.5 text-[10px] font-semibold text-del" title={f.blocks ? `${f.blocks} conflicts` : f.code}>{f.blocks || f.code}</span>
+              className={clsx('-mb-px flex h-8 max-w-72 shrink-0 items-center gap-1.5 rounded-t-md border px-3 text-sm',
+                current === f.path ? 'border-border border-b-background bg-background text-foreground' : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground')}>
+              <CircleAlert size={13} className="shrink-0 text-destructive" />
+              <span className="min-w-0 truncate"><span className="text-muted-foreground/70">{dir}</span>{name}</span>
+              <span className="shrink-0 rounded-full bg-destructive/15 px-1.5 text-2xs font-semibold text-destructive" title={f.blocks ? `${f.blocks} conflicts` : f.code}>{f.blocks || f.code}</span>
             </button>
           )
         })}
         {resolved.map((e) => (
-          <span key={e.path} className="-mb-px flex h-8 max-w-60 shrink-0 items-center gap-1.5 px-3 text-[13px] text-faint" data-testid="resolved-file" title={`${e.path}: resolved`}>
+          <span key={e.path} className="-mb-px flex h-8 max-w-60 shrink-0 items-center gap-1.5 px-3 text-sm text-muted-foreground/70" data-testid="resolved-file" title={`${e.path}: resolved`}>
             <CheckCircle2 size={13} className="shrink-0 text-add" />
             <span className="min-w-0 truncate">{splitPath(e.path).name}</span>
           </span>
@@ -93,7 +92,7 @@ export function ConflictWizard({ view }: { view: RepoView }) {
       {current && files?.some((f) => f.path === current) ? (
         <ConflictFileView key={current} view={view} file={files.find((f) => f.path === current)!} />
       ) : (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm text-faint">
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm text-muted-foreground/70">
           {files?.length === 0 ? (
             <>
               <CheckCircle2 size={28} className="text-add" />
@@ -134,7 +133,7 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
     return { ours: first?.oursLabel || 'HEAD', theirs: first?.theirsLabel || 'incoming' }
   }, [segments])
 
-  if (!versions) return <div className="flex flex-1 items-center justify-center text-faint"><Spinner /></div>
+  if (!versions) return <div className="flex flex-1 items-center justify-center text-muted-foreground/70"><Spinner /></div>
 
   // Three panes need all three texts: not for delete/modify conflicts or binary files.
   const text = (s: string | null) => s !== null && !s.includes('\0')
@@ -158,20 +157,20 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
   let blockNo = -1
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-2 border-b border-line px-3 py-1.5">
-        <span className="min-w-32 flex-1 truncate text-[13px]" title={file.path}><span className="text-faint">{dir}</span><span className="font-semibold">{name}</span></span>
+      <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-1.5">
+        <span className="min-w-32 flex-1 truncate text-sm" title={file.path}><span className="text-muted-foreground/70">{dir}</span><span className="font-semibold">{name}</span></span>
         {/* The whole file from one side, in that side's colour. */}
-        <div className="flex overflow-hidden rounded-md border border-line" role="group" aria-label="Take the whole file">
+        <div className="flex overflow-hidden rounded-md border border-border" role="group" aria-label="Take the whole file">
           <button onClick={() => resolveWith('ours')} disabled={versions.ours === null && versions.theirs === null}
-            className="flex h-7 items-center gap-1.5 px-2.5 text-xs hover:bg-hover disabled:opacity-40" title={`Resolve the whole file with your version (${labels.ours})`}>
+            className="flex h-7 items-center gap-1.5 px-2.5 text-xs hover:bg-accent disabled:opacity-40" title={`Resolve the whole file with your version (${labels.ours})`}>
             <i className="size-2 rounded-sm bg-ours" /> {versions.ours === null ? 'Keep deleted (ours)' : 'Take ours'}
           </button>
-          <button onClick={() => resolveWith('theirs')} className="flex h-7 items-center gap-1.5 border-l border-line px-2.5 text-xs hover:bg-hover"
+          <button onClick={() => resolveWith('theirs')} className="flex h-7 items-center gap-1.5 border-l border-border px-2.5 text-xs hover:bg-accent"
             title={`Resolve the whole file with their version (${labels.theirs})`}>
             <i className="size-2 rounded-sm bg-theirs" /> {versions.theirs === null ? 'Keep deleted (theirs)' : 'Take theirs'}
           </button>
         </div>
-        {aiOn && versions.merged !== null && <><ModelPicker area="conflict" agentsOnly /><PromptButton area="conflict" /></>}
+        {aiOn && versions.merged !== null && <AiTargetButton area="conflict" agentsOnly />}
         {agentOn && versions.merged !== null && (
           <Button size="sm" onClick={askAi} data-testid="ai-resolve" title={asking ? 'Stop' : 'Ask your AI agent to propose a resolution (you review it before anything is written)'}>
             {asking ? <><Spinner /> Stop</> : <><Sparkles size={12} /> Ask AI</>}
@@ -184,10 +183,10 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
           <Wrench size={13} />
         </Button>
         {canThree && (
-          <div className="flex overflow-hidden rounded-md border border-line" role="group" aria-label="Conflict view">
+          <div className="flex overflow-hidden rounded-md border border-border" role="group" aria-label="Conflict view">
             {(['three-pane', 'blocks'] as const).map((v) => (
               <button key={v} data-testid={`view-${v}`} aria-pressed={mode === v} onClick={() => { setPicked(v); setEdited(null) }}
-                className={clsx('h-7 px-2.5 text-xs', v === 'blocks' && 'border-l border-line', mode === v ? 'bg-select font-medium text-fg' : 'text-muted hover:bg-hover')}>
+                className={clsx('h-7 px-2.5 text-xs', v === 'blocks' && 'border-l border-border', mode === v ? 'bg-select font-medium text-foreground' : 'text-muted-foreground hover:bg-accent')}>
                 {v === 'three-pane' ? 'Three panes' : 'Cards'}
               </button>
             ))}
@@ -215,32 +214,32 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
         )}
       </div>
       {mode === 'three-pane' ? (
-        <Suspense fallback={<div className="flex flex-1 items-center justify-center text-faint"><Spinner /></div>}>
+        <Suspense fallback={<div className="flex flex-1 items-center justify-center text-muted-foreground/70"><Spinner /></div>}>
           <MergePanes base={versions.base ?? ''} ours={versions.ours!} theirs={versions.theirs!} labels={labels}
             onSave={(content) => void run(view.id, `Resolve ${file.path}`, () => api.resolveConflict(view.id, file.path, { content }), { quiet: true })} />
         </Suspense>
       ) : edited !== null ? (
         <div className="min-h-0 flex-1">
-          <Suspense fallback={<div className="flex h-full items-center justify-center text-faint"><Spinner /></div>}>
+          <Suspense fallback={<div className="flex h-full items-center justify-center text-muted-foreground/70"><Spinner /></div>}>
             <ResultEditor initial={edited} onChange={setEdited} />
           </Suspense>
         </div>
       ) : (
-        <div className="selectable min-h-0 flex-1 overflow-auto bg-panel px-4 py-3">
+        <div className="selectable min-h-0 flex-1 overflow-auto bg-card px-4 py-3">
           {versions.merged === null && (
-            <div className="mx-auto max-w-2xl rounded-lg border border-line bg-bg p-4 text-sm text-muted">
+            <div className="mx-auto max-w-2xl rounded-lg border border-border bg-background p-4 text-sm text-muted-foreground">
               This file was deleted on one side and changed on the other. Take ours or theirs to decide whether it stays.
             </div>
           )}
           {blocks.length === 0 && versions.merged !== null && (
-            <div className="mb-3 text-sm text-muted">No conflict markers left in this file. Mark it resolved to stage it.</div>
+            <div className="mb-3 text-sm text-muted-foreground">No conflict markers left in this file. Mark it resolved to stage it.</div>
           )}
           {segments.map((seg, si) => {
             if (seg.kind === 'text') {
               // A little context around each conflict instead of the whole file.
               const lines = seg.lines
               const shown = lines.length > 8 ? [...lines.slice(0, si === 0 ? 0 : 3), '⋯', ...lines.slice(-3)] : lines
-              return <pre key={si} className="px-3 font-mono text-[12px] text-faint">{shown.join('\n')}</pre>
+              return <pre key={si} className="px-3 font-mono text-xs text-muted-foreground/70">{shown.join('\n')}</pre>
             }
             blockNo++
             const b = blockNo
@@ -279,13 +278,13 @@ function ConflictCard({ seg, index, count, choice, onChoose }: {
     : []
   const takes = (side: 'ours' | 'theirs') => choice === side || choice === 'both' || choice === 'both-theirs-first'
   return (
-    <div className={clsx('my-3 overflow-hidden rounded-lg border bg-bg shadow-sm', choice ? 'border-line' : 'border-del/50')} data-testid="conflict-block" data-choice={choice ?? ''}>
-      <div className="flex flex-wrap items-center gap-2 border-b border-line bg-panel px-3 py-1.5 text-xs">
-        <span className={clsx('font-semibold', choice ? 'text-add' : 'text-del')}>{choice ? '✓' : '!'} Conflict {index + 1} of {count}</span>
-        <div className="ml-auto flex flex-wrap overflow-hidden rounded-md border border-line" role="radiogroup" aria-label={`Conflict ${index + 1}`}>
+    <div className={clsx('my-3 overflow-hidden rounded-lg border bg-background shadow-sm', choice ? 'border-border' : 'border-destructive/50')} data-testid="conflict-block" data-choice={choice ?? ''}>
+      <div className="flex flex-wrap items-center gap-2 border-b border-border bg-card px-3 py-1.5 text-xs">
+        <span className={clsx('font-semibold', choice ? 'text-add' : 'text-destructive')}>{choice ? '✓' : '!'} Conflict {index + 1} of {count}</span>
+        <div className="ml-auto flex flex-wrap overflow-hidden rounded-md border border-border" role="radiogroup" aria-label={`Conflict ${index + 1}`}>
           {CHOICES.filter((c) => c.value !== 'base' || seg.base).map((c, i) => (
             <button key={c.value} role="radio" aria-checked={choice === c.value} onClick={() => onChoose(c.value)} title={c.title} data-testid={c.testId}
-              className={clsx('flex h-6 items-center gap-1 px-2', i > 0 && 'border-l border-line', choice === c.value ? 'bg-accent text-accent-fg' : 'text-muted hover:bg-hover hover:text-fg')}>
+              className={clsx('flex h-6 items-center gap-1 px-2', i > 0 && 'border-l border-border', choice === c.value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground')}>
               {c.value === 'ours' && <i className="size-1.5 rounded-sm bg-ours" />}
               {c.value === 'theirs' && <i className="size-1.5 rounded-sm bg-theirs" />}
               {c.label}
@@ -293,21 +292,21 @@ function ConflictCard({ seg, index, count, choice, onChoose }: {
           ))}
         </div>
       </div>
-      <div className="grid grid-cols-2 font-mono text-[12px]">
+      <div className="grid grid-cols-2 font-mono text-xs">
         <SidePanel side="ours" label={seg.oursLabel || 'HEAD'} lines={seg.ours} taken={takes('ours')} onTake={() => onChoose(choice === 'theirs' ? 'both-theirs-first' : 'ours')} />
         <SidePanel side="theirs" label={seg.theirsLabel || 'incoming'} lines={seg.theirs} taken={takes('theirs')} onTake={() => onChoose(choice === 'ours' ? 'both' : 'theirs')} />
       </div>
-      <div className="border-t border-line" data-testid="conflict-result">
-        <div className="px-3 pt-1.5 text-[11px] font-semibold text-faint uppercase">Result</div>
+      <div className="border-t border-border" data-testid="conflict-result">
+        <div className="px-3 pt-1.5 text-2xs font-semibold text-muted-foreground/70 uppercase">Result</div>
         {choice ? (
-          <pre className="px-0 pt-1 pb-2 font-mono text-[12px]">
+          <pre className="px-0 pt-1 pb-2 font-mono text-xs">
             {result.length ? result.map((r, i) => (
               <div key={i} className="px-3" style={{ boxShadow: `inset 3px 0 0 ${r.from === 'base' ? 'var(--gs-faint)' : `var(--gs-${r.from})`}`, background: r.from === 'base' ? undefined : `color-mix(in srgb, var(--gs-${r.from}) 8%, transparent)` }}>
                 {r.line || ' '}
               </div>
-            )) : <div className="px-3 text-faint italic">(nothing: these lines are removed)</div>}
+            )) : <div className="px-3 text-muted-foreground/70 italic">(nothing: these lines are removed)</div>}
           </pre>
-        ) : <div className="px-3 pt-0.5 pb-2 text-xs text-faint">Pick a side above, or a choice on the right.</div>}
+        ) : <div className="px-3 pt-0.5 pb-2 text-xs text-muted-foreground/70">Pick a side above, or a choice on the right.</div>}
       </div>
     </div>
   )
@@ -318,14 +317,14 @@ function SidePanel({ side, label, lines, taken, onTake }: { side: 'ours' | 'thei
   return (
     <button onClick={onTake} data-testid={side === 'ours' ? 'use-ours' : 'use-theirs'} aria-pressed={taken}
       title={taken ? `${side === 'ours' ? 'Your' : 'Their'} lines are in the result` : `Take ${side === 'ours' ? 'your' : 'their'} lines`}
-      className={clsx('min-w-0 text-left', side === 'theirs' && 'border-l border-line')}
+      className={clsx('min-w-0 text-left', side === 'theirs' && 'border-l border-border')}
       style={{ background: `color-mix(in srgb, var(--gs-${side}) ${taken ? 16 : 5}%, transparent)`, boxShadow: taken ? `inset 0 0 0 2px var(--gs-${side})` : undefined }}>
-      <div className="flex items-center gap-2 px-3 py-1 font-sans text-[11px]">
+      <div className="flex items-center gap-2 px-3 py-1 font-sans text-2xs">
         <span className={clsx('rounded px-1 font-bold text-white', side === 'ours' ? 'bg-ours' : 'bg-theirs')}>{side === 'ours' ? 'A' : 'B'}</span>
-        <span className="min-w-0 flex-1 truncate font-semibold text-muted">{side === 'ours' ? 'Yours' : 'Theirs'} ({label})</span>
-        <span className={clsx('shrink-0', taken ? 'font-semibold' : 'text-faint')} style={taken ? { color: `var(--gs-${side})` } : undefined}>{taken ? '✓ in result' : 'Click to take'}</span>
+        <span className="min-w-0 flex-1 truncate font-semibold text-muted-foreground">{side === 'ours' ? 'Yours' : 'Theirs'} ({label})</span>
+        <span className={clsx('shrink-0', taken ? 'font-semibold' : 'text-muted-foreground/70')} style={taken ? { color: `var(--gs-${side})` } : undefined}>{taken ? '✓ in result' : 'Click to take'}</span>
       </div>
-      <pre className="overflow-x-auto px-3 pb-2">{lines.length ? lines.join('\n') : <span className="text-faint italic">(nothing)</span>}</pre>
+      <pre className="overflow-x-auto px-3 pb-2">{lines.length ? lines.join('\n') : <span className="text-muted-foreground/70 italic">(nothing)</span>}</pre>
     </button>
   )
 }

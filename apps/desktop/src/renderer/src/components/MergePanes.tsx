@@ -354,8 +354,8 @@ export default function MergePanes({ base, ours, theirs, labels, onSave }: Merge
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col" data-testid="merge-panes">
-      <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-2 border-b border-line bg-panel px-3 py-1 text-xs">
-        <label className="flex items-center gap-1.5 text-muted">
+      <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-2 border-b border-border bg-card px-3 py-1 text-xs">
+        <label className="flex items-center gap-1.5 text-muted-foreground">
           Start from
           <OptionSelect value={start} onChange={(v) => changeStart(v as StartFrom)} data-testid="merge-start" aria-label="Start from" className="px-1.5 text-xs data-[size=default]:h-6"
             options={[
@@ -370,7 +370,7 @@ export default function MergePanes({ base, ours, theirs, labels, onSave }: Merge
         </Button>
         <Button size="sm" variant="ghost" onClick={() => go(-1)} title="Previous conflict" data-testid="prev-conflict"><ChevronUp size={13} /></Button>
         <Button size="sm" variant="ghost" onClick={() => go(1)} title="Next conflict" data-testid="next-conflict"><ChevronDown size={13} /></Button>
-        <span className={clsx('ml-auto', conflicts.length ? 'text-del' : 'text-add')} data-testid="conflicts-left">
+        <span className={clsx('ml-auto', conflicts.length ? 'text-destructive' : 'text-add')} data-testid="conflicts-left">
           {conflicts.length ? `${conflicts.length} of ${totalConflicts} ${totalConflicts === 1 ? 'conflict' : 'conflicts'} left` : markers ? 'Remove the conflict markers' : 'All conflicts resolved'}
         </span>
         <Button size="sm" variant="primary" disabled={!canSave} onClick={save} data-testid="merge-save"
@@ -381,7 +381,7 @@ export default function MergePanes({ base, ours, theirs, labels, onSave }: Merge
       <div ref={box} className="flex min-h-0 flex-1 flex-col">
         <div className="grid min-h-0 grid-cols-2" style={{ height: `${split * 100}%` }}>
           {(['ours', 'theirs'] as const).map((p) => (
-            <div key={p} className={clsx('flex min-h-0 min-w-0 flex-col', p === 'theirs' && 'border-l border-line')}>
+            <div key={p} className={clsx('flex min-h-0 min-w-0 flex-col', p === 'theirs' && 'border-l border-border')}>
               <PaneHeader side={p} label={p === 'ours' ? labels.ours : labels.theirs} pending={status ? pendingOf(p) : 0} />
               <div ref={hosts[p]} className="min-h-0 flex-1 overflow-hidden" data-testid={`merge-${p}`} />
             </div>
@@ -389,12 +389,12 @@ export default function MergePanes({ base, ours, theirs, labels, onSave }: Merge
         </div>
         <SplitHandle box={box} split={split} onChange={setSplit} />
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex shrink-0 items-center gap-2 border-b border-line bg-panel px-3 py-1 text-[11px]">
-            <span className="font-semibold text-fg">Result</span>
-            <span className="text-faint">editable · lines show where they came from:</span>
-            <span className="flex items-center gap-1 text-muted"><i className="size-2 rounded-sm bg-ours" /> yours</span>
-            <span className="flex items-center gap-1 text-muted"><i className="size-2 rounded-sm bg-theirs" /> theirs</span>
-            <span className="flex items-center gap-1 text-muted"><i className="size-2 rounded-sm bg-add" /> by hand</span>
+          <div className="flex shrink-0 items-center gap-2 border-b border-border bg-card px-3 py-1 text-2xs">
+            <span className="font-semibold text-foreground">Result</span>
+            <span className="text-muted-foreground/70">editable · lines show where they came from:</span>
+            <span className="flex items-center gap-1 text-muted-foreground"><i className="size-2 rounded-sm bg-ours" /> yours</span>
+            <span className="flex items-center gap-1 text-muted-foreground"><i className="size-2 rounded-sm bg-theirs" /> theirs</span>
+            <span className="flex items-center gap-1 text-muted-foreground"><i className="size-2 rounded-sm bg-add" /> by hand</span>
           </div>
           <div ref={hosts.result} className="min-h-0 flex-1 overflow-hidden" data-testid="merge-result" />
         </div>
@@ -406,11 +406,11 @@ export default function MergePanes({ base, ours, theirs, labels, onSave }: Merge
 /** "A · Yours (main)" in its side's colour, with how many of its changes still wait for a decision. */
 function PaneHeader({ side, label, pending }: { side: Side; label: string; pending: number }) {
   return (
-    <div className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-1 text-[11px]" data-testid={`merge-${side}-header`}
+    <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-1 text-2xs" data-testid={`merge-${side}-header`}
       style={{ background: `color-mix(in srgb, var(--gs-${side}) 12%, var(--gs-panel))` }}>
       <span className={clsx('rounded px-1 font-bold text-white', side === 'ours' ? 'bg-ours' : 'bg-theirs')}>{side === 'ours' ? 'A' : 'B'}</span>
-      <span className="min-w-0 flex-1 truncate font-semibold">{side === 'ours' ? 'Yours' : 'Theirs'} <span className="font-normal text-muted">({label})</span></span>
-      {pending > 0 && <span className="shrink-0 text-muted">{pending} to decide</span>}
+      <span className="min-w-0 flex-1 truncate font-semibold">{side === 'ours' ? 'Yours' : 'Theirs'} <span className="font-normal text-muted-foreground">({label})</span></span>
+      {pending > 0 && <span className="shrink-0 text-muted-foreground">{pending} to decide</span>}
     </div>
   )
 }
@@ -433,6 +433,6 @@ function SplitHandle({ box, split, onChange }: { box: React.RefObject<HTMLDivEle
   return (
     <div role="separator" aria-orientation="horizontal" aria-valuenow={Math.round(split * 100)} onPointerDown={onPointerDown}
       onDoubleClick={() => onChange(0.45)} title="Drag to resize; double-click to reset" data-testid="merge-split"
-      className="h-1.5 shrink-0 cursor-row-resize border-y border-line bg-panel hover:bg-accent/40" />
+      className="h-1.5 shrink-0 cursor-row-resize border-y border-border bg-card hover:bg-primary/40" />
   )
 }
