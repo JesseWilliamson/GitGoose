@@ -27,7 +27,7 @@ preset, the custom command if set, the Anthropic API if a key is saved) and *mod
 AI only sets the default. An area's pick is remembered for that area alone (settings
 `aiAreaTargets`: commit, explain, review, walkthrough, impact, recompose, ask, chat, conflict,
 push-checks, error); Default follows Settings. Thread views show it under the turns, so one
-placement covers every chat (Recompose, Review, Walkthrough, Impact, Explain, Ask, AI panel);
+placement covers every chat (Recompose, Review, Walkthrough, Impact, Explain, Ask, AI pane);
 Recompose also shows it while the plan is being asked for, and a new pick there restarts the
 request on it.
 
@@ -77,7 +77,7 @@ lists are kept under, and which process a session lives in.
 | Explain box → **Ask a follow-up** | what you write (the session has the commit) | the thread grows under the explanation |
 | Recompose → **Chat** | what you write (the session has the pieces) | a thread beside the plan; revised plans as cards |
 | Diff selection → **Ask** | the lines, their function, definitions, history; then what you write | a thread under the diff (spec 007) |
-| **AI panel** (Mod+Shift+A, View → AI Chat) | the repository's name and HEAD, then what you write | a free-standing thread; its history lists every kept thread of the repository |
+| **AI pane** (Mod+Shift+A, View → Show AI; a tab in the right slot by default, movable: ADR-010) | the repository's name and HEAD, then what you write | a free-standing thread; its history lists every kept thread of the repository |
 
 **Waiting never blocks, and answers are not lost.** Every long request (explain, review,
 walkthrough, impact, recompose, fix, conflict help) is an *AI job* (`lib/aiJobs.ts`): a chip in

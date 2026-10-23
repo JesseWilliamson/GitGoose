@@ -1,11 +1,10 @@
 import type { AiThread, ThreadAnchor } from '@gitgoose/shared'
-import { History, MessagesSquare, Plus, Trash2, X } from 'lucide-react'
+import { History, MessagesSquare, Plus, Trash2 } from 'lucide-react'
 import { DropdownMenu } from 'radix-ui'
 import { useState } from 'react'
 import { api } from '../lib/api'
-import { modName } from '../lib/keys'
 import { reportError, updateRepo, type RepoView } from '../lib/store'
-import { deleteThread, newChat, toggleChat, useThread } from '../lib/thread'
+import { deleteThread, newChat, useThread } from '../lib/thread'
 import { Thread } from './Thread'
 import { DM, Spinner } from './ui'
 
@@ -27,7 +26,7 @@ const KIND: Record<ThreadAnchor['kind'], string> = {
 }
 
 /**
- * The AI panel (Mod+Shift+A): a conversation about the repository with no anchor. Its first
+ * The AI pane (Mod+Shift+A; ADR-010): a conversation about the repository with no anchor. Its first
  * message goes with only the repository's name and HEAD; the agent can ask to read files.
  * It also shows answers that have no view of their own (why an action failed, the conflict
  * agent's note), and every kept conversation of the repository is under the clock button, so
@@ -37,7 +36,7 @@ export function AiChatPanel({ view }: { view: RepoView }) {
   const thread = useThread(view.id, FREE, view.chat.threadId, (id) => updateRepo(view.id, (v) => ({ chat: { ...v.chat, threadId: id } })))
   const [history, setHistory] = useState<AiThread[] | null>(null)
   return (
-    <div className="absolute inset-y-0 right-0 z-20 flex w-[min(420px,90%)] flex-col border-l border-line bg-panel shadow-xl" data-testid="ai-chat-panel" key={view.chat.nonce}>
+    <div className="flex min-h-0 flex-1 flex-col" data-testid="ai-chat-panel" key={view.chat.nonce}>
       <div className="flex h-9 shrink-0 items-center gap-1 border-b border-line px-3 text-xs">
         <MessagesSquare size={14} className="text-accent" />
         <span className="min-w-0 flex-1 truncate font-semibold">AI · {thread?.title || view.snapshot.name}</span>
@@ -67,7 +66,6 @@ export function AiChatPanel({ view }: { view: RepoView }) {
             )}
           </DM.Content>
         </DropdownMenu.Root>
-        <button onClick={() => toggleChat(view.id)} title={`Close (${modName()}+Shift+A)`} aria-label="Close the AI panel" className="rounded p-1 text-muted hover:bg-hover hover:text-fg"><X size={13} /></button>
       </div>
       {thread
         ? <Thread thread={thread} repoId={view.id} className="flex-1" placeholder="Ask about this repository (Enter sends, Shift+Enter for a new line)"

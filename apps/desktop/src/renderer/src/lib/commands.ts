@@ -1,4 +1,4 @@
-import { DEFAULT_LAYOUT, setCollapsed } from '@gitgoose/shared'
+import { DEFAULT_LAYOUT, isPaneVisible, wideGraph } from '@gitgoose/shared'
 import {
   lfsPull, lfsTrack, snapshot, addRemote, addSubmodule, applyPatchFile, updateSubmodules, addWorktree, applyPatchFromClipboard, cleanupBranches, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, reopen, stash, undo,
 } from './actions'
@@ -51,7 +51,7 @@ export function commandEntries(): CommandEntry[] {
       () => toggleLine(id), `${modName()}+L`)
     add('Repository', 'What could the uncommitted changes affect?', () => showImpact(id, { kind: 'working' }))
     if ((useStore.getState().settings?.aiProvider ?? 'off') !== 'off') {
-      add('AI', active.chat.open ? 'Hide the AI panel' : 'Chat with the AI about this repository', () => toggleChat(id), `${modName()}+Shift+A`)
+      add('AI', isPaneVisible(settings!.layout, 'ai') ? 'Hide the AI pane' : 'Chat with the AI about this repository', () => toggleChat(), `${modName()}+Shift+A`)
       add('AI', 'Review uncommitted changes', () => startReview(id, { kind: 'working' }))
       add('AI', 'Review staged changes', () => startReview(id, { kind: 'staged' }))
       add('AI', 'Review what will be pushed', () => startReview(id, { kind: 'outgoing' }))
@@ -81,8 +81,8 @@ export function commandEntries(): CommandEntry[] {
   add('App', 'Clone repository…', () => useStore.setState({ dialog: { kind: 'clone' } }))
   add('App', 'New repository…', () => void initRepo())
   add('App', 'Settings', () => useStore.setState({ page: 'settings' }))
-  add('Layout', 'Reset panel sizes', () => void saveSettings({ layout: structuredClone(DEFAULT_LAYOUT) }))
-  add('Layout', 'Hide side panels', () => void saveSettings({ layout: setCollapsed(setCollapsed(settings!.layout, 'left', true), 'right', true) }))
+  add('Layout', 'Reset layout (panes and sizes)', () => void saveSettings({ layout: structuredClone(DEFAULT_LAYOUT) }))
+  add('Layout', 'Hide side panels', () => void saveSettings({ layout: wideGraph(settings!.layout) }))
   add('App', 'Keyboard shortcuts', () => useStore.setState({ dialog: { kind: 'shortcuts' } }), '?')
   if (settings) {
     const compact = settings.graphStyle === 'compact'

@@ -1,7 +1,7 @@
 import { fakeAnthropic, initRepo, makeFixture, tempDir } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import { join } from 'node:path'
-import { launch } from './app'
+import { hideAiPane, launch } from './app'
 
 /**
  * Conversations with the agent (spec 006, threads): the fake agent keeps each session's history
@@ -33,6 +33,8 @@ test('the AI panel: follow-ups continue the conversation; Shift+Enter is a new l
   const { app, page } = await launch(r.dir)
   await set(page, { aiProvider: 'agent', aiAgent: 'custom', aiAgentCommand: AGENT_CMD })
   const panel = await chat(page, 'hello')
+  // The pane is the AI tab of the right slot (ADR-010), opened with the shortcut.
+  await expect(page.getByTestId('slot-right').getByTestId('ai-chat-panel')).toBeVisible()
   // First use asks before anything is sent, naming what goes along.
   await expect(page.getByTestId('ai-consent')).toContainText("the repository's name and current commit")
   await page.getByTestId('ai-consent-ok').click()
@@ -54,6 +56,24 @@ test('the AI panel: follow-ups continue the conversation; Shift+Enter is a new l
   await panel.getByTestId('ai-chat-new').click()
   await chat(page, 'fresh')
   await expect(lastReply(panel)).toHaveText('Turn 1. You said: fresh.')
+  await app.close()
+})
+
+test('a collapsed slot holding the AI pane opens when an answer arrives in its thread', async () => {
+  const r = makeFixture('linear')
+  const { app, page } = await launch(r.dir)
+  await set(page, AGENT)
+  const panel = await chat(page, 'take your time FAKE:slow')
+  await expect(panel.getByTestId('thread-stop')).toBeVisible()
+  // Put the slot away while the agent works; the pane keeps its tab.
+  await page.keyboard.press('ControlOrMeta+p')
+  await page.getByTestId('palette-input').fill('Hide side panels')
+  await page.keyboard.press('Enter')
+  await expect.poll(async () => (await page.getByTestId('slot-right').boundingBox())?.width ?? 0).toBeLessThan(2)
+  // The turn ends (stopped here; any end of a turn is an answer to look at).
+  await page.evaluate(() => window.gitgoose.aiThreadCancel((document.querySelector('[data-thread]') as HTMLElement).dataset.thread!))
+  await expect.poll(async () => (await page.getByTestId('slot-right').boundingBox())?.width ?? 0).toBeGreaterThan(200)
+  await expect(page.getByTestId('slot-right').getByTestId('ai-chat-panel')).toBeVisible()
   await app.close()
 })
 
@@ -168,7 +188,7 @@ test('deleting a review conversation from the AI panel: the review chat lets go 
   await expect(panel.getByTestId('thread-feature')).toContainText('Review: Uncommitted changes')
   await page.getByTestId('ai-chat-history').click()
   await page.getByRole('menuitem', { name: 'Delete this conversation' }).click()
-  await panel.getByRole('button', { name: 'Close the AI panel' }).click()
+  await hideAiPane(page)
 
   // The rail holds a new conversation about the same review, and it answers.
   await expect(rail.getByTestId('thread-feature')).toHaveCount(0)
@@ -252,6 +272,8 @@ test('a commit message from the chat replaces the draft, and Undo puts the old o
   const card = panel.getByTestId('thread-artifact')
   await expect(card.getByTestId('artifact-summary')).toHaveText('docs: say what the widgets are for\n\nThe README did not say.')
   await card.getByTestId('artifact-apply').click()
+  // The commit box is in Details, which is the AI pane's neighbour tab on the right.
+  await page.getByTestId('pane-tab-details').click()
   await expect(page.getByTestId('commit-summary')).toHaveValue('docs: say what the widgets are for')
   await expect(page.getByTestId('commit-box').locator('textarea')).toHaveValue('The README did not say.')
   await page.getByRole('button', { name: 'Undo' }).last().click()
