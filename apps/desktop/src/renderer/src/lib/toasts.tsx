@@ -21,20 +21,20 @@ export const sonnerPresenter: ToastPresenter = {
 function ToastBody({ toast: t, onDismiss }: { toast: Toast; onDismiss: () => void }) {
   const [expanded, setExpanded] = useState(false)
   return (
-    <div role="status" data-kind={t.kind} className="w-96 max-w-[calc(100vw-2rem)] rounded-lg border border-line bg-raised p-3 text-[13px] text-fg shadow-xl shadow-black/30">
+    <div role="status" data-kind={t.kind} className="w-96 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-popover p-3 text-sm text-foreground shadow-xl shadow-black/30">
       <div className="flex items-start gap-2">
-        <span className={`mt-1 size-2 shrink-0 rounded-full ${t.kind === 'success' ? 'bg-add' : 'bg-accent'}`} />
+        <span className={`mt-1 size-2 shrink-0 rounded-full ${t.kind === 'success' ? 'bg-add' : 'bg-primary'}`} />
         <div className="min-w-0 flex-1">
           <div className="font-medium">{t.title}</div>
           {t.detail && (
             <pre onClick={() => setExpanded(!expanded)}
-              className={`selectable mt-1 cursor-pointer font-mono text-[11px] whitespace-pre-wrap text-muted ${expanded ? 'max-h-64 overflow-auto' : 'line-clamp-3'}`}>{t.detail}</pre>
+              className={`selectable mt-1 cursor-pointer font-mono text-2xs whitespace-pre-wrap text-muted-foreground ${expanded ? 'max-h-64 overflow-auto' : 'line-clamp-3'}`}>{t.detail}</pre>
           )}
         </div>
         {t.action && (
           <Button size="sm" onClick={() => { onDismiss(); t.action!.run() }} data-testid="toast-action">{t.action.label}</Button>
         )}
-        <button onClick={onDismiss} className="text-faint hover:text-fg" title="Dismiss" aria-label="Dismiss">✕</button>
+        <button onClick={onDismiss} className="text-muted-foreground/70 hover:text-foreground" title="Dismiss" aria-label="Dismiss">✕</button>
       </div>
     </div>
   )

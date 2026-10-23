@@ -218,13 +218,13 @@ export function Sidebar({ view }: { view: RepoView }) {
   const soloed = snap.filter.solo.map((r) => r.replace(/^refs\/(heads|remotes|tags)\//, ''))
 
   return (
-    <aside className="flex h-full min-h-0 w-full flex-col bg-panel">
-      <div className="flex h-6 shrink-0 items-center gap-1.5 px-3 pt-1.5 text-xs text-muted" data-testid="sidebar-viewing">
+    <aside className="flex h-full min-h-0 w-full flex-col bg-card">
+      <div className="flex h-6 shrink-0 items-center gap-1.5 px-3 pt-1.5 text-xs text-muted-foreground" data-testid="sidebar-viewing">
         <Eye size={12} className="shrink-0" />
         <span className="min-w-0 flex-1 truncate">
           {soloed.length ? `Viewing the history of ${soloed.join(', ')}` : `Viewing ${shown.toLocaleString()}/${branches.length.toLocaleString()}`}
         </span>
-        {shown < branches.length && <button onClick={() => showAllInGraph(view.id)} className="shrink-0 font-medium text-accent hover:underline">Show all</button>}
+        {shown < branches.length && <button onClick={() => showAllInGraph(view.id)} className="shrink-0 font-medium text-primary hover:underline">Show all</button>}
       </div>
       <ContextMenu.Root>
         <ContextMenu.Trigger asChild>
@@ -242,14 +242,14 @@ export function Sidebar({ view }: { view: RepoView }) {
         </ContextMenu.Trigger>
         <GraphMenu repoId={view.id} />
       </ContextMenu.Root>
-      <div className="shrink-0 border-t border-line p-2">
+      <div className="shrink-0 border-t border-border p-2">
         <input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Escape' && filter) { e.preventDefault(); setFilter('') } }}
           placeholder="Filter branches and tags"
           data-testid="sidebar-filter"
-          className="h-7 w-full rounded-md border border-line bg-bg px-2 text-xs outline-none focus:border-accent"
+          className="h-input w-full rounded-md border border-border bg-background px-2 text-xs outline-none focus:border-primary"
         />
         <div className="mt-1.5 flex items-center gap-1">
           <AddMenu view={view} />
@@ -310,7 +310,7 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
   onCursor: (key: string) => void
 }) {
   const style: React.CSSProperties = { position: 'absolute', top: 0, left: 0, right: 0, height: rowHeight(row), transform: `translateY(${top}px)` }
-  const base = clsx('flex cursor-default items-center gap-1.5 pr-3 text-[13px]', cursor ? 'bg-select' : 'hover:bg-hover')
+  const base = clsx('flex cursor-default items-center gap-1.5 pr-3 text-sm', cursor ? 'bg-select' : 'hover:bg-accent')
   /** Rows without a menu of their own: no menu opens (the list's menu would say "Nothing here"). */
   const noMenu = (e: React.MouseEvent) => e.preventDefault()
   const id = look.repoId
@@ -323,11 +323,11 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
           className={clsx('flex items-center pr-2', cursor && 'bg-select')}
           onContextMenu={menu ? () => useStore.setState({ menu: { kind: 'section', section: menu } }) : noMenu}>
           <button onClick={() => { onCursor(row.key); onToggle(row.key) }} style={{ paddingLeft: 8 }}
-            className="flex h-full min-w-0 flex-1 items-center gap-1.5 text-[12px] font-semibold text-muted hover:text-fg">
+            className="flex h-full min-w-0 flex-1 items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground">
             {row.open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
             {ICONS[row.section]}
             <span className="flex-1 truncate text-left">{row.title}</span>
-            {row.section !== 'workspace' && <span className="text-[11px] font-normal text-faint">{row.count}</span>}
+            {row.section !== 'workspace' && <span className="text-2xs font-normal text-muted-foreground/70">{row.count}</span>}
           </button>
           {row.section === 'remotes' && <SmallButton label="Add remote" onClick={() => addRemote(id)}><Plus size={13} /></SmallButton>}
           {row.section === 'worktrees' && <SmallButton label="Add worktree" onClick={() => addWorktree(id)}><Plus size={13} /></SmallButton>}
@@ -346,12 +346,12 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
         <div style={{ ...style, paddingLeft: pad(1) }} data-testid="workspace-item" data-item={row.item} title={`${w.title}${key ? ` (${key})` : ''}`}
           data-drop-target={WORKSPACE_TARGETS.has(row.item) ? drop({ kind: 'workspace', item: row.item as 'stashes' }) : undefined}
           onClick={() => { onCursor(row.key); onWorkspace(row.item) }} onContextMenu={noMenu}
-          className={clsx(base, active ? 'font-semibold text-fg' : 'text-muted')}>
+          className={clsx(base, active ? 'font-semibold text-foreground' : 'text-muted-foreground')}>
           {row.open !== undefined ? (row.open ? <ChevronDown size={12} className="-ml-3.5 shrink-0" /> : <ChevronRight size={12} className="-ml-3.5 shrink-0" />) : null}
           <span className="shrink-0">{w.icon}</span>
           <span className="min-w-0 flex-1 truncate">{w.label}</span>
-          {row.item === 'working-copy' && changes > 0 && <span className="text-[11px] text-faint">{changes}</span>}
-          {row.item === 'stashes' && prefs?.stashCount !== false && <span className="text-[11px] text-faint" data-testid="stash-count">{row.count}</span>}
+          {row.item === 'working-copy' && changes > 0 && <span className="text-2xs text-muted-foreground/70">{changes}</span>}
+          {row.item === 'stashes' && prefs?.stashCount !== false && <span className="text-2xs text-muted-foreground/70" data-testid="stash-count">{row.count}</span>}
           {row.item === 'pulls' && (
             <SmallButton label="Refresh pull requests" title="Refresh pull requests (asks GitHub)" onClick={(e) => { e.stopPropagation(); void loadPulls(id) }}>
               <RefreshCw size={11} className={view.pullsLoading ? 'animate-spin' : ''} />
@@ -367,24 +367,24 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
         <div style={{ ...style, paddingLeft: pad(row.depth) - FOLD }} data-testid="sidebar-folder" data-path={row.path} data-section={sectionName(row.section)}
           // Only Branches' folders take a branch (rename it into the folder).
           data-drop-target={row.section === 'branches' ? drop({ kind: 'folder', folder: row.path }) : undefined}
-          onClick={() => { onCursor(row.key); onToggle(row.key) }} onContextMenu={noMenu} className={clsx(base, 'text-muted')}>
+          onClick={() => { onCursor(row.key); onToggle(row.key) }} onContextMenu={noMenu} className={clsx(base, 'text-muted-foreground')}>
           {row.open ? <ChevronDown size={12} className="shrink-0" /> : <ChevronRight size={12} className="shrink-0" />}
           <Folder size={12} className="shrink-0" />
           <span className="min-w-0 flex-1 truncate">{row.name}</span>
-          <span className="text-[11px] text-faint">{row.count}</span>
+          <span className="text-2xs text-muted-foreground/70">{row.count}</span>
         </div>
       )
     case 'remote': {
       const hidden = look.filter.hidden.includes(`refs/remotes/${row.remote}/*`)
       return (
-        <div style={{ ...style, paddingLeft: pad(1) - FOLD }} data-testid="remote-section" data-name={row.remote} className={clsx(base, 'text-muted')}
+        <div style={{ ...style, paddingLeft: pad(1) - FOLD }} data-testid="remote-section" data-name={row.remote} className={clsx(base, 'text-muted-foreground')}
           data-drop-target={drop({ kind: 'remote', remote: row.remote })}
           onContextMenu={() => useStore.setState({ menu: { kind: 'remote', remote: row.remote } })}>
-          <button onClick={() => { onCursor(row.key); onToggle(row.key) }} className="flex h-full min-w-0 flex-1 items-center gap-1.5 font-medium hover:text-fg">
+          <button onClick={() => { onCursor(row.key); onToggle(row.key) }} className="flex h-full min-w-0 flex-1 items-center gap-1.5 font-medium hover:text-foreground">
             {row.open ? <ChevronDown size={12} className="shrink-0" /> : <ChevronRight size={12} className="shrink-0" />}
             <Cloud size={12} className="shrink-0" />
-            <span className={clsx('min-w-0 flex-1 truncate text-left', hidden && 'text-faint line-through')}>{row.remote}</span>
-            <span className="text-[11px] font-normal text-faint">{row.count}</span>
+            <span className={clsx('min-w-0 flex-1 truncate text-left', hidden && 'text-muted-foreground/70 line-through')}>{row.remote}</span>
+            <span className="text-2xs font-normal text-muted-foreground/70">{row.count}</span>
           </button>
         </div>
       )
@@ -403,7 +403,7 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
           title={`${s.message}\n${relativeTime(s.date)}\nClick to see its changes, double-click to pop`}
           className={clsx(base, (selected || cursor) && 'bg-select')}>
           <span className="min-w-0 flex-1 truncate">{stashLabel(s.message)}</span>
-          <span className="text-[10px] text-faint">{relativeTime(s.date)}</span>
+          <span className="text-2xs text-muted-foreground/70">{relativeTime(s.date)}</span>
         </div>
       )
     }
@@ -416,7 +416,7 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
           onContextMenu={() => useStore.setState({ menu: { kind: 'pull', number: p.number } })}
           title={`#${p.number} ${p.title}\n${p.author} wants to merge ${p.branch} into ${p.base}\nDouble-click to check it out`}
           className={base}>
-          <span className="shrink-0 text-[11px] text-faint">#{p.number}</span>
+          <span className="shrink-0 text-2xs text-muted-foreground/70">#{p.number}</span>
           <span className="min-w-0 flex-1 truncate">{p.title}</span>
           {p.draft && <Badge>draft</Badge>}
           {p.fromFork && <Badge title="From a fork">fork</Badge>}
@@ -437,9 +437,9 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
           onContextMenu={() => useStore.setState({ menu: { kind: 'worktree', path: w.path } })}
           title={`${w.path}${w.current ? '\nThis tab' : '\nDouble-click to open it in a tab'}`}
           className={clsx(base, w.current && 'font-semibold')}>
-          {w.current && <span className="-ml-4 w-3 text-[10px] text-accent">✓</span>}
+          {w.current && <span className="-ml-4 w-3 text-2xs text-primary">✓</span>}
           <span className="min-w-0 flex-1 truncate">{w.branch ?? `detached at ${w.head?.slice(0, 7) ?? '?'}`}</span>
-          <span className="max-w-24 truncate text-[10px] text-faint">{folder}</span>
+          <span className="max-w-24 truncate text-2xs text-muted-foreground/70">{folder}</span>
           {w.locked !== undefined && <Badge title={w.locked || undefined}>locked</Badge>}
           {w.prunable && <Badge title={w.prunable}>missing</Badge>}
         </div>
@@ -465,35 +465,35 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
       return (
         <div style={{ ...style, paddingLeft: pad(1) }} className="flex items-center gap-2 pr-3 text-xs text-warn" data-testid="lfs-setup" onContextMenu={noMenu}>
           <span className="min-w-0 flex-1 truncate">Not set up here: LFS files stay pointers.</span>
-          <button className="font-medium text-accent hover:underline" onClick={() => void lfsSetUp(id)}>Set up</button>
+          <button className="font-medium text-primary hover:underline" onClick={() => void lfsSetUp(id)}>Set up</button>
         </div>
       )
     case 'lfs-pattern':
       return (
         <div style={{ ...style, paddingLeft: pad(1) }} data-testid="lfs-pattern" onClick={() => onCursor(row.key)}
           onContextMenu={() => useStore.setState({ menu: { kind: 'lfs-pattern', pattern: row.pattern.pattern } })}
-          title={`From ${row.pattern.source}`} className={clsx(base, 'font-mono text-[12px]')}>
+          title={`From ${row.pattern.source}`} className={clsx(base, 'font-mono text-xs')}>
           <span className="min-w-0 flex-1 truncate">{row.pattern.pattern}</span>
           {row.pattern.lockable && <Badge title="Lockable: checked out read-only until you lock it">lockable</Badge>}
         </div>
       )
     case 'lfs-missing':
       return (
-        <div style={{ ...style, paddingLeft: pad(1) }} className="flex items-center gap-2 pr-3 text-xs text-muted" onContextMenu={noMenu}>
+        <div style={{ ...style, paddingLeft: pad(1) }} className="flex items-center gap-2 pr-3 text-xs text-muted-foreground" onContextMenu={noMenu}>
           <span className="min-w-0 flex-1">{row.count} not downloaded</span>
-          <button className="font-medium text-accent hover:underline" onClick={() => void lfsPull(id)}>Pull</button>
+          <button className="font-medium text-primary hover:underline" onClick={() => void lfsPull(id)}>Pull</button>
         </div>
       )
     case 'more-tags':
       return (
-        <div style={{ ...style, paddingLeft: pad(1) }} className="flex items-center text-xs text-faint" data-testid="more-tags" onContextMenu={noMenu}>
+        <div style={{ ...style, paddingLeft: pad(1) }} className="flex items-center text-xs text-muted-foreground/70" data-testid="more-tags" onContextMenu={noMenu}>
           {row.hidden.toLocaleString()} older {row.hidden === 1 ? 'tag' : 'tags'} ·&nbsp;
-          <button className="font-medium text-accent hover:underline" onClick={() => void saveSettings({ sidebarTags: 'all' })}>Show all</button>
+          <button className="font-medium text-primary hover:underline" onClick={() => void saveSettings({ sidebarTags: 'all' })}>Show all</button>
         </div>
       )
     case 'empty':
       return (
-        <div style={{ ...style, paddingLeft: pad(row.depth) }} className="flex items-center text-xs text-faint" data-testid="sidebar-empty" data-for={row.for} onContextMenu={noMenu}>
+        <div style={{ ...style, paddingLeft: pad(row.depth) }} className="flex items-center text-xs text-muted-foreground/70" data-testid="sidebar-empty" data-for={row.for} onContextMenu={noMenu}>
           {row.text}
         </div>
       )
@@ -522,9 +522,9 @@ function RefRow({ row, style, cursor, look, onClick, onDoubleClick }: {
   const tracking = r.upstream ? `Tracks ${r.upstream.replace(/^refs\/remotes\//, '')}${fetched}` : ''
   // Tower's badge order: ↑n ↓n, gone, merged, stale, worktree, #PR, local only.
   const badges: ReactNode[] = []
-  if ((r.ahead ?? 0) > 0) badges.push(<span key="ahead" className="text-[10px] text-add" title={`${r.ahead} to push. ${tracking}`}>↑{r.ahead}</span>)
-  if ((r.behind ?? 0) > 0) badges.push(<span key="behind" className="text-[10px] text-warn" title={`${r.behind} to pull. ${tracking}`}>↓{r.behind}</span>)
-  if (r.upstreamGone) badges.push(<span key="gone" className="text-[10px] text-faint" title="Upstream deleted on the remote">gone</span>)
+  if ((r.ahead ?? 0) > 0) badges.push(<span key="ahead" className="text-2xs text-add" title={`${r.ahead} to push. ${tracking}`}>↑{r.ahead}</span>)
+  if ((r.behind ?? 0) > 0) badges.push(<span key="behind" className="text-2xs text-warn" title={`${r.behind} to pull. ${tracking}`}>↓{r.behind}</span>)
+  if (r.upstreamGone) badges.push(<span key="gone" className="text-2xs text-muted-foreground/70" title="Upstream deleted on the remote">gone</span>)
   if (r.kind === 'local' && !head) {
     if (look.merged.has(r.shortName)) badges.push(<Badge key="merged" title={`Already in ${look.headBranch ?? 'HEAD'}: safe to delete`}>merged</Badge>)
     if (look.stale && isStale(r)) badges.push(<Badge key="stale" title="No commits for 90 days">stale</Badge>)
@@ -547,21 +547,21 @@ function RefRow({ row, style, cursor, look, onClick, onDoubleClick }: {
       data-section={sectionName(row.section)}
       data-upstream={r.upstream ?? ''}
       title={`${r.name}${tracking ? `\n${tracking}` : ''}\n${r.kind === 'tag' ? 'Click to show it in the graph' : 'Click to show its history, double-click to check out'}`}
-      className={clsx('group flex cursor-default items-center gap-1.5 pr-3 text-[13px]', cursor ? 'bg-select' : 'hover:bg-hover', head && 'font-semibold')}
+      className={clsx('group flex cursor-default items-center gap-1.5 pr-3 text-sm', cursor ? 'bg-select' : 'hover:bg-accent', head && 'font-semibold')}
     >
-      {head && <span className="-ml-4 w-3 text-[10px] text-accent">✓</span>}
-      <span className={clsx('min-w-[4.5rem] flex-1 truncate', out && 'text-faint line-through decoration-faint/50')} data-testid="ref-label">{row.label}</span>
+      {head && <span className="-ml-4 w-3 text-2xs text-primary">✓</span>}
+      <span className={clsx('min-w-[4.5rem] flex-1 truncate', out && 'text-muted-foreground/70 line-through decoration-muted-foreground/50')} data-testid="ref-label">{row.label}</span>
       {/* Badges give way before the branch name does: the name is what you are looking for. They
           wrap onto a second line that is cut off, so a badge that does not fit disappears whole
           instead of showing as "sta". */}
       {badges.length > 0 && <span className="flex h-4 min-w-0 shrink flex-wrap items-center justify-end gap-x-1 overflow-hidden">{badges}</span>}
-      {soloed && <span title="Showing its history: the graph shows only the branches you picked"><Focus size={12} className="text-accent" /></span>}
+      {soloed && <span title="Showing its history: the graph shows only the branches you picked"><Focus size={12} className="text-primary" /></span>}
       {!head && r.kind !== 'tag' && (
         <button
           onClick={(e) => { e.stopPropagation(); if (filter.hidden.includes(r.name)) showInGraph(look.repoId, r.name); else hideInGraph(look.repoId, r.name) }}
           onDoubleClick={(e) => e.stopPropagation()}
           title={hidden ? 'Show in the graph' : 'Hide in the graph'} aria-label={hidden ? 'Show in the graph' : 'Hide in the graph'} data-testid="toggle-hidden"
-          className={clsx('rounded p-0.5 text-faint hover:text-fg', hidden ? '' : 'opacity-0 group-hover:opacity-100')}>
+          className={clsx('rounded p-0.5 text-muted-foreground/70 hover:text-foreground', hidden ? '' : 'opacity-0 group-hover:opacity-100')}>
           {hidden ? <EyeOff size={12} /> : <Eye size={12} />}
         </button>
       )}
@@ -571,14 +571,14 @@ function RefRow({ row, style, cursor, look, onClick, onDoubleClick }: {
 
 function SmallButton({ label, title, onClick, children }: { label: string; title?: string; onClick: (e: React.MouseEvent) => void; children: ReactNode }) {
   return (
-    <button title={title ?? label} aria-label={label} onClick={onClick} onDoubleClick={(e) => e.stopPropagation()} className="ml-1 rounded p-0.5 text-faint hover:bg-hover hover:text-fg">
+    <button title={title ?? label} aria-label={label} onClick={onClick} onDoubleClick={(e) => e.stopPropagation()} className="ml-1 rounded p-0.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground">
       {children}
     </button>
   )
 }
 
 function Badge({ title, children }: { title?: string; children: ReactNode }) {
-  return <span title={title} className="rounded bg-hover px-1 text-[10px] text-faint">{children}</span>
+  return <span title={title} className="rounded bg-accent px-1 text-2xs text-muted-foreground/70">{children}</span>
 }
 
 /** The + below the sidebar: everything new that the sidebar lists. */
@@ -588,7 +588,7 @@ function AddMenu({ view }: { view: RepoView }) {
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
-        <button aria-label="New…" title="Create a branch, tag, remote, submodule or worktree" data-testid="sidebar-add" className="rounded p-1 text-muted hover:bg-hover hover:text-fg">
+        <button aria-label="New…" title="Create a branch, tag, remote, submodule or worktree" data-testid="sidebar-add" className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
           <Plus size={14} />
         </button>
       </DropdownMenu.Trigger>
@@ -612,7 +612,7 @@ function GearMenu({ path }: { path: string }) {
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
-        <button aria-label="Sidebar options" title="Sidebar options" data-testid="sidebar-gear" className="rounded p-1 text-muted hover:bg-hover hover:text-fg">
+        <button aria-label="Sidebar options" title="Sidebar options" data-testid="sidebar-gear" className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
           <Settings2 size={14} />
         </button>
       </DropdownMenu.Trigger>

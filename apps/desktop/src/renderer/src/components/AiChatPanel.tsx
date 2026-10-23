@@ -1,5 +1,5 @@
 import { runningTurn, type AiThread } from '@gitgoose/shared'
-import { Check, History, MessagesSquare, Plus, Trash2 } from 'lucide-react'
+import { Check, History, Plus, Trash2 } from 'lucide-react'
 import { DropdownMenu } from 'radix-ui'
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../lib/api'
@@ -7,9 +7,9 @@ import { clearDropped, markSent, useChips, useSentContext } from '../lib/aiConte
 import { reportError, updateRepo, type RepoView } from '../lib/store'
 import { deleteThread, newChat, useThread, useThreads } from '../lib/thread'
 import { ANCHOR_KIND, groupThreadsByDay } from '../lib/threadHistory'
-import { AiContextBar } from './AiContextBar'
+import { AiActionsMenu, AiContextChips } from './AiContextBar'
 import { Thread } from './Thread'
-import { DM, Spinner } from './ui'
+import { DM, Spinner, WithTooltip } from './ui'
 
 const FREE = { kind: 'free' } as const
 const NONE: string[] = []
@@ -19,24 +19,53 @@ const HISTORY_ITEMS = 40
 /**
  * The AI pane (Mod+Shift+A; ADR-010): a conversation about the repository, and the one place everything
  * AI shows up. Its first message goes with the repository's name and HEAD, plus the context
- * chips above the composer (the selection, and whatever was dropped on the panel); the agent can
+ * chips in the composer (the selection, and whatever was dropped on the panel); the agent can
  * ask to read files. It also shows answers that have no view of their own (why an action
  * failed, the conflict agent's note), and every kept conversation of the repository is under the
  * clock button, grouped by day, so an earlier explanation or review can be reopened and followed
- * up here. A review, walkthrough or recompose started from the action row is one of them at once.
+ * up here. A review, walkthrough or recompose started from the actions menu is one of them at once.
+ *
+ * The pane has no header of its own: its slot's tab strip already says "AI", and the two buttons
+ * a header would have held (New, History) are the strip's right end while this tab is in front
+ * (AiChatActions, rendered by Pane.tsx). One title, not two.
  *
  * Dropping works through the window's drag handling (DragBadge): this root is a drop target of
  * kind 'ai', and a drop becomes a chip (lib/aiContext.ts). Chips are references; main reads git.
  */
 export function AiChatPanel({ view }: { view: RepoView }) {
   const thread = useThread(view.id, FREE, view.chat.threadId, (id) => updateRepo(view.id, (v) => ({ chat: { ...v.chat, threadId: id } })))
-  const [history, setHistory] = useState<AiThread[] | null>(null)
   const chips = useChips(view)
   // Chips whose context this conversation already has are shown but not sent again.
   const sentKeys = useSentContext((s) => (thread ? s[thread.id] : undefined)) ?? NONE
   const unsent = chips.filter((c) => !sentKeys.includes(c.key))
+  return (
+    <div className="flex min-h-0 flex-1 flex-col" data-testid="ai-chat-panel" data-drop-target='{"kind":"ai"}' key={view.chat.nonce}>
+      {thread
+        ? <Thread thread={thread} repoId={view.id} className="flex-1" placeholder="Ask about this repository (Enter sends, Shift+Enter for a new line)"
+            hint="Ask about this repository, or drop commits, branches and files here"
+            hintTitle="The first message sends the repository's name and current commit, and what is attached; the agent asks before reading anything else."
+            above={<AiContextChips view={view} chips={chips} sentKeys={sentKeys} />} actions={<AiActionsMenu view={view} chips={chips} />}
+            context={unsent.map((c) => c.ref)}
+            onSent={() => {
+              markSent(thread.id, unsent.map((c) => c.key))
+              clearDropped(view.id)
+            }} />
+        : <div className="flex flex-1 items-center justify-center"><Spinner /></div>}
+    </div>
+  )
+}
+
+/**
+ * New conversation and the history, as small icon buttons: the right end of the slot's tab strip
+ * while the AI tab is in front. The first message of a conversation sends the repository's name
+ * and HEAD and what is attached; the agent asks before reading anything else (the "i" is in the
+ * empty state's tooltip).
+ */
+export function AiChatActions({ view }: { view: RepoView }) {
+  const [history, setHistory] = useState<AiThread[] | null>(null)
   const [historyOpen, setHistoryOpen] = useState(false)
-  // Open, the list follows the repository: a review started from the action row (or by a menu)
+  const thread = useThreads((s) => (view.chat.threadId ? s.threads[view.chat.threadId] : undefined))
+  // Open, the list follows the repository: a review started from the actions menu (or by a menu)
   // is saved when its request starts, and shows up here without reopening.
   useEffect(() => {
     if (!historyOpen) return
@@ -45,40 +74,32 @@ export function AiChatPanel({ view }: { view: RepoView }) {
     const timer = setInterval(load, 1500)
     return () => clearInterval(timer)
   }, [historyOpen, view.id])
+  const button = 'flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground'
   return (
-    <div className="flex min-h-0 flex-1 flex-col" data-testid="ai-chat-panel" data-drop-target='{"kind":"ai"}' key={view.chat.nonce}>
-      <div className="flex h-9 shrink-0 items-center gap-1 border-b border-line px-3 text-xs">
-        <MessagesSquare size={14} className="text-accent" />
-        <span className="min-w-0 flex-1 truncate font-semibold">AI · {thread?.title || view.snapshot.name}</span>
-        <button onClick={() => newChat(view.id)} title="New conversation" aria-label="New conversation" className="rounded p-1 text-muted hover:bg-hover hover:text-fg" data-testid="ai-chat-new"><Plus size={13} /></button>
-        <DropdownMenu.Root onOpenChange={setHistoryOpen}>
+    <div className="flex items-center gap-0.5">
+      <WithTooltip text="New conversation" side="bottom">
+        <button onClick={() => newChat(view.id)} aria-label="New conversation" className={button} data-testid="ai-chat-new"><Plus size={14} /></button>
+      </WithTooltip>
+      <DropdownMenu.Root onOpenChange={setHistoryOpen}>
+        <WithTooltip text="Earlier conversations" side="bottom">
           <DropdownMenu.Trigger asChild>
-            <button title="Earlier conversations" aria-label="Earlier conversations" className="rounded p-1 text-muted hover:bg-hover hover:text-fg" data-testid="ai-chat-history"><History size={13} /></button>
+            <button aria-label="Earlier conversations" className={button} data-testid="ai-chat-history"><History size={14} /></button>
           </DropdownMenu.Trigger>
-          <DM.Content align="end">
-            <HistoryList history={history} currentId={thread?.id} onOpen={(id) => updateRepo(view.id, (v) => ({ chat: { ...v.chat, threadId: id } }))} />
-            {!!thread?.turns.length && (
-              <>
-                <DM.Separator />
-                <DM.Item onSelect={() => {
-                  newChat(view.id)
-                  // Every view that shows it lets go too (a review's rail, an explanation, Ask, …).
-                  void deleteThread(view.id, thread.id).catch((e) => reportError('Could not delete the conversation', e))
-                }}><Trash2 size={12} /> Delete this conversation</DM.Item>
-              </>
-            )}
-          </DM.Content>
-        </DropdownMenu.Root>
-      </div>
-      {thread
-        ? <Thread thread={thread} repoId={view.id} className="flex-1" placeholder="Ask about this repository (Enter sends, Shift+Enter for a new line)"
-            hint="The first message sends the repository's name and current commit, and what is attached below; the agent asks before reading anything else."
-            above={<AiContextBar view={view} chips={chips} sentKeys={sentKeys} />} context={unsent.map((c) => c.ref)}
-            onSent={() => {
-              markSent(thread.id, unsent.map((c) => c.key))
-              clearDropped(view.id)
-            }} />
-        : <div className="flex flex-1 items-center justify-center"><Spinner /></div>}
+        </WithTooltip>
+        <DM.Content align="end">
+          <HistoryList history={history} currentId={thread?.id} onOpen={(id) => updateRepo(view.id, (v) => ({ chat: { ...v.chat, threadId: id } }))} />
+          {!!thread?.turns.length && (
+            <>
+              <DM.Separator />
+              <DM.Item onSelect={() => {
+                newChat(view.id)
+                // Every view that shows it lets go too (a review's rail, an explanation, Ask, …).
+                void deleteThread(view.id, thread.id).catch((e) => reportError('Could not delete the conversation', e))
+              }}><Trash2 size={12} /> Delete this conversation</DM.Item>
+            </>
+          )}
+        </DM.Content>
+      </DropdownMenu.Root>
     </div>
   )
 }
@@ -101,10 +122,10 @@ function HistoryList({ history, currentId, onOpen }: { history: AiThread[] | nul
             return (
               <DM.Item key={t.id} onSelect={() => onOpen(t.id)}>
                 <span className="flex w-80 max-w-full items-center gap-2" data-testid="ai-chat-history-item" data-kind={t.anchor.kind} data-running={running || undefined} data-current={t.id === currentId || undefined}>
-                  <span className="w-20 shrink-0 text-[11px] text-faint">{ANCHOR_KIND[t.anchor.kind]}</span>
+                  <span className="w-20 shrink-0 text-2xs text-muted-foreground/70">{ANCHOR_KIND[t.anchor.kind]}</span>
                   <span className="min-w-0 flex-1 truncate">{t.title || 'Untitled'}</span>
                   {running && <span data-testid="ai-chat-history-running" title="Answering now"><Spinner /></span>}
-                  {t.id === currentId && <Check size={12} className="shrink-0 text-accent" aria-label="Open now" />}
+                  {t.id === currentId && <Check size={12} className="shrink-0 text-primary" aria-label="Open now" />}
                 </span>
               </DM.Item>
             )

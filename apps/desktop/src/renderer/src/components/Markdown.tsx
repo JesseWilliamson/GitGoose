@@ -19,7 +19,7 @@ function Block({ b }: { b: MdBlock }): ReactNode {
   switch (b.t) {
     case 'p': return <p className="my-1.5 leading-relaxed"><Inline nodes={b.inline} /></p>
     case 'h': {
-      const size = b.level <= 1 ? 'text-[15px]' : b.level === 2 ? 'text-[14px]' : 'text-[13px]'
+      const size = b.level <= 2 ? 'text-base' : 'text-sm'
       return <div role="heading" aria-level={b.level} className={`mt-3 mb-1 font-semibold ${size}`}><Inline nodes={b.inline} /></div>
     }
     case 'list': {
@@ -29,8 +29,8 @@ function Block({ b }: { b: MdBlock }): ReactNode {
         : <ul className="my-1.5 list-disc pl-5 [&_p]:my-0">{items}</ul>
     }
     case 'code': return <CodeBlock lang={b.lang} text={b.text} />
-    case 'quote': return <blockquote className="my-1.5 border-l-2 border-line pl-3 text-muted">{b.blocks.map((x, i) => <Block key={i} b={x} />)}</blockquote>
-    case 'hr': return <hr className="my-3 border-line" />
+    case 'quote': return <blockquote className="my-1.5 border-l-2 border-border pl-3 text-muted-foreground">{b.blocks.map((x, i) => <Block key={i} b={x} />)}</blockquote>
+    case 'hr': return <hr className="my-3 border-border" />
   }
 }
 
@@ -38,11 +38,11 @@ function Inline({ nodes }: { nodes: MdInline[] }): ReactNode {
   return nodes.map((n, i) => {
     switch (n.t) {
       case 'text': return <span key={i}>{n.text}</span>
-      case 'code': return <code key={i} className="rounded bg-hover px-1 font-mono text-[0.92em]">{n.text}</code>
+      case 'code': return <code key={i} className="rounded bg-accent px-1 font-mono text-[0.92em]">{n.text}</code>
       case 'em': return <em key={i}><Inline nodes={n.children} /></em>
       case 'strong': return <strong key={i} className="font-semibold"><Inline nodes={n.children} /></strong>
       case 'link': return (
-        <a key={i} href={n.href} title={n.href} className="text-accent hover:underline"
+        <a key={i} href={n.href} title={n.href} className="text-primary hover:underline"
           onClick={(e) => {
             e.preventDefault()
             void api.openExternal(n.href).catch((err: unknown) => reportError('Could not open the link', err))
@@ -67,7 +67,7 @@ function CodeBlock({ lang, text }: { lang: string; text: string }) {
   }, [lang, text])
   const lines = text.split('\n')
   return (
-    <pre className="my-2 max-h-96 overflow-auto rounded border border-line bg-bg p-2 font-mono text-[12px] leading-[1.45]" data-lang={lang || undefined}>
+    <pre className="my-2 max-h-96 overflow-auto rounded border border-border bg-background p-2 font-mono text-xs leading-[1.45]" data-lang={lang || undefined}>
       {lines.map((l, i) => (
         <div key={i}>{tokens?.[i] ? tokens[i]!.map((t, k) => <span key={k} style={{ color: t.color }}>{t.content}</span>) : (l || ' ')}</div>
       ))}
