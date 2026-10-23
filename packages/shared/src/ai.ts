@@ -390,7 +390,7 @@ export type AiContextRef =
 
 /** What the user asked the AI to do. Each builds its own prompt in main/ai/prompts.ts. */
 export interface AiRunOptions {
-  /** Thread sends: what the user attached (context chips). Rendered by main, appended under the user's words. */
+  /** Thread sends: what the user attached (context chips). Rendered by main and put in front of the user's words (the question stays last). */
   context?: AiContextRef[]
   /** Send even though the secret scan found something, with each hit replaced by "[REDACTED kind]". */
   redact?: boolean

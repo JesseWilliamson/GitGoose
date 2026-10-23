@@ -174,7 +174,8 @@ describe('threads', () => {
     await ended(t.events, r2)
     const [one, two] = readFileSync(log, 'utf8').split('\n---\n')
     expect(one).toContain(`Context: commit ${hash.slice(0, 7)} Commit 5`)
-    expect(one).toContain("The user's message:\nwhat is this")
+    expect(one!.trim().endsWith('what is this')).toBe(true)
+    expect(one!.indexOf('Context: commit')).toBeLessThan(one!.indexOf('what is this'))
     expect(two).toContain('and the changes?')
     expect(two).toContain('Context: uncommitted changes')
     expect(two).toContain('widgets.ts')
@@ -187,6 +188,24 @@ describe('threads', () => {
     expect(seen.title).toBe('what is this')
     // Saved with it, like every other feature's sent text.
     expect(t.settings.aiThreads[t.repo.path]![0]!.turns[0]!.sent).toContain('Commit 5')
+  })
+
+  it('the history list shows a spinner only for a turn that really runs: one saved as running with nothing answering is stopped', async () => {
+    const t = await setup()
+    const at = Date.now()
+    let saved: AiThread = { id: 'old', repoId: '', anchor: { kind: 'free' }, title: 'left running', turns: [], createdAt: at, updatedAt: at, head: '' }
+    saved = reduceThread(saved, 'q', { kind: 'turn', text: 'left running', at })
+    t.ai['deps'].setSettings({ aiThreads: { [t.repo.path]: [saved] } })
+    expect(saved.turns.at(-1)!.status).toBe('running')
+    expect(t.ai.listThreads('x')[0]!.turns.at(-1)!.status).toBe('cancelled')
+    // A turn in flight in this process stays running.
+    t.ai.consent()
+    const live = await t.ai.openThread('x', { kind: 'free' })
+    const id = await t.ai.sendThread(live.id, 'FAKE:slow')
+    const listed = t.ai.listThreads('x').find((x) => x.id === live.id)!
+    expect(listed.turns.at(-1)!.status).toBe('running')
+    t.ai.cancelThread(live.id)
+    await ended(t.events, id)
   })
 
   it('context goes through the secret scan like the words do', async () => {

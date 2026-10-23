@@ -1,6 +1,6 @@
 import type { Repo } from '@gitgoose/git'
 import {
-  commandArgv, defaultTarget, effectivePrompt, openingPromptKind, reduceThread, systemPromptKind, targetCommandLine, targetKey, targetLabel, transcript,
+  commandArgv, defaultTarget, effectivePrompt, openingPromptKind, reduceThread, runningTurn, systemPromptKind, targetCommandLine, targetKey, targetLabel, transcript,
   type PromptKind, type PromptPreview, type PromptText,
   type AgentInfo, type AiArtifactResult, type AiModelList, type AiPermissionAsk, type AiPermissionRequest, type AiResult, type AiRunOptions, type AiStatus, type AiTarget, type AiTask,
   type AiThread, type AiUpdate, type ArtifactKind, type GitGooseEvent, type PermissionAnswer, type ReviewProfile, type Settings, type ThreadAnchor,
@@ -509,9 +509,9 @@ export class AiService {
     rec.starting = true
     let out: Outgoing
     try {
-      // The chips the user attached, rendered now (the renderer sent references only), under their words.
+      // The chips the user attached, rendered now (the renderer sent references only), in front of their words so the question stays last.
       const context = opts.context?.length ? await renderContext(this.deps.repo(rec.repoId), opts.context) : ''
-      out = await this.outgoing(rec, target, context ? `${message}\n\n${context}` : message, undefined, opts.redact === true)
+      out = await this.outgoing(rec, target, context ? `${context}\n\n${message}` : message, undefined, opts.redact === true)
     } finally {
       rec.starting = false
     }
@@ -544,7 +544,12 @@ export class AiService {
 
   /** Saved threads of a repository, most recently used first. */
   listThreads(repoId: string): AiThread[] {
-    return this.saved(this.deps.repo(repoId).path).map((t) => ({ ...t, repoId }))
+    return this.saved(this.deps.repo(repoId).path).map((t) => {
+      // A turn saved as running with nothing answering it (the app quit mid-answer) was interrupted:
+      // the history list shows a spinner only for turns that really run.
+      if (!runningTurn(t) || this.threads.get(t.id)?.active) return { ...t, repoId }
+      return { ...t, repoId, turns: t.turns.map((x) => (x.status === 'running' ? { ...x, status: 'cancelled' as const } : x)) }
+    })
   }
 
   deleteThread(repoId: string, threadId: string): void {

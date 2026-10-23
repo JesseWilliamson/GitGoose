@@ -262,6 +262,25 @@ describe('everything else is not a target', () => {
   })
 })
 
+describe('anything → the AI panel', () => {
+  const ai: DropTarget = { kind: 'ai' }
+  it.each<[string, DragSource, string]>([
+    ['a branch', ref(topic), 'Add branch topic to the AI conversation'],
+    ['a tag', ref(v1), 'Add tag v1 to the AI conversation'],
+    ['one commit', { kind: 'commits', hashes: [H('1')] }, 'Add commit 1111111 to the AI conversation'],
+    ['several commits', { kind: 'commits', hashes: [H('1'), H('2')] }, 'Add 2 commits to the AI conversation'],
+    ['a stash', { kind: 'stash', index: 0, hash: H('7'), ref: 'stash@{0}' }, 'Add stash@{0} to the AI conversation'],
+    ['files', { kind: 'files', rev: 'worktree', paths: ['a', 'b'] }, 'Add 2 files to the AI conversation'],
+  ])('%s becomes a context chip, with or without Alt, and never asks', (_, source, label) => {
+    for (const alt of [false, true]) {
+      const p = plan(source, ai, alt)
+      expect(p?.label).toBe(label)
+      expect(p?.op).toEqual({ op: 'ai-context', source })
+      expect(p?.confirm).toBeUndefined()
+    }
+  })
+})
+
 describe('payloads', () => {
   it.each<DragSource>([
     { kind: 'ref', ref: topic },
