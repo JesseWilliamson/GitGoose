@@ -215,11 +215,12 @@ export class GitRunner {
         }
       })
       // git may exit (a failing hook, a bad argument) before it reads its input; the write then
-      // fails with EPIPE, asynchronously, and with no listener that is an unhandled error. The exit
-      // code and stderr already say what went wrong. Anything else is a real failure; 'close'
-      // still follows the child's exit, so the promise cannot stay pending.
+      // fails asynchronously (EPIPE on POSIX, EOF or ECONNRESET on Windows pipes), and with no
+      // listener that is an unhandled error. The exit code and stderr already say what went
+      // wrong. Anything else is a real failure; 'close' still follows the child's exit, so the
+      // promise cannot stay pending.
       child.stdin!.on('error', (e: NodeJS.ErrnoException) => {
-        if (e.code === 'EPIPE') return
+        if (e.code === 'EPIPE' || e.code === 'EOF' || e.code === 'ECONNRESET') return
         reject(new GitError(`Could not write to git (${this.gitPath}): ${e.message}`, describe(args), null, '', ''))
       })
       if (opts.input !== undefined) child.stdin!.end(opts.input)
