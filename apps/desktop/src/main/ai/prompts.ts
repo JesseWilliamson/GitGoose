@@ -23,7 +23,7 @@ import { join } from 'node:path'
 export const MAX_DIFF_CHARS = 60_000
 
 /** Generated files that would fill the budget and tell the model nothing. */
-const NOISE = [':(exclude,glob)**/pnpm-lock.yaml', ':(exclude,glob)**/package-lock.json', ':(exclude,glob)**/yarn.lock', ':(exclude,glob)**/*.lock', ':(exclude,glob)**/*.min.js']
+export const NOISE = [':(exclude,glob)**/pnpm-lock.yaml', ':(exclude,glob)**/package-lock.json', ':(exclude,glob)**/yarn.lock', ':(exclude,glob)**/*.lock', ':(exclude,glob)**/*.min.js']
 
 /** What each review profile asks for (the answer is filtered the same way afterwards). */
 const PROFILE_ASK: Record<ReviewProfile, string> = {
