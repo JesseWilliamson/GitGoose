@@ -6,11 +6,12 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { areaOfAnchor } from '../lib/ai'
 import { api } from '../lib/api'
 import { applyArtifact } from '../lib/artifacts'
+import { validateMermaid } from '../lib/mermaid'
 import { sendMessage, stopThread } from '../lib/thread'
 import { Markdown } from './Markdown'
 import { ModelPicker } from './ModelPicker'
 import { PromptButton } from './PromptPanel'
-import { SequenceSvg } from './SequenceSvg'
+import { MermaidDiagram } from './MermaidDiagram'
 import { Button, Spinner } from './ui'
 
 /**
@@ -330,7 +331,14 @@ function ArtifactCard({ threadId, repoId, kind, json }: { threadId: string; repo
   const [applied, setApplied] = useState(false)
   useEffect(() => {
     let live = true
-    api.aiThreadArtifact(threadId, kind, json).then((r) => live && setChecked(r), (e: Error) => live && setChecked({ kind: 'problem', message: e.message }))
+    api.aiThreadArtifact(threadId, kind, json)
+      // A diagram is parsed here: Mermaid needs a DOM. A diagram that does not parse is a problem, with the parser's message.
+      .then(async (r): Promise<AiArtifactResult> => {
+        if (r.kind !== 'diagram') return r
+        const v = await validateMermaid(r.mermaid)
+        return v.ok ? r : { kind: 'problem', message: v.message }
+      })
+      .then((r) => live && setChecked(r), (e: Error) => live && setChecked({ kind: 'problem', message: e.message }))
     return () => { live = false }
   }, [threadId, kind, json])
   return (
@@ -364,6 +372,6 @@ function ArtifactSummary({ a }: { a: AiArtifactResult }) {
     )
     case 'walkthrough': return <div className="mt-1" data-testid="artifact-summary">{a.walkthrough.summary.slice(0, 300)}</div>
     case 'commit-message': return <pre className="selectable mt-1 font-mono text-[11px] whitespace-pre-wrap" data-testid="artifact-summary">{a.message}</pre>
-    case 'diagram': return <div className="mt-1"><SequenceSvg d={a.sequence} /></div>
+    case 'diagram': return <div className="mt-1"><MermaidDiagram source={a.mermaid} /></div>
   }
 }

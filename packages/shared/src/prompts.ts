@@ -126,13 +126,13 @@ export const DEFAULT_PROMPTS: Record<PromptKind, PromptDefault> = {
     instructions: [
       'Write a walkthrough of this change ({label}) for the person about to review it.',
       'Groups gather files by purpose (a feature, a refactor, its tests). Give a one-line summary for every piece that is not just imports or formatting.',
-      'Add a sequence only when the change adds or alters a flow between components (calls, requests, events); keep it under 8 participants and 20 messages. Otherwise "sequence": null.',
+      'Add a diagram only when the change adds or alters a flow between components (calls, requests, events) or a state machine. Write it as Mermaid source (sequenceDiagram, stateDiagram-v2 or flowchart), under 8 participants or 15 nodes, with plain labels. Otherwise "diagram": null.',
       NO_TOOLS,
     ].join('\n'),
     format: [
       'The change is cut into pieces [H1], [H2], … already in reading order (contracts, implementation, tests, config, docs).',
       JSON_ONLY,
-      '{"summary": "what the change does and why, 3-6 sentences", "effort": 1-5 (1 trivial, 5 needs a long careful review), "effortWhy": "one short reason", "groups": [{"title": "short", "description": "one or two sentences", "files": ["paths from the change"]}], "hunks": {"H1": "one line on what this piece does"}, "sequence": null or {"participants": ["A", "B"], "messages": [{"from": "A", "to": "B", "label": "call or event"}]}}',
+      '{"summary": "what the change does and why, 3-6 sentences", "effort": 1-5 (1 trivial, 5 needs a long careful review), "effortWhy": "one short reason", "groups": [{"title": "short", "description": "one or two sentences", "files": ["paths from the change"]}], "hunks": {"H1": "one line on what this piece does"}, "diagram": null or "Mermaid source, one string, e.g. \"sequenceDiagram\\n  A->>B: call\\n  B-->>A: result\""}',
     ].join('\n'),
     vars: { label: 'what is explained, e.g. "Staged changes"' },
   },

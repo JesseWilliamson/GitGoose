@@ -42,7 +42,7 @@ describe('walkthrough', () => {
       summary: 'Adds a running total to carts.', effort: 9, effortWhy: 'small',
       groups: [{ title: 'Total', description: 'The new field and its upkeep', files: ['src/api.ts', 'src/cart.ts', 'src/invented.ts'] }],
       hunks: { H3: 'Keeps the total in step', H99: 'nope' },
-      sequence: { participants: ['Test', 'add'], messages: [{ from: 'Test', to: 'add', label: 'add(cart, x)' }, { from: 'Ghost', to: 'add', label: 'x' }] },
+      diagram: '```mermaid\nsequenceDiagram\n  Test->>add: add(cart, x)\n```',
     }, input.files.map((f) => f.path), hunks)
     expect(v.effort).toBe(5)
     expect(v.groups).toEqual([
@@ -50,7 +50,9 @@ describe('walkthrough', () => {
       { title: 'Other changes', description: '', files: ['src/cart.test.ts'] },
     ])
     expect(hunks[2]!.summary).toBe('Keeps the total in step')
-    expect(v.sequence).toEqual({ participants: ['Test', 'add'], messages: [{ from: 'Test', to: 'add', label: 'add(cart, x)' }] })
+    expect(v.diagram).toBe('sequenceDiagram\n  Test->>add: add(cart, x)')
+    expect(verifyWalkthrough({ diagram: '  ' }, [], []).diagram).toBeNull()
+    expect(verifyWalkthrough({ diagram: { participants: ['A'] } }, [], []).diagram).toBeNull()
     expect(verifyWalkthrough(null, ['a'], []).groups).toEqual([{ title: 'Changes', description: '', files: ['a'] }])
     repo.dispose()
   })
