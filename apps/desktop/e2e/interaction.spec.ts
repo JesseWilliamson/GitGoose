@@ -197,3 +197,18 @@ test('double-clicking a commit where several branches point asks which one to ch
   await expect(page.getByRole('menu')).toHaveCount(0)
   await app.close()
 })
+
+test('a menu item that cannot run is greyed out and says why on hover', async () => {
+  const r = makeFixture('branches')
+  const { app, page } = await launch(r.dir)
+  await page.locator(`[data-testid="commit-row"][data-hash="${r.head()}"]`).getByText('E', { exact: true }).click({ button: 'right' })
+  const item = page.getByRole('menuitem', { name: 'Check out this commit (detached)' })
+  await expect(item).toHaveAttribute('aria-disabled', 'true')
+  await expect(item).toHaveAttribute('aria-description', 'This is HEAD')
+  await item.hover()
+  await expect(page.getByRole('tooltip').first()).toHaveText('This is HEAD')
+  // Clicking it does nothing: still on main, menu open.
+  await item.click({ force: true })
+  expect(r.git('rev-parse', '--abbrev-ref', 'HEAD').trim()).toBe('main')
+  await app.close()
+})

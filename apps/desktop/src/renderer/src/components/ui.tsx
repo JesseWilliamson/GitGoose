@@ -1,33 +1,24 @@
-import clsx from 'clsx'
-import { ContextMenu, Dialog as RDialog, DropdownMenu } from 'radix-ui'
-import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react'
+import type { InputHTMLAttributes, ReactNode } from 'react'
+import { cn } from '../lib/cn'
+import { Button } from './ui/button'
+import {
+  ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator, ContextMenuSub,
+} from './ui/context-menu'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from './ui/dialog'
+import {
+  DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuSub,
+} from './ui/dropdown-menu'
+import { Input } from './ui/input'
+import { Kbd } from './ui/kbd'
+import { WithTooltip } from './ui/tooltip'
 
 /**
- * Small shared primitives. Radix provides behaviour (focus, keyboard, positioning, a11y);
- * these wrappers only add the look, in one place.
+ * The app's shared primitives under their short names. The components themselves live in
+ * `ui/` (shadcn-shaped: small, owned by us, built on Radix and our theme tokens); this file keeps
+ * the names and props the rest of the renderer already uses.
  */
 
-type Variant = 'default' | 'primary' | 'danger' | 'ghost'
-
-export const Button = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: 'sm' | 'md' }>(
-  function Button({ variant = 'default', size = 'md', className, ...props }, ref) {
-    return (
-      <button
-        ref={ref}
-        className={clsx(
-          'inline-flex items-center justify-center gap-1.5 rounded-md font-medium whitespace-nowrap transition-colors disabled:opacity-40 disabled:pointer-events-none',
-          size === 'sm' ? 'h-6 px-2 text-xs' : 'h-8 px-3 text-[13px]',
-          variant === 'primary' && 'bg-accent text-accent-fg hover:brightness-110',
-          variant === 'danger' && 'bg-del text-white hover:brightness-110',
-          variant === 'default' && 'bg-raised border border-line text-fg hover:bg-hover',
-          variant === 'ghost' && 'text-muted hover:text-fg hover:bg-hover',
-          className,
-        )}
-        {...props}
-      />
-    )
-  },
-)
+export { Button, Kbd }
 
 /**
  * An icon-only toolbar button. The label is its accessible name and (unless a richer title is
@@ -37,25 +28,22 @@ export function ToolbarButton({ icon, label, onClick, disabled, title, badge, cl
   icon: ReactNode; label: string; onClick?: () => void; disabled?: boolean; title?: string; badge?: ReactNode; className?: string
 }) {
   return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      aria-label={label}
-      title={title ?? label}
-      className={clsx('no-drag relative flex size-8 shrink-0 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-fg disabled:opacity-40 disabled:pointer-events-none', className)}
-    >
-      {icon}
-      {badge}
-    </button>
+    <WithTooltip text={title ?? label} side="bottom">
+      <button
+        onClick={onClick}
+        disabled={disabled}
+        aria-label={label}
+        className={cn('no-drag relative flex size-8 shrink-0 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-fg disabled:pointer-events-none disabled:opacity-40', className)}
+      >
+        {icon}
+        {badge}
+      </button>
+    </WithTooltip>
   )
 }
 
-export function Kbd({ children }: { children: ReactNode }) {
-  return <kbd className="rounded border border-line bg-panel px-1 py-px font-mono text-[10px] text-muted">{children}</kbd>
-}
-
 export function Spinner({ className }: { className?: string }) {
-  return <span className={clsx('inline-block size-3 animate-spin rounded-full border-2 border-current border-t-transparent', className)} />
+  return <span className={cn('inline-block size-3 animate-spin rounded-full border-2 border-current border-t-transparent', className)} />
 }
 
 export function SectionHeader({ children, right }: { children: ReactNode; right?: ReactNode }) {
@@ -67,57 +55,34 @@ export function SectionHeader({ children, right }: { children: ReactNode; right?
   )
 }
 
-const menuContent = 'z-50 min-w-48 rounded-md border border-line bg-raised p-1 text-[13px] shadow-xl shadow-black/30'
-const menuItem = 'flex h-7 cursor-default items-center gap-2 rounded px-2 outline-none select-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-fg data-[disabled]:opacity-40'
-
 export const CM = {
-  Content: ({ children }: { children: ReactNode }) => (
-    <ContextMenu.Portal>
-      <ContextMenu.Content className={menuContent}>{children}</ContextMenu.Content>
-    </ContextMenu.Portal>
+  Content: ({ children }: { children: ReactNode }) => <ContextMenuContent>{children}</ContextMenuContent>,
+  /** `reason` greys the item out and says why on hover (a tooltip, and aria-description). */
+  Item: ({ children, onSelect, disabled, danger, reason }: { children: ReactNode; onSelect: () => void; disabled?: boolean; danger?: boolean; reason?: string }) => (
+    <ContextMenuItem danger={danger} reason={reason} onSelect={onSelect} disabled={disabled}>{children}</ContextMenuItem>
   ),
-  Item: ({ children, onSelect, disabled, danger }: { children: ReactNode; onSelect: () => void; disabled?: boolean; danger?: boolean }) => (
-    <ContextMenu.Item className={clsx(menuItem, danger && 'text-del')} onSelect={onSelect} disabled={disabled}>{children}</ContextMenu.Item>
-  ),
-  Separator: () => <ContextMenu.Separator className="my-1 h-px bg-line" />,
-  Label: ({ children }: { children: ReactNode }) => <ContextMenu.Label className="truncate px-2 py-1 text-[11px] text-faint">{children}</ContextMenu.Label>,
-  Sub: ({ label, children }: { label: string; children: ReactNode }) => (
-    <ContextMenu.Sub>
-      <ContextMenu.SubTrigger className={clsx(menuItem, 'justify-between')}>{label}<span className="text-faint">›</span></ContextMenu.SubTrigger>
-      <ContextMenu.Portal>
-        <ContextMenu.SubContent className={menuContent}>{children}</ContextMenu.SubContent>
-      </ContextMenu.Portal>
-    </ContextMenu.Sub>
-  ),
+  Separator: () => <ContextMenuSeparator />,
+  Label: ({ children }: { children: ReactNode }) => <ContextMenuLabel>{children}</ContextMenuLabel>,
+  Sub: ContextMenuSub,
 }
 
 export const DM = {
   Content: ({ children, align = 'start' }: { children: ReactNode; align?: 'start' | 'end' | 'center' }) => (
-    <DropdownMenu.Portal>
-      <DropdownMenu.Content align={align} sideOffset={4} className={menuContent}>{children}</DropdownMenu.Content>
-    </DropdownMenu.Portal>
+    <DropdownMenuContent align={align}>{children}</DropdownMenuContent>
   ),
-  Item: ({ children, onSelect, disabled }: { children: ReactNode; onSelect: () => void; disabled?: boolean }) => (
-    <DropdownMenu.Item className={menuItem} onSelect={onSelect} disabled={disabled}>{children}</DropdownMenu.Item>
+  Item: ({ children, onSelect, disabled, reason }: { children: ReactNode; onSelect: () => void; disabled?: boolean; reason?: string }) => (
+    <DropdownMenuItem reason={reason} onSelect={onSelect} disabled={disabled}>{children}</DropdownMenuItem>
   ),
   /** A toggle that keeps the menu open, so several can be flipped in a row. */
   Check: ({ children, checked, onChange, disabled, testId }: { children: ReactNode; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean; testId?: string }) => (
-    <DropdownMenu.CheckboxItem className={clsx(menuItem, 'pl-7 relative')} checked={checked} disabled={disabled} data-testid={testId}
+    <DropdownMenuCheckboxItem checked={checked} disabled={disabled} data-testid={testId}
       onCheckedChange={(v) => onChange(v === true)} onSelect={(e) => e.preventDefault()}>
-      <DropdownMenu.ItemIndicator className="absolute left-2 flex items-center">✓</DropdownMenu.ItemIndicator>
       {children}
-    </DropdownMenu.CheckboxItem>
+    </DropdownMenuCheckboxItem>
   ),
-  Separator: () => <DropdownMenu.Separator className="my-1 h-px bg-line" />,
-  Label: ({ children }: { children: ReactNode }) => <DropdownMenu.Label className="px-2 py-1 text-[11px] text-faint">{children}</DropdownMenu.Label>,
-  Sub: ({ label, children }: { label: string; children: ReactNode }) => (
-    <DropdownMenu.Sub>
-      <DropdownMenu.SubTrigger className={clsx(menuItem, 'justify-between')}>{label}<span className="text-faint">›</span></DropdownMenu.SubTrigger>
-      <DropdownMenu.Portal>
-        <DropdownMenu.SubContent className={clsx(menuContent, 'max-h-80 overflow-y-auto')}>{children}</DropdownMenu.SubContent>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Sub>
-  ),
+  Separator: () => <DropdownMenuSeparator />,
+  Label: ({ children }: { children: ReactNode }) => <DropdownMenuLabel>{children}</DropdownMenuLabel>,
+  Sub: DropdownMenuSub,
 }
 
 export function Modal({ open, onClose, title, children, width = 440, tall = false, onEscapeKeyDown }: {
@@ -128,31 +93,21 @@ export function Modal({ open, onClose, title, children, width = 440, tall = fals
   onEscapeKeyDown?: (e: KeyboardEvent) => void
 }) {
   return (
-    <RDialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
-      <RDialog.Portal>
-        <RDialog.Overlay className="fixed inset-0 z-40 bg-black/40" />
-        <RDialog.Content
-          onEscapeKeyDown={onEscapeKeyDown}
-          style={{ width }}
-          className={clsx('fixed left-1/2 z-50 max-w-[94vw] -translate-x-1/2 rounded-lg border border-line bg-raised p-4 shadow-2xl shadow-black/40', tall ? 'top-[5vh]' : 'top-[18%]')}
-        >
-          <RDialog.Title className="mb-3 text-[15px] font-semibold">{title}</RDialog.Title>
-          <RDialog.Description className="sr-only">{title}</RDialog.Description>
-          {children}
-        </RDialog.Content>
-      </RDialog.Portal>
-    </RDialog.Root>
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent onEscapeKeyDown={onEscapeKeyDown} style={{ width }} className={tall ? 'top-[5vh]' : 'top-[18%]'}>
+        <DialogTitle>{title}</DialogTitle>
+        <DialogDescription className="sr-only">{title}</DialogDescription>
+        {children}
+      </DialogContent>
+    </Dialog>
   )
 }
 
-export function TextField({ label, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label?: string }) {
+export function TextField({ label, ...props }: InputHTMLAttributes<HTMLInputElement> & { label?: string }) {
   return (
     <label className="block">
       {label && <span className="mb-1 block text-xs text-muted">{label}</span>}
-      <input
-        {...props}
-        className={clsx('h-8 w-full rounded-md border border-line bg-bg px-2 text-[13px] outline-none focus:border-accent', props.className)}
-      />
+      <Input {...props} />
     </label>
   )
 }
