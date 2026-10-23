@@ -89,23 +89,23 @@ export function SettingsPage() {
   if (!settings) return null
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="settings-page">
-      <div className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-panel px-4">
-        <h1 className="text-[15px] font-semibold">Settings</h1>
+      <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-card px-4">
+        <h1 className="text-base font-semibold">Settings</h1>
         <div className="flex-1" />
-        <button onClick={() => useStore.setState({ page: null })} title="Close (Esc)" className="rounded p-1 text-muted hover:bg-hover hover:text-fg" data-testid="settings-close">
+        <button onClick={() => useStore.setState({ page: null })} title="Close (Esc)" className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" data-testid="settings-close">
           <X size={16} />
         </button>
       </div>
       <div className="flex min-h-0 flex-1">
-        <nav className="flex w-56 shrink-0 flex-col border-r border-line bg-panel">
+        <nav className="flex w-56 shrink-0 flex-col border-r border-border bg-card">
           <div className="relative p-3">
-            <Search size={13} className="pointer-events-none absolute top-1/2 left-5.5 -translate-y-1/2 text-faint" />
+            <Search size={13} className="pointer-events-none absolute top-1/2 left-5.5 -translate-y-1/2 text-muted-foreground/70" />
             <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search settings"
-              className="h-8 bg-bg pl-7 text-[13px] md:text-[13px] dark:bg-bg" data-testid="settings-search" />
+              className="h-input bg-background pl-7 text-sm md:text-sm dark:bg-background" data-testid="settings-search" />
           </div>
           {sections.map((s) => (
             <button key={s} onClick={() => jump(s)} data-testid={`settings-nav-${s}`} aria-current={section === s ? 'true' : undefined}
-              className={clsx('block w-full px-4 py-1.5 text-left text-[13px]', section === s ? 'bg-select text-fg' : 'text-muted hover:bg-hover hover:text-fg')}>
+              className={clsx('block w-full px-4 py-1.5 text-left text-sm', section === s ? 'bg-select text-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground')}>
               {s}
             </button>
           ))}
@@ -113,12 +113,12 @@ export function SettingsPage() {
         {/* The bottom padding lets the last sections scroll up to the top, where the nav picks them. */}
         <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-8 pb-[50vh]" data-testid="settings-scroll">
           <div className="mx-auto max-w-[960px]">
-            {sections.length === 0 && <p className="py-8 text-center text-sm text-faint">No settings match “{query}”.</p>}
+            {sections.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground/70">No settings match “{query}”.</p>}
             {sections.map((s) => {
               const Panel = SECTION_PANELS[s]
               return (
                 <section key={s} data-section={s} className="mt-6 scroll-mt-6">
-                  <h2 className="flex h-7 items-center border-b border-line text-[11px] font-semibold tracking-wide text-muted uppercase">{s}</h2>
+                  <h2 className="flex h-7 items-center border-b border-border text-2xs font-semibold tracking-wide text-muted-foreground uppercase">{s}</h2>
                   {shown.filter((v) => v.spec.section === s).map((v) => (
                     <SettingRow key={v.key} k={v.key} spec={v.spec} value={settings[v.key]} />
                   ))}
@@ -140,7 +140,7 @@ function SettingRow({ k, spec, value }: { k: SettingKey; spec: Visible['spec']; 
   return (
     <SettingsRow testid={`setting-${k}`} label={spec.label} description={spec.description}
       labelExtra={modified && (
-        <button onClick={() => set(spec.default)} title="Reset to default" className="text-faint hover:text-accent" data-testid={`reset-${k}`}>
+        <button onClick={() => set(spec.default)} title="Reset to default" className="text-muted-foreground/70 hover:text-primary" data-testid={`reset-${k}`}>
           <RotateCcw size={11} />
         </button>
       )}>
@@ -164,9 +164,9 @@ function NumberControl({ spec, value, onChange }: { spec: Extract<SettingSpec, {
         onPointerUp={() => onChange(local)} onKeyUp={() => onChange(local)}
         className="min-w-0 flex-1 accent-[var(--gs-accent)]" />
       {/* A fixed 72 px slot, value and unit on one line ("8192 tokens"). */}
-      <span className="flex w-[72px] shrink-0 items-baseline justify-end gap-1 font-mono text-xs whitespace-nowrap text-fg" data-testid="number-value">
+      <span className="flex w-[72px] shrink-0 items-baseline justify-end gap-1 font-mono text-xs whitespace-nowrap text-foreground" data-testid="number-value">
         {label}
-        {spec.unit && <span className="text-muted">{spec.unit}</span>}
+        {spec.unit && <span className="text-muted-foreground">{spec.unit}</span>}
       </span>
     </div>
   )
@@ -180,10 +180,10 @@ function ChoiceControl({ spec, value, onChange }: { spec: Extract<SettingSpec, {
   if (segmented) {
     return (
       <Tabs value={value} onValueChange={onChange} className="w-full">
-        <TabsList aria-label={spec.label} className="h-8 w-full rounded-md border border-line bg-bg p-0.5 dark:bg-bg">
+        <TabsList aria-label={spec.label} className="h-8 w-full rounded-md border border-border bg-background p-0.5 dark:bg-background">
           {spec.options.map((o) => (
             <TabsTrigger key={o.value} value={o.value}
-              className="h-full rounded text-xs text-muted hover:text-fg data-[state=active]:bg-accent data-[state=active]:text-accent-fg data-[state=active]:shadow-none dark:data-[state=active]:border-transparent dark:data-[state=active]:bg-accent dark:data-[state=active]:text-accent-fg">
+              className="h-full rounded text-xs text-muted-foreground hover:text-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-none dark:data-[state=active]:border-transparent dark:data-[state=active]:bg-primary dark:data-[state=active]:text-primary-foreground">
               {o.label}
             </TabsTrigger>
           ))}
@@ -201,7 +201,7 @@ function TextControl({ spec, value, onChange }: { spec: Extract<SettingSpec, { k
   return (
     <Input value={local} placeholder={spec.placeholder} aria-label={spec.label} onChange={(e) => setLocal(e.target.value)} onBlur={commit}
       onKeyDown={(e) => { if (e.key === 'Enter') commit() }}
-      className="h-8 bg-bg font-mono text-xs md:text-xs dark:bg-bg" />
+      className="h-8 bg-background font-mono text-xs md:text-xs dark:bg-background" />
   )
 }
 
@@ -233,16 +233,16 @@ function KeybindingsEditor({ value, onChange }: { value: Record<string, string>;
 
   return (
     <div data-testid="setting-keybindings">
-      <p className="border-b border-line py-3 text-xs text-muted">{SETTINGS.keybindings.description}</p>
+      <p className="border-b border-border py-3 text-xs text-muted-foreground">{SETTINGS.keybindings.description}</p>
       {COMMANDS.map((c) => {
         const combos = value[c.id] === undefined ? c.defaults : value[c.id] ? [value[c.id]!] : []
         const conflicted = combos.some((k) => (clash.get(k)?.length ?? 0) > 1)
         return (
-          <SettingsRow key={c.id} label={c.label} description={conflicted ? <span className="text-del">conflict</span> : undefined}>
+          <SettingsRow key={c.id} label={c.label} description={conflicted ? <span className="text-destructive">conflict</span> : undefined}>
             {/* The whole control column is the button, so every shortcut is edited the same way. */}
             <button onClick={() => setRecording(c.id)} data-testid={`keybinding-${c.id}`}
-              className={clsx('flex h-8 w-full items-center justify-end gap-1 rounded-md border bg-bg px-2 text-xs',
-                recording === c.id ? 'border-accent text-accent' : conflicted ? 'border-del text-del' : 'border-line text-muted hover:text-fg')}>
+              className={clsx('flex h-8 w-full items-center justify-end gap-1 rounded-md border bg-background px-2 text-xs',
+                recording === c.id ? 'border-primary text-primary' : conflicted ? 'border-destructive text-destructive' : 'border-border text-muted-foreground hover:text-foreground')}>
               {recording === c.id ? 'Press keys…' : combos.length ? combos.map((k) => <Kbd key={k}>{formatCombo(k)}</Kbd>) : 'none'}
             </button>
           </SettingsRow>

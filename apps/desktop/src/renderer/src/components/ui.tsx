@@ -22,13 +22,13 @@ import { cn } from '@/lib/utils'
 
 type Variant = 'default' | 'primary' | 'danger' | 'ghost'
 
-// shadcn's variants are named for its palette; ours keep the app's. `accent` (shadcn's hover
-// background) is our blue here, so the hover colours are spelled out.
-const buttonLook: Record<Variant, { variant: 'outline' | 'default' | 'destructive' | 'ghost'; className: string }> = {
-  default: { variant: 'outline', className: 'border-line bg-raised text-fg shadow-none hover:bg-hover hover:text-fg dark:border-line dark:bg-raised dark:hover:bg-hover' },
-  primary: { variant: 'default', className: 'hover:bg-primary hover:brightness-110' },
-  danger: { variant: 'destructive', className: 'bg-del text-white hover:bg-del hover:brightness-110 dark:bg-del' },
-  ghost: { variant: 'ghost', className: 'text-muted hover:bg-hover hover:text-fg dark:hover:bg-hover' },
+// The app's four button kinds, on shadcn's variants (same colour names, so there is little to
+// override): default = a bordered secondary, primary = the one blue button, danger, ghost.
+const buttonLook: Record<Variant, { variant: 'secondary' | 'default' | 'destructive' | 'ghost'; className: string }> = {
+  default: { variant: 'secondary', className: 'border border-border hover:bg-accent hover:text-accent-foreground' },
+  primary: { variant: 'default', className: '' },
+  danger: { variant: 'destructive', className: 'dark:bg-destructive' },
+  ghost: { variant: 'ghost', className: 'text-muted-foreground hover:text-foreground dark:hover:bg-accent' },
 }
 
 export function Button({ variant = 'default', size = 'md', className, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: 'sm' | 'md'; ref?: React.Ref<HTMLButtonElement> }) {
@@ -37,14 +37,14 @@ export function Button({ variant = 'default', size = 'md', className, ...props }
     <ShadButton
       variant={look.variant}
       size={size === 'sm' ? 'xs' : 'sm'}
-      className={cn(size === 'md' && 'text-[13px]', look.className, className)}
+      className={cn(size === 'md' && 'text-sm', look.className, className)}
       {...props}
     />
   )
 }
 
 export function Kbd({ children }: { children: ReactNode }) {
-  return <ShadKbd className="h-auto min-w-0 rounded border border-line bg-panel px-1 py-px font-mono text-[10px] font-normal text-muted">{children}</ShadKbd>
+  return <ShadKbd className="h-auto min-w-0 rounded border border-border bg-card px-1 py-px font-mono text-2xs font-normal text-muted-foreground">{children}</ShadKbd>
 }
 
 /**
@@ -82,7 +82,7 @@ export function ToolbarButton({ icon, label, onClick, disabled, title, badge, cl
         onClick={onClick}
         disabled={disabled}
         aria-label={label}
-        className={cn('no-drag relative flex size-8 shrink-0 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-fg disabled:pointer-events-none disabled:opacity-40', className)}
+        className={cn('no-drag relative flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-40', className)}
       >
         {icon}
         {badge}
@@ -97,7 +97,7 @@ export function Spinner({ className }: { className?: string }) {
 
 export function SectionHeader({ children, right }: { children: ReactNode; right?: ReactNode }) {
   return (
-    <div className="flex h-7 items-center justify-between px-3 text-[11px] font-semibold tracking-wide text-muted uppercase">
+    <div className="flex h-row-lg items-center justify-between px-3 text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
       <span className="truncate">{children}</span>
       {right}
     </div>
@@ -118,7 +118,7 @@ function Reason({ reason, children }: { reason?: string; children: ReactNode }) 
   )
 }
 
-const itemText = 'h-7 py-0 text-[13px]'
+const itemText = 'h-row-lg py-0 text-sm'
 
 export const CM = {
   // No animation, like a native menu. Opening: shadcn slides the menu in from the left, so for its
@@ -134,7 +134,7 @@ export const CM = {
     </Reason>
   ),
   Separator: () => <ContextMenuSeparator />,
-  Label: ({ children }: { children: ReactNode }) => <ContextMenuLabel className="truncate py-1 text-[11px] font-normal text-faint">{children}</ContextMenuLabel>,
+  Label: ({ children }: { children: ReactNode }) => <ContextMenuLabel className="truncate py-1 text-2xs font-normal text-muted-foreground/70">{children}</ContextMenuLabel>,
   /** `reason` greys the whole submenu out (its trigger), for when none of its items could run. */
   Sub: ({ label, children, reason }: { label: string; children: ReactNode; reason?: string }) => (
     <ContextMenuSub>
@@ -150,9 +150,10 @@ export const DM = {
   Content: ({ children, align = 'start' }: { children: ReactNode; align?: 'start' | 'end' | 'center' }) => (
     <DropdownMenuContent align={align} sideOffset={4} className="min-w-48 data-[state=open]:animate-none! data-[state=closed]:animate-none!">{children}</DropdownMenuContent>
   ),
-  Item: ({ children, onSelect, disabled, reason }: { children: ReactNode; onSelect: () => void; disabled?: boolean; reason?: string }) => (
+  /** `reason` greys the item out and says why on hover (a tooltip, and aria-description); `title` is what an enabled item does. */
+  Item: ({ children, onSelect, disabled, reason, title, testId }: { children: ReactNode; onSelect: () => void; disabled?: boolean; reason?: string; title?: string; testId?: string }) => (
     <Reason reason={reason}>
-      <DropdownMenuItem className={itemText} onSelect={onSelect} disabled={disabled || !!reason} aria-description={reason}>{children}</DropdownMenuItem>
+      <DropdownMenuItem className={itemText} onSelect={onSelect} disabled={disabled || !!reason} aria-description={reason} title={reason ? undefined : title} data-testid={testId}>{children}</DropdownMenuItem>
     </Reason>
   ),
   /** A toggle that keeps the menu open, so several can be flipped in a row. */
@@ -163,7 +164,7 @@ export const DM = {
     </DropdownMenuCheckboxItem>
   ),
   Separator: () => <DropdownMenuSeparator />,
-  Label: ({ children }: { children: ReactNode }) => <DropdownMenuLabel className="py-1 text-[11px] font-normal text-faint">{children}</DropdownMenuLabel>,
+  Label: ({ children }: { children: ReactNode }) => <DropdownMenuLabel className="py-1 text-2xs font-normal text-muted-foreground/70">{children}</DropdownMenuLabel>,
   Sub: ({ label, children }: { label: string; children: ReactNode }) => (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger className={itemText}>{label}</DropdownMenuSubTrigger>
@@ -188,7 +189,7 @@ export function Modal({ open, onClose, title, children, width = 440, tall = fals
         // shadcn centres a dialog and caps it at sm:max-w-lg; ours sit near the top and choose their width.
         className={cn('block max-w-[94vw] translate-y-0 gap-0 p-4 sm:max-w-[94vw]', tall ? 'top-[5vh]' : 'top-[18%]')}
       >
-        <DialogTitle className="mb-3 text-[15px] leading-normal">{title}</DialogTitle>
+        <DialogTitle className="mb-3 text-base leading-normal">{title}</DialogTitle>
         <DialogDescription className="sr-only">{title}</DialogDescription>
         {children}
       </DialogContent>
@@ -199,8 +200,8 @@ export function Modal({ open, onClose, title, children, width = 440, tall = fals
 export function TextField({ label, className, ...props }: InputHTMLAttributes<HTMLInputElement> & { label?: string }) {
   return (
     <label className="block">
-      {label && <span className="mb-1 block text-xs text-muted">{label}</span>}
-      <Input {...props} className={cn('h-8 bg-bg px-2 py-0 text-[13px] shadow-none md:text-[13px] dark:bg-bg', className)} />
+      {label && <span className="mb-1 block text-xs text-muted-foreground">{label}</span>}
+      <Input {...props} className={cn('h-input bg-background px-2 py-0 text-sm shadow-none md:text-sm dark:bg-background', className)} />
     </label>
   )
 }

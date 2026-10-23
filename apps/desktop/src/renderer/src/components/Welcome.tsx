@@ -9,7 +9,7 @@ export function Welcome() {
     <div className="flex flex-1 items-center justify-center" data-testid="welcome">
       <div className="w-[460px]">
         <div className="mb-6 flex items-center gap-3">
-          <FolderGit2 size={34} className="text-accent" />
+          <FolderGit2 size={34} className="text-primary" />
           <h1 className="text-xl font-semibold">GitGoose</h1>
         </div>
         <div className="grid grid-cols-3 gap-2">
@@ -19,11 +19,11 @@ export function Welcome() {
         </div>
         {recent.length > 0 && (
           <div className="mt-8">
-            <div className="mb-2 text-[11px] font-semibold tracking-wide text-muted uppercase">Recent</div>
+            <div className="mb-2 text-2xs font-semibold tracking-wide text-muted-foreground uppercase">Recent</div>
             {recent.slice(0, 8).map((p) => (
-              <button key={p} onClick={() => reopen(p)} className="flex w-full flex-col rounded-md px-2 py-1.5 text-left hover:bg-hover">
-                <span className="text-[13px]">{p.split(/[\\/]/).pop()}</span>
-                <span className="truncate text-xs text-faint">{p}</span>
+              <button key={p} onClick={() => reopen(p)} className="flex w-full flex-col rounded-md px-2 py-1.5 text-left hover:bg-accent">
+                <span className="text-sm">{p.split(/[\\/]/).pop()}</span>
+                <span className="truncate text-xs text-muted-foreground/70">{p}</span>
               </button>
             ))}
           </div>

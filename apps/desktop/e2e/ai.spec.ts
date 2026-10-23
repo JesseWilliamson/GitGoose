@@ -2,7 +2,7 @@ import { fakeAnthropic, makeFixture, tempDir } from '@gitgoose/fixtures'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { hideAiPane, launch } from './app'
+import { hideAiPane, launch, openPrompt } from './app'
 
 /** The fake agent (speaks real ACP over stdio), configured the way a user sets a custom agent. */
 const FAKE = join(import.meta.dirname, 'fake-agent.mjs')
@@ -149,7 +149,7 @@ test("the commit box shows its prompt; an edit there is what is sent, and Settin
   const { app, page } = await launch(r.dir, { FAKE_AGENT_LOG: log })
   await set(page, { ...AGENT, aiConsent: [`agent:${AGENT.aiAgentCommand}`] })
 
-  await page.getByTestId('prompt-button-commit').click()
+  await openPrompt(page, 'commit')
   const panel = page.getByTestId('prompt-panel-commit')
   await expect(panel.getByTestId('prompt-source')).toHaveText('Built-in')
   // Only the editable words are shown: not the fixed answer format, not the context.
@@ -175,7 +175,7 @@ test("the commit box shows its prompt; an edit there is what is sent, and Settin
   // Settings → AI lists every prompt and says the area has its own edit.
   const s = await page.evaluate(() => window.gitgoose.getSettings())
   expect(s.aiPromptEdits['commit-message']?.instructions).toBe('Write a commit message for this. PANEL-EDIT')
-  await page.getByTestId('prompt-button-commit').click()
+  await openPrompt(page, 'commit')
   await page.getByTestId('prompt-panel-commit').getByTestId('prompt-reset').click()
   await expect(page.getByTestId('prompt-panel-commit').getByTestId('prompt-source')).toHaveText('Built-in')
   await page.keyboard.press('Escape')
@@ -196,7 +196,7 @@ test("a blank part in the area's prompt falls back to Settings' words, as the re
     aiPrompts: { 'commit-message': { system: 'You write git commit messages.', instructions: words } },
   })
 
-  await page.getByTestId('prompt-button-commit').click()
+  await openPrompt(page, 'commit')
   const panel = page.getByTestId('prompt-panel-commit')
   await expect(panel.getByTestId('prompt-source')).toHaveText('From Settings → AI')
   // Blank instructions fall back to Settings' words, not the built-in ones.

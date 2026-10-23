@@ -3,6 +3,7 @@ import {
   type AiArea, type PromptKind, type PromptSource, type PromptText,
 } from '@gitgoose/shared'
 import clsx from 'clsx'
+import { cn } from '@/lib/utils'
 import { FileText, RotateCcw } from 'lucide-react'
 import { Popover } from 'radix-ui'
 import { useEffect, useRef, useState } from 'react'
@@ -31,22 +32,22 @@ export function PromptButton({ area, className }: {
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger asChild>
-        <button className={clsx('inline-flex h-6 items-center gap-1 rounded-md border border-line px-1.5 text-xs text-muted hover:bg-hover hover:text-fg', className)}
+        <button className={cn('inline-flex h-row items-center gap-1 rounded-md border border-border px-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground', className)}
           title="Show and edit the prompt" data-testid={`prompt-button-${area}`}>
           <FileText size={12} /> Prompt{source === 'area' ? ' (edited)' : ''}
         </button>
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content align="end" sideOffset={6} collisionPadding={12}
-          className="z-50 flex max-h-[min(75vh,var(--radix-popover-content-available-height))] w-[min(620px,92vw)] flex-col overflow-hidden rounded-lg border border-line bg-raised text-[13px] shadow-2xl shadow-black/40"
+          className="z-50 flex max-h-[min(75vh,var(--radix-popover-content-available-height))] w-[min(620px,92vw)] flex-col overflow-hidden rounded-lg border border-border bg-popover text-sm shadow-2xl shadow-black/40"
           data-testid={`prompt-panel-${area}`}
           // Keys typed here are the panel's (Recompose's Ctrl+Z must not step its plan).
           onKeyDown={(e) => e.stopPropagation()}>
           {kinds.length > 1 && (
-            <div className="flex shrink-0 gap-1 border-b border-line px-3 pt-2">
+            <div className="flex shrink-0 gap-1 border-b border-border px-3 pt-2">
               {kinds.map((k) => (
                 <button key={k} onClick={() => setKind(k)}
-                  className={clsx('rounded-t px-2 py-1 text-xs', k === kind ? 'bg-bg text-fg' : 'text-muted hover:text-fg')}>{DEFAULT_PROMPTS[k].label}</button>
+                  className={clsx('rounded-t px-2 py-1 text-xs', k === kind ? 'bg-background text-foreground' : 'text-muted-foreground hover:text-foreground')}>{DEFAULT_PROMPTS[k].label}</button>
               ))}
             </div>
           )}
@@ -112,22 +113,22 @@ export function PromptEditor({ kind, value, onChange, source, onReset, resetLabe
 }) {
   const def = DEFAULT_PROMPTS[kind]
   const vars = Object.entries(def.vars)
-  const area = 'w-full resize-y rounded-md border border-line bg-bg px-2 py-1 font-mono text-[12px] leading-relaxed outline-none focus:border-accent'
+  const area = 'w-full resize-y rounded-md border border-border bg-background px-2 py-1 font-mono text-xs leading-relaxed outline-none focus:border-primary'
   return (
     <div data-testid={`prompt-editor-${kind}`}>
       <div className="mb-2 flex items-center gap-2 text-xs">
-        <span className="flex-1 text-faint" data-testid="prompt-source">{SOURCE_LABEL[source]}</span>
+        <span className="flex-1 text-muted-foreground/70" data-testid="prompt-source">{SOURCE_LABEL[source]}</span>
         {onReset && <Button size="sm" variant="ghost" onClick={onReset} data-testid="prompt-reset"><RotateCcw size={11} /> {resetLabel}</Button>}
       </div>
-      <label className="mb-1 block text-[11px] font-semibold tracking-wide text-muted uppercase">System</label>
+      <label className="mb-1 block text-2xs font-semibold tracking-wide text-muted-foreground uppercase">System</label>
       <textarea value={value.system} onChange={(e) => onChange({ ...value, system: e.target.value })} rows={2} spellCheck={false}
         className={clsx(area, 'mb-3')} data-testid="prompt-system" />
-      <label className="mb-1 block text-[11px] font-semibold tracking-wide text-muted uppercase">Instructions</label>
+      <label className="mb-1 block text-2xs font-semibold tracking-wide text-muted-foreground uppercase">Instructions</label>
       <textarea value={value.instructions} onChange={(e) => onChange({ ...value, instructions: e.target.value })} rows={Math.min(12, value.instructions.split('\n').length + 2)} spellCheck={false}
         className={area} data-testid="prompt-instructions" />
       {vars.length > 0 && (
-        <p className="mt-1 text-[11px] text-faint">
-          Filled in when sent: {vars.map(([name, what], i) => <span key={name}>{i ? ', ' : ''}<code className="text-muted">{`{${name}}`}</code> ({what})</span>)}.
+        <p className="mt-1 text-2xs text-muted-foreground/70">
+          Filled in when sent: {vars.map(([name, what], i) => <span key={name}>{i ? ', ' : ''}<code className="text-muted-foreground">{`{${name}}`}</code> ({what})</span>)}.
         </p>
       )}
     </div>
@@ -181,11 +182,11 @@ export function PromptSettings() {
     <div data-testid="prompt-settings">
       <SettingsRow label="Prompts" last={false}
         description="The default words for each AI request. An area's Prompt button can change them for that area; the answer format is fixed." />
-      <Tabs value={kind} onValueChange={(v) => setKind(v as PromptKind)} orientation="vertical" className="flex-row gap-6 border-b border-line pt-1 pb-3">
+      <Tabs value={kind} onValueChange={(v) => setKind(v as PromptKind)} orientation="vertical" className="flex-row gap-6 border-b border-border pt-1 pb-3">
         <TabsList className="w-44 shrink-0 items-stretch gap-0.5 self-start bg-transparent p-0">
           {kinds.map((k) => (
             <TabsTrigger key={k} value={k} data-testid={`prompt-kind-${k}`}
-              className="h-7 flex-none justify-start truncate rounded px-2 text-xs text-muted hover:bg-hover hover:text-fg data-[state=active]:bg-select data-[state=active]:text-fg data-[state=active]:shadow-none dark:data-[state=active]:border-transparent dark:data-[state=active]:bg-select dark:data-[state=active]:text-fg">
+              className="h-7 flex-none justify-start truncate rounded px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground data-[state=active]:bg-select data-[state=active]:text-foreground data-[state=active]:shadow-none dark:data-[state=active]:border-transparent dark:data-[state=active]:bg-select dark:data-[state=active]:text-foreground">
               {DEFAULT_PROMPTS[k].label}{edited(k) ? ' •' : ''}
             </TabsTrigger>
           ))}
@@ -193,7 +194,7 @@ export function PromptSettings() {
         <div className="min-w-0 flex-1">
           <SettingsPrompt key={kind} kind={kind} />
           {areaEdited(kind) && (
-            <p className="mt-2 flex items-center gap-2 text-[11px] text-warn">
+            <p className="mt-2 flex items-center gap-2 text-2xs text-warn">
               Its area has its own edit, which it uses instead of this.
               <Button size="sm" variant="ghost" onClick={() => void setPromptEdit(kind, null)}>Drop that edit</Button>
             </p>

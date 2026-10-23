@@ -72,18 +72,19 @@ test('a failing pre-commit hook shows its output; Skip hooks commits anyway', as
   await app.close()
 })
 
-test('with AI on, the model picker, Prompt, Write and Commit all fit in the footer without overlapping', async () => {
+test('with AI on, the target button, Write and Commit all fit in the footer without overlapping', async () => {
   const r = setup()
   const { app, page } = await launch(r.dir, isolatedGlobal())
   await page.evaluate(() => window.gitgoose.setSettings({ aiProvider: 'agent', aiAgent: 'claude' } as never))
   const box = page.getByTestId('commit-box')
   await expect(box.getByTestId('ai-commit-message')).toBeVisible()
-  const triggers = box.getByTestId('model-picker-commit').getByRole('combobox')
-  await expect(triggers).toHaveCount(2)
+  // One quiet button names who answers ("Claude · default"); the selects and Prompt are in its popover.
+  const target = box.getByTestId('ai-target-commit')
+  await expect(target).toHaveText('Claude · default')
   const bounds = (await box.boundingBox())!
   type Rect = { x: number; y: number; width: number; height: number }
   const rects: Rect[] = [(await page.getByTestId('commit-button').boundingBox())!, (await box.getByTestId('ai-commit-message').boundingBox())!]
-  for (let i = 0; i < 2; i++) rects.push((await triggers.nth(i).boundingBox())!)
+  rects.push((await target.boundingBox())!)
   for (const rect of rects) {
     expect(rect.x).toBeGreaterThanOrEqual(bounds.x)
     expect(rect.x + rect.width).toBeLessThanOrEqual(bounds.x + bounds.width + 0.5)

@@ -1,6 +1,7 @@
 import type { ReviewScope } from '@gitgoose/shared'
 import clsx from 'clsx'
-import { Archive, FileText, GitBranch, GitCommitHorizontal, GitCompare, GitMerge, Layers, ListTree, Pencil, Scissors, SearchCheck, Sparkles, Tag, Waypoints, X, type LucideIcon } from 'lucide-react'
+import { Archive, ChevronDown, FileText, GitBranch, GitCommitHorizontal, GitCompare, GitMerge, Layers, ListTree, Pencil, Scissors, SearchCheck, Sparkles, Tag, Waypoints, X, Zap, type LucideIcon } from 'lucide-react'
+import { DropdownMenu } from 'radix-ui'
 import { cherryPick, cherryPickMany, rebase } from '../lib/actions'
 import { removeChip, type ChipKind, type ContextChip } from '../lib/aiContext'
 import { explainCommit } from '../lib/explain'
@@ -9,16 +10,18 @@ import { startReview } from '../lib/review'
 import { getLog, selectCommit, useStore, type RepoView } from '../lib/store'
 import { startWalkthrough } from '../lib/walkthrough'
 import { recomposeWithAi } from './RecomposeDialog'
-import { Button } from './ui'
+import { DM } from './ui'
 import { Badge } from './ui/badge'
 
 /**
- * Under the AI panel's conversation, above its composer: what the next message will carry (the
- * context chips) and what the AI can do with it (the action row).
+ * Two parts of the AI panel's composer, both inside its one box: the chips at its top (what the
+ * next message will carry) and, at the left of its footer, the actions menu (what the AI can do
+ * with them).
  *
- * Chips are references; main reads git when the message is sent (lib/aiContext.ts). The buttons
+ * Chips are references; main reads git when the message is sent (lib/aiContext.ts). The actions
  * only call the starters the menus already call, so a review started here is the same review,
- * and its thread is in the history list like any other.
+ * and its thread is in the history list like any other. They are a menu, not seven buttons: they
+ * are things you do now and then, so they should not take a third of the pane all the time.
  */
 
 const ICON: Record<ChipKind, LucideIcon> = {
@@ -101,41 +104,55 @@ export function paneActions(view: Pick<RepoView, 'id' | 'snapshot' | 'editable'>
   ]
 }
 
-export function AiContextBar({ view, chips, sentKeys }: { view: RepoView; chips: ContextChip[]; sentKeys: string[] }) {
-  const aiOn = useStore((s) => (s.settings?.aiProvider ?? 'off') !== 'off')
-  const actions = paneActions(view, chips, aiOn)
+/** The chips of the next message, and what the hint beside them says about them. Sits at the top of the composer's box. */
+export function AiContextChips({ view, chips, sentKeys }: { view: RepoView; chips: ContextChip[]; sentKeys: string[] }) {
   const pending = chips.filter((c) => !sentKeys.includes(c.key)).length
   return (
-    <div className="shrink-0 border-t border-line px-2 pt-1.5 pb-0.5 text-[11px]" data-testid="ai-context">
-      <div className="flex flex-wrap items-center gap-1">
-        {chips.map((c) => {
-          const Icon = ICON[c.kind]
-          const sent = sentKeys.includes(c.key)
-          return (
-            <Badge key={c.key} variant="outline" data-testid="ai-context-chip" data-kind={c.kind} data-selection={c.fromSelection || undefined} data-sent={sent ? 'true' : undefined}
-              title={sent ? `${c.title} (already in this conversation, not sent again)` : c.title}
-              className={clsx('max-w-full rounded-md border-line bg-bg py-0.5 pr-0.5 pl-1.5 text-[11px] font-normal', sent ? 'text-muted' : 'text-fg')}>
-              <Icon size={11} className={clsx('shrink-0', sent ? 'text-faint' : 'text-accent')} />
-              <span className="min-w-0 truncate" data-testid="ai-context-chip-label">{c.label}</span>
-              <button onClick={() => removeChip(view.id, c)} aria-label={`Remove ${c.label}`} title="Do not send this" data-testid="ai-context-chip-remove"
-                className="shrink-0 rounded p-0.5 text-muted hover:bg-hover hover:text-fg"><X size={10} /></button>
-            </Badge>
-          )
-        })}
-        <span className="text-faint" data-testid="ai-context-hint">
-          {pending ? 'Sent with your next message' : chips.length ? 'In this conversation already' : 'Drop commits, branches, stashes or files here to add them'}
-        </span>
-      </div>
-      <div className="mt-1 flex flex-wrap gap-1" data-testid="ai-actions">
-        {actions.map((a) => (
-          // A disabled button takes no pointer events, so the tooltip is on a wrapper too.
-          <span key={a.name} title={a.why || a.what}>
-            <Button size="sm" disabled={!!a.why} onClick={a.run} title={a.why || a.what} data-testid={`ai-action-${a.name}`}>
-              <a.icon size={11} className="shrink-0" />{a.label}
-            </Button>
-          </span>
-        ))}
-      </div>
+    <div className="flex flex-wrap items-center gap-1 px-2 pt-2 text-2xs" data-testid="ai-context">
+      {chips.map((c) => {
+        const Icon = ICON[c.kind]
+        const sent = sentKeys.includes(c.key)
+        return (
+          <Badge key={c.key} variant="outline" data-testid="ai-context-chip" data-kind={c.kind} data-selection={c.fromSelection || undefined} data-sent={sent ? 'true' : undefined}
+            title={sent ? `${c.title} (already in this conversation, not sent again)` : c.title}
+            className={clsx('h-row max-w-full rounded-sm border-border bg-card py-0 pr-0.5 pl-1.5 text-2xs font-normal', sent ? 'text-muted-foreground' : 'text-foreground')}>
+            <Icon size={11} className={clsx('shrink-0', sent ? 'text-muted-foreground/70' : 'text-primary')} />
+            <span className="min-w-0 truncate" data-testid="ai-context-chip-label">{c.label}</span>
+            <button onClick={() => removeChip(view.id, c)} aria-label={`Remove ${c.label}`} title="Do not send this" data-testid="ai-context-chip-remove"
+              className="shrink-0 rounded-sm p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"><X size={10} /></button>
+          </Badge>
+        )
+      })}
+      <span className="text-muted-foreground/70" data-testid="ai-context-hint">
+        {pending ? 'Sent with your next message' : chips.length ? 'In this conversation already' : 'Drop commits, branches, stashes or files here to add them'}
+      </span>
     </div>
+  )
+}
+
+/**
+ * What the AI can do with the chips, in one menu at the left of the composer's footer. An action
+ * that cannot run now stays in the list, greyed, with the reason on hover (Select commits or drop
+ * a branch here): a missing item would leave the user guessing what is possible.
+ */
+export function AiActionsMenu({ view, chips }: { view: RepoView; chips: ContextChip[] }) {
+  const aiOn = useStore((s) => (s.settings?.aiProvider ?? 'off') !== 'off')
+  const actions = paneActions(view, chips, aiOn)
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <button data-testid="ai-actions" title="What the AI can do with the attached context"
+          className="inline-flex h-row shrink-0 items-center gap-1 rounded-md px-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground">
+          <Zap size={12} /> Actions <ChevronDown size={10} className="text-muted-foreground/70" />
+        </button>
+      </DropdownMenu.Trigger>
+      <DM.Content align="start">
+        {actions.map((a) => (
+          <DM.Item key={a.name} testId={`ai-action-${a.name}`} reason={a.why || undefined} title={a.what} onSelect={a.run}>
+            <a.icon size={13} className="shrink-0 text-muted-foreground" />{a.label}
+          </DM.Item>
+        ))}
+      </DM.Content>
+    </DropdownMenu.Root>
   )
 }

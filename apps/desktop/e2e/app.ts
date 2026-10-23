@@ -40,6 +40,25 @@ export async function pickFromSubmenu(page: Page, submenu: string | RegExp, name
   await item.press('Enter')
 }
 
+/**
+ * Open the popover of an AI area's target button ("Claude · default"), which holds the two model
+ * selects (`model-picker-who`, `model-picker-model`) and the Prompt button; a no-op if it is open.
+ * `within` narrows the search when several areas of one kind are on screen.
+ */
+export async function openTarget(page: Page, area: string, within?: Locator): Promise<Locator> {
+  const panel = page.getByTestId(`ai-target-panel-${area}`)
+  if (!(await panel.isVisible())) await (within ?? page).getByTestId(`ai-target-${area}`).click()
+  await expect(panel).toBeVisible()
+  return panel
+}
+
+/** Open an area's Prompt editor (through its target button's popover). */
+export async function openPrompt(page: Page, area: string): Promise<void> {
+  const button = page.getByTestId(`prompt-button-${area}`)
+  if (!(await button.isVisible())) await openTarget(page, area)
+  await button.click()
+}
+
 /** Launch the built app (out/) with a throwaway profile, optionally opening a repository. */
 export async function launch(repo?: string, env: Record<string, string> = {}, opts: { keepSize?: boolean } = {}): Promise<Launched> {
   const args = [join(import.meta.dirname, '..', 'out', 'main', 'index.js')]

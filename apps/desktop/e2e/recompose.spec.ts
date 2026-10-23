@@ -2,7 +2,7 @@ import { initRepo, tempDir } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { launch } from './app'
+import { launch, openTarget } from './app'
 
 const FAKE = join(import.meta.dirname, 'fake-agent.mjs')
 const AGENT_CMD = `"${process.execPath}" "${FAKE}"`
@@ -407,7 +407,7 @@ test("recompose asks the area's model, and its chat can switch models", async ()
 
   await page.getByTestId('recompose-chat-toggle').click()
   const chat = page.getByTestId('recompose-chat')
-  const model = chat.getByTestId('model-picker-recompose').getByTestId('model-picker-model')
+  const model = (await openTarget(page, 'recompose', chat)).getByTestId('model-picker-model')
   // The list came from the session that answered: no "Load models…" needed.
   await expect(model).toHaveText('Fake Fast')
   await model.click()
