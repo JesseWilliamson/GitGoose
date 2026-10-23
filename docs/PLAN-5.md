@@ -41,13 +41,17 @@ answer: small components you own, built on Radix and Tailwind, styled through CS
 
 **What.**
 
-- Dependencies (asked for in the brief): `sonner`, `class-variance-authority`, `tailwind-merge`.
-  No shadcn CLI run; the components are written into `components/ui/` by hand, in shadcn's shape,
-  using our theme tokens (`bg-panel`, `text-muted`, `border-line`, `bg-accent`, …), not shadcn's
-  `--background` set. A `cn()` helper (`lib/cn.ts`: clsx + tailwind-merge).
+- shadcn itself (Jesse: "I meant literally use shadcn"): `shadcn init` (Tailwind v4, CSS
+  variables, `components.json`, an `@/` alias for the renderer) and `shadcn add` for each
+  component, the files kept as generated so a later `add` can overwrite them. The CLI brings
+  its own dependencies (`class-variance-authority`, `tailwind-merge`, `sonner`, Radix).
 - `components/ui/`: `button`, `select`, `dropdown-menu`, `context-menu`, `tooltip`, `dialog`,
   `input`, `textarea`, `switch`, `checkbox`, `tabs`, `separator`, `badge`, `kbd`, `toggle`,
-  `popover`, `scroll-area`. Each the shadcn component, trimmed to what we use.
+  `popover`, `scroll-area`, `sonner`, all generated. shadcn's CSS variables (`--background`,
+  `--primary`, `--border`, …) are defined in `styles.css` for both themes from the app's
+  existing palette, so the components look native; the rest of the app keeps its token
+  utilities (`bg-panel`, `text-muted`, …) until the audit pass. Anything of ours (the `reason`
+  prop, `OptionSelect`) wraps a generated component rather than editing it.
 - `components/ui.tsx` keeps exporting the same names (`Button`, `ToolbarButton`, `Kbd`,
   `Spinner`, `SectionHeader`, `CM`, `DM`, `Modal`, `TextField`) but implemented over the new
   primitives, so no other file must change in this PR. `CM.Item` and `DM.Item` gain
