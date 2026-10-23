@@ -99,7 +99,7 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
   band?: boolean
   /**
    * Set while the graph shows one line of history (lib/lineView.ts): the lane of the line's row
-   * above, or -1 at its top. The row then draws only that line (see lineEdges). Plain numbers,
+   * above, or -1 at its top. The row then draws only that line, and in lane 0 (see lineEdges). Plain numbers,
    * not an object, so the memo still skips rows whose line did not change.
    */
   lineAbove?: number
@@ -114,8 +114,9 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
   // the edge would put a dot on top of the last visible lane's line, reading as a commit on a
   // branch it has nothing to do with. The row still shows the lines that pass through it.
   const lastX = width - (band ? STRIP_W : 0) - LANE_W / 2
-  const offscreen = laneX(row.lane) > lastX
-  const cx = laneX(row.lane)
+  const lane = lineAbove === undefined ? row.lane : 0
+  const cx = laneX(lane)
+  const offscreen = cx > lastX
   const color = laneColor(row.color)
   const r = nodeRadius(author ? 'avatar' : 'ring')
   const clip = `clip-${row.hash}`
