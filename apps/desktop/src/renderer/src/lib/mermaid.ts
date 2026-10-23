@@ -45,6 +45,8 @@ export async function renderMermaid(src: string): Promise<string> {
   const mermaid = await loadMermaid()
   mermaid.initialize({
     startOnLoad: false,
+    // An invalid diagram is reported by our own error message; Mermaid's error SVG would be left in the page.
+    suppressErrorRendering: true,
     securityLevel: 'strict',
     theme: 'base',
     themeVariables: { ...themeVariables(), darkMode: document.documentElement.dataset.theme !== 'light' },
