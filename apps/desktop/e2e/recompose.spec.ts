@@ -244,6 +244,9 @@ test('move a change to another commit or a new one; empty commits block until re
 
 /** Press on `from`, move the pointer to `to` (or a point) in steps, release: a pointer drag, not an HTML5 one. */
 async function drag(page: Page, from: ReturnType<Page['locator']>, to: ReturnType<Page['locator']> | { x: number; y: number } | (() => Promise<{ x: number; y: number }>)) {
+  // The previous drag may still be settling: its clone flying home (160 ms) and the rows sliding
+  // into place. Row rects read mid-animation are not where the rows will be, so start from rest.
+  await quiet(page)
   // The hunk may sit below the fold of its column (the third of three on a small window).
   await from.scrollIntoViewIfNeeded()
   // Near the top-left: a hunk card is dragged by its header, not its diff text. The lift is
@@ -275,6 +278,7 @@ async function drag(page: Page, from: ReturnType<Page['locator']>, to: ReturnTyp
   let still = 0
   for (let i = 0; i < 12 && still < 2; i++) {
     await page.waitForTimeout(150)
+    await quiet(page, false)
     const now = await where()
     if (Math.abs(now.x - target.x) < 1 && Math.abs(now.y - target.y) < 1) still++
     else {
@@ -283,7 +287,16 @@ async function drag(page: Page, from: ReturnType<Page['locator']>, to: ReturnTyp
     }
     await page.mouse.move(target.x + (i % 2), target.y, { steps: 2 })
   }
-  return { drop: () => page.mouse.up() }
+  // Let the page render what the last move caused, and be still, before the release: the drop
+  // acts on the page's state at that moment (which row or zone is under the pointer).
+  await quiet(page, false)
+  return { drop: async () => { await quiet(page, false); await page.mouse.up() } }
+}
+
+/** Wait until the app has stopped animating (and, unless mid-drag, the floating clone is gone), then one more frame. */
+async function quiet(page: Page, settled = true) {
+  await page.waitForFunction((gone) => (!gone || !document.querySelector('.drag-float')) && document.getAnimations().length === 0, settled)
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
 }
 
 test('drag: a hunk onto a commit, a hunk into the open space for a new commit, a commit to reorder', async () => {
