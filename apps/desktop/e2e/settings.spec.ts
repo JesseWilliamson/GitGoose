@@ -27,6 +27,41 @@ test('opens the settings page, searches it, and closes with Esc', async () => {
   await app.close()
 })
 
+test('every Appearance control shares one column edge, and the nav follows the scroll', async () => {
+  const r = makeFixture('linear')
+  const { app, page } = await launch(r.dir)
+  await page.keyboard.press('ControlOrMeta+,')
+  const section = page.locator('[data-section="Appearance"]')
+  await expect(section).toBeVisible()
+  // Each row's control column holds one control; a switch is the one that does not fill it.
+  const boxes = await section.locator('[data-control]').evaluateAll((cols) => cols.map((col) => {
+    const sw = col.querySelector('[role=switch]')
+    const el = sw ?? col.firstElementChild!
+    const b = el.getBoundingClientRect()
+    return { isSwitch: !!sw, x: b.x, width: b.width, right: b.right }
+  }))
+  expect(boxes.length).toBeGreaterThan(8)
+  const fills = boxes.filter((b) => !b.isSwitch)
+  const switches = boxes.filter((b) => b.isSwitch)
+  expect(switches.length).toBeGreaterThan(0)
+  for (const b of fills) {
+    expect(Math.abs(b.x - fills[0]!.x)).toBeLessThanOrEqual(1)
+    expect(Math.abs(b.width - fills[0]!.width)).toBeLessThanOrEqual(1)
+  }
+  expect(Math.round(fills[0]!.width)).toBe(360)
+  for (const b of switches) expect(Math.abs(b.right - (fills[0]!.x + fills[0]!.width))).toBeLessThanOrEqual(1)
+
+  // Scrolling Graph into view highlights it in the nav (without clicking the nav).
+  await expect(page.getByTestId('settings-nav-Appearance')).toHaveAttribute('aria-current', 'true')
+  await page.locator('[data-section="Graph"]').evaluate((el) => el.scrollIntoView({ block: 'start' }))
+  await expect(page.getByTestId('settings-nav-Graph')).toHaveAttribute('aria-current', 'true')
+  await expect(page.getByTestId('settings-nav-Appearance')).not.toHaveAttribute('aria-current', 'true')
+  // Clicking a nav item scrolls to its section.
+  await page.getByTestId('settings-nav-Git').click()
+  await expect(page.getByTestId('settings-nav-Git')).toHaveAttribute('aria-current', 'true')
+  await app.close()
+})
+
 test('UI scale zooms the whole window, from the keyboard, and persists', async () => {
   const profile = tempDir('gitgoose-profile-')
   const r = makeFixture('linear')

@@ -2,15 +2,21 @@ import { SECTIONS, SETTINGS, type Section, type SettingKey, type SettingSpec, ty
 import clsx from 'clsx'
 import { RotateCcw, Search, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
+import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { COMMANDS, comboOf, conflicts, formatCombo } from '../lib/keys'
 import { saveSettings, useStore } from '../lib/store'
 import { OptionSelect } from './OptionSelect'
 import { AiPanel } from './AiPanel'
+import { SettingsRow, SwitchSlot } from './SettingsRow'
+import { Kbd } from './ui'
 
 /**
  * The settings page, generated from the SETTINGS table in packages/shared/src/settings.ts.
  * Each entry renders by its kind; sections can also add their own panels (AI agents)
- * through SECTION_PANELS.
+ * through SECTION_PANELS, shown after the section's generated rows. Every row, generated or
+ * not, is a SettingsRow: a label column and one 360 px control column.
  */
 export const SECTION_PANELS: Partial<Record<Section, ComponentType>> = { AI: AiPanel }
 
@@ -40,42 +46,64 @@ export function SettingsPage() {
     scroller.current?.querySelector(`[data-section="${s}"]`)?.scrollIntoView({ block: 'start' })
   }
 
+  // The nav follows the page: the section that overlaps the top quarter of the scroll area is
+  // the one in view. When two overlap it, the later one has just arrived and wins.
+  const sectionKey = sections.join()
+  useEffect(() => {
+    const root = scroller.current
+    if (!root) return
+    const order = sectionKey ? (sectionKey.split(',') as Section[]) : []
+    const inBand = new Set<Section>()
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        const s = (e.target as HTMLElement).dataset.section as Section
+        if (e.isIntersecting) inBand.add(s)
+        else inBand.delete(s)
+      }
+      const current = [...order].reverse().find((s) => inBand.has(s))
+      if (current) setSection(current)
+    }, { root, rootMargin: '0px 0px -75% 0px' })
+    root.querySelectorAll('[data-section]').forEach((el) => io.observe(el))
+    return () => io.disconnect()
+  }, [sectionKey])
+
   if (!settings) return null
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="settings-page">
       <div className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-panel px-4">
         <h1 className="text-[15px] font-semibold">Settings</h1>
-        <div className="flex h-8 w-80 items-center rounded-md border border-line bg-bg px-2 focus-within:border-accent">
-          <Search size={13} className="text-faint" />
-          <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search settings"
-            className="h-full flex-1 bg-transparent px-2 text-[13px] outline-none" data-testid="settings-search" />
-        </div>
         <div className="flex-1" />
         <button onClick={() => useStore.setState({ page: null })} title="Close (Esc)" className="rounded p-1 text-muted hover:bg-hover hover:text-fg" data-testid="settings-close">
           <X size={16} />
         </button>
       </div>
       <div className="flex min-h-0 flex-1">
-        <nav className="w-48 shrink-0 border-r border-line bg-panel py-2">
+        <nav className="flex w-56 shrink-0 flex-col border-r border-line bg-panel">
+          <div className="relative p-3">
+            <Search size={13} className="pointer-events-none absolute top-1/2 left-5.5 -translate-y-1/2 text-faint" />
+            <Input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search settings"
+              className="h-8 bg-bg pl-7 text-[13px] md:text-[13px] dark:bg-bg" data-testid="settings-search" />
+          </div>
           {sections.map((s) => (
-            <button key={s} onClick={() => jump(s)}
+            <button key={s} onClick={() => jump(s)} data-testid={`settings-nav-${s}`} aria-current={section === s ? 'true' : undefined}
               className={clsx('block w-full px-4 py-1.5 text-left text-[13px]', section === s ? 'bg-select text-fg' : 'text-muted hover:bg-hover hover:text-fg')}>
               {s}
             </button>
           ))}
         </nav>
-        <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-8 py-4">
-          <div className="mx-auto max-w-3xl">
+        {/* The bottom padding lets the last sections scroll up to the top, where the nav picks them. */}
+        <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-8 pt-4 pb-[50vh]" data-testid="settings-scroll">
+          <div className="mx-auto max-w-[960px]">
             {sections.length === 0 && <p className="py-8 text-center text-sm text-faint">No settings match “{query}”.</p>}
             {sections.map((s) => {
               const Panel = SECTION_PANELS[s]
               return (
-                <section key={s} data-section={s} className="mb-8 scroll-mt-4">
-                  <h2 className="mb-2 border-b border-line pb-1 text-[12px] font-semibold tracking-wide text-muted uppercase">{s}</h2>
-                  {Panel && !q && <Panel />}
+                <section key={s} data-section={s} className="mt-8 scroll-mt-4 first:mt-0">
+                  <h2 className="flex h-7 items-center border-b border-line text-[11px] font-semibold tracking-wide text-muted uppercase">{s}</h2>
                   {shown.filter((v) => v.spec.section === s).map((v) => (
                     <SettingRow key={v.key} k={v.key} spec={v.spec} value={settings[v.key]} />
                   ))}
+                  {Panel && !q && <Panel />}
                 </section>
               )
             })}
@@ -91,34 +119,17 @@ function SettingRow({ k, spec, value }: { k: SettingKey; spec: Visible['spec']; 
   const modified = JSON.stringify(value) !== JSON.stringify(spec.default)
   if (spec.kind === 'keybindings') return <KeybindingsEditor value={value as Record<string, string>} onChange={set} />
   return (
-    <div className="flex items-start gap-6 border-b border-line/40 py-3" data-testid={`setting-${k}`}>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 text-[13px] font-medium">
-          {spec.label}
-          {modified && (
-            <button onClick={() => set(spec.default)} title="Reset to default" className="text-faint hover:text-accent" data-testid={`reset-${k}`}>
-              <RotateCcw size={11} />
-            </button>
-          )}
-        </div>
-        {spec.description && <p className="mt-0.5 text-xs text-muted">{spec.description}</p>}
-      </div>
-      <div className="flex shrink-0 items-center">
-        {spec.kind === 'boolean' && <Toggle checked={value as boolean} onChange={set} />}
-        {spec.kind === 'number' && <NumberControl spec={spec} value={value as number} onChange={set} />}
-        {spec.kind === 'choice' && <ChoiceControl spec={spec} value={value as string} onChange={set} />}
-        {spec.kind === 'text' && <TextControl spec={spec} value={value as string} onChange={set} />}
-      </div>
-    </div>
-  )
-}
-
-function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button role="switch" aria-checked={checked} onClick={() => onChange(!checked)}
-      className={clsx('relative h-5 w-9 rounded-full transition-colors', checked ? 'bg-accent' : 'bg-line')}>
-      <span className={clsx('absolute top-0.5 size-4 rounded-full bg-white shadow transition-[left]', checked ? 'left-[18px]' : 'left-0.5')} />
-    </button>
+    <SettingsRow testid={`setting-${k}`} label={spec.label} description={spec.description}
+      labelExtra={modified && (
+        <button onClick={() => set(spec.default)} title="Reset to default" className="text-faint hover:text-accent" data-testid={`reset-${k}`}>
+          <RotateCcw size={11} />
+        </button>
+      )}>
+      {spec.kind === 'boolean' && <SwitchSlot><Switch checked={value as boolean} onCheckedChange={set} aria-label={spec.label} /></SwitchSlot>}
+      {spec.kind === 'number' && <NumberControl spec={spec} value={value as number} onChange={set} />}
+      {spec.kind === 'choice' && <ChoiceControl spec={spec} value={value as string} onChange={set} />}
+      {spec.kind === 'text' && <TextControl spec={spec} value={value as string} onChange={set} />}
+    </SettingsRow>
   )
 }
 
@@ -126,34 +137,42 @@ function NumberControl({ spec, value, onChange }: { spec: Extract<SettingSpec, {
   // Sliders send many events while dragging; show the value live, save when released.
   const [local, setLocal] = useState(value)
   useEffect(() => setLocal(value), [value])
-  const label = spec.format === 'percent' ? `${Math.round(local * 100)}%` : `${local}${spec.unit ? ` ${spec.unit}` : ''}`
+  const label = spec.format === 'percent' ? `${Math.round(local * 100)}%` : `${local}`
   return (
-    <div className="flex items-center gap-3">
-      <input type="range" min={spec.min} max={spec.max} step={spec.step} value={local}
+    <div className="flex w-full items-center gap-3">
+      <input type="range" min={spec.min} max={spec.max} step={spec.step} value={local} aria-label={spec.label}
         onChange={(e) => setLocal(Number(e.target.value))}
         onPointerUp={() => onChange(local)} onKeyUp={() => onChange(local)}
-        className="w-40 accent-[var(--gs-accent)]" />
-      <span className="w-20 text-right font-mono text-xs text-muted" data-testid="number-value">{label}</span>
+        className="min-w-0 flex-1 accent-[var(--gs-accent)]" />
+      {/* A fixed 56 px slot; the unit sits under the number so "8192 tokens" fits it. */}
+      <span className="flex w-14 shrink-0 flex-col items-end font-mono text-xs leading-tight text-muted" data-testid="number-value">
+        {label}
+        {spec.unit && <span className="text-[10px] text-faint">{spec.unit}</span>}
+      </span>
     </div>
   )
 }
 
+/** The longest option label that still fits one line in a three-way segmented control in the 360 px column. */
+const SEGMENTED_MAX_LABEL = 16
+
 function ChoiceControl({ spec, value, onChange }: { spec: Extract<SettingSpec, { kind: 'choice' }>; value: string; onChange: (v: string) => void }) {
-  if (spec.options.length <= 3) {
+  const segmented = spec.options.length <= 3 && spec.options.every((o) => o.label.length <= SEGMENTED_MAX_LABEL)
+  if (segmented) {
     return (
-      <div className="flex rounded-md border border-line p-0.5">
-        {spec.options.map((o) => (
-          <button key={o.value} onClick={() => onChange(o.value)}
-            className={clsx('rounded px-2.5 py-1 text-xs', value === o.value ? 'bg-accent text-accent-fg' : 'text-muted hover:text-fg')}>
-            {o.label}
-          </button>
-        ))}
-      </div>
+      <Tabs value={value} onValueChange={onChange} className="w-full">
+        <TabsList aria-label={spec.label} className="h-8 w-full rounded-md border border-line bg-bg p-0.5 dark:bg-bg">
+          {spec.options.map((o) => (
+            <TabsTrigger key={o.value} value={o.value}
+              className="h-full rounded text-xs text-muted hover:text-fg data-[state=active]:bg-accent data-[state=active]:text-accent-fg data-[state=active]:shadow-none dark:data-[state=active]:border-transparent dark:data-[state=active]:bg-accent dark:data-[state=active]:text-accent-fg">
+              {o.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
     )
   }
-  return (
-    <OptionSelect value={value} onChange={onChange} options={spec.options} aria-label={spec.label} />
-  )
+  return <OptionSelect value={value} onChange={onChange} options={spec.options} aria-label={spec.label} className="w-full" />
 }
 
 function TextControl({ spec, value, onChange }: { spec: Extract<SettingSpec, { kind: 'text' }>; value: string; onChange: (v: string) => void }) {
@@ -161,9 +180,9 @@ function TextControl({ spec, value, onChange }: { spec: Extract<SettingSpec, { k
   useEffect(() => setLocal(value), [value])
   const commit = () => { if (local !== value) onChange(local) }
   return (
-    <input value={local} placeholder={spec.placeholder} onChange={(e) => setLocal(e.target.value)} onBlur={commit}
+    <Input value={local} placeholder={spec.placeholder} aria-label={spec.label} onChange={(e) => setLocal(e.target.value)} onBlur={commit}
       onKeyDown={(e) => { if (e.key === 'Enter') commit() }}
-      className="h-8 w-72 rounded-md border border-line bg-bg px-2 font-mono text-xs outline-none focus:border-accent" />
+      className="h-8 bg-bg font-mono text-xs md:text-xs dark:bg-bg" />
   )
 }
 
@@ -195,28 +214,21 @@ function KeybindingsEditor({ value, onChange }: { value: Record<string, string>;
 
   return (
     <div data-testid="setting-keybindings">
-      <p className="mb-2 text-xs text-muted">{SETTINGS.keybindings.description}</p>
-      <table className="w-full text-[13px]">
-        <tbody>
-          {COMMANDS.map((c) => {
-            const combos = value[c.id] === undefined ? c.defaults : value[c.id] ? [value[c.id]!] : []
-            const conflicted = combos.some((k) => (clash.get(k)?.length ?? 0) > 1)
-            return (
-              <tr key={c.id} className="border-b border-line/40">
-                <td className="py-1.5">{c.label}</td>
-                <td className="py-1.5 text-right">
-                  <button onClick={() => setRecording(c.id)} data-testid={`keybinding-${c.id}`}
-                    className={clsx('min-w-28 rounded border px-2 py-0.5 font-mono text-xs',
-                      recording === c.id ? 'border-accent text-accent' : conflicted ? 'border-del text-del' : 'border-line text-muted hover:text-fg')}>
-                    {recording === c.id ? 'Press keys…' : combos.length ? combos.map(formatCombo).join(', ') : 'none'}
-                  </button>
-                  {conflicted && <span className="ml-2 text-xs text-del">conflict</span>}
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
+      <p className="border-b border-line py-3 text-xs text-muted">{SETTINGS.keybindings.description}</p>
+      {COMMANDS.map((c) => {
+        const combos = value[c.id] === undefined ? c.defaults : value[c.id] ? [value[c.id]!] : []
+        const conflicted = combos.some((k) => (clash.get(k)?.length ?? 0) > 1)
+        return (
+          <SettingsRow key={c.id} label={c.label} description={conflicted ? <span className="text-del">conflict</span> : undefined}>
+            {/* The whole control column is the button, so every shortcut is edited the same way. */}
+            <button onClick={() => setRecording(c.id)} data-testid={`keybinding-${c.id}`}
+              className={clsx('flex h-8 w-full items-center justify-end gap-1 rounded-md border bg-bg px-2 text-xs',
+                recording === c.id ? 'border-accent text-accent' : conflicted ? 'border-del text-del' : 'border-line text-muted hover:text-fg')}>
+              {recording === c.id ? 'Press keys…' : combos.length ? combos.map((k) => <Kbd key={k}>{formatCombo(k)}</Kbd>) : 'none'}
+            </button>
+          </SettingsRow>
+        )
+      })}
     </div>
   )
 }
