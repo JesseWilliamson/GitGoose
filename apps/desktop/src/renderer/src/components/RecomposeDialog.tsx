@@ -14,7 +14,7 @@ import { toast, updateRepo, useStore } from '../lib/store'
 import { useThread } from '../lib/thread'
 import { AiTargetButton } from './AiTargetButton'
 import { Thread } from './Thread'
-import { Button, CM, DM, Modal, SectionHeader, Spinner } from './ui'
+import { Button, CM, DM, Modal, ModalFooter, SectionHeader, Spinner } from './ui'
 
 /**
  * Recompose with AI, GitKraken-style: the AI proposes a new set of commits for the selected
@@ -104,34 +104,34 @@ export function RecomposeDialog() {
     recomposeWithAi(state.repoId, state.hashes)
   }
   return (
-    <Modal open onClose={hide} title={`${title} with AI`} width={state.proposal ? 1120 : 560} tall={!!state.proposal}
+    <Modal open onClose={hide} title={`${title} with AI`} size={state.proposal ? 'xl' : 'md'} tall={!!state.proposal}
       onEscapeKeyDown={(e) => {
         // Esc ends what is in progress first (typing a message; a drag cancels itself, see
         // Review); only from rest does it close the dialog.
         const a = document.activeElement
         if (a instanceof HTMLTextAreaElement || a instanceof HTMLInputElement) { a.blur(); e.preventDefault() }
       }}>
-      <div data-testid="recompose-dialog" className="text-sm">
+      <div data-testid="recompose-dialog" className="space-y-3 text-sm">
         {state.proposal ? (
           <Review key={state.requestId ?? 'review'} repoId={state.repoId} proposal={state.proposal} close={discard} threadId={state.threadId} incoming={state.incoming} />
         ) : state.error ? (
           <>
             <div className="flex items-start gap-2 text-destructive" data-testid="recompose-error"><CircleAlert size={15} className="mt-px shrink-0" /> {state.error}</div>
-            <div className="mt-4 flex items-center justify-end gap-2">
+            <ModalFooter>
               <AiTargetButton area="recompose" className="mr-auto" />
               <Button onClick={discard}>Close</Button>
               <Button variant="primary" onClick={() => recomposeWithAi(state.repoId, state.hashes)}>Try again</Button>
-            </div>
+            </ModalFooter>
           </>
         ) : (
           <>
             <div className="flex items-center gap-2 text-muted-foreground"><Spinner /> Asking the AI how to split these changes into commits…</div>
-            <p className="mt-2 text-xs text-hint">You can close this; the plan waits in the status bar.</p>
-            <div className="mt-4 flex items-center justify-end gap-2">
+            <p className="text-xs text-hint">You can close this; the plan waits in the status bar.</p>
+            <ModalFooter>
               <AiTargetButton area="recompose" onPicked={restart} className="mr-auto" />
               <Button onClick={discard} data-testid="recompose-stop">Stop</Button>
               <Button variant="primary" onClick={hide} data-testid="recompose-hide">Close</Button>
-            </div>
+            </ModalFooter>
           </>
         )}
       </div>

@@ -8,7 +8,7 @@ import { COMMANDS, FIXED_KEYS, formatCombo, keymap, modName } from '../lib/keys'
 import { api } from '../lib/api'
 import { withPushChecks } from '../lib/pushchecks'
 import { setting, toast, useStore } from '../lib/store'
-import { Button, Modal, TextField } from './ui'
+import { Button, Modal, ModalFooter, TextField } from './ui'
 import { OptionSelect } from './OptionSelect'
 import { AiTargetButton } from './AiTargetButton'
 
@@ -20,25 +20,25 @@ export function Dialogs() {
   if (dialog.kind === 'confirm') {
     return (
       <Modal open onClose={close} title={dialog.title}>
-        <p className="mb-4 text-sm text-muted-foreground">{dialog.message}</p>
-        <div className="flex justify-end gap-2">
+        <p className="text-sm text-muted-foreground">{dialog.message}</p>
+        <ModalFooter>
           <Button onClick={close}>Cancel</Button>
           <Button autoFocus variant={dialog.danger ? 'danger' : 'primary'} onClick={() => { close(); void dialog.onConfirm() }}>{dialog.confirm}</Button>
-        </div>
+        </ModalFooter>
       </Modal>
     )
   }
   if (dialog.kind === 'choice') {
     return (
-      <Modal open onClose={() => { close(); dialog.onDismiss?.() }} title={dialog.title} width={500}>
-        <div data-testid="choice-dialog">
-          <p className="mb-3 text-sm text-muted-foreground">{dialog.message}</p>
-          {dialog.detail && <pre className="selectable mb-4 max-h-40 overflow-auto rounded bg-background p-2 font-mono text-2xs whitespace-pre-wrap text-muted-foreground">{dialog.detail}</pre>}
-          <div className="flex flex-wrap justify-end gap-2">
+      <Modal open onClose={() => { close(); dialog.onDismiss?.() }} title={dialog.title} size="md">
+        <div className="space-y-3" data-testid="choice-dialog">
+          <p className="text-sm text-muted-foreground">{dialog.message}</p>
+          {dialog.detail && <pre className="selectable max-h-40 overflow-auto rounded bg-background p-2 font-mono text-2xs whitespace-pre-wrap text-muted-foreground">{dialog.detail}</pre>}
+          <ModalFooter>
             {dialog.choices.map((c, i) => (
               <Button key={c.label} autoFocus={i === 0} variant={c.variant ?? 'default'} onClick={() => { close(); void c.run?.() }}>{c.label}</Button>
             ))}
-          </div>
+          </ModalFooter>
         </div>
       </Modal>
     )
@@ -65,7 +65,7 @@ function TextDialog({ d, close }: { d: Extract<NonNullable<ReturnType<typeof use
     d.onSubmit(value)
   }
   return (
-    <Modal open onClose={close} title={d.title} width={560}>
+    <Modal open onClose={close} title={d.title} size="md">
       <textarea autoFocus value={value} onChange={(e) => setValue(e.target.value)} rows={8} data-testid="dialog-text"
         onKeyDown={(e) => {
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -75,10 +75,10 @@ function TextDialog({ d, close }: { d: Extract<NonNullable<ReturnType<typeof use
         }}
         style={{ fontFamily: 'var(--gs-code-font)' }}
         className="w-full resize-y rounded-md border border-border bg-background px-2 py-1.5 text-sm outline-none focus:border-primary" />
-      <div className="mt-3 flex justify-end gap-2">
+      <ModalFooter>
         <Button onClick={close}>Cancel</Button>
         <Button variant="primary" disabled={!value.trim()} onClick={submit} data-testid="dialog-submit">{d.confirm}</Button>
-      </div>
+      </ModalFooter>
     </Modal>
   )
 }
@@ -103,12 +103,12 @@ function CleanupDialog({ repoId, close }: { repoId: string; close: () => void })
     void deleteBranches(repoId, candidates.filter((c) => picked.has(c.name)).map((c) => c.name), unmerged > 0)
   }
   return (
-    <Modal open onClose={close} title="Clean up branches" width={520}>
-      <p className="mb-3 text-sm text-muted-foreground">
+    <Modal open onClose={close} title="Clean up branches" size="md" onEnter={() => picked.size > 0 && submit()}>
+      <p className="text-sm text-muted-foreground">
         Merged branches are already part of {view?.snapshot.head.branch ?? 'HEAD'}. Stale ones have had no commits for {STALE_DAYS} days. Undo brings deleted branches back.
       </p>
-      {candidates.length === 0 && <p className="mb-3 text-sm text-hint">Nothing to clean up.</p>}
-      <div className="mb-3 max-h-72 overflow-y-auto rounded-md border border-border" data-testid="cleanup-list">
+      {candidates.length === 0 && <p className="text-sm text-hint">Nothing to clean up.</p>}
+      <div className="max-h-72 overflow-y-auto rounded-md border border-border" data-testid="cleanup-list">
         {candidates.map((c) => (
           <label key={c.name} className="flex h-7 items-center gap-2 px-2 text-sm hover:bg-accent">
             <input type="checkbox" checked={picked.has(c.name)} onChange={() => toggle(c.name)} aria-label={c.name} />
@@ -119,13 +119,13 @@ function CleanupDialog({ repoId, close }: { repoId: string; close: () => void })
           </label>
         ))}
       </div>
-      {unmerged > 0 && <p className="mb-3 text-xs text-warn">{unmerged} of these {unmerged === 1 ? 'is' : 'are'} not merged: {unmerged === 1 ? 'its' : 'their'} commits will only be reachable through undo.</p>}
-      <div className="flex justify-end gap-2">
+      {unmerged > 0 && <p className="text-xs text-warn">{unmerged} of these {unmerged === 1 ? 'is' : 'are'} not merged: {unmerged === 1 ? 'its' : 'their'} commits will only be reachable through undo.</p>}
+      <ModalFooter>
         <Button onClick={close}>Cancel</Button>
         <Button variant={unmerged ? 'danger' : 'primary'} disabled={picked.size === 0} onClick={submit} data-testid="dialog-submit">
           Delete {picked.size} branch{picked.size === 1 ? '' : 'es'}
         </Button>
-      </div>
+      </ModalFooter>
     </Modal>
   )
 }
@@ -157,7 +157,7 @@ function IdentityDialog({ repoId, onSaved, close }: { repoId: string; onSaved?: 
     if (name.trim() && email.trim()) save(scope, name.trim(), email.trim())
   }
   return (
-    <Modal open onClose={close} title="Who you commit as" width={460}>
+    <Modal open onClose={close} title="Who you commit as" size="md">
       <form onSubmit={submit} className="space-y-3" data-testid="identity-dialog">
         <TextField autoFocus label="Name" value={name} onChange={(e) => setName(e.target.value)} />
         <TextField label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
@@ -171,10 +171,10 @@ function IdentityDialog({ repoId, onSaved, close }: { repoId: string; onSaved?: 
             <button type="button" className="text-primary hover:underline" onClick={() => save('local', null, null)}>Use the global one here</button>
           </p>
         )}
-        <div className="flex justify-end gap-2">
+        <ModalFooter>
           <Button type="button" onClick={close}>Cancel</Button>
           <Button type="submit" variant="primary" disabled={!name.trim() || !email.trim()} data-testid="dialog-submit">Save</Button>
-        </div>
+        </ModalFooter>
       </form>
     </Modal>
   )
@@ -217,7 +217,7 @@ function CreatePullDialog({ repoId, branch, close }: { repoId: string; branch: s
     else create()
   }
   return (
-    <Modal open onClose={close} title={`Pull request for ${branch}`} width={520}>
+    <Modal open onClose={close} title={`Pull request for ${branch}`} size="md">
       <form onSubmit={submit} className="space-y-3" data-testid="create-pr">
         <TextField autoFocus label="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
         <label className="block">
@@ -232,10 +232,10 @@ function CreatePullDialog({ repoId, branch, close }: { repoId: string; branch: s
           </label>
         </div>
         {needsPush && <p className="text-xs text-muted-foreground">{branch} will be pushed to {remote} first.</p>}
-        <div className="flex justify-end gap-2">
+        <ModalFooter>
           <Button type="button" onClick={close}>Cancel</Button>
           <Button type="submit" variant="primary" disabled={!title.trim() || !remote} data-testid="dialog-submit">Continue on GitHub</Button>
-        </div>
+        </ModalFooter>
       </form>
     </Modal>
   )
@@ -253,10 +253,10 @@ function LearningsDialog({ repoId, close }: { repoId: string; close: () => void 
     setList(next)
   }
   return (
-    <Modal open onClose={close} title="Review learnings" width={560}>
-      <p className="mb-3 text-sm text-muted-foreground">Sent with every review of this repository. They come from "Don't flag again" on findings.</p>
-      {list?.length === 0 && <p className="mb-3 text-sm text-hint">None yet.</p>}
-      <div className="mb-3 max-h-72 overflow-y-auto" data-testid="learnings">
+    <Modal open onClose={close} title="Review learnings" size="md">
+      <p className="text-sm text-muted-foreground">Sent with every review of this repository. They come from "Don't flag again" on findings.</p>
+      {list?.length === 0 && <p className="text-sm text-hint">None yet.</p>}
+      <div className="max-h-72 overflow-y-auto" data-testid="learnings">
         {list?.map((l, i) => (
           <div key={i} className="flex items-center gap-2 border-b border-border/60 py-1.5 text-sm">
             <span className="min-w-0 flex-1">{l.text}{l.path && <span className="ml-2 font-mono text-2xs text-hint">{l.path}</span>}</span>
@@ -264,7 +264,7 @@ function LearningsDialog({ repoId, close }: { repoId: string; close: () => void 
           </div>
         ))}
       </div>
-      <div className="flex justify-end"><Button onClick={close}>Close</Button></div>
+      <ModalFooter><Button autoFocus onClick={close}>Close</Button></ModalFooter>
     </Modal>
   )
 }
@@ -280,12 +280,12 @@ const SOURCE: Record<PushCheckResult['source'], string> = { builtin: 'built in',
 function PushChecksDialog({ d, close }: { d: Extract<NonNullable<ReturnType<typeof useStore.getState>['dialog']>, { kind: 'push-checks' }>; close: () => void }) {
   const failed = d.results.filter((r) => r.verdict === 'fail').length
   return (
-    <Modal open onClose={close} title={d.outcome === 'block' ? 'A pre-push check failed' : 'Pre-push checks'} width={560}>
-      <p className="mb-3 text-sm text-muted-foreground">
+    <Modal open onClose={close} title={d.outcome === 'block' ? 'A pre-push check failed' : 'Pre-push checks'} size="md">
+      <p className="text-sm text-muted-foreground">
         {d.label}. {failed ? `${failed} of ${d.results.length} check${d.results.length === 1 ? '' : 's'} failed.` : 'A blocking check could not be judged.'}
         {d.outcome === 'block' ? ' Nothing was pushed.' : ''}
       </p>
-      <div className="mb-4 max-h-80 overflow-y-auto" data-testid="push-checks">
+      <div className="max-h-80 overflow-y-auto" data-testid="push-checks">
         {d.results.map((r, i) => (
           <div key={i} className="border-b border-border/60 py-2 text-sm" data-testid="push-check" data-verdict={r.verdict}>
             <div className="flex items-center gap-2">
@@ -299,7 +299,7 @@ function PushChecksDialog({ d, close }: { d: Extract<NonNullable<ReturnType<type
           </div>
         ))}
       </div>
-      <div className="flex items-center gap-2">
+      <ModalFooter>
         <Button variant="ghost" onClick={() => useStore.setState({ dialog: { kind: 'push-rules', repoId: d.repoId } })}>Edit checks…</Button>
         {/* For the next push: the checks above were judged already. */}
         <AiTargetButton area="push-checks" />
@@ -308,7 +308,7 @@ function PushChecksDialog({ d, close }: { d: Extract<NonNullable<ReturnType<type
         <Button variant={d.outcome === 'block' ? 'danger' : 'primary'} onClick={() => { close(); d.onPush() }} data-testid="push-anyway">
           {d.outcome === 'block' ? 'Push anyway' : 'Push'}
         </Button>
-      </div>
+      </ModalFooter>
     </Modal>
   )
 }
@@ -329,20 +329,21 @@ function PushRulesDialog({ repoId, close }: { repoId: string; close: () => void 
     close()
   }
   return (
-    <Modal open onClose={close} title="Pre-push checks" width={600}>
-      <p className="mb-3 text-sm text-muted-foreground">
+    <Modal open onClose={close} title="Pre-push checks" size="md">
+      <p className="text-sm text-muted-foreground">
         Rules in plain words, checked by the AI against the commits you push. A failing Block check stops the push (you can still push anyway); Warn only tells you.
       </p>
       {repo.length > 0 && (
-        <div className="mb-3">
+        <div>
           <div className="mb-1 text-xs text-hint">From .coderabbit.yaml (edit the file to change these)</div>
           {repo.map((c, i) => (
             <div key={i} className="mb-1 rounded border border-border/60 px-2 py-1 text-xs"><span className="font-semibold">{c.name}</span> · {c.mode === 'block' ? 'blocks' : 'warns'}<div className="text-muted-foreground">{c.instructions}</div></div>
           ))}
         </div>
       )}
+      <div>
       <div className="mb-1 text-xs text-hint">Yours, for this repository</div>
-      <div className="mb-3 max-h-72 space-y-2 overflow-y-auto" data-testid="push-rules">
+      <div className="max-h-72 space-y-2 overflow-y-auto" data-testid="push-rules">
         {mine?.length === 0 && <p className="text-sm text-hint">None yet.</p>}
         {mine?.map((c, i) => (
           <div key={i} className="rounded-md border border-border p-2">
@@ -359,12 +360,13 @@ function PushRulesDialog({ repoId, close }: { repoId: string; close: () => void 
           </div>
         ))}
       </div>
-      <div className="flex gap-2">
+      </div>
+      <ModalFooter>
         <Button onClick={() => setMine((m) => [...(m ?? []), { name: '', instructions: '', mode: 'warn' }])} data-testid="push-rule-add">Add check</Button>
         <span className="flex-1" />
         <Button onClick={close}>Cancel</Button>
         <Button variant="primary" disabled={!mine} onClick={() => void save()} data-testid="push-rules-save">Save</Button>
-      </div>
+      </ModalFooter>
     </Modal>
   )
 }
@@ -384,12 +386,12 @@ function LfsLocksDialog({ repoId, close }: { repoId: string; close: () => void }
     confirmAction(`Unlock ${l.path}?`, `${l.owner || 'Someone'} holds this lock. If it is not yours, unlocking forces it and they may lose work.`, 'Unlock', () => go(true))
   }
   return (
-    <Modal open onClose={close} title="Git LFS locks" width={560}>
-      {error ? <p className="mb-3 text-sm text-destructive">{error}</p>
-        : locks === null ? <p className="mb-3 text-sm text-hint">Asking the server…</p>
-        : locks.length === 0 ? <p className="mb-3 text-sm text-hint">No files are locked.</p>
+    <Modal open onClose={close} title="Git LFS locks" size="md">
+      {error ? <p className="text-sm text-destructive">{error}</p>
+        : locks === null ? <p className="text-sm text-hint">Asking the server…</p>
+        : locks.length === 0 ? <p className="text-sm text-hint">No files are locked.</p>
         : (
-          <div className="mb-3 max-h-72 overflow-y-auto rounded-md border border-border" data-testid="lfs-locks">
+          <div className="max-h-72 overflow-y-auto rounded-md border border-border" data-testid="lfs-locks">
             {locks.map((l) => (
               <div key={l.id} className="flex h-8 items-center gap-2 px-2 text-sm">
                 <span className="min-w-0 flex-1 truncate font-mono text-xs">{l.path}</span>
@@ -399,7 +401,7 @@ function LfsLocksDialog({ repoId, close }: { repoId: string; close: () => void }
             ))}
           </div>
         )}
-      <div className="flex justify-end"><Button onClick={close}>Close</Button></div>
+      <ModalFooter><Button autoFocus onClick={close}>Close</Button></ModalFooter>
     </Modal>
   )
 }
@@ -423,7 +425,7 @@ function PickDialog({ d, close }: { d: Extract<NonNullable<ReturnType<typeof use
           else if (e.key === 'ArrowUp') { e.preventDefault(); setAt((a) => Math.max(a - 1, 0)) }
           else if (e.key === 'Enter' && shown[at]) { e.preventDefault(); pick(shown[at]!.value) }
         }}
-        className="mb-2 h-input w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus:border-primary" />
+        className="h-input w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus:border-primary" />
       <div className="max-h-72 overflow-y-auto" role="listbox">
         {shown.map((i, n) => (
           <div key={i.value} role="option" aria-selected={n === at} onMouseEnter={() => setAt(n)} onClick={() => pick(i.value)} data-testid="pick-item"
@@ -452,10 +454,10 @@ function InputDialog({ d, close }: { d: Extract<NonNullable<ReturnType<typeof us
       <form onSubmit={submit} className="space-y-3">
         <TextField autoFocus label={d.label} placeholder={d.placeholder} value={value} onChange={(e) => setValue(e.target.value)} data-testid="dialog-input" />
         {d.extra && <TextField label={d.extra.label} placeholder={d.extra.placeholder} value={extra} onChange={(e) => setExtra(e.target.value)} />}
-        <div className="flex justify-end gap-2">
+        <ModalFooter>
           <Button type="button" onClick={close}>Cancel</Button>
           <Button type="submit" variant="primary" disabled={!value.trim()} data-testid="dialog-submit">{d.confirm}</Button>
-        </div>
+        </ModalFooter>
       </form>
     </Modal>
   )
@@ -471,7 +473,7 @@ function CloneDialog({ close }: { close: () => void }) {
     if (await cloneRepo(url.trim(), dir)) close()
   }
   return (
-    <Modal open onClose={close} title="Clone a repository" width={520}>
+    <Modal open onClose={close} title="Clone a repository" size="md">
       <form onSubmit={submit} className="space-y-3">
         <TextField autoFocus label="URL" placeholder="https://github.com/owner/repo.git" value={url} onChange={(e) => setUrl(e.target.value)} />
         <div className="flex items-end gap-2">
@@ -479,10 +481,10 @@ function CloneDialog({ close }: { close: () => void }) {
           <Button type="button" onClick={async () => setDir((await api.pickDirectory()) ?? dir)}>Choose…</Button>
         </div>
         {progress && <div className="truncate font-mono text-xs text-muted-foreground">{progress}</div>}
-        <div className="flex justify-end gap-2">
+        <ModalFooter>
           <Button type="button" onClick={close}>Cancel</Button>
           <Button type="submit" variant="primary" disabled={!url.trim() || !dir || !!progress}>Clone</Button>
-        </div>
+        </ModalFooter>
       </form>
     </Modal>
   )
@@ -491,7 +493,7 @@ function CloneDialog({ close }: { close: () => void }) {
 function ShortcutsDialog({ close }: { close: () => void }) {
   const mod = modName()
   return (
-    <Modal open onClose={close} title="Keyboard shortcuts" width={520}>
+    <Modal open onClose={close} title="Keyboard shortcuts" size="md">
       <table className="w-full text-sm" data-testid="shortcuts">
         <tbody>
           {/* The live bindings, so rebinding in Settings → Keyboard shows up here too. */}
@@ -531,10 +533,10 @@ export function PromptDialog() {
       <form onSubmit={(e) => { e.preventDefault(); answer(value) }} className="space-y-3">
         <div className="flex items-start gap-2 text-sm text-muted-foreground"><KeyRound size={16} className="mt-0.5 shrink-0" />{prompt.message.trim()}</div>
         <TextField autoFocus type={prompt.secret ? 'password' : 'text'} value={value} onChange={(e) => setValue(e.target.value)} data-testid="prompt-input" />
-        <div className="flex justify-end gap-2">
+        <ModalFooter>
           <Button type="button" onClick={() => answer(null)}>Cancel</Button>
           <Button type="submit" variant="primary">Continue</Button>
-        </div>
+        </ModalFooter>
       </form>
     </Modal>
   )

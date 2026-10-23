@@ -193,28 +193,54 @@ export const DM = {
   ),
 }
 
-export function Modal({ open, onClose, title, children, width = 440, tall = false, onEscapeKeyDown }: {
-  open: boolean; onClose: () => void; title: string; children: ReactNode; width?: number
+/**
+ * One width per kind of dialog: `sm` 400 (a question, a prompt, one field), `md` 520 (a form, a
+ * list, a message with detail), `lg` 720 (something with code or a diff in it), `xl` 1120 (an
+ * editor, only the recompose workbench). The rhythm is on the 4 px grid: the title is text-base
+ * semibold, 12 px to the body, the body's blocks are 12 px apart (space-y-3), and the footer, with
+ * `ModalFooter`, sits 16 px under the body with its buttons at the right, the primary one last.
+ * Esc closes (Radix); Enter in a form submits it, and `onEnter` does the same for a dialog that
+ * has no form (it is not called from a text area or a button, where Enter means something else).
+ */
+export const MODAL_WIDTH = { sm: 400, md: 520, lg: 720, xl: 1120 } as const
+export type ModalSize = keyof typeof MODAL_WIDTH
+
+export function Modal({ open, onClose, title, children, size = 'sm', tall = false, onEscapeKeyDown, onEnter }: {
+  open: boolean; onClose: () => void; title: string; children: ReactNode; size?: ModalSize
   /** A big dialog (a whole editor): placed near the top so it has the height. */
   tall?: boolean
   /** Esc closes the dialog unless this calls preventDefault (to end something inside it first). */
   onEscapeKeyDown?: (e: KeyboardEvent) => void
+  /** Enter runs the dialog's primary action, for a dialog without a form. */
+  onEnter?: () => void
 }) {
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent
         showCloseButton={false}
         onEscapeKeyDown={onEscapeKeyDown}
-        style={{ width }}
+        onKeyDown={onEnter ? (e) => {
+          if (e.key !== 'Enter' || e.defaultPrevented || e.shiftKey) return
+          if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLButtonElement || e.target instanceof HTMLAnchorElement) return
+          e.preventDefault()
+          onEnter()
+        } : undefined}
+        data-size={size}
+        style={{ width: MODAL_WIDTH[size] }}
         // shadcn centres a dialog and caps it at sm:max-w-lg; ours sit near the top and choose their width.
         className={cn('block max-w-[94vw] translate-y-0 gap-0 p-4 sm:max-w-[94vw]', tall ? 'top-[5vh]' : 'top-[18%]')}
       >
-        <DialogTitle className="mb-3 text-base leading-normal">{title}</DialogTitle>
+        <DialogTitle className="mb-3 text-base leading-normal font-semibold">{title}</DialogTitle>
         <DialogDescription className="sr-only">{title}</DialogDescription>
-        {children}
+        <div className="space-y-3">{children}</div>
       </DialogContent>
     </Dialog>
   )
+}
+
+/** The buttons at the bottom of a dialog: right-aligned, the primary one last (put a left-hand tool first with `mr-auto`). */
+export function ModalFooter({ children, className }: { children: ReactNode; className?: string }) {
+  return <div className={cn('flex flex-wrap items-center justify-end gap-2 pt-1', className)}>{children}</div>
 }
 
 export function TextField({ label, className, ...props }: InputHTMLAttributes<HTMLInputElement> & { label?: string }) {

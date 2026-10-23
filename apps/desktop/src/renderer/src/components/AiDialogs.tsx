@@ -10,7 +10,7 @@ import { fileDiffRows } from '../lib/diffLayout'
 import { acceptFix, showFix } from '../lib/review'
 import { toast, useStore } from '../lib/store'
 import { RecomposeDialog } from './RecomposeDialog'
-import { Button, Modal, Spinner } from './ui'
+import { Button, Modal, Spinner, ModalFooter } from './ui'
 import { AiTargetButton } from './AiTargetButton'
 
 /** Every AI modal: consent, login, tool permission, streamed answers, conflict proposals. */
@@ -37,16 +37,16 @@ function ConsentDialog() {
   }
   return (
     <Modal open onClose={() => answer(false)} title={`Send to ${c.label}?`}>
-      <div className="text-sm" data-testid="ai-consent">
+      <div className="space-y-3 text-sm" data-testid="ai-consent">
         <p className="text-muted-foreground">
           To do this, GitGoose sends {c.what} to <b className="text-foreground">{c.label}</b>.
           {c.label === 'Anthropic API' ? ' It goes to Anthropic with your API key.' : ' The agent runs on this computer with its own login, and may send it to its provider.'}
         </p>
-        <p className="mt-2 text-xs text-hint">You are asked once for each agent or provider. Settings → AI turns AI features off.</p>
-        <div className="mt-4 flex justify-end gap-2">
+        <p className="text-xs text-hint">You are asked once for each agent or provider. Settings → AI turns AI features off.</p>
+        <ModalFooter>
           <Button onClick={() => answer(false)}>Cancel</Button>
           <Button variant="primary" autoFocus onClick={() => answer(true)} data-testid="ai-consent-ok">Continue</Button>
-        </div>
+        </ModalFooter>
       </div>
     </Modal>
   )
@@ -75,7 +75,7 @@ function LoginDialog() {
     }
   }
   return (
-    <Modal open onClose={() => done(false)} title={`Log in to ${l.agent}`} width={500}>
+    <Modal open onClose={() => done(false)} title={`Log in to ${l.agent}`} size="md">
       <div className="space-y-3 text-sm" data-testid="ai-login">
         <p className="text-muted-foreground">The agent needs you to log in. It keeps its own credentials; GitGoose never sees them.</p>
         {l.methods.map((m) => (
@@ -99,7 +99,7 @@ function LoginDialog() {
           </div>
         ))}
         {error && <div className="text-xs text-destructive">{error}</div>}
-        <div className="flex justify-end"><Button onClick={() => done(false)}>Cancel</Button></div>
+        <ModalFooter><Button onClick={() => done(false)}>Cancel</Button></ModalFooter>
       </div>
     </Modal>
   )
@@ -113,8 +113,8 @@ function PermissionDialog() {
   const label = (kind: string, name: string) =>
     kind === 'allow_once' ? 'Allow once' : kind === 'allow_always' ? 'Allow for this session' : name
   return (
-    <Modal open onClose={deny} title="The agent wants to use a tool" width={500}>
-      <div className="text-sm" data-testid="ai-permission">
+    <Modal open onClose={deny} title="The agent wants to use a tool" size="md">
+      <div className="space-y-3 text-sm" data-testid="ai-permission">
         <div className="flex items-start gap-2">
           <ShieldQuestion size={18} className="mt-0.5 shrink-0 text-warn" />
           <div className="min-w-0">
@@ -123,7 +123,7 @@ function PermissionDialog() {
             {p.paths.map((path) => <div key={path} className="selectable truncate font-mono text-xs text-muted-foreground" title={path}>{path}</div>)}
           </div>
         </div>
-        <div className="mt-4 flex flex-wrap justify-end gap-2">
+        <ModalFooter>
           <Button onClick={deny} autoFocus data-testid="ai-permission-deny">Deny</Button>
           {p.options.filter((o) => o.kind.startsWith('allow')).map((o) => (
             <Button key={o.optionId} variant={o.kind === 'allow_once' ? 'primary' : 'default'} onClick={() => answerPermission(p.permissionId, o.optionId)}
@@ -131,7 +131,7 @@ function PermissionDialog() {
               {label(o.kind, o.name)}
             </Button>
           ))}
-        </div>
+        </ModalFooter>
       </div>
     </Modal>
   )
@@ -145,20 +145,20 @@ function OutputDialog() {
     useAi.setState({ output: null })
   }
   return (
-    <Modal open onClose={close} title={o.title} width={560}>
-      <div data-testid="ai-output">
+    <Modal open onClose={close} title={o.title} size="md">
+      <div className="space-y-3" data-testid="ai-output">
         <div className="selectable max-h-[50vh] min-h-16 overflow-y-auto text-sm leading-relaxed whitespace-pre-wrap" data-testid="ai-output-text">
           {o.text || (o.requestId ? <span className="flex items-center gap-2 text-muted-foreground"><Spinner /> Thinking…</span> : null)}
         </div>
-        {o.error && <div className="mt-2 text-xs text-destructive" data-testid="ai-output-error">{o.error}</div>}
-        <div className="mt-4 flex items-center justify-between gap-2">
+        {o.error && <div className="text-xs text-destructive" data-testid="ai-output-error">{o.error}</div>}
+        <ModalFooter className="justify-between">
           <span className="flex items-center gap-1 text-2xs text-hint"><Sparkles size={11} /> AI-written; check it before acting on it.</span>
           <div className="flex items-center gap-2">
             <AiTargetButton area="error" />
             {o.requestId && <Button onClick={() => cancelAi(o.requestId!)}>Stop</Button>}
             <Button variant="primary" onClick={close}>Close</Button>
           </div>
-        </div>
+        </ModalFooter>
       </div>
     </Modal>
   )
@@ -219,16 +219,16 @@ function FixView({ fix }: { fix: NonNullable<ReturnType<typeof useAi.getState>['
   }
   const rows = fix.before !== null && fix.after !== null ? fileDiffRows(fix.before, fix.after) : []
   return (
-    <Modal open onClose={hide} title={`Fix: ${fix.title}`} width={760}>
-      <div className="text-sm" data-testid="ai-fix">
+    <Modal open onClose={hide} title={`Fix: ${fix.title}`} size="lg">
+      <div className="space-y-3 text-sm" data-testid="ai-fix">
         {fix.requestId && (
           <>
             <p className="flex items-center gap-2 text-muted-foreground"><Spinner /> Asking for a fix to {fix.path}…</p>
-            <p className="mt-2 text-xs text-hint">You can close this; the fix waits in the status bar.</p>
+            <p className="text-xs text-hint">You can close this; the fix waits in the status bar.</p>
           </>
         )}
         {fix.error && <p className="text-destructive">{fix.error}</p>}
-        {fix.note && <p className="mb-2 text-muted-foreground">{fix.note}</p>}
+        {fix.note && <p className="text-muted-foreground">{fix.note}</p>}
         {fix.after !== null && (
           <>
             {rows.length === 0 ? <p className="text-hint">The proposal is the same as the file: nothing to change.</p> : (
@@ -239,11 +239,11 @@ function FixView({ fix }: { fix: NonNullable<ReturnType<typeof useAi.getState>['
               </pre>
             )}
             {stale
-              ? <p className="mt-2 flex items-start gap-1 text-xs text-destructive" data-testid="ai-fix-stale"><CircleAlert size={12} className="mt-px shrink-0" /> {fix.path} has changed since this fix was asked for, so Use is off: it would overwrite those changes. Discard it and ask for a new fix.</p>
-              : <p className="mt-2 text-xs text-hint">Nothing has been written. Use writes {fix.path}; it is refused if the file changes meanwhile.</p>}
+              ? <p className="flex items-start gap-1 text-xs text-destructive" data-testid="ai-fix-stale"><CircleAlert size={12} className="mt-px shrink-0" /> {fix.path} has changed since this fix was asked for, so Use is off: it would overwrite those changes. Discard it and ask for a new fix.</p>
+              : <p className="text-xs text-hint">Nothing has been written. Use writes {fix.path}; it is refused if the file changes meanwhile.</p>}
           </>
         )}
-        <div className="mt-4 flex justify-end gap-2">
+        <ModalFooter>
           {fix.requestId ? (
             <>
               <Button onClick={discard} data-testid="ai-fix-stop">Stop</Button>
@@ -255,7 +255,7 @@ function FixView({ fix }: { fix: NonNullable<ReturnType<typeof useAi.getState>['
               <Button variant="primary" disabled={!rows.length || stale} onClick={() => void acceptFix()} data-testid="ai-fix-accept">Use this fix</Button>
             </>
           ) : <Button onClick={discard} data-testid="ai-fix-discard">Close</Button>}
-        </div>
+        </ModalFooter>
       </div>
     </Modal>
   )
@@ -295,27 +295,27 @@ function ProposalView({ p }: { p: NonNullable<ReturnType<typeof useAi.getState>[
     if (ok) toast({ kind: 'success', title: `Resolved ${p.path} with the agent's version` })
   }
   return (
-    <Modal open onClose={hide} title={`Proposed resolution for ${p.path}`} width={720}>
-      <div className="text-sm" data-testid="ai-proposal">
-        {p.note && <p className="mb-2 text-muted-foreground">{p.note}</p>}
+    <Modal open onClose={hide} title={`Proposed resolution for ${p.path}`} size="lg">
+      <div className="space-y-3 text-sm" data-testid="ai-proposal">
+        {p.note && <p className="text-muted-foreground">{p.note}</p>}
         <pre className="selectable max-h-[50vh] overflow-auto rounded border border-border bg-background p-2 font-mono text-xs" data-testid="ai-proposal-content">{p.content}</pre>
         {stale ? (
-          <p className="mt-2 flex items-start gap-1 text-xs text-destructive" data-testid="ai-proposal-stale">
+          <p className="flex items-start gap-1 text-xs text-destructive" data-testid="ai-proposal-stale">
             <CircleAlert size={12} className="mt-px shrink-0" />
             {stillConflicted ? `${p.path} has changed since this resolution was proposed` : `${p.path} is no longer in conflict`}, so Use is off: it would overwrite that. Discard it, and ask again if you still want help.
           </p>
         ) : (
-          <p className="mt-2 text-xs text-hint">
+          <p className="text-xs text-hint">
             Nothing has been written yet. Use it to write this file and mark it resolved, or discard it and keep resolving by hand.
           </p>
         )}
-        <div className="mt-4 flex justify-end gap-2">
+        <ModalFooter>
           <Button onClick={close} data-testid="ai-proposal-discard">Discard</Button>
           <Button variant="primary" disabled={markers > 0 || !repoOpen || stale} onClick={() => void accept()} data-testid="ai-proposal-accept"
             title={markers ? 'The proposal still has conflict markers' : undefined}>
             Use this resolution
           </Button>
-        </div>
+        </ModalFooter>
       </div>
     </Modal>
   )
