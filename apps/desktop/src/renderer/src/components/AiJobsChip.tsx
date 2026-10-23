@@ -23,17 +23,17 @@ export function AiJobsChip() {
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger asChild>
-        <button className={clsx('flex max-w-72 min-w-0 items-center gap-1 rounded px-1 hover:bg-hover hover:text-fg', !running.length && 'text-accent')}
+        <button className={clsx('flex max-w-72 min-w-0 items-center gap-1 rounded px-1 hover:bg-accent hover:text-foreground', !running.length && 'text-primary')}
           data-testid="ai-jobs" title="AI requests and answers">
           <Sparkles size={11} className="shrink-0" />
           {running.length ? <Spinner className="shrink-0" /> : null}
           <span className="truncate">{label}</span>
-          {running.length && ready ? <span className="shrink-0 text-accent">· {ready} ready</span> : null}
+          {running.length && ready ? <span className="shrink-0 text-primary">· {ready} ready</span> : null}
         </button>
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content side="top" align="end" sideOffset={6} data-testid="ai-jobs-list"
-          className="z-50 w-96 max-w-[94vw] rounded-md border border-line bg-raised p-1 text-sm shadow-xl shadow-black/30">
+          className="z-50 w-96 max-w-[94vw] rounded-md border border-border bg-popover p-1 text-sm shadow-xl shadow-black/30">
           {[...jobs].reverse().map((j) => <JobRow key={j.id} job={j} close={() => setOpen(false)} />)}
         </Popover.Content>
       </Popover.Portal>
@@ -44,13 +44,13 @@ export function AiJobsChip() {
 function JobRow({ job, close }: { job: AiJob; close: () => void }) {
   const repoName = useStore((s) => (s.tabs.length > 1 ? s.repos[job.repoId]?.snapshot.name : undefined))
   return (
-    <div className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-hover" data-testid="ai-job" data-status={job.status}>
+    <div className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-accent" data-testid="ai-job" data-status={job.status}>
       <span className="flex w-4 shrink-0 justify-center">
-        {job.status === 'running' ? <Spinner /> : job.status === 'error' ? <CircleAlert size={13} className="text-del" /> : <Sparkles size={13} className="text-accent" />}
+        {job.status === 'running' ? <Spinner /> : job.status === 'error' ? <CircleAlert size={13} className="text-destructive" /> : <Sparkles size={13} className="text-primary" />}
       </span>
       <div className="min-w-0 flex-1">
         <div className="truncate">{job.title}</div>
-        <div className="truncate text-2xs text-faint" title={job.error}>
+        <div className="truncate text-2xs text-muted-foreground/70" title={job.error}>
           {job.status === 'running' ? 'Working on it…' : job.status === 'error' ? job.error ?? 'Failed' : 'Ready'}
           {repoName ? ` · ${repoName}` : ''}
         </div>

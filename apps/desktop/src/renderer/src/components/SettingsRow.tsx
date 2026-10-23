@@ -19,10 +19,10 @@ export function SettingsRow({ label, description, children, testid, labelExtra, 
   last?: boolean
 }) {
   return (
-    <div className={clsx('grid grid-cols-[1fr_360px] items-center gap-x-6 py-3', last && 'border-b border-line')} data-testid={testid}>
+    <div className={clsx('grid grid-cols-[1fr_360px] items-center gap-x-6 py-3', last && 'border-b border-border')} data-testid={testid}>
       <div className="min-w-0">
         <div className="flex items-center gap-2 text-sm font-medium">{label}{labelExtra}</div>
-        {description && <div className="mt-0.5 text-xs text-muted">{description}</div>}
+        {description && <div className="mt-0.5 text-xs text-muted-foreground">{description}</div>}
       </div>
       {children !== undefined && <div className="flex w-[360px] min-w-0 items-center" data-control>{children}</div>}
     </div>

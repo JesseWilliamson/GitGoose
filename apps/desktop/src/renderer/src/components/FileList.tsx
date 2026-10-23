@@ -12,11 +12,11 @@ const BADGE: Record<string, { letter: string; cls: string; title: string }> = {
   added: { letter: 'A', cls: 'text-add', title: 'Added' },
   untracked: { letter: 'U', cls: 'text-add', title: 'Untracked' },
   modified: { letter: 'M', cls: 'text-warn', title: 'Modified' },
-  deleted: { letter: 'D', cls: 'text-del', title: 'Deleted' },
-  renamed: { letter: 'R', cls: 'text-accent', title: 'Renamed' },
-  copied: { letter: 'C', cls: 'text-accent', title: 'Copied' },
+  deleted: { letter: 'D', cls: 'text-destructive', title: 'Deleted' },
+  renamed: { letter: 'R', cls: 'text-primary', title: 'Renamed' },
+  copied: { letter: 'C', cls: 'text-primary', title: 'Copied' },
   typechange: { letter: 'T', cls: 'text-warn', title: 'Type changed' },
-  unmerged: { letter: '!', cls: 'text-del', title: 'Conflicted' },
+  unmerged: { letter: '!', cls: 'text-destructive', title: 'Conflicted' },
 }
 
 /** Porcelain status letter (M, A, D, R...) to a change kind. */
@@ -65,12 +65,12 @@ export function FileRow({ path, oldPath, kind, selected, onClick, actions, stats
       onDragStart={drag ? (e) => startDrag(e.dataTransfer, drag) : undefined}
       title={oldPath ? `${oldPath} → ${path}` : path}
       style={tree ? { paddingLeft: 12 + (depth ?? 0) * 14 + 16 } : undefined}
-      className={clsx('group flex h-row cursor-default items-center gap-2 px-3 text-sm', selected ? 'bg-select' : 'hover:bg-hover')}
+      className={clsx('group flex h-row cursor-default items-center gap-2 px-3 text-sm', selected ? 'bg-select' : 'hover:bg-accent')}
     >
       <span className={clsx('w-3 shrink-0 text-center font-mono text-2xs font-bold', b.cls)} title={b.title}>{b.letter}</span>
       <span className="min-w-0 flex-1 truncate">
         <span>{name}</span>
-        {dir && !tree && <span className="ml-1.5 text-xs text-faint">{dir}</span>}
+        {dir && !tree && <span className="ml-1.5 text-xs text-muted-foreground/70">{dir}</span>}
       </span>
       {stats}
       {actions && <span className="hidden shrink-0 items-center gap-1 group-hover:flex">{actions}</span>}
@@ -128,11 +128,11 @@ export function FileListView<T>({ items, pathOf, filter, renderFile, folderActio
       ) : (
         <div key={`dir:${r.path}`} onClick={() => toggle(r.path)} data-testid={testId ? `${testId}-folder` : undefined} data-path={r.path}
           style={{ paddingLeft: 12 + r.depth * 14 }}
-          className="group flex h-row cursor-default items-center gap-1.5 pr-3 text-sm hover:bg-hover">
-          {collapsed.has(r.path) ? <ChevronRight size={12} className="text-faint" /> : <ChevronDown size={12} className="text-faint" />}
-          <Folder size={13} className="shrink-0 text-faint" />
+          className="group flex h-row cursor-default items-center gap-1.5 pr-3 text-sm hover:bg-accent">
+          {collapsed.has(r.path) ? <ChevronRight size={12} className="text-muted-foreground/70" /> : <ChevronDown size={12} className="text-muted-foreground/70" />}
+          <Folder size={13} className="shrink-0 text-muted-foreground/70" />
           <span className="min-w-0 flex-1 truncate">{r.name}</span>
-          <span className="text-2xs text-faint">{r.files.length}</span>
+          <span className="text-2xs text-muted-foreground/70">{r.files.length}</span>
           {folderActions && <span className="hidden shrink-0 items-center gap-1 group-hover:flex" onClick={(e) => e.stopPropagation()}>{folderActions(r.files)}</span>}
         </div>
       ))}
@@ -144,13 +144,13 @@ export function FileListView<T>({ items, pathOf, filter, renderFile, folderActio
 export function FileListTools({ filter, onFilter }: { filter: string; onFilter: (f: string) => void }) {
   const tree = useSetting('fileTree')
   return (
-    <div className="flex items-center gap-1 border-b border-line px-2 py-1">
-      <Search size={12} className="ml-1 shrink-0 text-faint" />
+    <div className="flex items-center gap-1 border-b border-border px-2 py-1">
+      <Search size={12} className="ml-1 shrink-0 text-muted-foreground/70" />
       <input value={filter} onChange={(e) => onFilter(e.target.value)} placeholder="Filter files" data-testid="file-filter"
         onKeyDown={(e) => { if (e.key === 'Escape') onFilter('') }}
         className="h-6 min-w-0 flex-1 bg-transparent px-1 text-xs outline-none" />
       <button onClick={() => void saveSettings({ fileTree: !tree })} title={tree ? 'Show as a list' : 'Show as a tree'} aria-label={tree ? 'Show as a list' : 'Show as a tree'}
-        data-testid="file-tree-toggle" className="rounded p-1 text-faint hover:bg-hover hover:text-fg">
+        data-testid="file-tree-toggle" className="rounded p-1 text-muted-foreground/70 hover:bg-accent hover:text-foreground">
         {tree ? <List size={13} /> : <ListTree size={13} />}
       </button>
     </div>

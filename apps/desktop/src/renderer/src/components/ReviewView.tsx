@@ -11,10 +11,10 @@ import { ModelPicker } from './ModelPicker'
 import { PromptButton } from './PromptPanel'
 
 export const SEVERITY_STYLE: Record<FindingSeverity, string> = {
-  critical: 'bg-del text-white',
-  major: 'bg-del/15 text-del',
+  critical: 'bg-destructive text-white',
+  major: 'bg-destructive/15 text-destructive',
   minor: 'bg-warn/15 text-warn',
-  nit: 'bg-hover text-muted',
+  nit: 'bg-accent text-muted-foreground',
 }
 
 /**
@@ -40,11 +40,11 @@ export function ReviewView({ view }: { view: RepoView }) {
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col" data-testid="review">
-      <div className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-panel px-4">
-        <Sparkles size={18} className="text-accent" />
+      <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-card px-4">
+        <Sparkles size={18} className="text-primary" />
         <div className="min-w-0 flex-1">
           <div className="text-base font-semibold">Review: {result?.label ?? 'running…'}</div>
-          <div className="truncate text-xs text-muted">
+          <div className="truncate text-xs text-muted-foreground">
             {r.requestId ? 'Reading the change…' : r.error ? 'The review failed.'
               : findings.length ? counts.map(([s, n]) => `${n} ${s}`).join(' · ') : 'No findings.'}
             {` · ${r.profile} profile`}
@@ -59,10 +59,10 @@ export function ReviewView({ view }: { view: RepoView }) {
       </div>
       <div className="flex min-h-0 flex-1">
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-        {r.error && <div className="m-4 rounded-md border border-del/40 bg-del/10 p-3 text-sm text-del">{r.error}</div>}
-        {result?.summary && <p className="selectable mx-4 mt-4 text-sm text-muted" data-testid="review-summary">{result.summary}</p>}
+        {r.error && <div className="m-4 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{r.error}</div>}
+        {result?.summary && <p className="selectable mx-4 mt-4 text-sm text-muted-foreground" data-testid="review-summary">{result.summary}</p>}
         {result?.incremental && (
-          <div className="mx-4 mt-2 text-xs text-muted" data-testid="review-incremental">
+          <div className="mx-4 mt-2 text-xs text-muted-foreground" data-testid="review-incremental">
             Re-review: {result.incremental.sent} changed piece{result.incremental.sent === 1 ? '' : 's'} sent, {result.incremental.unchanged} unchanged.
             {result.incremental.addressed.length > 0 && (
               <span data-testid="review-addressed"> Addressed since last time: {result.incremental.addressed.map((a) => `${a.title} (${a.path})`).join('; ')}.</span>
@@ -70,11 +70,11 @@ export function ReviewView({ view }: { view: RepoView }) {
           </div>
         )}
         {result && (
-          <p className="mx-4 mt-2 text-xs text-faint" data-testid="review-context">
+          <p className="mx-4 mt-2 text-xs text-muted-foreground/70" data-testid="review-context">
             {result.context.guidelines.length ? `Followed ${result.context.guidelines.join(', ')}` : 'No guideline files (CLAUDE.md, AGENTS.md, …) cover these files'}
             {result.context.pathInstructions.length ? ` · path instructions for ${result.context.pathInstructions.join(', ')}` : ''}
             {` · ${result.context.learnings} learning${result.context.learnings === 1 ? '' : 's'} · `}
-            <button className="text-accent hover:underline" onClick={() => useStore.setState({ dialog: { kind: 'learnings', repoId: view.id } })}>Manage learnings</button>
+            <button className="text-primary hover:underline" onClick={() => useStore.setState({ dialog: { kind: 'learnings', repoId: view.id } })}>Manage learnings</button>
             {result.context.commits ? ` · ${result.context.commits} commit message${result.context.commits === 1 ? '' : 's'}` : ''}
             {result.context.code && (
               <span data-testid="review-code-context" title={result.context.code.source === 'graph' ? 'Parsed by the code graph' : 'The code graph was not ready: line patterns and text search were used'}>
@@ -88,34 +88,34 @@ export function ReviewView({ view }: { view: RepoView }) {
                   : l.status === 'failed' ? <span className="text-warn">failed{l.note ? `: ${l.note}` : ''}</span>
                   : `skipped (${l.note})`}
                 {l.status === 'skipped' && l.note?.startsWith('you chose') && (
-                  <> <button className="text-accent hover:underline" onClick={() => void api.decideLinter(view.id, l.command, null).then(() => toast({ kind: 'info', title: `The next review will ask about ${l.name} again.` }))}>Ask again</button></>
+                  <> <button className="text-primary hover:underline" onClick={() => void api.decideLinter(view.id, l.command, null).then(() => toast({ kind: 'info', title: `The next review will ask about ${l.name} again.` }))}>Ask again</button></>
                 )}
               </span>
             ))}
           </p>
         )}
-        {result && !findings.length && !r.error && <p className="mx-4 mt-4 text-sm text-faint">Nothing to report{result.findings.length ? ' (all dismissed)' : ''}.</p>}
+        {result && !findings.length && !r.error && <p className="mx-4 mt-4 text-sm text-muted-foreground/70">Nothing to report{result.findings.length ? ' (all dismissed)' : ''}.</p>}
         {[...byFile].map(([path, list]) => (
           <section key={path} className="mx-4 mt-4">
-            <h3 className="mb-2 font-mono text-xs text-muted">{path}</h3>
+            <h3 className="mb-2 font-mono text-xs text-muted-foreground">{path}</h3>
             {list.map((f) => (
               <div key={f.id} ref={r.focus === f.id ? focused : undefined} data-testid="finding" data-severity={f.severity}
-                className={clsx('mb-2 rounded-md border bg-panel p-3', r.focus === f.id ? 'border-accent' : 'border-line')}>
+                className={clsx('mb-2 rounded-md border bg-card p-3', r.focus === f.id ? 'border-primary' : 'border-border')}>
                 <div className="flex items-center gap-2">
                   <span className={clsx('rounded px-1.5 text-2xs font-semibold uppercase', SEVERITY_STYLE[f.severity])}>{f.severity}</span>
-                  <span className="text-2xs text-faint">{f.type}</span>
-                  {f.source && <span className="rounded border border-line px-1 text-2xs text-muted" data-testid="finding-source" title={f.source === 'scan' ? "Found by GitGoose's built-in secret scan, not the AI" : 'Reported by a linter, not the AI'}>{f.tool}</span>}
-                  {f.status && <span className={clsx('text-2xs', f.status === 'new' ? 'text-accent' : 'text-faint')} data-testid="finding-status">{f.status === 'new' ? 'new' : 'still open'}</span>}
-                  {f.fromChat && <span className="rounded bg-accent/15 px-1 text-2xs text-accent" data-testid="finding-from-chat" title="Applied from the chat beside the review">from chat</span>}
+                  <span className="text-2xs text-muted-foreground/70">{f.type}</span>
+                  {f.source && <span className="rounded border border-border px-1 text-2xs text-muted-foreground" data-testid="finding-source" title={f.source === 'scan' ? "Found by GitGoose's built-in secret scan, not the AI" : 'Reported by a linter, not the AI'}>{f.tool}</span>}
+                  {f.status && <span className={clsx('text-2xs', f.status === 'new' ? 'text-primary' : 'text-muted-foreground/70')} data-testid="finding-status">{f.status === 'new' ? 'new' : 'still open'}</span>}
+                  {f.fromChat && <span className="rounded bg-primary/15 px-1 text-2xs text-primary" data-testid="finding-from-chat" title="Applied from the chat beside the review">from chat</span>}
                   <span className="min-w-0 flex-1 truncate text-sm font-semibold">{f.title}</span>
-                  <button className="font-mono text-2xs text-accent hover:underline" onClick={() => open(f)} title="Show in the diff">
+                  <button className="font-mono text-2xs text-primary hover:underline" onClick={() => open(f)} title="Show in the diff">
                     lines {f.startLine}{f.endLine !== f.startLine ? `-${f.endLine}` : ''}
                   </button>
                 </div>
                 <p className="selectable mt-1.5 text-sm whitespace-pre-wrap">{f.message}</p>
                 {f.suggestion !== undefined && (
-                  <pre className="selectable mt-2 overflow-x-auto rounded border border-line bg-bg p-2 font-mono text-xs" data-testid="suggestion">
-                    {(f.original ?? []).map((l, i) => <div key={`o${i}`} className="text-del">- {l}</div>)}
+                  <pre className="selectable mt-2 overflow-x-auto rounded border border-border bg-background p-2 font-mono text-xs" data-testid="suggestion">
+                    {(f.original ?? []).map((l, i) => <div key={`o${i}`} className="text-destructive">- {l}</div>)}
                     {f.suggestion.split('\n').map((l, i) => <div key={`n${i}`} className="text-add">+ {l}</div>)}
                   </pre>
                 )}
@@ -131,11 +131,11 @@ export function ReviewView({ view }: { view: RepoView }) {
           </section>
         ))}
         {result && (result.dropped.length > 0 || result.skipped.length > 0) && (
-          <div className="mx-4 my-4 text-xs text-faint">
+          <div className="mx-4 my-4 text-xs text-muted-foreground/70">
             {result.skipped.length > 0 && <p>Not reviewed (over the size limit): {result.skipped.join(', ')}.</p>}
             {result.dropped.length > 0 && (
               <>
-                <button className="hover:text-fg" onClick={() => setShowDropped(!showDropped)} data-testid="dropped-toggle">
+                <button className="hover:text-foreground" onClick={() => setShowDropped(!showDropped)} data-testid="dropped-toggle">
                   {result.dropped.length} finding{result.dropped.length === 1 ? ' was' : 's were'} thrown out by verification {showDropped ? '▾' : '▸'}
                 </button>
                 {showDropped && (

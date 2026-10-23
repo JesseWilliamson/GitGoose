@@ -55,7 +55,7 @@ export function AiPanel() {
                   </span>
                 )}
                 {test?.error && (
-                  <pre className="selectable mt-1 max-h-32 overflow-auto rounded bg-bg p-2 text-2xs whitespace-pre-wrap text-del" data-testid="ai-test-error">{test.error}</pre>
+                  <pre className="selectable mt-1 max-h-32 overflow-auto rounded bg-background p-2 text-2xs whitespace-pre-wrap text-destructive" data-testid="ai-test-error">{test.error}</pre>
                 )}
               </>
             }>
@@ -72,7 +72,7 @@ export function AiPanel() {
             description={
               <>
                 {status.hasApiKey ? 'An Anthropic API key is saved.' : 'Paste an Anthropic API key (console.anthropic.com → API keys).'}
-                <span className="mt-1 block text-faint">Text features only: resolving conflicts needs an agent, because it edits a file.</span>
+                <span className="mt-1 block text-muted-foreground/70">Text features only: resolving conflicts needs an agent, because it edits a file.</span>
                 {status.keyInMemoryOnly && (
                   <span className="mt-1 flex items-start gap-1.5 text-warn">
                     <CircleAlert size={13} className="mt-px shrink-0" /> No system keychain was found: the key is kept until GitGoose quits.
@@ -91,7 +91,7 @@ export function AiPanel() {
                 })
               }}>
                 <Input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="sk-ant-…" autoComplete="off" spellCheck={false}
-                  aria-label="API key" data-testid="ai-api-key" className="h-8 flex-1 bg-bg font-mono text-xs md:text-xs dark:bg-bg" />
+                  aria-label="API key" data-testid="ai-api-key" className="h-8 flex-1 bg-background font-mono text-xs md:text-xs dark:bg-background" />
                 <Button variant="primary" type="submit" disabled={!key.trim()}>Save</Button>
               </form>
             )}

@@ -22,7 +22,7 @@ import { PaneDropZones, SlotView } from './Pane'
  */
 
 const MIN: Record<Slot, number> = { left: 160, right: 260, bottom: 160 }
-const SEPARATOR = 'bg-line transition-colors hover:bg-accent data-[separator-state=drag]:bg-accent'
+const SEPARATOR = 'bg-border transition-colors hover:bg-primary data-[separator-state=drag]:bg-primary'
 
 export function Workspace({ view }: { view: RepoView }) {
   const layout = useSetting('layout')

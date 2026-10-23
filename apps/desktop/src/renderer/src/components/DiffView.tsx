@@ -48,10 +48,10 @@ export function FileView({ view, target, mode }: { view: RepoView; target: DiffT
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col" data-testid="file-view">
-      <div className="flex h-10 shrink-0 items-center gap-3 border-b border-line bg-panel px-3">
+      <div className="flex h-10 shrink-0 items-center gap-3 border-b border-border bg-card px-3">
         <div className="min-w-0 flex-1 truncate text-sm">
-          <span className="text-faint">{dir}</span><span className="font-semibold">{name}</span>
-          <span className="ml-2 text-xs text-muted">{where}</span>
+          <span className="text-muted-foreground/70">{dir}</span><span className="font-semibold">{name}</span>
+          <span className="ml-2 text-xs text-muted-foreground">{where}</span>
         </div>
         {rev && <RevisionMenu view={view} rev={rev} path={target.path} />}
         {mode === 'diff' && target.kind !== 'untracked' && (
@@ -60,24 +60,24 @@ export function FileView({ view, target, mode }: { view: RepoView; target: DiffT
           </Button>
         )}
         {mode === 'diff' && (
-          <div className="flex rounded-md border border-line p-0.5 text-xs" role="group" aria-label="Diff layout">
+          <div className="flex rounded-md border border-border p-0.5 text-xs" role="group" aria-label="Diff layout">
             {(['unified', 'split'] as const).map((l) => (
               <button key={l} onClick={() => void saveSettings({ diffLayout: l })} data-testid={`layout-${l}`} aria-pressed={layout === l}
-                className={clsx('rounded px-2 py-0.5', layout === l ? 'bg-accent text-accent-fg' : 'text-muted hover:text-fg')}>
+                className={clsx('rounded px-2 py-0.5', layout === l ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground')}>
                 {l === 'unified' ? 'Unified' : 'Split'}
               </button>
             ))}
           </div>
         )}
-        <div className="flex rounded-md border border-line p-0.5 text-xs">
+        <div className="flex rounded-md border border-border p-0.5 text-xs">
           {(['diff', 'history', 'blame'] as const).map((m) => (
             <button key={m} onClick={() => setMode(m)}
-              className={clsx('rounded px-2 py-0.5 capitalize', mode === m ? 'bg-accent text-accent-fg' : 'text-muted hover:text-fg')}>
+              className={clsx('rounded px-2 py-0.5 capitalize', mode === m ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground')}>
               {m}
             </button>
           ))}
         </div>
-        <button onClick={close} title="Close (Esc)" className="rounded p-1 text-muted hover:bg-hover hover:text-fg"><X size={16} /></button>
+        <button onClick={close} title="Close (Esc)" className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"><X size={16} /></button>
       </div>
       {mode === 'diff' && <DiffPane view={view} target={target} />}
       {mode === 'history' && <HistoryPane view={view} path={target.path} />}
@@ -200,7 +200,7 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
         e.stopPropagation()
         updateRepo(view.id, (v) => (v.review ? { review: { ...v.review, focus: f.id }, center: { kind: 'review' } } : {}))
       }}
-      className={clsx('absolute inset-y-0 left-0 w-1 cursor-pointer', f.severity === 'critical' || f.severity === 'major' ? 'bg-del' : f.severity === 'minor' ? 'bg-warn' : 'bg-faint')} />
+      className={clsx('absolute inset-y-0 left-0 w-1 cursor-pointer', f.severity === 'critical' || f.severity === 'major' ? 'bg-destructive' : f.severity === 'minor' ? 'bg-warn' : 'bg-muted-foreground/70')} />
   )
   /** The name Code Peek shows (Ctrl/Cmd+click in the diff), or null. */
   const [peek, setPeek] = useState<string | null>(null)
@@ -240,8 +240,8 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
   })
   useEffect(() => virt.measure(), [lineH, wrap, split, virt])
 
-  if (diff === undefined) return <div className="flex flex-1 items-center justify-center text-faint"><Spinner /></div>
-  if (diff === null) return <div className="flex flex-1 items-center justify-center text-sm text-faint">No changes to show</div>
+  if (diff === undefined) return <div className="flex flex-1 items-center justify-center text-muted-foreground/70"><Spinner /></div>
+  if (diff === null) return <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground/70">No changes to show</div>
 
   // Line and hunk staging work on the diff as shown; with whitespace hidden, the patch would
   // carry changes the user never saw, so it is switched off (whole-file staging still works).
@@ -279,12 +279,12 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
     <div className="flex items-center gap-2">
       {selectedCount > 0 && (
         <>
-          <span className="text-xs text-muted">{selectedCount} {selectedCount === 1 ? 'line' : 'lines'} selected</span>
+          <span className="text-xs text-muted-foreground">{selectedCount} {selectedCount === 1 ? 'line' : 'lines'} selected</span>
           {target.kind !== 'staged' && <Button size="sm" variant="primary" data-testid="stage-lines" onClick={() => apply('stage', selectionHunks())}>Stage lines</Button>}
           {target.kind === 'staged' && <Button size="sm" variant="primary" onClick={() => apply('unstage', selectionHunks())}>Unstage lines</Button>}
           {target.kind === 'unstaged' && <Button size="sm" onClick={() => apply('discard', selectionHunks())}>Discard lines</Button>}
           <Button size="sm" variant="ghost" onClick={() => setSel(new Map())}>Clear</Button>
-          <span className="mx-1 h-4 w-px bg-line" />
+          <span className="mx-1 h-4 w-px bg-border" />
         </>
       )}
       {target.kind !== 'staged' ? (
@@ -306,18 +306,18 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       {(fileActions || diff.oldPath || isSvg) && (
-        <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-line px-3 text-xs">
+        <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border px-3 text-xs">
           {isSvg && (
             <div className="flex shrink-0 items-center gap-1" data-testid="svg-view">
               {(['image', 'text'] as SvgView[]).map((v) => (
                 <button key={v} onClick={() => pickSvgView(v)} aria-pressed={svgView === v}
-                  className={clsx('rounded px-2 py-1', svgView === v ? 'bg-select font-medium' : 'text-muted hover:bg-hover')}>
+                  className={clsx('rounded px-2 py-1', svgView === v ? 'bg-select font-medium' : 'text-muted-foreground hover:bg-accent')}>
                   {v === 'image' ? 'Image' : 'Text'}
                 </button>
               ))}
             </div>
           )}
-          <span className="min-w-0 flex-1 truncate text-muted" data-testid="diff-hint">
+          <span className="min-w-0 flex-1 truncate text-muted-foreground" data-testid="diff-hint">
             {diff.oldPath ? `Renamed from ${diff.oldPath}` : asImage ? '' : editable ? `Click lines to select them; shift-click for a range; ${modName()}+click a name to peek.`
               : editable === false && ignoreWhitespace && target.kind !== 'commit' && target.kind !== 'range' ? 'Whitespace changes are hidden, so line and hunk staging are off (Settings → Diff).' : ''}
           </span>
@@ -327,9 +327,9 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
       {asImage ? (
         <ImageDiff repoId={view.id} target={target} path={target.path} />
       ) : diff.binary ? (
-        <div className="flex flex-1 items-center justify-center text-sm text-faint">Binary file</div>
+        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground/70">Binary file</div>
       ) : diff.hunks.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center text-sm text-faint">{diff.change === 'added' ? 'Empty file' : 'Only the file mode changed'}</div>
+        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground/70">{diff.change === 'added' ? 'Empty file' : 'Only the file mode changed'}</div>
       ) : (
         <div ref={scrollRef} className="selectable min-h-0 flex-1 overflow-auto" style={CODE_STYLE} data-testid="diff-lines"
           onMouseDownCapture={(e) => {
@@ -350,7 +350,7 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
               const hunk = diff.hunks[it.hunk]!
               if (it.kind === 'hunk') {
                 return (
-                  <div key={vi.key} ref={wrap ? virt.measureElement : undefined} data-index={vi.index} style={style} className="flex items-center gap-2 border-y border-line/50 bg-panel pr-3 pl-2 text-faint">
+                  <div key={vi.key} ref={wrap ? virt.measureElement : undefined} data-index={vi.index} style={style} className="flex items-center gap-2 border-y border-border/50 bg-card pr-3 pl-2 text-muted-foreground/70">
                     <span className="sticky left-2 truncate">@@ -{hunk.oldStart},{hunk.oldLines} +{hunk.newStart},{hunk.newLines} @@ {hunk.section}</span>
                     {editable && (
                       <span className="sticky right-3 ml-auto flex gap-1 font-sans">
@@ -369,16 +369,16 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
               }
               if (it.kind === 'row') {
                 const half = (li: number | null, side: 'left' | 'right') => {
-                  if (li === null) return <div className={clsx('flex w-1/2 min-w-0 bg-panel/40', side === 'right' && 'border-l border-line')} />
+                  if (li === null) return <div className={clsx('flex w-1/2 min-w-0 bg-card/40', side === 'right' && 'border-l border-border')} />
                   const l = hunk.lines[li]!
                   const selected = sel.get(it.hunk)?.has(li) ?? false
                   return (
                     <div data-testid="diff-cell" data-kind={l.kind} data-side={side} data-new={side === 'right' ? l.newNo : undefined}
                       onMouseDown={(e) => { if (l.kind !== ' ' && e.button === 0 && e.detail === 1) { e.preventDefault(); toggle(it.hunk, li, e.shiftKey) } }}
-                      className={clsx('flex w-1/2 min-w-0 whitespace-pre-wrap break-all', side === 'right' && 'border-l border-line',
+                      className={clsx('flex w-1/2 min-w-0 whitespace-pre-wrap break-all', side === 'right' && 'border-l border-border',
                         l.kind === '+' && 'bg-add-bg', l.kind === '-' && 'bg-del-bg', l.kind !== ' ' && editable && 'cursor-pointer',
-                        selected && 'ring-1 ring-accent ring-inset brightness-125')}>
-                      <span className={clsx('relative w-10 shrink-0 pr-1 text-right text-faint', selected && 'bg-select')}>
+                        selected && 'ring-1 ring-primary ring-inset brightness-125')}>
+                      <span className={clsx('relative w-10 shrink-0 pr-1 text-right text-muted-foreground/70', selected && 'bg-select')}>
                         {side === 'right' && marker(findingAt(l.newNo))}
                         {side === 'left' ? (l.oldNo ?? '') : (l.newNo ?? '')}
                       </span>
@@ -402,12 +402,12 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
                   onDoubleClick={() => { if (target.kind !== 'commit') void openInEditor(`${view.snapshot.path}/${target.path}`, line.newNo ?? line.oldNo ?? 1) }}
                   title={target.kind !== 'commit' ? 'Double-click to open in your editor at this line' : undefined}
                   className={clsx('flex', wrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre', line.kind === '+' && 'bg-add-bg', line.kind === '-' && 'bg-del-bg',
-                    line.kind !== ' ' && editable && 'cursor-pointer', selected && 'ring-1 ring-accent ring-inset brightness-125')}>
-                  <span className={clsx('sticky left-0 flex w-[84px] shrink-0 self-stretch bg-bg text-right text-faint', selected && 'bg-select')}>
+                    line.kind !== ' ' && editable && 'cursor-pointer', selected && 'ring-1 ring-primary ring-inset brightness-125')}>
+                  <span className={clsx('sticky left-0 flex w-[84px] shrink-0 self-stretch bg-background text-right text-muted-foreground/70', selected && 'bg-select')}>
                     {line.kind !== '-' && marker(findingAt(line.newNo))}
                     <span className="w-9 pr-1">{line.oldNo ?? ''}</span>
                     <span className="w-9 pr-1">{line.newNo ?? ''}</span>
-                    <span className={clsx('w-3 text-center', line.kind === '+' && 'text-add', line.kind === '-' && 'text-del')}>{line.kind === ' ' ? '' : line.kind}</span>
+                    <span className={clsx('w-3 text-center', line.kind === '+' && 'text-add', line.kind === '-' && 'text-destructive')}>{line.kind === ' ' ? '' : line.kind}</span>
                   </span>
                   <span className="min-w-0 pr-4 pl-2">{textOf(it.line)}</span>
                 </div>
@@ -418,7 +418,7 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
       )}
       {selLines && (
         <button onMouseDown={(e) => e.preventDefault()} onClick={askAboutSelection} data-testid="ask-selection"
-          className="absolute top-12 right-5 z-10 flex items-center gap-1.5 rounded-full border border-accent/40 bg-raised px-3 py-1 text-xs font-medium text-accent shadow-lg">
+          className="absolute top-12 right-5 z-10 flex items-center gap-1.5 rounded-full border border-primary/40 bg-popover px-3 py-1 text-xs font-medium text-primary shadow-lg">
           <MessageCircleQuestion size={13} /> Ask about line{selLines.end > selLines.start ? `s ${selLines.start}-${selLines.end}` : ` ${selLines.start}`}
         </button>
       )}
@@ -437,9 +437,9 @@ function LineText({ text, tokens, ranges, kind, noNewline }: {
     <>
       {segs.map((s, k) => (
         <span key={k} style={{ color: s.color }} data-changed={s.changed || undefined}
-          className={s.changed ? (kind === '+' ? 'rounded-sm bg-add/30' : 'rounded-sm bg-del/30') : undefined}>{s.text}</span>
+          className={s.changed ? (kind === '+' ? 'rounded-sm bg-add/30' : 'rounded-sm bg-destructive/30') : undefined}>{s.text}</span>
       ))}
-      {noNewline && <span className="ml-2 text-faint" title="No newline at end of file">⏎̸</span>}
+      {noNewline && <span className="ml-2 text-muted-foreground/70" title="No newline at end of file">⏎̸</span>}
     </>
   )
 }
@@ -470,21 +470,21 @@ function HistoryPane({ view, path }: { view: RepoView; path: string }) {
     setCommits(null)
     api.fileHistory(view.id, path).then(setCommits, (e) => reportError('Could not load history', e))
   }, [view.id, path])
-  if (!commits) return <div className="flex flex-1 items-center justify-center text-faint"><Spinner /></div>
+  if (!commits) return <div className="flex flex-1 items-center justify-center text-muted-foreground/70"><Spinner /></div>
   return (
     <div className="min-h-0 flex-1 overflow-y-auto" data-testid="file-history">
-      {commits.length === 0 && <div className="p-4 text-sm text-faint">No commits touch this file yet.</div>}
+      {commits.length === 0 && <div className="p-4 text-sm text-muted-foreground/70">No commits touch this file yet.</div>}
       {commits.map((c) => (
         <button key={c.hash}
           onClick={() => {
             updateRepo(view.id, { selected: { kind: 'commit', hash: c.hash }, center: { kind: 'file', target: { kind: 'commit', hash: c.hash, path }, mode: 'diff' } })
             void ensureLoaded(view.id, c.hash)
           }}
-          className="flex w-full items-center gap-3 border-b border-line/50 px-4 py-2 text-left text-sm hover:bg-hover">
-          <span className="font-mono text-xs text-faint">{shortHash(c.hash)}</span>
+          className="flex w-full items-center gap-3 border-b border-border/50 px-4 py-2 text-left text-sm hover:bg-accent">
+          <span className="font-mono text-xs text-muted-foreground/70">{shortHash(c.hash)}</span>
           <span className="min-w-0 flex-1 truncate">{c.subject}</span>
-          <span className="text-xs text-muted">{c.authorName}</span>
-          <span className="w-24 text-right text-xs text-faint">{formatDate(c.authorDate, dateFormat)}</span>
+          <span className="text-xs text-muted-foreground">{c.authorName}</span>
+          <span className="w-24 text-right text-xs text-muted-foreground/70">{formatDate(c.authorDate, dateFormat)}</span>
         </button>
       ))}
     </div>
@@ -508,7 +508,7 @@ function BlamePane({ view, path, rev }: { view: RepoView; path: string; rev?: st
   useEffect(() => virt.measure(), [lineH, virt])
   const heats = useMemo(() => heatByCommit(lines ?? []), [lines])
   const avatars = useSetting('avatars')
-  if (!lines) return <div className="flex flex-1 items-center justify-center text-faint"><Spinner /></div>
+  if (!lines) return <div className="flex flex-1 items-center justify-center text-muted-foreground/70"><Spinner /></div>
   return (
     <div ref={scrollRef} className="selectable min-h-0 flex-1 overflow-auto" style={CODE_STYLE} data-testid="blame">
       <div style={{ height: virt.getTotalSize(), position: 'relative' }} className="w-max min-w-full">
@@ -521,24 +521,24 @@ function BlamePane({ view, path, rev }: { view: RepoView; path: string; rev?: st
           const heat = heatColor(h)
           return (
             <div key={vi.key} style={{ position: 'absolute', top: 0, left: 0, minWidth: '100%', height: lineH, lineHeight: `${lineH}px`, transform: `translateY(${vi.start}px)` }}
-              className={clsx('flex whitespace-pre', first && vi.index > 0 && 'border-t border-line/50')}>
+              className={clsx('flex whitespace-pre', first && vi.index > 0 && 'border-t border-border/50')}>
               <span className="sticky left-0 flex w-[300px] shrink-0 items-center gap-2 pr-2 font-sans text-2xs"
                 style={{ background: `color-mix(in srgb, ${heat} 14%, var(--gs-panel))` }}>
                 <span className="h-full w-1 shrink-0" style={{ background: heat }} data-testid="blame-heat" data-heat={h} />
                 {first && (
-                  <button className="flex min-w-0 flex-1 items-center gap-2 text-left hover:text-accent" title={`${l.summary}\n${l.author} <${l.email}>`}
+                  <button className="flex min-w-0 flex-1 items-center gap-2 text-left hover:text-primary" title={`${l.summary}\n${l.author} <${l.email}>`}
                     onClick={() => { updateRepo(view.id, { selected: { kind: 'commit', hash: l.hash } }); void ensureLoaded(view.id, l.hash) }}>
                     <span data-testid="blame-avatar" className="flex shrink-0">
                       <Avatar name={l.author} email={l.email} src={avatarSrc(l.email, avatars)} size={Math.min(16, lineH - 2)} />
                     </span>
-                    <span className="font-mono text-faint">{shortHash(l.hash)}</span>
+                    <span className="font-mono text-muted-foreground/70">{shortHash(l.hash)}</span>
                     <span className="min-w-0 flex-1 truncate">{l.summary}</span>
-                    <span className="text-faint">{l.author.split(' ')[0]}</span>
-                    <span className="text-faint">{relativeTime(l.date)}</span>
+                    <span className="text-muted-foreground/70">{l.author.split(' ')[0]}</span>
+                    <span className="text-muted-foreground/70">{relativeTime(l.date)}</span>
                   </button>
                 )}
               </span>
-              <span className="w-10 shrink-0 pr-2 text-right text-faint">{l.lineNo}</span>
+              <span className="w-10 shrink-0 pr-2 text-right text-muted-foreground/70">{l.lineNo}</span>
               <span className="pr-4">{l.text}</span>
             </div>
           )

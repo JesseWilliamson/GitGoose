@@ -21,7 +21,7 @@ export function Toolbar({ view }: { view: RepoView }) {
   const pullMode = useSetting('pullMode')
   const pullWhy = whyNotPull(snap, head)
   return (
-    <div className="drag grid h-toolbar shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center border-b border-line bg-panel px-2" data-testid="toolbar">
+    <div className="drag grid h-toolbar shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center border-b border-border bg-card px-2" data-testid="toolbar">
       <div className="flex min-w-0 items-center gap-0.5">
         <Location view={view} />
         <Divider />
@@ -29,7 +29,7 @@ export function Toolbar({ view }: { view: RepoView }) {
           <div className="no-drag flex items-stretch">
             <ToolbarButton icon={<ArrowDown size={16} />} label="Pull" title={`Pull (${pullMode === 'ff-only' ? 'fast-forward only' : pullMode})`} onClick={() => void pull(id)} disabled={!!view.busy}
               badge={(head?.behind ?? 0) > 0 ? <Badge>{head!.behind}</Badge> : null} />
-            <DropdownMenu.Trigger className="-ml-1 rounded-md px-0.5 text-faint hover:bg-hover hover:text-fg" aria-label="Pull options"><ChevronDown size={11} /></DropdownMenu.Trigger>
+            <DropdownMenu.Trigger className="-ml-1 rounded-md px-0.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground" aria-label="Pull options"><ChevronDown size={11} /></DropdownMenu.Trigger>
           </div>
           <DM.Content>
             <DM.Item reason={pullWhy} onSelect={() => void pull(id, 'merge')}>Pull (merge)</DM.Item>
@@ -42,7 +42,7 @@ export function Toolbar({ view }: { view: RepoView }) {
           <div className="no-drag flex items-stretch">
             <ToolbarButton icon={<ArrowUp size={16} />} label="Push" onClick={() => push(id)} disabled={!!view.busy || !snap.head.branch}
               badge={(head?.ahead ?? 0) > 0 ? <Badge>{head!.ahead}</Badge> : null} />
-            <DropdownMenu.Trigger className="-ml-1 rounded-md px-0.5 text-faint hover:bg-hover hover:text-fg" aria-label="Push options"><ChevronDown size={11} /></DropdownMenu.Trigger>
+            <DropdownMenu.Trigger className="-ml-1 rounded-md px-0.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground" aria-label="Push options"><ChevronDown size={11} /></DropdownMenu.Trigger>
           </div>
           <DM.Content>
             <DM.Item reason={whyNotPush(head)} onSelect={() => push(id)}>Push</DM.Item>
@@ -59,15 +59,15 @@ export function Toolbar({ view }: { view: RepoView }) {
           The shortcut is spelled out per platform (not the ⌘ glyph everywhere). */}
       <button onClick={() => runCommand('search')} data-testid="omni-open"
         title={`Search everything (${shortcutOf('search', keys)}); commands only: ${shortcutOf('palette', keys)}`}
-        className="no-drag mx-3 flex h-7 w-[26rem] min-w-0 items-center gap-2 rounded-md border border-line bg-bg px-2.5 text-xs text-faint hover:border-accent/60 hover:text-muted">
+        className="no-drag mx-3 flex h-7 w-[26rem] min-w-0 items-center gap-2 rounded-md border border-border bg-background px-2.5 text-xs text-muted-foreground/70 hover:border-primary/60 hover:text-muted-foreground">
         <Search size={13} className="shrink-0" />
         <span className="min-w-0 flex-1 truncate text-left">Search…</span>
-        <kbd className="shrink-0 rounded border border-line px-1 text-2xs">{shortcutOf('search', keys)}</kbd>
+        <kbd className="shrink-0 rounded border border-border px-1 text-2xs">{shortcutOf('search', keys)}</kbd>
       </button>
 
       <div className="flex min-w-0 items-center justify-end gap-0.5">
         {(view.busy || view.progress) && (
-          <div className="no-drag flex min-w-0 max-w-64 items-center gap-2 truncate px-2 text-xs text-muted" data-testid="busy">
+          <div className="no-drag flex min-w-0 max-w-64 items-center gap-2 truncate px-2 text-xs text-muted-foreground" data-testid="busy">
             <Spinner /> <span className="truncate">{view.progress ?? view.busy}</span>
           </div>
         )}
@@ -92,10 +92,10 @@ function UndoChip({ view }: { view: RepoView }) {
     <div className="no-drag flex min-w-0 items-center" data-testid="undo-chip">
       <button onClick={() => void undo(view.id)} disabled={!last || !!view.busy} aria-label="Undo"
         title={last ? `Undo: ${last.label} (${modName()}+Z)` : 'Nothing to undo'}
-        className="flex h-7 min-w-0 items-center gap-1.5 rounded-md px-2 text-xs text-muted hover:bg-hover hover:text-fg disabled:opacity-40 disabled:pointer-events-none">
+        className="flex h-7 min-w-0 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 disabled:pointer-events-none">
         <Undo2 size={15} className="shrink-0" />
         <span className="shrink-0 font-medium">Undo</span>
-        {last && <span className="min-w-0 truncate text-faint" data-testid="undo-label">{last.label}</span>}
+        {last && <span className="min-w-0 truncate text-muted-foreground/70" data-testid="undo-label">{last.label}</span>}
       </button>
       <ToolbarButton icon={<Redo2 size={15} />} label="Redo" onClick={() => void redo(view.id)} disabled={!next || !!view.busy}
         title={next ? `Redo: ${next.label} (${shortcutOf('redo')})` : 'Nothing to redo'} className="size-7" />
@@ -104,7 +104,7 @@ function UndoChip({ view }: { view: RepoView }) {
 }
 
 function Divider() {
-  return <span className="mx-1 h-5 w-px shrink-0 bg-line" />
+  return <span className="mx-1 h-5 w-px shrink-0 bg-border" />
 }
 
 /**
@@ -116,13 +116,13 @@ function Location({ view }: { view: RepoView }) {
   const value = head.branch ?? (head.hash ? head.hash.slice(0, 7) : 'no commits')
   return (
     <div className="flex min-w-0 shrink items-center gap-1 px-1 text-sm" data-testid="location">
-      <span className="max-w-40 truncate text-muted" title={path} data-testid="location-repo">{name}</span>
-      <ChevronRight size={14} className="shrink-0 text-faint" />
-      <span className={clsx('max-w-48 truncate font-semibold text-fg', !head.branch && !!head.hash && 'font-mono')} title={head.hash} data-testid="location-head">{value}</span>
+      <span className="max-w-40 truncate text-muted-foreground" title={path} data-testid="location-repo">{name}</span>
+      <ChevronRight size={14} className="shrink-0 text-muted-foreground/70" />
+      <span className={clsx('max-w-48 truncate font-semibold text-foreground', !head.branch && !!head.hash && 'font-mono')} title={head.hash} data-testid="location-head">{value}</span>
     </div>
   )
 }
 
 function Badge({ children }: { children: React.ReactNode }) {
-  return <span className="absolute -top-0.5 right-0 rounded-full bg-accent px-1 text-2xs leading-[14px] font-bold text-accent-fg">{children}</span>
+  return <span className="absolute -top-0.5 right-0 rounded-full bg-primary px-1 text-2xs leading-[14px] font-bold text-primary-foreground">{children}</span>
 }

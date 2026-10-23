@@ -26,7 +26,7 @@ export function OptionSelect({ value, onChange, options, disabled, className, pl
   return (
     <Select value={enc(value)} onValueChange={(v) => onChange(v === EMPTY ? '' : v)} disabled={disabled}>
       <SelectTrigger
-        className={cn('min-w-0 gap-1 bg-bg px-2 py-0 text-sm shadow-none data-[size=default]:h-input dark:bg-bg dark:hover:bg-hover', className)}
+        className={cn('min-w-0 gap-1 bg-background px-2 py-0 text-sm shadow-none data-[size=default]:h-input dark:bg-background dark:hover:bg-accent', className)}
         {...trigger}
       >
         <SelectValue placeholder={placeholder} />

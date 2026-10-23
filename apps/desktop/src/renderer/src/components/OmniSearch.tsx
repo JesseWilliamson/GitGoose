@@ -173,28 +173,28 @@ function OmniPanel({ initial, close }: { initial: string; close: () => void }) {
 
   return (
     <Command shouldFilter={false} loop value={selected} onValueChange={setSelected} onKeyDown={onKeyDown} label="Search"
-      className="overflow-hidden rounded-xl border border-line bg-raised shadow-2xl shadow-black/50">
-      <div className="flex h-13 items-center gap-3 border-b border-line px-4">
-        <Search size={18} className="shrink-0 text-faint" />
+      className="overflow-hidden rounded-xl border border-border bg-popover shadow-2xl shadow-black/50">
+      <div className="flex h-13 items-center gap-3 border-b border-border px-4">
+        <Search size={18} className="shrink-0 text-muted-foreground/70" />
         <Command.Input ref={input} autoFocus value={raw} onValueChange={setRaw} data-testid="palette-input"
           placeholder={chip === 'all' ? 'Search commits, branches, files, commands…' : `Search ${SCOPE_LABEL[chip].toLowerCase()}…`}
-          className="h-full min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-faint" />
-        {searching && <Spinner className="text-faint" />}
-        <kbd className="rounded border border-line px-1.5 py-0.5 text-2xs text-faint">Esc</kbd>
+          className="h-full min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground/70" />
+        {searching && <Spinner className="text-muted-foreground/70" />}
+        <kbd className="rounded border border-border px-1.5 py-0.5 text-2xs text-muted-foreground/70">Esc</kbd>
       </div>
-      <div className="flex items-center gap-1 border-b border-line px-3 py-2" role="tablist" aria-label="Search in">
+      <div className="flex items-center gap-1 border-b border-border px-3 py-2" role="tablist" aria-label="Search in">
         {SCOPES.map((s) => (
           <button key={s} role="tab" aria-selected={scope === s} onClick={() => { setChip(s); if (raw.startsWith('>')) setRaw(raw.slice(1).trimStart()); input.current?.focus() }}
             data-testid={`omni-scope-${s}`}
-            className={clsx('rounded-full px-2.5 py-0.5 text-xs', scope === s ? 'bg-accent text-accent-fg' : 'text-muted hover:bg-hover hover:text-fg')}>
+            className={clsx('rounded-full px-2.5 py-0.5 text-xs', scope === s ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground')}>
             {SCOPE_LABEL[s]}
           </button>
         ))}
       </div>
       <Command.List className="max-h-[min(58vh,520px)] overflow-y-auto overscroll-contain p-2" data-testid="omni-results">
         {groups.length === 0 && (
-          <div className="px-3 py-10 text-center text-sm text-faint" data-testid="omni-empty">
-            {searching ? 'Searching history…' : query ? <>No results for “<span className="text-fg">{query}</span>”</> : 'Type to search'}
+          <div className="px-3 py-10 text-center text-sm text-muted-foreground/70" data-testid="omni-empty">
+            {searching ? 'Searching history…' : query ? <>No results for “<span className="text-foreground">{query}</span>”</> : 'Type to search'}
           </div>
         )}
         {groups.map((g) => (
@@ -202,17 +202,17 @@ function OmniPanel({ initial, close }: { initial: string; close: () => void }) {
             className="mb-1 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:pt-2 [&_[cmdk-group-heading]]:pb-1">
             {g.results.map((r) => (
               <Command.Item key={valueOf(r)} value={valueOf(r)} onSelect={() => activate(r, false)} data-testid="omni-item" data-kind={r.kind}
-                className="group flex min-h-11 cursor-default items-center gap-3 rounded-lg px-2.5 py-1.5 data-[selected=true]:bg-accent/12">
-                <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-line bg-bg text-muted group-data-[selected=true]:border-accent/50 group-data-[selected=true]:text-accent">
+                className="group flex min-h-11 cursor-default items-center gap-3 rounded-lg px-2.5 py-1.5 data-[selected=true]:bg-primary/12">
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground group-data-[selected=true]:border-primary/50 group-data-[selected=true]:text-primary">
                   {ICON[r.kind]}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className={clsx('block truncate text-sm', r.kind === 'file' || r.kind === 'change' ? 'font-mono text-xs' : '')}>
                     <Highlight text={r.title} ranges={r.ranges} dimUntil={r.kind === 'file' || r.kind === 'change' ? r.title.lastIndexOf('/') + 1 : 0} />
                   </span>
-                  {r.sub && <span className="block truncate text-2xs text-faint">{r.sub}</span>}
+                  {r.sub && <span className="block truncate text-2xs text-muted-foreground/70">{r.sub}</span>}
                 </span>
-                <CornerDownLeft size={13} className="shrink-0 text-faint opacity-0 group-data-[selected=true]:opacity-100" />
+                <CornerDownLeft size={13} className="shrink-0 text-muted-foreground/70 opacity-0 group-data-[selected=true]:opacity-100" />
               </Command.Item>
             ))}
           </Command.Group>
@@ -225,7 +225,7 @@ function OmniPanel({ initial, close }: { initial: string; close: () => void }) {
 
 function GroupHeading({ label, shown, total }: { label: string; shown: number; total: number }) {
   return (
-    <span className="flex items-baseline gap-2 text-2xs font-semibold tracking-wide text-faint uppercase">
+    <span className="flex items-baseline gap-2 text-2xs font-semibold tracking-wide text-muted-foreground/70 uppercase">
       {label}
       {total > shown && <span className="font-normal tracking-normal normal-case">{shown} of {total.toLocaleString()} · Tab to narrow</span>}
     </span>
@@ -245,8 +245,8 @@ function Highlight({ text, ranges, dimUntil = 0 }: { text: string; ranges: [numb
           ? [{ t: p.text.slice(0, dimUntil - start), dim: true }, { t: p.text.slice(dimUntil - start), dim: false }]
           : [{ t: p.text, dim: at <= dimUntil }]
         return parts.map((x, j) => p.hit
-          ? <mark key={`${i}-${j}`} className="bg-transparent font-semibold text-accent">{x.t}</mark>
-          : <span key={`${i}-${j}`} className={x.dim ? 'text-faint' : undefined}>{x.t}</span>)
+          ? <mark key={`${i}-${j}`} className="bg-transparent font-semibold text-primary">{x.t}</mark>
+          : <span key={`${i}-${j}`} className={x.dim ? 'text-muted-foreground/70' : undefined}>{x.t}</span>)
       })}
     </>
   )
@@ -254,9 +254,9 @@ function Highlight({ text, ranges, dimUntil = 0 }: { text: string; ranges: [numb
 
 function Footer({ current }: { current: OmniResult | undefined }) {
   const alt = current?.kind === 'branch' ? 'check out' : current?.kind === 'file' || current?.kind === 'change' ? 'open in editor' : null
-  const Key = ({ children }: { children: ReactNode }) => <kbd className="rounded border border-line bg-bg px-1 text-2xs">{children}</kbd>
+  const Key = ({ children }: { children: ReactNode }) => <kbd className="rounded border border-border bg-background px-1 text-2xs">{children}</kbd>
   return (
-    <div className="flex h-9 items-center gap-4 border-t border-line px-4 text-2xs text-faint" data-testid="omni-footer">
+    <div className="flex h-9 items-center gap-4 border-t border-border px-4 text-2xs text-muted-foreground/70" data-testid="omni-footer">
       <span className="flex items-center gap-1"><Key>↑</Key><Key>↓</Key> move</span>
       <span className="flex items-center gap-1"><Key>↵</Key> {current ? openLabel(current) : 'open'}</span>
       {alt && <span className="flex items-center gap-1"><Key>{modName()}</Key><Key>↵</Key> {alt}</span>}

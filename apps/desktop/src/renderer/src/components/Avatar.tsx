@@ -45,7 +45,7 @@ export function AvatarStack({ people, size, max = 3 }: { people: StackedAuthor[]
         </span>
       ))}
       {extra > 0 && (
-        <span className="ml-1 shrink-0 text-2xs font-medium text-faint" title={people.slice(max).map((p) => `${p.name} <${p.email}>`).join('\n')}>
+        <span className="ml-1 shrink-0 text-2xs font-medium text-muted-foreground/70" title={people.slice(max).map((p) => `${p.name} <${p.email}>`).join('\n')}>
           +{extra}
         </span>
       )}

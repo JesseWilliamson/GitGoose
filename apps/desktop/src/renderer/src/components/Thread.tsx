@@ -77,7 +77,7 @@ export function Thread({ thread, repoId, testids = {}, placeholder, hint, hideFe
   return (
     <div className={clsx('flex min-h-0 flex-col', className)} data-testid={testids.root ?? 'thread'} data-thread={thread.id}>
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2 text-sm" data-testid="thread-turns">
-        {!turns.length && hint && <p className="text-xs text-faint">{hint}</p>}
+        {!turns.length && hint && <p className="text-xs text-muted-foreground/70">{hint}</p>}
         {turns.map((t, i) => (t.role === 'user'
           ? <UserTurn key={t.id} turn={t} testid={testids.user ?? 'thread-user'} />
           : <AgentTurn key={t.id} turn={t} thread={thread} repoId={repoId} testid={testids.agent ?? 'thread-agent'} retry={t === last ? retry : undefined}
@@ -86,14 +86,14 @@ export function Thread({ thread, repoId, testids = {}, placeholder, hint, hideFe
       </div>
       {(thread.mode || !!thread.commands?.length) && (
         // What the agent says about itself (ACP current_mode_update, available_commands_update).
-        <div className="shrink-0 truncate border-t border-line px-3 py-0.5 text-2xs text-faint" data-testid="thread-meta"
+        <div className="shrink-0 truncate border-t border-border px-3 py-0.5 text-2xs text-muted-foreground/70" data-testid="thread-meta"
           title={thread.commands?.length ? 'Slash commands the agent offers: type one as your message' : undefined}>
           {thread.mode && <>Mode: {thread.mode}</>}{thread.mode && thread.commands?.length ? ' · ' : ''}
           {thread.commands?.length ? <>Commands: {thread.commands.map((c) => `/${c}`).join(' ')}</> : null}
         </div>
       )}
       {above}
-      <div className="flex shrink-0 items-center justify-end border-t border-line px-2 pt-1.5">
+      <div className="flex shrink-0 items-center justify-end border-t border-border px-2 pt-1.5">
         {/* The area's pick: a change applies from the next message (main moves the conversation if needed). */}
         <ModelPicker area={areaOfAnchor(thread.anchor)} />
         <PromptButton area={areaOfAnchor(thread.anchor)} className="ml-1" />
@@ -107,7 +107,7 @@ export function Thread({ thread, repoId, testids = {}, placeholder, hint, hideFe
               void send()
             }
           }}
-          className="min-w-0 flex-1 resize-none rounded-md border border-line bg-bg px-2 py-1 text-sm outline-none focus:border-accent" />
+          className="min-w-0 flex-1 resize-none rounded-md border border-border bg-background px-2 py-1 text-sm outline-none focus:border-primary" />
         {running
           ? <Button onClick={() => stopThread(thread.id)} data-testid="thread-stop" title="Stop the answer"><Square size={12} /> Stop</Button>
           : <Button variant="primary" disabled={!text.trim() || sending} onClick={() => void send()} data-testid={testids.send ?? 'thread-send'} title="Send (Enter)"><Send size={12} /> Send</Button>}
@@ -132,17 +132,17 @@ function UserTurn({ turn, testid }: { turn: AiTurn; testid: string }) {
   // enough: turns are keyed by id, so it survives every streamed update.
   const [showSent, setShowSent] = useState(false)
   const toggle = turn.sent ? (
-    <button className="shrink-0 rounded px-1 text-2xs font-normal text-faint hover:bg-hover hover:text-fg" data-testid="thread-sent-toggle"
+    <button className="shrink-0 rounded px-1 text-2xs font-normal text-muted-foreground/70 hover:bg-accent hover:text-foreground" data-testid="thread-sent-toggle"
       title="Show exactly what was sent" onClick={() => setShowSent(!showSent)}>{showSent ? 'Hide sent' : 'Sent'}</button>
   ) : null
   const sent = showSent && turn.sent ? (
-    <pre className="selectable mt-1 max-h-72 overflow-auto rounded-md border border-line/60 bg-bg/60 p-2 font-mono text-2xs font-normal whitespace-pre-wrap text-muted" data-testid="thread-sent">{turn.sent}</pre>
+    <pre className="selectable mt-1 max-h-72 overflow-auto rounded-md border border-border/60 bg-background/60 p-2 font-mono text-2xs font-normal whitespace-pre-wrap text-muted-foreground" data-testid="thread-sent">{turn.sent}</pre>
   ) : null
   if (turn.feature) {
     return (
       <div className="mt-2">
         {/* The toggle sits beside the label, not in it: the label reads as the feature's name alone. */}
-        <div className="flex items-center gap-1.5 text-xs text-faint">
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground/70">
           <span className="flex items-center gap-1.5" data-testid="thread-feature"><Sparkles size={11} /> {turn.feature}</span>
           {toggle}
         </div>
@@ -171,16 +171,16 @@ const PROSE_FEATURES = new Set<AiThread['anchor']['kind']>(['explain', 'error', 
 function AgentTurn({ turn, thread, repoId, testid, retry, by }: { turn: AiTurn; thread: AiThread; repoId: string; testid: string; retry?: () => void; by?: string }) {
   const [raw, setRaw] = useState(false)
   // Shown where the speaker changes (the first answer, and after a switch).
-  const who = by ? <div className="mt-1 text-2xs text-faint" data-testid="thread-by">{by}</div> : null
+  const who = by ? <div className="mt-1 text-2xs text-muted-foreground/70" data-testid="thread-by">{by}</div> : null
   if (turn.feature && !PROSE_FEATURES.has(thread.anchor.kind)) {
     // The feature's own answer (JSON the view has already turned into its result).
     return (
-      <div className="mt-0.5 text-xs text-faint" data-testid="thread-feature-answer">
+      <div className="mt-0.5 text-xs text-muted-foreground/70" data-testid="thread-feature-answer">
         {who}
         {turn.status === 'running' ? <span className="flex items-center gap-1.5"><Spinner /> Working on it…</span>
-          : turn.status === 'error' ? <span className="text-del">{turn.error?.message}</span>
-          : <>Answered; the result is shown in its own view. <button className="hover:text-fg" onClick={() => setRaw(!raw)}>{raw ? 'Hide' : 'Show'} the raw answer</button></>}
-        {raw && <pre className="selectable mt-1 max-h-48 overflow-auto rounded border border-line bg-bg p-2 font-mono text-2xs whitespace-pre-wrap">{textOf(turn)}</pre>}
+          : turn.status === 'error' ? <span className="text-destructive">{turn.error?.message}</span>
+          : <>Answered; the result is shown in its own view. <button className="hover:text-foreground" onClick={() => setRaw(!raw)}>{raw ? 'Hide' : 'Show'} the raw answer</button></>}
+        {raw && <pre className="selectable mt-1 max-h-48 overflow-auto rounded border border-border bg-background p-2 font-mono text-2xs whitespace-pre-wrap">{textOf(turn)}</pre>}
       </div>
     )
   }
@@ -190,10 +190,10 @@ function AgentTurn({ turn, thread, repoId, testid, retry, by }: { turn: AiTurn; 
       {who}
       <div data-testid={testid} data-status={turn.status}>
         {turn.blocks.map((b, i) => <BlockView key={i} b={b} thread={thread} repoId={repoId} />)}
-        {empty && turn.status === 'running' && <span className="flex items-center gap-2 text-muted"><Spinner /> Thinking…</span>}
+        {empty && turn.status === 'running' && <span className="flex items-center gap-2 text-muted-foreground"><Spinner /> Thinking…</span>}
       </div>
-      {turn.status === 'cancelled' && <div className="mt-1 text-xs text-faint" data-testid="thread-stopped">Stopped.</div>}
-      {turn.status === 'error' && <div className="mt-1 flex items-start gap-1 text-xs text-del whitespace-pre-wrap" data-testid="thread-error"><CircleAlert size={12} className="mt-px shrink-0" /> {turn.error?.message}</div>}
+      {turn.status === 'cancelled' && <div className="mt-1 text-xs text-muted-foreground/70" data-testid="thread-stopped">Stopped.</div>}
+      {turn.status === 'error' && <div className="mt-1 flex items-start gap-1 text-xs text-destructive whitespace-pre-wrap" data-testid="thread-error"><CircleAlert size={12} className="mt-px shrink-0" /> {turn.error?.message}</div>}
       {retry && <Button size="sm" variant="ghost" className="mt-1" onClick={retry} data-testid="thread-retry"><RotateCcw size={11} /> Try again</Button>}
     </div>
   )
@@ -213,20 +213,20 @@ function BlockView({ b, thread, repoId }: { b: AiBlock; thread: AiThread; repoId
 function Thought({ text }: { text: string }) {
   const [open, setOpen] = useState(false)
   return (
-    <div className="my-1 text-xs text-muted" data-testid="thread-thought" data-open={open || undefined}>
-      <button className="flex items-center gap-1 hover:text-fg" onClick={() => setOpen(!open)}>
+    <div className="my-1 text-xs text-muted-foreground" data-testid="thread-thought" data-open={open || undefined}>
+      <button className="flex items-center gap-1 hover:text-foreground" onClick={() => setOpen(!open)}>
         <ChevronRight size={11} className={clsx('transition-transform', open && 'rotate-90')} /><Brain size={11} /> Thinking
       </button>
-      {open && <div className="mt-1 border-l-2 border-line pl-2 italic"><Markdown text={text} /></div>}
+      {open && <div className="mt-1 border-l-2 border-border pl-2 italic"><Markdown text={text} /></div>}
     </div>
   )
 }
 
 const STATUS_ICON: Record<AiToolCall['status'], ReactNode> = {
-  pending: <Circle size={11} className="text-faint" />,
+  pending: <Circle size={11} className="text-muted-foreground/70" />,
   in_progress: <Spinner className="size-3" />,
   completed: <Check size={11} className="text-add" />,
-  failed: <CircleAlert size={11} className="text-del" />,
+  failed: <CircleAlert size={11} className="text-destructive" />,
 }
 
 function ToolCard({ tool }: { tool: AiToolCall }) {
@@ -235,20 +235,20 @@ function ToolCard({ tool }: { tool: AiToolCall }) {
   const [chosen, setOpen] = useState<boolean | null>(null)
   const open = chosen ?? tool.content.some((c) => c.type === 'diff')
   return (
-    <div className="my-1.5 rounded-md border border-line bg-panel text-xs" data-testid="tool-card" data-status={tool.status} data-kind={tool.kind}>
+    <div className="my-1.5 rounded-md border border-border bg-card text-xs" data-testid="tool-card" data-status={tool.status} data-kind={tool.kind}>
       <button className="flex w-full items-center gap-2 px-2 py-1 text-left" onClick={() => setOpen(!open)}>
         {STATUS_ICON[tool.status]}
-        <Hammer size={11} className="text-faint" />
+        <Hammer size={11} className="text-muted-foreground/70" />
         <span className="min-w-0 flex-1 truncate font-medium" data-testid="tool-title">{tool.title}</span>
-        <span className="text-faint">{tool.kind}</span>
-        <ChevronRight size={11} className={clsx('text-faint transition-transform', open && 'rotate-90')} />
+        <span className="text-muted-foreground/70">{tool.kind}</span>
+        <ChevronRight size={11} className={clsx('text-muted-foreground/70 transition-transform', open && 'rotate-90')} />
       </button>
       {open && (
-        <div className="border-t border-line px-2 py-1.5">
-          {tool.rawInput && <pre className="selectable mb-1 max-h-32 overflow-auto rounded bg-bg p-1.5 font-mono text-2xs whitespace-pre-wrap" data-testid="tool-input">{tool.rawInput}</pre>}
-          {tool.locations.length > 0 && <div className="mb-1 font-mono text-2xs text-muted">{tool.locations.join(', ')}</div>}
+        <div className="border-t border-border px-2 py-1.5">
+          {tool.rawInput && <pre className="selectable mb-1 max-h-32 overflow-auto rounded bg-background p-1.5 font-mono text-2xs whitespace-pre-wrap" data-testid="tool-input">{tool.rawInput}</pre>}
+          {tool.locations.length > 0 && <div className="mb-1 font-mono text-2xs text-muted-foreground">{tool.locations.join(', ')}</div>}
           {tool.content.map((c, i) => c.type === 'text'
-            ? <pre key={i} className="selectable max-h-40 overflow-auto font-mono text-2xs whitespace-pre-wrap text-muted">{c.text}</pre>
+            ? <pre key={i} className="selectable max-h-40 overflow-auto font-mono text-2xs whitespace-pre-wrap text-muted-foreground">{c.text}</pre>
             : <DiffBox key={i} path={c.path} oldText={c.oldText} newText={c.newText} />)}
         </div>
       )}
@@ -267,13 +267,13 @@ function DiffBox({ path, oldText, newText }: { path: string; oldText: string | n
   const removed = a.slice(head, a.length - tail)
   const added = b.slice(head, b.length - tail)
   return (
-    <div className="mt-1 overflow-hidden rounded border border-line" data-testid="tool-diff">
-      <div className="flex items-center gap-1 border-b border-line bg-bg px-1.5 py-0.5 font-mono text-2xs text-muted"><FileDiff size={11} /> {path.split(/[\\/]/).pop()}{oldText === null && ' (new file)'}</div>
+    <div className="mt-1 overflow-hidden rounded border border-border" data-testid="tool-diff">
+      <div className="flex items-center gap-1 border-b border-border bg-background px-1.5 py-0.5 font-mono text-2xs text-muted-foreground"><FileDiff size={11} /> {path.split(/[\\/]/).pop()}{oldText === null && ' (new file)'}</div>
       <pre className="selectable max-h-60 overflow-auto font-mono text-2xs leading-[1.45]">
-        {head > 0 && <div className="px-1.5 text-faint">… {head} unchanged line{head === 1 ? '' : 's'}</div>}
-        {removed.map((l, i) => <div key={`r${i}`} className="bg-del-bg px-1.5 text-del">-{l}</div>)}
+        {head > 0 && <div className="px-1.5 text-muted-foreground/70">… {head} unchanged line{head === 1 ? '' : 's'}</div>}
+        {removed.map((l, i) => <div key={`r${i}`} className="bg-del-bg px-1.5 text-destructive">-{l}</div>)}
         {added.map((l, i) => <div key={`a${i}`} className="bg-add-bg px-1.5 text-add">+{l}</div>)}
-        {tail > 0 && <div className="px-1.5 text-faint">… {tail} unchanged line{tail === 1 ? '' : 's'}</div>}
+        {tail > 0 && <div className="px-1.5 text-muted-foreground/70">… {tail} unchanged line{tail === 1 ? '' : 's'}</div>}
       </pre>
     </div>
   )
@@ -281,12 +281,12 @@ function DiffBox({ path, oldText, newText }: { path: string; oldText: string | n
 
 function PlanCard({ entries }: { entries: AiPlanEntry[] }) {
   return (
-    <div className="my-1.5 rounded-md border border-line bg-panel px-2 py-1.5 text-xs" data-testid="thread-plan">
-      <div className="mb-1 font-semibold text-muted">Plan</div>
+    <div className="my-1.5 rounded-md border border-border bg-card px-2 py-1.5 text-xs" data-testid="thread-plan">
+      <div className="mb-1 font-semibold text-muted-foreground">Plan</div>
       {entries.map((e, i) => (
         <div key={i} className="flex items-center gap-1.5" data-status={e.status}>
-          {e.status === 'completed' ? <Check size={11} className="text-add" /> : e.status === 'in_progress' ? <CircleDot size={11} className="text-accent" /> : <Circle size={11} className="text-faint" />}
-          <span className={clsx(e.status === 'completed' && 'text-muted line-through')}>{e.content}</span>
+          {e.status === 'completed' ? <Check size={11} className="text-add" /> : e.status === 'in_progress' ? <CircleDot size={11} className="text-primary" /> : <Circle size={11} className="text-muted-foreground/70" />}
+          <span className={clsx(e.status === 'completed' && 'text-muted-foreground line-through')}>{e.content}</span>
         </div>
       ))}
     </div>
@@ -306,13 +306,13 @@ function PermissionCard({ p }: { p: AiPermissionAsk }) {
     void api.aiThreadPermission(p.permissionId, a)
   }
   return (
-    <div className={clsx('my-1.5 rounded-md border p-2 text-xs', p.answer ? 'border-line bg-panel' : 'border-warn/50 bg-warn/10')} data-testid="thread-permission" data-answer={p.answer} data-has-raw-input={p.rawInput ? true : undefined}>
+    <div className={clsx('my-1.5 rounded-md border p-2 text-xs', p.answer ? 'border-border bg-card' : 'border-warn/50 bg-warn/10')} data-testid="thread-permission" data-answer={p.answer} data-has-raw-input={p.rawInput ? true : undefined}>
       <div className="flex items-center gap-1.5 font-semibold"><ShieldQuestion size={12} className="text-warn" /> The agent wants to {p.kind === 'other' ? 'use a tool' : p.kind}</div>
-      {p.rawInput && <pre className="selectable mt-1 max-h-32 overflow-auto rounded bg-bg p-1.5 font-mono text-2xs whitespace-pre-wrap" data-testid="permission-input">{p.rawInput}</pre>}
+      {p.rawInput && <pre className="selectable mt-1 max-h-32 overflow-auto rounded bg-background p-1.5 font-mono text-2xs whitespace-pre-wrap" data-testid="permission-input">{p.rawInput}</pre>}
       <div className="mt-1">{p.title}</div>
-      {p.paths.length > 0 && <div className="mt-0.5 font-mono text-2xs break-all text-muted">{p.paths.join('\n')}</div>}
+      {p.paths.length > 0 && <div className="mt-0.5 font-mono text-2xs break-all text-muted-foreground">{p.paths.join('\n')}</div>}
       {p.answer ? (
-        <div className="mt-1.5 text-faint" data-testid="permission-answer">{ANSWERED[p.answer]}</div>
+        <div className="mt-1.5 text-muted-foreground/70" data-testid="permission-answer">{ANSWERED[p.answer]}</div>
       ) : (
         <div className="mt-2 flex flex-wrap gap-1.5">
           <Button size="sm" disabled={busy} onClick={() => answer('deny')} data-testid="thread-permission-deny">Deny</Button>
@@ -349,12 +349,12 @@ function ArtifactCard({ threadId, repoId, kind, json }: { threadId: string; repo
     return () => { live = false }
   }, [threadId, kind, json])
   return (
-    <div className="my-1.5 rounded-md border border-accent/40 bg-accent/5 p-2 text-xs" data-testid="thread-artifact" data-kind={kind} data-state={!checked ? 'checking' : checked.kind === 'problem' ? 'problem' : applied ? 'applied' : 'ready'}>
-      <div className="flex items-center gap-1.5 font-semibold"><Sparkles size={12} className="text-accent" /> {ARTIFACT_LABEL[kind]}</div>
-      {!checked ? <div className="mt-1 flex items-center gap-1.5 text-muted"><Spinner /> Checking it…</div> : <ArtifactSummary a={checked} />}
+    <div className="my-1.5 rounded-md border border-primary/40 bg-primary/5 p-2 text-xs" data-testid="thread-artifact" data-kind={kind} data-state={!checked ? 'checking' : checked.kind === 'problem' ? 'problem' : applied ? 'applied' : 'ready'}>
+      <div className="flex items-center gap-1.5 font-semibold"><Sparkles size={12} className="text-primary" /> {ARTIFACT_LABEL[kind]}</div>
+      {!checked ? <div className="mt-1 flex items-center gap-1.5 text-muted-foreground"><Spinner /> Checking it…</div> : <ArtifactSummary a={checked} />}
       {checked && checked.kind !== 'problem' && checked.kind !== 'diagram' && (
         <div className="mt-2">
-          {applied ? <span className="text-faint" data-testid="artifact-applied">Applied</span>
+          {applied ? <span className="text-muted-foreground/70" data-testid="artifact-applied">Applied</span>
             : <Button size="sm" variant="primary" onClick={() => setApplied(applyArtifact(repoId, checked))} data-testid="artifact-apply">Apply</Button>}
         </div>
       )}
@@ -364,7 +364,7 @@ function ArtifactCard({ threadId, repoId, kind, json }: { threadId: string; repo
 
 function ArtifactSummary({ a }: { a: AiArtifactResult }) {
   switch (a.kind) {
-    case 'problem': return <div className="mt-1 text-del">{a.message}</div>
+    case 'problem': return <div className="mt-1 text-destructive">{a.message}</div>
     case 'findings': return (
       <div className="mt-1" data-testid="artifact-summary">
         {a.review.findings.length} finding{a.review.findings.length === 1 ? '' : 's'} checked against the change{a.review.dropped.length ? `, ${a.review.dropped.length} thrown out (${a.review.dropped.map((d) => d.title).join(', ')})` : ''}.

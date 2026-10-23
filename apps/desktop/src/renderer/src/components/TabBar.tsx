@@ -21,7 +21,7 @@ function useMaximized(): boolean {
   return maximized
 }
 
-const CONTROL = 'no-drag flex w-11 items-center justify-center self-stretch text-muted hover:bg-hover hover:text-fg'
+const CONTROL = 'no-drag flex w-11 items-center justify-center self-stretch text-muted-foreground hover:bg-accent hover:text-foreground'
 
 /** Minimise, maximise/restore and close, drawn by the page: Linux has no OS-drawn ones for a frameless window. */
 function WindowControls() {
@@ -45,12 +45,12 @@ export function TabBar() {
   const platform = window.gitgoose.platform
   const mac = platform === 'darwin'
   return (
-    <div className={clsx('drag flex h-(--titlebar-h) shrink-0 items-end gap-px border-b border-line bg-bg', mac ? 'pl-20' : 'pl-1')} data-testid="tabs"
+    <div className={clsx('drag flex h-(--titlebar-h) shrink-0 items-end gap-px border-b border-border bg-background', mac ? 'pl-20' : 'pl-1')} data-testid="tabs"
       // The empty part of the bar (not a tab: those are children). macOS does this itself.
       onDoubleClick={(e) => { if (!mac && !(e.target as HTMLElement).closest('button, [data-tab]')) void api.windowToggleMaximize() }}>
       {!mac && (
         <button onClick={() => void api.menuPopup()} aria-label="Menu" title="Menu"
-          className="no-drag mr-1 mb-1 shrink-0 rounded p-1 text-muted hover:bg-hover hover:text-fg"><Menu size={15} /></button>
+          className="no-drag mr-1 mb-1 shrink-0 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"><Menu size={15} /></button>
       )}
       {/* The tabs scroll sideways inside their own strip, so the menu button and the window
           controls on either side stay in view however many repositories are open. */}
@@ -65,14 +65,14 @@ export function TabBar() {
             onClick={() => useStore.setState({ active: id })}
             title={r.snapshot.path}
             className={clsx('no-drag group flex h-8 max-w-56 min-w-28 shrink-0 cursor-default items-center gap-2 rounded-t-md border border-b-0 px-3 text-sm',
-              id === active ? 'border-line bg-panel text-fg' : 'border-transparent text-muted hover:text-fg')}>
+              id === active ? 'border-border bg-card text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground')}>
             <span className="min-w-0 flex-1 truncate">{r.snapshot.name}</span>
             <button onClick={(e) => { e.stopPropagation(); void closeTab(id) }} title="Close tab"
-              className="rounded p-0.5 opacity-0 group-hover:opacity-100 hover:bg-hover"><X size={12} /></button>
+              className="rounded p-0.5 opacity-0 group-hover:opacity-100 hover:bg-accent"><X size={12} /></button>
           </div>
         )
       })}
-      <button onClick={() => void openRepoDialog()} title={`Open repository (${modName()}+O)`} className="no-drag mb-1 ml-1 shrink-0 rounded p-1 text-muted hover:bg-hover hover:text-fg">
+      <button onClick={() => void openRepoDialog()} title={`Open repository (${modName()}+O)`} className="no-drag mb-1 ml-1 shrink-0 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
         <Plus size={15} />
       </button>
       </div>

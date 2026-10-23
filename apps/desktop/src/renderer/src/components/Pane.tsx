@@ -34,7 +34,7 @@ export function SlotView({ slot, view }: { slot: Slot; view: RepoView }) {
   if (st.active) built.current.add(st.active)
   for (const p of built.current) if (!st.panes.includes(p)) built.current.delete(p)
   return (
-    <div className="flex h-full min-h-0 flex-col bg-panel" data-testid={`slot-${slot}`}>
+    <div className="flex h-full min-h-0 flex-col bg-card" data-testid={`slot-${slot}`}>
       <TabStrip slot={slot} state={st} />
       {st.panes.filter((p) => built.current.has(p)).map((p) => (
         <div key={p} className={clsx('min-h-0 flex-1 flex-col', p === st.active ? 'flex' : 'hidden')} data-pane={p}>
@@ -68,7 +68,7 @@ function TabStrip({ slot, state }: { slot: Slot; state: SlotState }) {
   }
 
   return (
-    <div ref={strip} className={clsx('relative flex h-strip shrink-0 items-stretch border-b border-line bg-bg/40', drop && 'bg-accent/10')}
+    <div ref={strip} className={clsx('relative flex h-strip shrink-0 items-stretch border-b border-border bg-background/40', drop && 'bg-primary/10')}
       data-testid={`tabs-${slot}`}
       onDragOver={(e) => {
         if (!e.dataTransfer.types.includes(PANE_MIME)) return
@@ -89,7 +89,7 @@ function TabStrip({ slot, state }: { slot: Slot; state: SlotState }) {
       {state.panes.map((p) => (
         <Tab key={p} pane={p} slot={slot} tabbed={tabbed} active={state.active === p} />
       ))}
-      {drop && <div className="pointer-events-none absolute inset-y-0 w-0.5 bg-accent" style={{ left: drop.x }} />}
+      {drop && <div className="pointer-events-none absolute inset-y-0 w-0.5 bg-primary" style={{ left: drop.x }} />}
     </div>
   )
 }
@@ -107,8 +107,8 @@ function Tab({ pane, slot, tabbed, active }: { pane: PaneId; slot: Slot; tabbed:
       onDragEnd={() => usePaneDrag.setState({ dragging: null })}
       onClick={() => changeLayout((l) => activatePane(l, pane))}
       className={clsx('group/tab flex min-w-0 cursor-default items-center gap-1 pr-1 pl-2 text-2xs font-semibold tracking-wide uppercase',
-        tabbed && 'border-r border-line',
-        tabbed && active ? 'bg-panel text-fg shadow-[inset_0_-2px_0_var(--color-accent)]' : 'text-muted hover:text-fg')}>
+        tabbed && 'border-r border-border',
+        tabbed && active ? 'bg-card text-foreground shadow-[inset_0_-2px_0_var(--primary)]' : 'text-muted-foreground hover:text-foreground')}>
       <span className="truncate">{PANE_TITLES[pane]}</span>
       <PaneMenu pane={pane} slot={slot} />
     </div>
@@ -123,7 +123,7 @@ function PaneMenu({ pane, slot }: { pane: PaneId; slot: Slot }) {
       <DropdownMenu.Root>
         <DropdownMenu.Trigger asChild>
           <button aria-label={`${PANE_TITLES[pane]} pane menu`} data-testid={`pane-menu-${pane}`}
-            className="rounded p-0.5 text-faint opacity-60 hover:bg-hover hover:text-fg hover:opacity-100 data-[state=open]:opacity-100">
+            className="rounded p-0.5 text-muted-foreground/70 opacity-60 hover:bg-accent hover:text-foreground hover:opacity-100 data-[state=open]:opacity-100">
             <Ellipsis size={13} />
           </button>
         </DropdownMenu.Trigger>
@@ -149,7 +149,7 @@ export function PaneDropZones() {
   if (!dragging) return null
   const zone = (slot: Slot, cls: string) => (
     <div key={slot} data-testid={`pane-drop-${slot}`}
-      className={clsx('absolute z-30 border-accent/60 bg-accent/15 transition-colors', cls, over === slot && 'bg-accent/50')}
+      className={clsx('absolute z-30 border-primary/60 bg-primary/15 transition-colors', cls, over === slot && 'bg-primary/50')}
       onDragOver={(e) => {
         if (!e.dataTransfer.types.includes(PANE_MIME)) return
         e.preventDefault()

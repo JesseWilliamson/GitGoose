@@ -54,7 +54,7 @@ export function ImageDiff({ repoId, target, path }: { repoId: string; target: Di
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repoId, key])
 
-  if (!sides) return <div className="flex flex-1 items-center justify-center text-sm text-faint">Loading image…</div>
+  if (!sides) return <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground/70">Loading image…</div>
   const both = !!sides.old?.url && !!sides.new?.url
   const measured = (which: 'old' | 'new') => (e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget
@@ -62,10 +62,10 @@ export function ImageDiff({ repoId, target, path }: { repoId: string; target: Di
   }
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="image-diff">
-      <div className="flex h-9 shrink-0 items-center gap-1 border-b border-line px-3 text-xs">
+      <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border px-3 text-xs">
         {(['2-up', 'swipe', 'onion'] as Mode[]).map((m) => (
           <button key={m} disabled={!both && m !== '2-up'} onClick={() => setMode(m)}
-            className={clsx('rounded px-2 py-1 disabled:opacity-40', mode === m ? 'bg-select font-medium' : 'text-muted hover:bg-hover')}>
+            className={clsx('rounded px-2 py-1 disabled:opacity-40', mode === m ? 'bg-select font-medium' : 'text-muted-foreground hover:bg-accent')}>
             {m === '2-up' ? 'Side by side' : m === 'swipe' ? 'Swipe' : 'Onion skin'}
           </button>
         ))}
@@ -85,7 +85,7 @@ export function ImageDiff({ repoId, target, path }: { repoId: string; target: Di
               <img src={sides.old!.url!} alt="Before" className="block max-w-none" />
               <img src={sides.new!.url!} alt="After" className="absolute top-0 left-0 block max-w-none"
                 style={mode === 'swipe' ? { clipPath: `inset(0 0 0 ${amount}%)` } : { opacity: amount / 100 }} />
-              {mode === 'swipe' && <div className="absolute top-0 bottom-0 w-px bg-accent" style={{ left: `${amount}%` }} />}
+              {mode === 'swipe' && <div className="absolute top-0 bottom-0 w-px bg-primary" style={{ left: `${amount}%` }} />}
             </div>
           </div>
         )}
@@ -97,12 +97,12 @@ export function ImageDiff({ repoId, target, path }: { repoId: string; target: Di
 function Side({ label, side, onLoad, testId }: { label: string; side: Loaded | null; onLoad: (e: React.SyntheticEvent<HTMLImageElement>) => void; testId: string }) {
   return (
     <figure className="flex max-w-full flex-col items-center gap-2" data-testid={testId}>
-      <figcaption className="rounded bg-panel/90 px-2 py-0.5 text-2xs text-muted">
+      <figcaption className="rounded bg-card/90 px-2 py-0.5 text-2xs text-muted-foreground">
         {label}{side ? ` · ${formatBytes(side.size)}${side.w ? ` · ${side.w}×${side.h}` : ''}` : ''}
       </figcaption>
-      {!side ? <div className="rounded bg-panel/90 px-3 py-6 text-xs text-faint">{label === 'Before' ? 'Added in this change' : 'Deleted in this change'}</div>
-        : side.tooBig ? <div className="rounded bg-panel/90 px-3 py-6 text-xs text-faint">Too large to show ({formatBytes(side.size)})</div>
-        : <img src={side.url!} alt={label} onLoad={onLoad} className="max-h-[70vh] max-w-full border border-line object-contain" />}
+      {!side ? <div className="rounded bg-card/90 px-3 py-6 text-xs text-muted-foreground/70">{label === 'Before' ? 'Added in this change' : 'Deleted in this change'}</div>
+        : side.tooBig ? <div className="rounded bg-card/90 px-3 py-6 text-xs text-muted-foreground/70">Too large to show ({formatBytes(side.size)})</div>
+        : <img src={side.url!} alt={label} onLoad={onLoad} className="max-h-[70vh] max-w-full border border-border object-contain" />}
     </figure>
   )
 }

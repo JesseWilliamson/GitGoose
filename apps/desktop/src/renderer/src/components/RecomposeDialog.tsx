@@ -117,7 +117,7 @@ export function RecomposeDialog() {
           <Review key={state.requestId ?? 'review'} repoId={state.repoId} proposal={state.proposal} close={discard} threadId={state.threadId} incoming={state.incoming} />
         ) : state.error ? (
           <>
-            <div className="flex items-start gap-2 text-del" data-testid="recompose-error"><CircleAlert size={15} className="mt-px shrink-0" /> {state.error}</div>
+            <div className="flex items-start gap-2 text-destructive" data-testid="recompose-error"><CircleAlert size={15} className="mt-px shrink-0" /> {state.error}</div>
             <div className="mt-4 flex items-center justify-end gap-2">
               <ModelPicker area="recompose" />
               <PromptButton area="recompose" className="mr-auto" />
@@ -127,8 +127,8 @@ export function RecomposeDialog() {
           </>
         ) : (
           <>
-            <div className="flex items-center gap-2 text-muted"><Spinner /> Asking the AI how to split these changes into commits…</div>
-            <p className="mt-2 text-xs text-faint">You can close this; the plan waits in the status bar.</p>
+            <div className="flex items-center gap-2 text-muted-foreground"><Spinner /> Asking the AI how to split these changes into commits…</div>
+            <p className="mt-2 text-xs text-muted-foreground/70">You can close this; the plan waits in the status bar.</p>
             <div className="mt-4 flex items-center justify-end gap-2">
               <ModelPicker area="recompose" onPicked={restart} />
               <PromptButton area="recompose" className="mr-auto" />
@@ -453,19 +453,19 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
         </p>
       )}
       {proposal.unplaced.length > 0 && (
-        <p className="mb-2 text-xs text-muted">The AI left {proposal.unplaced.length} {proposal.unplaced.length === 1 ? 'change' : 'changes'} out; {proposal.unplaced.length === 1 ? 'it was' : 'they were'} added to the last commit.</p>
+        <p className="mb-2 text-xs text-muted-foreground">The AI left {proposal.unplaced.length} {proposal.unplaced.length === 1 ? 'change' : 'changes'} out; {proposal.unplaced.length === 1 ? 'it was' : 'they were'} added to the last commit.</p>
       )}
 
-      <div className="flex min-h-0 flex-1 overflow-hidden rounded-md border border-line">
+      <div className="flex min-h-0 flex-1 overflow-hidden rounded-md border border-border">
         {/* The proposed commits, applied bottom to top (oldest at the bottom, as in the graph). While a hunk is in the air this column is
             the only place it can go, so everything else dims. */}
-        <div className="flex w-80 shrink-0 flex-col border-r border-line bg-panel" data-testid="recompose-commits-column">
+        <div className="flex w-80 shrink-0 flex-col border-r border-border bg-card" data-testid="recompose-commits-column">
           {/* One line, never wrapping: a hint that changed the header's height would move the rows
               under the pointer mid-drag and flip the drop target back and forth. */}
-          <div className="flex items-center gap-2 px-3 pt-2 pb-1 text-2xs font-semibold tracking-wide whitespace-nowrap text-faint uppercase">
+          <div className="flex items-center gap-2 px-3 pt-2 pb-1 text-2xs font-semibold tracking-wide whitespace-nowrap text-muted-foreground/70 uppercase">
             <span className="shrink-0">Commits</span>
             <span className="min-w-0 flex-1 truncate text-right font-normal normal-case tracking-normal">
-              {draggingUnit ? <span className="text-accent">drop on a commit, or above for a new one</span> : `${draft.length}, oldest at the bottom`}
+              {draggingUnit ? <span className="text-primary">drop on a commit, or above for a new one</span> : `${draft.length}, oldest at the bottom`}
             </span>
           </div>
           <ContextMenu.Root>
@@ -476,7 +476,7 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
                 {draggingUnit && (
                   <li data-testid="recompose-new-commit" data-target={drag.over === 'new' || undefined}
                     className={clsx('mt-1 flex min-h-16 shrink-0 items-center justify-center gap-1.5 rounded-md border border-dashed text-xs',
-                      drag.over === 'new' ? 'border-accent bg-accent/15 text-fg' : 'border-faint text-muted')}>
+                      drag.over === 'new' ? 'border-primary bg-primary/15 text-foreground' : 'border-muted-foreground/70 text-muted-foreground')}>
                     <Plus size={12} /> New commit
                   </li>
                 )}
@@ -492,23 +492,23 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
                       onContextMenu={() => { if (!pickedSet.has(i)) focus(i) }}
                       className={clsx('group relative mt-1 flex shrink-0 cursor-grab gap-2 rounded-md border px-2 py-1.5 select-none',
                         isSlot && 'drag-placeholder',
-                        target ? 'border-accent bg-accent/15' : pickedSet.has(i) ? 'border-accent bg-accent/10' : 'border-transparent hover:bg-hover',
-                        !c.units.length && !target && 'border-dashed border-del/50')}>
-                      <GripVertical size={13} className="mt-0.5 shrink-0 text-faint opacity-0 group-hover:opacity-100" />
-                      <span className="mt-px w-4 shrink-0 text-right font-mono text-2xs text-faint">{i + 1}</span>
+                        target ? 'border-primary bg-primary/15' : pickedSet.has(i) ? 'border-primary bg-primary/10' : 'border-transparent hover:bg-accent',
+                        !c.units.length && !target && 'border-dashed border-destructive/50')}>
+                      <GripVertical size={13} className="mt-0.5 shrink-0 text-muted-foreground/70 opacity-0 group-hover:opacity-100" />
+                      <span className="mt-px w-4 shrink-0 text-right font-mono text-2xs text-muted-foreground/70">{i + 1}</span>
                       <div className="min-w-0 flex-1">
-                        <div className={clsx('truncate', !c.message.trim() && 'text-faint italic')} data-testid="recompose-title">{c.message.split('\n')[0] || 'No message yet'}</div>
-                        <div className="mt-0.5 flex gap-2 text-2xs text-faint">
-                          {c.units.length ? <><span>{files} {files === 1 ? 'file' : 'files'}</span><span className="text-add">+{stats.add}</span><span className="text-del">−{stats.del}</span></>
-                            : <span className="text-del">No changes</span>}
+                        <div className={clsx('truncate', !c.message.trim() && 'text-muted-foreground/70 italic')} data-testid="recompose-title">{c.message.split('\n')[0] || 'No message yet'}</div>
+                        <div className="mt-0.5 flex gap-2 text-2xs text-muted-foreground/70">
+                          {c.units.length ? <><span>{files} {files === 1 ? 'file' : 'files'}</span><span className="text-add">+{stats.add}</span><span className="text-destructive">−{stats.del}</span></>
+                            : <span className="text-destructive">No changes</span>}
                         </div>
                       </div>
                       <div className={clsx('flex shrink-0 flex-col opacity-0 group-hover:opacity-100 group-data-[selected]:opacity-100', draggingUnit && 'hidden')}>
                         {/* Up is later (newer), as in the graph. */}
                         <button title="Later" disabled={i === draft.length - 1} onClick={(e) => { e.stopPropagation(); update((d) => moveCommit(d, i, i + 1)); focus(i + 1) }}
-                          className="rounded p-0.5 text-muted hover:bg-hover disabled:opacity-30" data-testid="recompose-up"><ArrowUp size={12} /></button>
+                          className="rounded p-0.5 text-muted-foreground hover:bg-accent disabled:opacity-30" data-testid="recompose-up"><ArrowUp size={12} /></button>
                         <button title="Earlier" disabled={i === 0} onClick={(e) => { e.stopPropagation(); update((d) => moveCommit(d, i, i - 1)); focus(i - 1) }}
-                          className="rounded p-0.5 text-muted hover:bg-hover disabled:opacity-30" data-testid="recompose-down"><ArrowDown size={12} /></button>
+                          className="rounded p-0.5 text-muted-foreground hover:bg-accent disabled:opacity-30" data-testid="recompose-down"><ArrowDown size={12} /></button>
                       </div>
                     </li>
                   )
@@ -523,7 +523,7 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
               <CM.Item disabled={!empties} onSelect={() => { update(removeEmpty); focus(0) }}>Remove {empties === 1 ? 'the empty commit' : 'empty commits'}</CM.Item>
             </CM.Content>
           </ContextMenu.Root>
-          <div className="flex gap-1 border-t border-line p-2">
+          <div className="flex gap-1 border-t border-border p-2">
             <Button size="sm" variant="ghost" onClick={() => { update(addCommit); focus(draft.length) }} data-testid="recompose-add"><Plus size={12} /> New commit</Button>
             {empties > 0 && (
               <Button size="sm" variant="ghost" onClick={() => { update(removeEmpty); focus(0) }} data-testid="recompose-remove-empty"><Trash2 size={12} /> Remove empty</Button>
@@ -535,19 +535,19 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
             dragged: nothing here takes a drop. */}
         {current && (
           <div className={clsx('flex min-w-0 flex-1 flex-col transition-opacity', draggingUnit && 'opacity-40')} data-testid="recompose-hunks-column">
-            <div className="flex items-center px-3 pt-2 pb-1 text-2xs font-semibold tracking-wide text-faint uppercase">
+            <div className="flex items-center px-3 pt-2 pb-1 text-2xs font-semibold tracking-wide text-muted-foreground/70 uppercase">
               <span className="flex-1">Hunks</span>
               <span className="font-normal normal-case tracking-normal">{current.units.length} in commit {sel + 1}</span>
             </div>
-            <div className="border-b border-line px-3 pb-3">
+            <div className="border-b border-border px-3 pb-3">
               <textarea key={sel} value={current.message} onChange={(e) => update((d) => editMessage(d, sel, e.target.value), `message:${sel}`)}
                 rows={Math.max(2, Math.min(6, current.message.split('\n').length))} placeholder={`Message for commit ${sel + 1} (first line is the summary)`}
-                className="w-full resize-y rounded-md border border-line bg-bg px-2 py-1.5 font-mono text-xs outline-none focus:border-accent"
+                className="w-full resize-y rounded-md border border-border bg-background px-2 py-1.5 font-mono text-xs outline-none focus:border-primary"
                 data-testid="recompose-message" />
             </div>
             <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3" data-testid="recompose-units">
               {current.units.length === 0 && (
-                <div className="rounded-md border border-dashed border-line p-6 text-center text-xs text-faint">
+                <div className="rounded-md border border-dashed border-border p-6 text-center text-xs text-muted-foreground/70">
                   No hunks yet. Open another commit and drag its hunks onto this one in the list, or use "Move to" on a hunk.
                 </div>
               )}
@@ -565,11 +565,11 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
       </div>
 
       <div className="mt-3 flex items-center gap-3">
-        <p className="flex min-w-0 flex-1 items-center gap-1 text-xs text-faint">
+        <p className="flex min-w-0 flex-1 items-center gap-1 text-xs text-muted-foreground/70">
           {wrongBranch ? (
-            <span className="flex items-center gap-1 text-del" data-testid="recompose-wrong-branch"><CircleAlert size={12} className="shrink-0" /> This plan is for {proposal.branch}, but {headBranch ?? 'no branch'} is checked out. Check out {proposal.branch} to create these commits.</span>
+            <span className="flex items-center gap-1 text-destructive" data-testid="recompose-wrong-branch"><CircleAlert size={12} className="shrink-0" /> This plan is for {proposal.branch}, but {headBranch ?? 'no branch'} is checked out. Check out {proposal.branch} to create these commits.</span>
           ) : problems.length ? (
-            <span className="flex items-center gap-1 text-del" data-testid="recompose-problems"><CircleAlert size={12} className="shrink-0" /> {problems[0]}{problems.length > 1 ? ` (and ${problems.length - 1} more)` : ''}</span>
+            <span className="flex items-center gap-1 text-destructive" data-testid="recompose-problems"><CircleAlert size={12} className="shrink-0" /> {problems[0]}{problems.length > 1 ? ` (and ${problems.length - 1} more)` : ''}</span>
           ) : (
             <><Sparkles size={11} className="shrink-0" /> Replaces {proposal.hashes.length === 1 ? 'the commit' : `the ${proposal.hashes.length} commits`} on {proposal.branch}. Every change stays in exactly one commit, so the final code is the same; your working tree is not touched, and Undo puts the old commits back.</>
           )}
@@ -591,7 +591,7 @@ function RecomposeChat({ repoId, hashes, threadId }: { repoId: string; hashes: s
   const thread = useThread(repoId, { kind: 'recompose', hashes }, threadId)
   return (
     // Keys typed here are the chat's: Ctrl+Z in its box must not step the plan's history.
-    <div className="flex w-80 shrink-0 flex-col border-l border-line" data-testid="recompose-chat" onKeyDown={(e) => e.stopPropagation()}>
+    <div className="flex w-80 shrink-0 flex-col border-l border-border" data-testid="recompose-chat" onKeyDown={(e) => e.stopPropagation()}>
       {thread ? <Thread thread={thread} repoId={repoId} className="min-h-0 flex-1" placeholder="Put the tests in their own commit…"
         hint="A revised plan comes back as a card you can apply and undo." /> : <div className="flex flex-1 items-center justify-center"><Spinner /></div>}
     </div>
@@ -604,15 +604,15 @@ function UnitCard({ unit, draft, here, slot, onPointerDown, onMove }: {
 }) {
   const { dir, name } = splitPath(unit.path)
   return (
-    <div className={clsx('overflow-hidden rounded-md border border-line bg-bg', slot && 'drag-placeholder')} data-testid="recompose-unit" data-unit={unit.id}
+    <div className={clsx('overflow-hidden rounded-md border border-border bg-background', slot && 'drag-placeholder')} data-testid="recompose-unit" data-unit={unit.id}
       onPointerDown={onPointerDown}>
-      <div className="flex cursor-grab items-center gap-2 border-b border-line bg-panel px-2 py-1 text-xs select-none">
-        <GripVertical size={12} className="shrink-0 text-faint" />
-        <span className="min-w-0 flex-1 truncate font-mono text-xs"><span className="text-faint">{dir}</span>{name}</span>
-        {unit.binary ? <span className="text-faint">binary</span> : <><span className="text-add">+{unit.added}</span><span className="text-del">−{unit.removed}</span></>}
+      <div className="flex cursor-grab items-center gap-2 border-b border-border bg-card px-2 py-1 text-xs select-none">
+        <GripVertical size={12} className="shrink-0 text-muted-foreground/70" />
+        <span className="min-w-0 flex-1 truncate font-mono text-xs"><span className="text-muted-foreground/70">{dir}</span>{name}</span>
+        {unit.binary ? <span className="text-muted-foreground/70">binary</span> : <><span className="text-add">+{unit.added}</span><span className="text-destructive">−{unit.removed}</span></>}
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild>
-            <button className="rounded px-1.5 py-0.5 text-muted hover:bg-hover hover:text-fg" data-testid="recompose-move">Move to…</button>
+            <button className="rounded px-1.5 py-0.5 text-muted-foreground hover:bg-accent hover:text-foreground" data-testid="recompose-move">Move to…</button>
           </DropdownMenu.Trigger>
           <DM.Content align="end">
             {/* Newest first, like the list. */}
@@ -627,12 +627,12 @@ function UnitCard({ unit, draft, here, slot, onPointerDown, onMove }: {
       {unit.preview ? (
         <pre className="selectable max-h-72 overflow-auto py-1 font-mono text-2xs leading-[1.45]">
           {unit.preview.split('\n').map((l, i) => (
-            <div key={i} className={clsx('px-2', l.startsWith('+') ? 'bg-add-bg text-add' : l.startsWith('-') ? 'bg-del-bg text-del' : l.startsWith('@@') ? 'text-accent' : l.startsWith('…') ? 'text-faint italic' : 'text-muted')}>
+            <div key={i} className={clsx('px-2', l.startsWith('+') ? 'bg-add-bg text-add' : l.startsWith('-') ? 'bg-del-bg text-destructive' : l.startsWith('@@') ? 'text-primary' : l.startsWith('…') ? 'text-muted-foreground/70 italic' : 'text-muted-foreground')}>
               {l || ' '}
             </div>
           ))}
         </pre>
-      ) : <div className="px-2 py-1.5 text-xs text-faint">{unit.binary ? 'A binary file.' : 'The whole file (a mode change, or an empty file).'}</div>}
+      ) : <div className="px-2 py-1.5 text-xs text-muted-foreground/70">{unit.binary ? 'A binary file.' : 'The whole file (a mode change, or an empty file).'}</div>}
     </div>
   )
 }

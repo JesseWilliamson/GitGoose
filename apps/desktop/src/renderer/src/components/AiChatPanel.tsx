@@ -47,13 +47,13 @@ export function AiChatPanel({ view }: { view: RepoView }) {
   }, [historyOpen, view.id])
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="ai-chat-panel" data-drop-target='{"kind":"ai"}' key={view.chat.nonce}>
-      <div className="flex h-9 shrink-0 items-center gap-1 border-b border-line px-3 text-xs">
-        <MessagesSquare size={14} className="text-accent" />
+      <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border px-3 text-xs">
+        <MessagesSquare size={14} className="text-primary" />
         <span className="min-w-0 flex-1 truncate font-semibold">AI · {thread?.title || view.snapshot.name}</span>
-        <button onClick={() => newChat(view.id)} title="New conversation" aria-label="New conversation" className="rounded p-1 text-muted hover:bg-hover hover:text-fg" data-testid="ai-chat-new"><Plus size={13} /></button>
+        <button onClick={() => newChat(view.id)} title="New conversation" aria-label="New conversation" className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" data-testid="ai-chat-new"><Plus size={13} /></button>
         <DropdownMenu.Root onOpenChange={setHistoryOpen}>
           <DropdownMenu.Trigger asChild>
-            <button title="Earlier conversations" aria-label="Earlier conversations" className="rounded p-1 text-muted hover:bg-hover hover:text-fg" data-testid="ai-chat-history"><History size={13} /></button>
+            <button title="Earlier conversations" aria-label="Earlier conversations" className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" data-testid="ai-chat-history"><History size={13} /></button>
           </DropdownMenu.Trigger>
           <DM.Content align="end">
             <HistoryList history={history} currentId={thread?.id} onOpen={(id) => updateRepo(view.id, (v) => ({ chat: { ...v.chat, threadId: id } }))} />
@@ -101,10 +101,10 @@ function HistoryList({ history, currentId, onOpen }: { history: AiThread[] | nul
             return (
               <DM.Item key={t.id} onSelect={() => onOpen(t.id)}>
                 <span className="flex w-80 max-w-full items-center gap-2" data-testid="ai-chat-history-item" data-kind={t.anchor.kind} data-running={running || undefined} data-current={t.id === currentId || undefined}>
-                  <span className="w-20 shrink-0 text-2xs text-faint">{ANCHOR_KIND[t.anchor.kind]}</span>
+                  <span className="w-20 shrink-0 text-2xs text-muted-foreground/70">{ANCHOR_KIND[t.anchor.kind]}</span>
                   <span className="min-w-0 flex-1 truncate">{t.title || 'Untitled'}</span>
                   {running && <span data-testid="ai-chat-history-running" title="Answering now"><Spinner /></span>}
-                  {t.id === currentId && <Check size={12} className="shrink-0 text-accent" aria-label="Open now" />}
+                  {t.id === currentId && <Check size={12} className="shrink-0 text-primary" aria-label="Open now" />}
                 </span>
               </DM.Item>
             )

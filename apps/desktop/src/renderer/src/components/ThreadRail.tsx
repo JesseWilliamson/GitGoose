@@ -21,11 +21,11 @@ export function ThreadRail({ repoId, anchor, threadId, onThread, kind, hint, cla
 }) {
   const thread = useThread(repoId, anchor, threadId, onThread)
   return (
-    <aside className={clsx('flex min-h-0 w-80 shrink-0 flex-col border-l border-line bg-panel', className)} data-testid={`${kind}-chat`}>
-      <div className="flex h-8 shrink-0 items-center gap-2 border-b border-line px-3 text-xs">
-        <MessagesSquare size={13} className="text-accent" />
+    <aside className={clsx('flex min-h-0 w-80 shrink-0 flex-col border-l border-border bg-card', className)} data-testid={`${kind}-chat`}>
+      <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border px-3 text-xs">
+        <MessagesSquare size={13} className="text-primary" />
         <span className="flex-1 font-semibold">Chat</span>
-        <button onClick={() => toggleRail(kind)} title="Hide the chat" aria-label="Hide the chat" className="rounded p-1 text-muted hover:bg-hover hover:text-fg"><X size={13} /></button>
+        <button onClick={() => toggleRail(kind)} title="Hide the chat" aria-label="Hide the chat" className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"><X size={13} /></button>
       </div>
       {thread ? <Thread thread={thread} repoId={repoId} hint={hint} className="flex-1" /> : <div className="flex flex-1 items-center justify-center"><Spinner /></div>}
     </aside>
