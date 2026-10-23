@@ -174,12 +174,13 @@ test('Tower look: two-line rows beside hollow nodes, text indented by the lanes,
   // further than 170 px from the row's left edge, with twelve lanes open.
   const rowLeft = (await head.boundingBox())!.x
   expect(busyX - rowLeft).toBeLessThanOrEqual(170)
-  await expect(page.getByTestId('sidebar-viewing')).toHaveText('Viewing 13/13')
+  // "Viewing n/m" is for when the graph hides something; with every branch showing it is not there.
+  await expect(page.getByTestId('sidebar-viewing')).toHaveCount(0)
   await page.locator('[data-testid="sidebar-ref"][data-ref="refs/heads/b3"]').hover()
   await page.locator('[data-testid="sidebar-ref"][data-ref="refs/heads/b3"]').getByTestId('toggle-hidden').click()
   await expect(page.getByTestId('sidebar-viewing')).toContainText('Viewing 12/13')
   await page.getByTestId('sidebar-viewing').getByRole('button', { name: 'Show all' }).click()
-  await expect(page.getByTestId('sidebar-viewing')).toHaveText('Viewing 13/13')
+  await expect(page.getByTestId('sidebar-viewing')).toHaveCount(0)
   await app.close()
 })
 
