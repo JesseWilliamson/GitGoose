@@ -94,6 +94,13 @@ jobs:
         shell: bash
         run: |
           pnpm build:dist
+          # An unset secret still arrives as an empty variable, and electron-builder takes
+          # CSC_LINK="" as a certificate path (the current folder: "not a file"). Pull request
+          # builds never sign, so only tags and manual runs hit it. Empty means unset.
+          for name in CSC_LINK CSC_KEY_PASSWORD WIN_CSC_LINK WIN_CSC_KEY_PASSWORD \
+                      APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            [ -n "${!name}" ] || unset "$name"
+          done
           # electron-builder only builds; the next step uploads. Its own publishing skips a release
           # that is already published ("existing type not compatible with publishing type"),
           # which is exactly the release a UI publish hands us.
