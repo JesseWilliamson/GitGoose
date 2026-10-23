@@ -77,7 +77,54 @@ lists are kept under, and which process a session lives in.
 | Explain box → **Ask a follow-up** | what you write (the session has the commit) | the thread grows under the explanation |
 | Recompose → **Chat** | what you write (the session has the pieces) | a thread beside the plan; revised plans as cards |
 | Diff selection → **Ask** | the lines, their function, definitions, history; then what you write | a thread under the diff (spec 007) |
-| **AI panel** (Mod+Shift+A, View → AI Chat) | the repository's name and HEAD, then what you write | a free-standing thread; its history lists every kept thread of the repository |
+| **AI panel** (Mod+Shift+A, View → AI Chat) | the repository's name and HEAD, the **context chips** (git output for each, below), then what you write | a free-standing thread; its history lists every kept thread of the repository, by day |
+
+### Context chips (the AI panel)
+
+Above the panel's composer is a row of chips: what the next message will carry. The **selection**
+is a chip by itself (`commit a1b2c3d subject`, `3 commits`, `uncommitted changes`, `a..b`);
+× removes it and it stays removed while the selection is the same, then comes back with the next
+one. A **drop** on the panel adds chips: a branch or tag, commits, a stash, files. The panel is
+a drop target of kind `ai` in the window's drag handling (ADR-009), so the badge says "Add branch
+x to the AI conversation" and nothing in the repository changes. The same thing twice is one
+chip. A message sends the chips and uses up the dropped ones; the selection's chip stays while
+the selection does. A line under the chips says "Sent with your next message".
+
+Chips are **references**, not text (`AiContextRef` in `packages/shared/src/ai.ts`): the renderer
+never reads git. `aiThreadSend(threadId, text, { context })` is an additive change to the
+contract (`AiRunOptions.context`; no method removed or renamed). Main renders each reference
+(`main/ai/context.ts`, read-only git) and puts the text **in front of** the user's words, so the
+question is the last thing the model reads:
+
+| chip | what is rendered |
+|---|---|
+| commits | per commit (20 at most; the rest by hash): `git show --stat` with the full message, and the patch for the newest 8 |
+| branch / tag | `git log --oneline -20`, and `git diff --stat` from the merge base with HEAD |
+| stash | its message, `git stash show --stat` and `-p` |
+| files | the patch of those paths in that commit (against the first parent for a merge or stash); from the changes list, the staged and the unstaged diff |
+| uncommitted changes | `git status --porcelain=v2` as a short list (staged, not staged, conflicted, untracked), and both diffs |
+| compare | the log between, `git diff --stat` and the patch (or against the working tree) |
+
+**The cap** is the commit message's: 60,000 characters for everything the chips add, lockfiles
+(`*.lock`, `package-lock.json`, `pnpm-lock.yaml`) and `*.min.js` left out of every diff and stat
+(files you drag yourself are not excluded). Each chip's overview (message, stat, log) is kept; the patches share
+what is left equally, so small ones are whole and the largest are cut with a "… truncated"
+marker. A name that is gone or not valid is said in the text, never an error. The whole message,
+context included, goes through the secret scan, and the turn's `sent` keeps exactly what went
+out (saved threads keep 20k characters of it, as for every feature). Consent names it:
+"…and the git output for the context chips you attached".
+
+**Actions.** Under the chips, buttons enabled by what is attached (`data-testid="ai-action-<name>"`;
+a disabled one says why in its tooltip): *Explain* (one commit), *Review*, *Walk through*, *Impact*
+(commits, a branch, or the uncommitted changes; chips you dropped win over the selection),
+*Recompose* / *Split* (editable commits of the current branch), *Rebase onto…* (a dropped
+branch), *Cherry-pick onto HEAD* (commits). They call the same starters as the menus, so their
+threads are in the history list at once; the list refreshes while it is open.
+
+**History.** Grouped by the day a conversation was last used (Today, Yesterday, dates); each line
+shows the kind (Chat, Review, Explain, …) and its title, a spinner while its turn runs, a check
+on the open one. A turn saved as running with nothing answering it (the app quit mid-answer) is
+listed as stopped.
 
 **Waiting never blocks, and answers are not lost.** Every long request (explain, review,
 walkthrough, impact, recompose, fix, conflict help) is an *AI job* (`lib/aiJobs.ts`): a chip in
