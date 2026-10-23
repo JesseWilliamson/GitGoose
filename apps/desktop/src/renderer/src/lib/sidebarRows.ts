@@ -135,7 +135,7 @@ export function sidebarRows(input: SidebarInput): SidebarRow[] {
   const pinned = input.pins.map((n) => byName.get(n)).filter((r): r is Ref => !!r && matches(r.shortName))
   if (header('pinned', 'Pinned', pinned.length, openRefs('section:pinned'))) {
     for (const r of pinned) out.push({ kind: 'ref', key: refKey('pinned', r), depth: 1, section: 'pinned', ref: r, label: r.shortName })
-    if (!pinned.length && !filtering) out.push({ kind: 'empty', key: 'empty:pinned', depth: 1, text: 'Drag a branch here to pin it', for: 'pinned' })
+    // Nothing pinned: just the header (the sidebar says "Drop to pin" in it while a branch is dragged).
   }
 
   // ---- Branches
