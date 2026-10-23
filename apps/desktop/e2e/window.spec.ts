@@ -1,5 +1,7 @@
 import { tempDir } from '@gitgoose/fixtures'
 import { expect, test, type ElectronApplication } from '@playwright/test'
+import { delimiter } from 'node:path'
+import { makeFixture } from '@gitgoose/fixtures'
 import { launch } from './app'
 
 test('remembers the window size between launches', async () => {
@@ -75,6 +77,19 @@ test.describe('title bar', () => {
     await app.close()
   })
 
+  test('with many tabs open the window controls stay inside the window', async () => {
+    const repos = ['branches', 'branches', 'branches', 'branches', 'branches', 'branches', 'branches', 'branches'].map(() => makeFixture('branches').dir)
+    const { app, page } = await launch(repos.join(delimiter))
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(900, 640))
+    await expect(page.locator('[data-tab]')).toHaveCount(8)
+    const view = { width: await page.evaluate(() => window.innerWidth) }
+    const box = (await page.getByRole('button', { name: 'Close', exact: true }).boundingBox())!
+    expect(box.x).toBeGreaterThanOrEqual(0)
+    expect(box.x + box.width).toBeLessThanOrEqual(view.width)
+    await expect(page.getByRole('button', { name: 'Menu', exact: true })).toBeInViewport({ ratio: 1 })
+    await app.close()
+  })
+
   test('Minimize reaches the window', async () => {
     const { app, page } = await launch()
     // Xvfb has no window manager to iconify a window, so record the call instead of the result.
@@ -92,7 +107,7 @@ test.describe('title bar', () => {
   test('Close closes the window', async () => {
     const { app, page } = await launch()
     const closed = app.evaluate(({ BrowserWindow }) => new Promise<boolean>((res) => BrowserWindow.getAllWindows()[0]!.once('closed', () => res(true))))
-    await page.getByRole('button', { name: 'Close', exact: true }).click()
+    await page.getByRole('button', { name: 'Close', exact: true }).click({ noWaitAfter: true }).catch(() => {}) // the window goes away mid-click
     expect(await closed).toBe(true)
   })
 
