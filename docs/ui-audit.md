@@ -86,7 +86,6 @@ What "go back to basics" meant in practice, four questions asked of every surfac
 | Graph, compact | Ref column and lanes leave the message 90 px. | Message first: refs inline after it, lanes capped. | Done (audit 2a): columns give way (SHA, branch / tag, author, date) until the message keeps 40% of the row; the pills follow the message. |
 | Working copy | Staged and Unstaged split the height evenly; identity line is the first thing in the commit box. | Split by content; identity under the fields, in the commit options. | Done (audit 2a) |
 | Details | Explain row carried two selects and Prompt; e-mail address truncated mid-word. | One target button in the Explain row; name and date only. | Done (audit 2a): the target button, and the header (name and relative date, the address on hover) |
-
 | AI pane | Two headers; four stacked control bars (33% of the pane); empty state a faint paragraph top-left. | No pane header (New / History move to the strip); one composer box; centred empty state. | Done |
 | Pane tab strips | Uppercase 11 px, ⋯ on every tab, an inset underline: a third tab style. | 12 px medium sentence case, 2 px primary underline, ⋯ on hover or when open, right-click opens the same menu, a right slot for pane actions. | Done |
 | File diff | Five controls in three styles in one bar. | Group: view mode left, tools in a menu right. | Done (audit 2b) |
@@ -96,7 +95,6 @@ What "go back to basics" meant in practice, four questions asked of every surfac
 | Toolbar | Search is a fake input 26 rem wide; badges on pull and push overlap their icons. | Search as the shadcn `Input` with a kbd hint, badges as counts beside the icon. | Done (audit 2b) |
 | Sidebar | Eye row, mixed badges, always-on drag hint, lone + and filter icon. | One row anatomy, counts right-aligned in one column, hint only while dragging. | Done (audit 2a) |
 | Status bar | Path is truncated at the wrong end. | Truncate left or show the folder name. | Done (audit 2a) |
-
 | Tokens | Two vocabularies, hand-typed sizes. | One vocabulary, a documented scale. | Done |
 
 ## What changed in UI audit 1
