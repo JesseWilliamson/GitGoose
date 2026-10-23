@@ -1,10 +1,14 @@
 # Releasing
 
-1. Bump `version` in `apps/desktop/package.json`.
-2. Commit, then tag and push: `git tag v0.2.0 && git push origin v0.2.0`.
-3. The Release workflow checks the tag matches the version, creates a **draft** GitHub release,
-   and builds installers on macOS, Windows and Linux into it. Review it and publish.
-4. Installed copies check for updates about 10 seconds after launch and download the new version
+1. Bump `version` in `apps/desktop/package.json` (say `1.0.0-alpha.4`) and commit it.
+2. Release that commit, either way (the tag may be `v1.0.0-alpha.4` or `1.0.0-alpha.4`):
+   - **Tag from the command line:** `git tag 1.0.0-alpha.4 && git push origin 1.0.0-alpha.4`. The
+     Release workflow creates a **draft** release and builds the installers into it; review it
+     and publish.
+   - **Publish from the GitHub UI** (Releases → Draft a new release, new tag on that commit). The
+     Release workflow starts when you publish and attaches the installers about 10 minutes later.
+   Either way it first checks the tag matches the version, and fails the run when it does not.
+3. Installed copies check for updates about 10 seconds after launch and download the new version
    in the background; it installs when the app quits.
 
 | OS | installers | updates itself |
