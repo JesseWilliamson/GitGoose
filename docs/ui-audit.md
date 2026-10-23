@@ -45,7 +45,7 @@ What "go back to basics" meant in practice, four questions asked of every surfac
 - **Hint text fails contrast.** The "faint" grey is about 3.3 : 1 on the panel in both themes
   (dark `#707075` on `#1d1d20`, light `#8e8f94` on white); AA for 11 to 12 px text is 4.5 : 1. It
   is used for hints, counts, dates, placeholders and every "Sent with your next message". Now one
-  utility (`text-muted-foreground/70`), so raising it is one change. UI audit 2.
+  utility (`text-muted-foreground/70`), so raising it is one change. Done (audit 2b).
 - **Compact graph starves the message.** The branch/tag column takes 160 px and the lane strip
   200 px, the message column keeps about 90 px: "Publish si…". The header says "COMMIT ME…".
   Columns have fixed widths and the message gets what is left. UI audit 2.
@@ -53,7 +53,7 @@ What "go back to basics" meant in practice, four questions asked of every surfac
   truncated mid-address. Name and date are the content; the address is a tooltip. UI audit 2.
 - **The diff header has five controls in three styles** in one 40 px bar: "This version ▾",
   "Diff tool", a Unified | Split segmented control, a Diff | History | Blame one, and ✕. Group
-  them: view mode left, tools in a menu on the right. UI audit 2.
+  them: view mode left, tools in a menu on the right. Done (audit 2b).
 - **Status bar prints the repository path** in 11 px mono, right-aligned, truncated at its end
   ("/tmp/claude-0/-home-user-GitGoose/346cd904-0139-5110-b376-3e6a…"): the part that is cut off
   is the part that tells repositories apart. Truncate from the left, or show the folder only.
@@ -62,7 +62,8 @@ What "go back to basics" meant in practice, four questions asked of every surfac
   one hint line), so a short list floats in a tall box. Split by content. UI audit 2.
 - **Section headers are a fourth casing.** After the strips became sentence case, the remaining
   UPPERCASE 11 px headers ("UNSTAGED (3)", "1 FILE CHANGED", "BRANCH / TAG") are the odd ones
-  out. Pick one: sentence case 12 px medium, muted. UI audit 2.
+  out. Pick one: sentence case 12 px medium, muted. Done (audit 2b) except the sidebar and the graph's
+  column header, which are 2a's files.
 - **The commit box identity line** ("as Ada Lovelace <ada@example.com> · this repository") is
   11 px faint above the fields it describes. Fine as information, wrong as the first thing.
 - **Empty sections draw chrome.** "Pinned 0", "STAGED (0)" with a paragraph. An empty section
@@ -76,23 +77,22 @@ What "go back to basics" meant in practice, four questions asked of every surfac
 
 ## Surface by surface
 
-"Done" is UI audit 1; "Done (audit 2a)" is the sidebar, graph lanes, working copy, Details header and
-status bar; "Next" is UI audit 2b.
+"Done" is UI audit 1; "Done (audit 2a)" and "Done (audit 2b)" are the two halves of UI audit 2.
 
 | Surface | What is wrong (one line) | What to do (one line) | |
 |---|---|---|---|
-| Welcome | Logo and three equal cards float in an empty window, no recents, no shortcuts. | Recent repositories as the main list, Open / Clone / New as one row of quiet buttons, shortcuts as a footer. | Next |
+| Welcome | Logo and three equal cards float in an empty window, no recents, no shortcuts. | Recent repositories as the main list, Open / Clone / New as one row of quiet buttons, shortcuts as a footer. | Done (audit 2b) |
 | Graph, comfy | The lane cell grows with the lane count (198 px at 8 lanes, 294 at the cap of 12) so text starts mid-window; empty lanes sit on the left of most rows. | Cap it lower, compress unused lanes, let the message start at a fixed indent. | Done (audit 2a): 4 lanes at 24 px, then 16 px, cap 8; the text starts at 166 px at most. |
 | Graph, compact | Ref column and lanes leave the message 90 px. | Message first: refs inline after it, lanes capped. | Done (audit 2a): columns give way (SHA, branch / tag, author, date) until the message keeps 40% of the row; the pills follow the message. |
 | Working copy | Staged and Unstaged split the height evenly; identity line is the first thing in the commit box. | Split by content; identity under the fields, in the commit options. | Done (audit 2a) |
 | Details | Explain row carried two selects and Prompt; e-mail address truncated mid-word. | One target button in the Explain row; name and date only. | Done (audit 2a): the target button, and the header (name and relative date, the address on hover) |
 | AI pane | Two headers; four stacked control bars (33% of the pane); empty state a faint paragraph top-left. | No pane header (New / History move to the strip); one composer box; centred empty state. | Done |
 | Pane tab strips | Uppercase 11 px, ⋯ on every tab, an inset underline: a third tab style. | 12 px medium sentence case, 2 px primary underline, ⋯ on hover or when open, right-click opens the same menu, a right slot for pane actions. | Done |
-| File diff | Five controls in three styles in one bar. | Group: view mode left, tools in a menu right. | Next |
-| Omni search | One generic icon, "Repository" under every command. | An icon per kind (branch, commit, file, command), subtitle only when it says something (the shortcut, the file's folder). | Next |
+| File diff | Five controls in three styles in one bar. | Group: view mode left, tools in a menu right. | Done (audit 2b) |
+| Omni search | One generic icon, "Repository" under every command. | An icon per kind (branch, commit, file, command), subtitle only when it says something (the shortcut, the file's folder). | Done (audit 2b) |
 | Context menu | Items are fine; shadcn's blue highlight was the old `accent`. Disabled items now carry reasons. | Done by the colour vocabulary: highlight is the subdued accent surface. | Done |
-| Dialogs | Title, field and buttons are right but the width and spacing are chosen per dialog. | One width per kind, header / body / footer rhythm on the 4 px grid. | Next |
-| Toolbar | Search is a fake input 26 rem wide; badges on pull and push overlap their icons. | Search as the shadcn `Input` with a kbd hint, badges as counts beside the icon. | Next |
+| Dialogs | Title, field and buttons are right but the width and spacing are chosen per dialog. | One width per kind, header / body / footer rhythm on the 4 px grid. | Done (audit 2b) |
+| Toolbar | Search is a fake input 26 rem wide; badges on pull and push overlap their icons. | Search as the shadcn `Input` with a kbd hint, badges as counts beside the icon. | Done (audit 2b) |
 | Sidebar | Eye row, mixed badges, always-on drag hint, lone + and filter icon. | One row anatomy, counts right-aligned in one column, hint only while dragging. | Done (audit 2a) |
 | Status bar | Path is truncated at the wrong end. | Truncate left or show the folder name. | Done (audit 2a) |
 | Tokens | Two vocabularies, hand-typed sizes. | One vocabulary, a documented scale. | Done |
@@ -180,6 +180,41 @@ the AI pane uses for New and History. Details could put Review / Stash there lat
 Every change was checked by screenshot in dark and light: the graph with a commit selected, the
 context menu (the highlight is the subdued surface, not blue), Details, the working copy, the file
 diff, the AI pane (empty, with a chip, the actions menu open, the target popover open), a dialog.
+
+## What changed in UI audit 2b
+
+**Hint contrast.** The "faint" grey is its own token now, `text-hint` (`--hint`, set to `--gs-faint`),
+so its contrast belongs to the palette and not to whatever opacity a class composes with. Measured
+with the WCAG formula, on the card:
+
+| | Before | After |
+|---|---|---|
+| Dark, the palette value | `#707075` 3.41 : 1 | `#909096` 5.30 : 1 |
+| Dark, what `/70` actually drew | `#7b7b7f` 3.99 : 1 | |
+| Light, the palette value | `#8e8f94` 2.99 : 1 | `#6b6c72` 4.85 : 1 |
+| Light, what `/70` actually drew | `#8c8c90` 3.10 : 1 | |
+
+(The audit's "about 3.3 : 1" was the palette value; the drawn colour, the muted grey at 70%, was
+a little better in dark and a little worse in light.) The new hint is at least 4.5 : 1 on the page,
+the card and popovers in both themes, and still quieter than the muted text (6.70 and 5.90), so the
+hierarchy survives. `lib/hint.test.ts` reads the hex values from `styles.css` and fails if a palette
+change breaks it. Every former `text-muted-foreground/70` now says `text-hint`; there is no
+compatibility rule left.
+
+**Section headers.** One component, `SectionHeader` (sentence case, 12 px medium, muted, an optional
+muted `count`, a `right` slot, `as` for real headings). Welcome, Impact, Walkthrough, Settings, the
+code peek, the conflict wizard's result, Recompose's columns and the omni group headings use it.
+
+**Dialogs.** `Modal` takes a kind: `sm` 400, `md` 520, `lg` 720, and `xl` 1120 for the recompose
+workbench alone. Title `text-base` semibold, 12 px to the body, blocks 12 px apart, `ModalFooter` 16 px
+under the body, the primary button last. The ConflictWizard is a view, not a dialog.
+
+| Kind | Dialogs |
+|---|---|
+| sm 400 | confirm, input, pick, credentials prompt, "Send to ...?" consent |
+| md 520 | choice (message with detail), commit message text, clean up branches, who you commit as, pull request, review learnings, pre-push results, pre-push rules, LFS locks, clone, keyboard shortcuts, agent login, tool permission, AI output, recompose (asking) |
+| lg 720 | AI fix proposal, AI conflict resolution |
+| xl 1120 | recompose (the editor) |
 
 ## What changed in UI audit 2a
 

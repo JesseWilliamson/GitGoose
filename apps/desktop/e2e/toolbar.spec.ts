@@ -49,3 +49,38 @@ test('a tooltip closes when a menu opens next to it', async () => {
   await expect(page.getByRole('tooltip')).toHaveCount(0)
   await app.close()
 })
+
+test('the search is a real input with its shortcut, and a count sits beside its icon', async () => {
+  const r = makeFixture('with-remote')
+  r.commit('ahead of origin', { 'a-new-file.txt': 'x\n' })
+  const { app, page } = await launch(r.dir)
+  const toolbar = page.getByTestId('toolbar')
+
+  // A real <input> (shadcn's), about 20 rem wide, with the platform's shortcut as a Kbd on its right.
+  const search = toolbar.getByTestId('omni-open')
+  expect(await search.evaluate((el) => el.tagName)).toBe('INPUT')
+  const field = (await search.boundingBox())!
+  expect(field.width).toBeGreaterThan(300)
+  expect(field.width).toBeLessThan(340)
+  const kbd = toolbar.locator('kbd')
+  await expect(kbd).toHaveText(process.platform === 'darwin' ? '⌘K' : 'Ctrl+K')
+  const hint = (await kbd.boundingBox())!
+  expect(hint.x).toBeGreaterThan(field.x + field.width / 2)
+  expect(hint.x + hint.width).toBeLessThanOrEqual(field.x + field.width)
+  // Enter on it opens the search too, like a click.
+  await search.focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByTestId('omni')).toBeVisible()
+  await page.keyboard.press('Escape')
+
+  // Every toolbar button is 28 px tall, and the count of commits to push (the fixture has one, plus ours) is beside its icon, not on it.
+  const push = toolbar.getByRole('button', { name: 'Push' }).first()
+  expect((await push.boundingBox())!.height).toBe(28)
+  await expect(push.getByTestId('toolbar-count')).toHaveText('2')
+  const icon = (await push.locator('svg').boundingBox())!
+  const count = (await push.getByTestId('toolbar-count').boundingBox())!
+  expect(count.x).toBeGreaterThanOrEqual(icon.x + icon.width)
+  expect((await toolbar.getByRole('button', { name: 'Fetch' }).boundingBox())!.height).toBe(28)
+  expect((await toolbar.getByRole('button', { name: 'Settings' }).boundingBox())!.height).toBe(28)
+  await app.close()
+})

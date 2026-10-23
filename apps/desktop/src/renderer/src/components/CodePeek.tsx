@@ -6,6 +6,7 @@ import { openInEditor } from '../lib/actions'
 import { api } from '../lib/api'
 import { indexingText } from '../lib/codegraph'
 import { useStore } from '../lib/store'
+import { SectionHeader } from './ui'
 
 const mod = (e: React.MouseEvent) => (window.gitgoose?.platform === 'darwin' ? e.metaKey : e.ctrlKey)
 
@@ -57,15 +58,15 @@ export function CodePeekPanel({ repoId, repoPath, name, rev, onClose }: { repoId
       <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border px-3 text-xs">
         <span className="font-semibold">Peek</span>
         <code className="rounded bg-accent px-1.5 font-mono">{name}</code>
-        <span className="text-muted-foreground/70">{rev ? `as of ${rev.slice(0, 7)}` : 'in the working tree'}</span>
-        {peek && <span className="text-muted-foreground/70">· {peek.definitions.length} definition{peek.definitions.length === 1 ? '' : 's'}, {peek.references.length}{peek.truncated ? '+' : ''} use{peek.references.length === 1 ? '' : 's'}</span>}
+        <span className="text-hint">{rev ? `as of ${rev.slice(0, 7)}` : 'in the working tree'}</span>
+        {peek && <span className="text-hint">· {peek.definitions.length} definition{peek.definitions.length === 1 ? '' : 's'}, {peek.references.length}{peek.truncated ? '+' : ''} use{peek.references.length === 1 ? '' : 's'}</span>}
         <span className="flex-1" />
         <button onClick={onClose} title="Close (Esc)" aria-label="Close peek" className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"><X size={13} /></button>
       </div>
       <div className="min-h-0 flex-1 overflow-auto font-mono text-xs">
         {error && <div className="p-3 font-sans text-xs text-destructive">{error}</div>}
-        {!peek && !error && <div className="p-3 font-sans text-xs text-muted-foreground/70" data-testid="peek-waiting">{waiting ?? 'Searching…'}</div>}
-        {peek && peek.definitions.length === 0 && <div className="px-3 pt-2 font-sans text-xs text-muted-foreground/70">No definition found (it may come from a dependency).</div>}
+        {!peek && !error && <div className="p-3 font-sans text-xs text-hint" data-testid="peek-waiting">{waiting ?? 'Searching…'}</div>}
+        {peek && peek.definitions.length === 0 && <div className="px-3 pt-2 font-sans text-xs text-hint">No definition found (it may come from a dependency).</div>}
         {peek?.definitions.map((d) => (
           <div key={`${d.path}:${d.line}`} className="border-b border-border/60" data-testid="peek-definition">
             <button onClick={() => open(d.path, d.line)} className="flex w-full items-center gap-2 px-3 pt-2 pb-1 text-left font-sans text-xs hover:text-primary">
@@ -77,7 +78,7 @@ export function CodePeekPanel({ repoId, repoPath, name, rev, onClose }: { repoId
         ))}
         {peek && peek.references.length > 0 && (
           <div className="py-1">
-            <div className="px-3 py-1 font-sans text-2xs font-semibold text-muted-foreground/70 uppercase">Used in</div>
+            <SectionHeader className="font-sans">Used in</SectionHeader>
             {peek.references.map((r) => (
               <button key={`${r.path}:${r.line}:${r.column}`} onClick={() => open(r.path, r.line)} data-testid="peek-reference"
                 className="flex w-full items-center gap-3 px-3 py-0.5 text-left hover:bg-accent">

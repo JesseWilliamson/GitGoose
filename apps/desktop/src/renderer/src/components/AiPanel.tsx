@@ -72,7 +72,7 @@ export function AiPanel() {
             description={
               <>
                 {status.hasApiKey ? 'An Anthropic API key is saved.' : 'Paste an Anthropic API key (console.anthropic.com → API keys).'}
-                <span className="mt-1 block text-muted-foreground/70">Text features only: resolving conflicts needs an agent, because it edits a file.</span>
+                <span className="mt-1 block text-hint">Text features only: resolving conflicts needs an agent, because it edits a file.</span>
                 {status.keyInMemoryOnly && (
                   <span className="mt-1 flex items-start gap-1.5 text-warn">
                     <CircleAlert size={13} className="mt-px shrink-0" /> No system keychain was found: the key is kept until GitGoose quits.

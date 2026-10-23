@@ -11,11 +11,11 @@ import { relativeTime, shortHash } from '../lib/format'
 import { pieces, fuzzy } from '../lib/fuzzy'
 import { modName } from '../lib/keys'
 import {
-  KIND_WEIGHT, kindsOf, loadRecent, parseQuery, rankAll, rememberRecent, SCOPE_LABEL, SCOPES,
-  type OmniEntry, type OmniKind, type OmniResult, type OmniScope,
+  commitSub, KIND_WEIGHT, kindsOf, loadRecent, parseQuery, rankAll, rememberRecent, SCOPE_LABEL, SCOPES,
+  splitPath, type OmniEntry, type OmniKind, type OmniResult, type OmniScope,
 } from '../lib/omni'
 import { ensureLoaded, updateRepo, useStore, type RepoView } from '../lib/store'
-import { Spinner } from './ui'
+import { SectionHeader, Spinner } from './ui'
 
 /**
  * One search for everything, opened with Ctrl+K (or Ctrl+F), like the search on the Next.js
@@ -36,8 +36,8 @@ const COMMIT_SCORE = 100
 const SUGGESTED = ['Repository:Fetch all remotes', 'Repository:Pull', 'Repository:Push', 'Repository:New branch', 'Repository:Stash all changes', 'Repository:Show reflog (recover lost commits)']
 
 const ICON: Record<OmniKind, ReactNode> = {
-  command: <SquareTerminal size={15} />, branch: <GitBranch size={15} />, tag: <Tag size={15} />, change: <FileDiff size={15} />, file: <File size={15} />,
-  stash: <Archive size={15} />, setting: <Settings2 size={15} />, commit: <GitCommitHorizontal size={15} />,
+  command: <SquareTerminal size={16} />, branch: <GitBranch size={16} />, tag: <Tag size={16} />, change: <FileDiff size={16} />, file: <File size={16} />,
+  stash: <Archive size={16} />, setting: <Settings2 size={16} />, commit: <GitCommitHorizontal size={16} />,
 }
 
 interface Group {
@@ -115,7 +115,7 @@ function OmniPanel({ initial, close }: { initial: string; close: () => void }) {
       // Git's order (newest first) is kept inside the group; the group goes where its best match ranks.
       const results = commits.list.map((c): OmniResult => {
         const m = fuzzy(query, c.subject)
-        return { kind: 'commit', key: c.hash, title: c.subject, sub: `${c.authorName} · ${relativeTime(c.authorDate)} · ${shortHash(c.hash)}`, score: m?.score ?? COMMIT_SCORE, ranges: m?.ranges ?? [] }
+        return { kind: 'commit', key: c.hash, title: c.subject, sub: commitSub(shortHash(c.hash), relativeTime(c.authorDate)), score: m?.score ?? COMMIT_SCORE, ranges: m?.ranges ?? [] }
       })
       const best = Math.max(...results.map((r) => r.score)) + KIND_WEIGHT.commit
       const at = ranked.findIndex((g) => (g.results[0]?.score ?? 0) + KIND_WEIGHT[g.id as OmniKind] < best)
@@ -175,12 +175,12 @@ function OmniPanel({ initial, close }: { initial: string; close: () => void }) {
     <Command shouldFilter={false} loop value={selected} onValueChange={setSelected} onKeyDown={onKeyDown} label="Search"
       className="overflow-hidden rounded-xl border border-border bg-popover shadow-2xl shadow-black/50">
       <div className="flex h-13 items-center gap-3 border-b border-border px-4">
-        <Search size={18} className="shrink-0 text-muted-foreground/70" />
+        <Search size={18} className="shrink-0 text-hint" />
         <Command.Input ref={input} autoFocus value={raw} onValueChange={setRaw} data-testid="palette-input"
           placeholder={chip === 'all' ? 'Search commits, branches, files, commands…' : `Search ${SCOPE_LABEL[chip].toLowerCase()}…`}
-          className="h-full min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground/70" />
-        {searching && <Spinner className="text-muted-foreground/70" />}
-        <kbd className="rounded border border-border px-1.5 py-0.5 text-2xs text-muted-foreground/70">Esc</kbd>
+          className="h-full min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-hint" />
+        {searching && <Spinner className="text-hint" />}
+        <kbd className="rounded border border-border px-1.5 py-0.5 text-2xs text-hint">Esc</kbd>
       </div>
       <div className="flex items-center gap-1 border-b border-border px-3 py-2" role="tablist" aria-label="Search in">
         {SCOPES.map((s) => (
@@ -193,7 +193,7 @@ function OmniPanel({ initial, close }: { initial: string; close: () => void }) {
       </div>
       <Command.List className="max-h-[min(58vh,520px)] overflow-y-auto overscroll-contain p-2" data-testid="omni-results">
         {groups.length === 0 && (
-          <div className="px-3 py-10 text-center text-sm text-muted-foreground/70" data-testid="omni-empty">
+          <div className="px-3 py-10 text-center text-sm text-hint" data-testid="omni-empty">
             {searching ? 'Searching history…' : query ? <>No results for “<span className="text-foreground">{query}</span>”</> : 'Type to search'}
           </div>
         )}
@@ -201,19 +201,7 @@ function OmniPanel({ initial, close }: { initial: string; close: () => void }) {
           <Command.Group key={g.id} heading={<GroupHeading label={g.label} shown={g.results.length} total={g.total} />}
             className="mb-1 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:pt-2 [&_[cmdk-group-heading]]:pb-1">
             {g.results.map((r) => (
-              <Command.Item key={valueOf(r)} value={valueOf(r)} onSelect={() => activate(r, false)} data-testid="omni-item" data-kind={r.kind}
-                className="group flex min-h-11 cursor-default items-center gap-3 rounded-lg px-2.5 py-1.5 data-[selected=true]:bg-primary/12">
-                <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground group-data-[selected=true]:border-primary/50 group-data-[selected=true]:text-primary">
-                  {ICON[r.kind]}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className={clsx('block truncate text-sm', r.kind === 'file' || r.kind === 'change' ? 'font-mono text-xs' : '')}>
-                    <Highlight text={r.title} ranges={r.ranges} dimUntil={r.kind === 'file' || r.kind === 'change' ? r.title.lastIndexOf('/') + 1 : 0} />
-                  </span>
-                  {r.sub && <span className="block truncate text-2xs text-muted-foreground/70">{r.sub}</span>}
-                </span>
-                <CornerDownLeft size={13} className="shrink-0 text-muted-foreground/70 opacity-0 group-data-[selected=true]:opacity-100" />
-              </Command.Item>
+              <ResultRow key={valueOf(r)} r={r} value={valueOf(r)} onSelect={() => activate(r, false)} />
             ))}
           </Command.Group>
         ))}
@@ -223,31 +211,45 @@ function OmniPanel({ initial, close }: { initial: string; close: () => void }) {
   )
 }
 
-function GroupHeading({ label, shown, total }: { label: string; shown: number; total: number }) {
+/**
+ * One result, one 28 px line: the kind's icon, the title, and, only when it says something, a
+ * quiet second part at the right: a command's shortcut, a file's folder, a commit's hash and date.
+ */
+function ResultRow({ r, value, onSelect }: { r: OmniResult; value: string; onSelect: () => void }) {
+  const isPath = r.kind === 'file' || r.kind === 'change'
+  const path = isPath ? splitPath(r.title, r.ranges) : null
   return (
-    <span className="flex items-baseline gap-2 text-2xs font-semibold tracking-wide text-muted-foreground/70 uppercase">
-      {label}
-      {total > shown && <span className="font-normal tracking-normal normal-case">{shown} of {total.toLocaleString()} · Tab to narrow</span>}
-    </span>
+    <Command.Item value={value} onSelect={onSelect} data-testid="omni-item" data-kind={r.kind}
+      className="group flex h-row-lg cursor-default items-center gap-2 rounded-md px-2 data-[selected=true]:bg-accent">
+      <span className="flex shrink-0 text-muted-foreground group-data-[selected=true]:text-foreground" data-testid="omni-icon">{ICON[r.kind]}</span>
+      <span className={clsx('max-w-[70%] min-w-0 shrink-0 truncate text-sm', isPath && 'font-mono text-xs')}>
+        {path ? <Highlight text={path.name} ranges={path.nameRanges} /> : <Highlight text={r.title} ranges={r.ranges} />}
+      </span>
+      {path?.dir ? (
+        <span className="min-w-0 flex-1 truncate font-mono text-2xs text-hint" data-testid="omni-sub"><Highlight text={path.dir} ranges={path.dirRanges} /></span>
+      ) : (
+        <span className="min-w-0 flex-1 truncate text-right text-2xs text-hint" data-testid={r.sub ? 'omni-sub' : undefined}>{r.sub}</span>
+      )}
+      <CornerDownLeft size={12} className="shrink-0 text-hint opacity-0 group-data-[selected=true]:opacity-100" />
+    </Command.Item>
   )
 }
 
-/** The text with matched characters marked. A path's folder part is dimmed, so the file name stands out. */
-function Highlight({ text, ranges, dimUntil = 0 }: { text: string; ranges: [number, number][]; dimUntil?: number }) {
-  let at = 0
+function GroupHeading({ label, shown, total }: { label: string; shown: number; total: number }) {
+  return (
+    <SectionHeader className="h-row px-0" right={total > shown ? <span className="font-normal text-hint">{shown} of {total.toLocaleString()} · Tab to narrow</span> : undefined}>
+      {label}
+    </SectionHeader>
+  )
+}
+
+/** The text with matched characters marked. */
+function Highlight({ text, ranges }: { text: string; ranges: [number, number][] }) {
   return (
     <>
-      {pieces(text, ranges).flatMap((p, i) => {
-        const start = at
-        at += p.text.length
-        // Split a piece that crosses the end of the folder part.
-        const parts = start < dimUntil && at > dimUntil
-          ? [{ t: p.text.slice(0, dimUntil - start), dim: true }, { t: p.text.slice(dimUntil - start), dim: false }]
-          : [{ t: p.text, dim: at <= dimUntil }]
-        return parts.map((x, j) => p.hit
-          ? <mark key={`${i}-${j}`} className="bg-transparent font-semibold text-primary">{x.t}</mark>
-          : <span key={`${i}-${j}`} className={x.dim ? 'text-muted-foreground/70' : undefined}>{x.t}</span>)
-      })}
+      {pieces(text, ranges).map((p, i) => p.hit
+        ? <mark key={i} className="bg-transparent font-semibold text-primary">{p.text}</mark>
+        : <span key={i}>{p.text}</span>)}
     </>
   )
 }
@@ -256,7 +258,7 @@ function Footer({ current }: { current: OmniResult | undefined }) {
   const alt = current?.kind === 'branch' ? 'check out' : current?.kind === 'file' || current?.kind === 'change' ? 'open in editor' : null
   const Key = ({ children }: { children: ReactNode }) => <kbd className="rounded border border-border bg-background px-1 text-2xs">{children}</kbd>
   return (
-    <div className="flex h-9 items-center gap-4 border-t border-border px-4 text-2xs text-muted-foreground/70" data-testid="omni-footer">
+    <div className="flex h-9 items-center gap-4 border-t border-border px-4 text-2xs text-hint" data-testid="omni-footer">
       <span className="flex items-center gap-1"><Key>↑</Key><Key>↓</Key> move</span>
       <span className="flex items-center gap-1"><Key>↵</Key> {current ? openLabel(current) : 'open'}</span>
       {alt && <span className="flex items-center gap-1"><Key>{modName()}</Key><Key>↵</Key> {alt}</span>}
@@ -280,7 +282,7 @@ function openLabel(r: OmniResult): string {
 
 function localSources(view: RepoView | null, commands: ReturnType<typeof commandEntries>, files: string[] | null): Partial<Record<OmniKind, OmniEntry[]>> {
   const out: Partial<Record<OmniKind, OmniEntry[]>> = {
-    command: commands.map((c) => ({ kind: 'command', key: c.id, title: c.label, sub: c.hint ? `${c.group} · ${c.hint}` : c.group })),
+    command: commands.map((c) => ({ kind: 'command', key: c.id, title: c.label, sub: c.hint })),
     setting: Object.entries(SETTINGS).flatMap(([key, spec]) => spec.kind === 'internal' ? []
       : [{ kind: 'setting' as const, key, title: spec.label, sub: `${spec.section}${'keywords' in spec && spec.keywords ? ` · ${spec.keywords}` : ''}` }]),
   }
@@ -290,9 +292,10 @@ function localSources(view: RepoView | null, commands: ReturnType<typeof command
   const refs = [...snap.refs].sort((a, b) => Number(b.shortName === snap.head.branch) - Number(a.shortName === snap.head.branch))
   out.branch = refs.filter((r) => r.kind === 'local' || r.kind === 'remote').map((r) => ({
     kind: 'branch', key: r.name, title: r.shortName,
-    sub: r.kind === 'local' ? (r.shortName === snap.head.branch ? 'Checked out' : r.upstream ? `Local · tracks ${r.upstream.replace('refs/remotes/', '')}` : 'Local') : 'Remote',
+    // Only what the name and the icon do not already say: that it is checked out, or what it tracks.
+    sub: r.kind === 'local' ? (r.shortName === snap.head.branch ? 'Checked out' : r.upstream ? `tracks ${r.upstream.replace('refs/remotes/', '')}` : undefined) : undefined,
   }))
-  out.tag = snap.refs.filter((r) => r.kind === 'tag').reverse().map((r) => ({ kind: 'tag', key: r.name, title: r.shortName, sub: 'Tag' }))
+  out.tag = snap.refs.filter((r) => r.kind === 'tag').reverse().map((r) => ({ kind: 'tag', key: r.name, title: r.shortName }))
   out.stash = view.stashes.map((s) => ({ kind: 'stash', key: s.hash, title: s.message, sub: `${s.ref} · ${relativeTime(s.date)}` }))
   out.change = snap.status.map((e) => ({
     kind: 'change', key: e.path, title: e.path,
@@ -310,7 +313,9 @@ function emptyGroups(view: RepoView | null, sources: Partial<Record<OmniKind, Om
   const as = (e: OmniEntry): OmniResult => ({ ...e, score: 0, ranges: [] })
   const groups: Group[] = []
   if (scope === 'all') {
+    // A command is shown as it is now (its second line was once its group, "Repository").
     const recent = loadRecent().filter((e) => e.kind !== 'command' || sources.command?.some((c) => c.key === e.key))
+      .map((e) => e.kind === 'command' ? sources.command!.find((c) => c.key === e.key)! : e)
     if (recent.length) groups.push({ id: 'recent', label: 'Recent', results: recent.map(as), total: recent.length })
     const suggested = (sources.command ?? []).filter((c) => SUGGESTED.includes(c.key) && !recent.some((r) => r.kind === 'command' && r.key === c.key))
     if (suggested.length) groups.push({ id: 'suggested', label: 'Suggestions', results: suggested.map(as), total: suggested.length })
