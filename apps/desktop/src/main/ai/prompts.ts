@@ -96,6 +96,12 @@ export interface PromptContext {
   words?: (kind: PromptKind) => PromptText | undefined
   /** The review's lint pass (main/ai/linters.ts): run what the user allowed on these files. */
   lint?: (paths: string[], texts: Map<string, string>, lines: AddedLines) => Promise<{ findings: ReviewFinding[]; runs: LinterRun[]; report: string[] }>
+  /**
+   * What the user wrote in the chat composer before sending the action (every AI action starts
+   * there, with the action's prompt seeded and editable). It goes after the context, so the
+   * question is the last thing the model reads.
+   */
+  ask?: string
 }
 
 /** The words a prompt of `kind` uses: the edited parts, blank ones falling back to the built-in words. */
@@ -115,7 +121,10 @@ function wordsOf(kind: PromptKind, ctx: PromptContext): { system: string; templa
 export function compose(kind: PromptKind, ctx: PromptContext, vars: Record<string, string>, context: string, note?: string): Pick<BuiltPrompt, 'system' | 'prompt' | 'parts'> {
   const def = DEFAULT_PROMPTS[kind]
   const { system, template } = wordsOf(kind, ctx)
-  const parts: PromptParts = { kind, system, template, instructions: renderTemplate(template, vars), format: def.format, context, ...(note ? { note } : {}) }
+  const parts: PromptParts = {
+    kind, system, template, instructions: renderTemplate(template, vars), format: def.format, context,
+    ...(note ? { note } : {}), ...(ctx.ask?.trim() ? { ask: ctx.ask.trim() } : {}),
+  }
   return { system, prompt: joinPrompt(parts), parts }
 }
 
@@ -505,6 +514,21 @@ export function replayMessage(history: { user: string; agent: string }[], text: 
     'The new message:',
     text,
   ].join('\n')
+}
+
+/**
+ * The artifact a feature's own first answer is: what to check the raw JSON in the thread
+ * against when a saved conversation is reopened. Null for an anchor whose result is not an
+ * artifact (an impact is worked out locally; an explanation is prose).
+ */
+export function featureArtifact(anchor: ThreadAnchor): ArtifactKind | null {
+  switch (anchor.kind) {
+    case 'review':
+    case 'changestack': return 'findings'
+    case 'walkthrough': return 'walkthrough'
+    case 'recompose': return 'plan'
+    default: return null
+  }
 }
 
 /** The task a thread's artifacts are checked against (its verifier needs what the feature saw). */

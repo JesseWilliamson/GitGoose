@@ -11,6 +11,7 @@ import { ReflogView } from './ReflogView'
 import { ReviewView } from './ReviewView'
 import { WalkthroughView } from './WalkthroughView'
 import { ImpactView } from './ImpactView'
+import { RecomposeView } from './RecomposeView'
 import { PaneDropZones, SlotView } from './Pane'
 
 /**
@@ -32,6 +33,7 @@ export function Workspace({ view }: { view: RepoView }) {
     : view.center.kind === 'review' ? <ReviewView view={view} />
     : view.center.kind === 'walkthrough' ? <WalkthroughView view={view} />
     : view.center.kind === 'impact' ? <ImpactView view={view} />
+    : view.center.kind === 'recompose' ? <RecomposeView view={view} />
     : view.center.kind === 'file' ? <FileView view={view} target={view.center.target} mode={view.center.mode} />
     : <Graph view={view} />
 

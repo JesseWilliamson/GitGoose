@@ -66,7 +66,11 @@ export function releaseThread(threadId: string): void {
  */
 export function useThread(repoId: string, anchor: ThreadAnchor, threadId: string | null | undefined, onOpened?: (id: string) => void): AiThread | null {
   const [id, setId] = useState<string | null>(threadId ?? null)
-  const key = JSON.stringify(anchor)
+  // The anchor only decides which conversation this is while the view has no id for one yet:
+  // with an id, that is what is resumed. So it is left out of the key then, and a view whose
+  // anchor settles once the conversation exists (the AI pane, after a composed action has
+  // started) does not let go of the thread it is showing and open it again.
+  const key = threadId ? '' : JSON.stringify(anchor)
   useEffect(() => {
     let live = true
     let held: string | null = null
@@ -178,11 +182,4 @@ function revealAnswer(repoId: string, threadId: string): void {
   const layout = setting('layout')
   const slot = slotOf(layout, 'ai')
   if (slot && layout[slot].collapsed && layout[slot].active === 'ai') saveLayout(setCollapsed(layout, slot, false))
-}
-
-/** Which chat rails are open, per view kind (remembered while the app runs). */
-export const useRails = create<Record<string, boolean>>(() => ({}))
-
-export function toggleRail(kind: string): void {
-  useRails.setState((s) => ({ [kind]: !s[kind] }))
 }

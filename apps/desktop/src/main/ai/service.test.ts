@@ -242,6 +242,54 @@ describe('threads', () => {
     expect(await t.ai.checkArtifact(thread.id, 'diagram', '  ')).toMatchObject({ kind: 'problem' })
   })
 
+  it('runs a feature in the conversation the user opened, with their own words last', async () => {
+    const t = await setup()
+    t.ai.consent()
+    // The chat opens the conversation first (a menu composed the action into its box), and the
+    // feature's request is that conversation's first turn, not a second thread beside it.
+    const open = await t.ai.openThread('x', { kind: 'review', scope: { kind: 'staged' } })
+    const res = await t.ai.run('rv', 'x', { kind: 'review', scope: { kind: 'staged' }, profile: 'chill' },
+      { keepThread: true, thread: open.id, ask: 'Only the error handling, please.' })
+    expect(res.threadId).toBe(open.id)
+    expect(t.ai.listThreads('x').map((x) => x.id)).toEqual([open.id])
+    // The user turn reads as what they wrote; the feature's own prompt is under "Sent".
+    const shown = mirror(t.events, open)
+    const user = shown.turns[0]!
+    expect(user.blocks).toEqual([{ type: 'text', text: 'Only the error handling, please.' }])
+    expect(user.feature).toBe(undefined)
+    expect(user.sent).toContain('Only the error handling, please.')
+    // Their words go after the context, so the question is the last thing the model reads.
+    expect(user.sent!.lastIndexOf('What I asked for')).toBeGreaterThan(user.sent!.indexOf('Staged diff') || 0)
+    // The agent's turn is still the feature's, so the view shows the result and not raw JSON.
+    expect(shown.turns[1]!.feature).toBe('Review: Staged changes')
+  })
+
+  it('reopening a conversation hands back its result, checked again by the feature\'s verifier', async () => {
+    const t = await setup()
+    t.ai.consent()
+    const res = await t.ai.run('rv', 'x', { kind: 'review', scope: { kind: 'staged' }, profile: 'chill' }, { keepThread: true })
+    const again = await t.ai.threadResult(res.threadId!)
+    expect(again?.kind).toBe('findings')
+    if (again?.kind !== 'findings') return
+    expect(again.review.findings.map((f) => f.title)).toEqual(res.review!.findings.map((f) => f.title))
+    // A conversation with no result of its own has nothing to give back.
+    const chat = await t.ai.openThread('x', { kind: 'free' })
+    expect(await t.ai.threadResult(chat.id)).toBe(null)
+    expect(await t.ai.threadResult('not-a-thread')).toBe(null)
+  })
+
+  it('marks a saved conversation out of date once what it was about has changed', async () => {
+    const t = await setup()
+    t.ai.consent()
+    const res = await t.ai.run('rv', 'x', { kind: 'review', scope: { kind: 'staged' }, profile: 'chill' }, { keepThread: true })
+    const saved = t.ai.listThreads('x').find((x) => x.id === res.threadId)!
+    expect(saved.basis).toBeTruthy()
+    expect(await t.ai.staleThreads('x')).toEqual({})
+    // Committing what was reviewed is exactly the case the mark is for.
+    t.r.git('commit', '-q', '-m', 'Add the widget registry')
+    expect(await t.ai.staleThreads('x')).toEqual({ [res.threadId!]: 'The uncommitted changes have changed since.' })
+  })
+
   it('a feature thread nobody opens still ends its session after the idle grace', async () => {
     const t = await setup({}, undefined, { threadIdleMs: 60 })
     t.ai.consent()

@@ -409,6 +409,18 @@ export interface AiRunOptions {
    * ones. Only system and instructions: the answer format is never the caller's.
    */
   prompt?: PromptText
+  /**
+   * `aiRun` only: run the feature in a thread that is already open (the chat the user started
+   * it from) instead of opening one. Every AI action goes through the chat, so the feature's
+   * request and the conversation around it are one thread, not two.
+   */
+  thread?: string
+  /**
+   * `aiRun` only: the user's own words, sent after the context so the question is the last
+   * thing the model reads. The composer is seeded with the action's prompt and the user edits
+   * it before sending, so this is what they actually asked for.
+   */
+  ask?: string
 }
 
 /** A request's prompt before anything is sent (aiPromptPreview): its parts, for the Prompt panel. */
@@ -625,6 +637,27 @@ export interface AiTurn {
   sent?: string
 }
 
+/**
+ * What a thread's anchor resolved to when the conversation started: the commits it is about.
+ * Comparing it with the same thing worked out now says whether the answer still describes the
+ * repository, which is what decides whether reopening a review (or a plan, a walkthrough, an
+ * impact) may put its result back in the middle of the window. See `staleReason` in ./basis.ts.
+ *
+ * Only threads with a result to restore have one; a chat, an explanation or an error has
+ * nothing to go stale.
+ */
+export interface ThreadBasis {
+  /** The commits the anchor covers, in order (resolved: a branch name becomes its tip). */
+  commits: string[]
+  /** A ref the anchor names, and the commit it pointed at then. */
+  ref?: { name: string; hash: string }
+  /**
+   * Scopes that take in uncommitted work: a digest of `git diff --raw` for exactly what was
+   * read (the index, the working tree, or both), so an edit since shows up as a change.
+   */
+  dirty?: string
+}
+
 export interface AiThread {
   id: string
   repoId: string
@@ -641,6 +674,12 @@ export interface AiThread {
   commands?: string[]
   /** Who the conversation is with now (set by its first turn, and again when it switches). */
   target?: AiTarget
+  /**
+   * What the anchor pointed at when the thread started. Reopening the thread may show its
+   * result again only while the same thing is still true (./basis.ts); otherwise the
+   * conversation is marked out of date, because its answer is about commits that are gone.
+   */
+  basis?: ThreadBasis
 }
 
 /**
@@ -648,8 +687,12 @@ export interface AiThread {
  * run by main for the copy it keeps and by the renderer for the copy it shows.
  */
 export type AiUpdate =
-  /** A user turn was sent (and the agent's turn begins). */
-  | { kind: 'turn'; text: string; feature?: string; at: number; by?: string; sent?: string }
+  /**
+   * A user turn was sent (and the agent's turn begins). `feature` is the feature's own name,
+   * shown instead of its prompt; `ask` is what the user wrote in the composer before sending
+   * it, which is shown as an ordinary user turn (the prompt itself is under "Sent").
+   */
+  | { kind: 'turn'; text: string; feature?: string; ask?: string; at: number; by?: string; sent?: string }
   /** Streamed text, appended. */
   | { kind: 'text'; text: string }
   | { kind: 'thought'; text: string }

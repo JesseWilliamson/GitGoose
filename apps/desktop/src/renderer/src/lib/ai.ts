@@ -31,10 +31,13 @@ export interface AiUi {
   } | null
   /** Fix with AI: waiting for, or showing, a proposed new version of one file. */
   fix: { repoId: string; path: string; title: string; requestId: string | null; before: string | null; after: string | null; note: string; error: string | null; hidden?: boolean } | null
-  /** Recompose with AI: waiting for a plan (requestId set), failed, or under review. */
+  /**
+   * Recompose with AI: waiting for a plan (requestId set), failed, or under review. The plan is
+   * shown in the middle of the window (CenterView 'recompose'), so there is no hidden flag:
+   * looking at something else is just another centre view, and the job chip brings it back.
+   */
   recompose: {
     repoId: string; hashes: string[]; requestId: string | null; proposal: RecomposeProposal | null; error: string | null
-    hidden?: boolean
     /** The conversation the plan came from (the chat column beside the plan). */
     threadId?: string
     /** A plan applied from the chat: the editor takes it as one undo step (see lib/artifacts.ts). */
@@ -164,7 +167,18 @@ export interface AiRun {
  * `before` runs once the provider is set up and agreed to, just before the request: for questions
  * that only make sense when the request will really happen (which linters a review may run).
  */
-export function startAi(repoId: string | null, task: AiTask, onText?: (text: string) => void, opts: { before?: () => Promise<void>; keepThread?: boolean; onThread?: (threadId: string) => void; target?: AiTarget } = {}): AiRun {
+export interface StartAiOptions {
+  before?: () => Promise<void>
+  keepThread?: boolean
+  onThread?: (threadId: string) => void
+  target?: AiTarget
+  /** Run the feature in a conversation that is already open (the chat it was started from). */
+  thread?: string
+  /** What the user wrote in that chat's composer before sending: it goes after the context. */
+  ask?: string
+}
+
+export function startAi(repoId: string | null, task: AiTask, onText?: (text: string) => void, opts: StartAiOptions = {}): AiRun {
   const requestId = crypto.randomUUID()
   // Decided once, up front: changing the picker mid-request applies to the next one.
   const target = opts.target ?? areaTarget(areaOf(task.kind)) ?? undefined
@@ -180,7 +194,10 @@ export function startAi(repoId: string | null, task: AiTask, onText?: (text: str
       let redact = false
       for (let attempt = 0; ; attempt++) {
         try {
-          const o = { ...(redact ? { redact } : {}), ...(opts.keepThread ? { keepThread: true } : {}), ...(target ? { target } : {}), ...(prompt ? { prompt } : {}) }
+          const o = {
+            ...(redact ? { redact } : {}), ...(opts.keepThread ? { keepThread: true } : {}), ...(target ? { target } : {}), ...(prompt ? { prompt } : {}),
+            ...(opts.thread ? { thread: opts.thread } : {}), ...(opts.ask?.trim() ? { ask: opts.ask } : {}),
+          }
           return await api.aiRun(requestId, repoId ?? '', task, Object.keys(o).length ? o : undefined)
         } catch (e) {
           const err = e as { code?: string; message?: string }
@@ -289,9 +306,13 @@ export function showRepo(repoId: string): void {
   if (useStore.getState().repos[repoId]) useStore.setState({ active: repoId, page: null })
 }
 
-/** Show a thread in the AI pane: the pane is shown and activated wherever it lives (ADR-010). */
+/**
+ * Show a thread in the AI pane: the pane is shown and activated wherever it lives (ADR-010),
+ * and whatever the pane was doing instead (the history list, an action waiting to be sent)
+ * gives way — this is a request to look at one conversation.
+ */
 export function openInPanel(repoId: string, threadId: string): void {
-  updateRepo(repoId, (v) => ({ chat: { ...v.chat, threadId } }))
+  updateRepo(repoId, (v) => ({ chat: { ...v.chat, threadId, pending: undefined, history: false } }))
   showAiPane()
 }
 
@@ -299,7 +320,8 @@ export function openInPanel(repoId: string, threadId: string): void {
 function panelShows(repoId: string, threadId: string | null): boolean {
   const s = useStore.getState()
   const chat = s.repos[repoId]?.chat
-  return !!threadId && s.active === repoId && !s.page && isPaneVisible(setting('layout'), 'ai') && chat?.threadId === threadId
+  // Not while the history has the pane: the conversation is not on screen then.
+  return !!threadId && s.active === repoId && !s.page && isPaneVisible(setting('layout'), 'ai') && chat?.threadId === threadId && !chat.history
 }
 
 /** A run's end finishes its job: an answer or an error stays until seen; nothing at all (stopped, not set up) drops it. */

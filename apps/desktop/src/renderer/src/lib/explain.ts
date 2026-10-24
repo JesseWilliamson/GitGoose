@@ -48,10 +48,10 @@ function showCommit(repoId: string, hash: string): void {
   void ensureLoaded(repoId, hash)
 }
 
-export function explainCommit(repoId: string, hash: string): void {
+export function explainCommit(repoId: string, hash: string, opts: { thread?: string; ask?: string } = {}): void {
   const k = keyOf(repoId, hash)
-  const run = startAi(repoId, { kind: 'explain-commit', hash }, (text) => patch(k, { text }), { keepThread: true })
-  useExplains.setState({ [k]: { text: '', requestId: run.requestId, error: null } })
+  const run = startAi(repoId, { kind: 'explain-commit', hash }, (text) => patch(k, { text }), { keepThread: true, ...opts })
+  useExplains.setState({ [k]: { text: '', requestId: run.requestId, error: null, threadId: opts.thread } })
   registerJob({
     id: run.requestId,
     repoId,
@@ -65,7 +65,7 @@ export function explainCommit(repoId: string, hash: string): void {
   run.done.then((res) => {
     if (!mine()) return dropJob(run.requestId)
     if (res) {
-      patch(k, { text: res.text, requestId: null, threadId: res.threadId })
+      patch(k, { text: res.text, requestId: null, threadId: res.threadId ?? opts.thread })
       return finishJob(run.requestId)
     }
     // Stopped: keep what had streamed; with nothing, as if never asked (an older explanation may show).
