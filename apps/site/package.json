@@ -8,13 +8,15 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "node scripts/typecheck.mjs"
+    "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@radix-ui/react-select": "^2.4.1",
-    "@radix-ui/react-slider": "^1.6.1",
-    "@radix-ui/react-switch": "^1.4.1",
-    "@radix-ui/react-toggle-group": "^1.2.1",
+    "@dsviz/arch": "^3.0.0",
+    "@dsviz/core": "^3.0.0",
+    "@dsviz/ds": "^3.0.0",
+    "@dsviz/git": "^3.0.0",
+    "@dsviz/react": "^3.0.0",
+    "@dsviz/uml": "^3.0.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },

@@ -183,18 +183,24 @@ importers:
 
   apps/site:
     dependencies:
-      '@radix-ui/react-select':
-        specifier: ^2.4.1
-        version: 2.4.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@radix-ui/react-slider':
-        specifier: ^1.6.1
-        version: 1.6.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@radix-ui/react-switch':
-        specifier: ^1.4.1
-        version: 1.4.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@radix-ui/react-toggle-group':
-        specifier: ^1.2.1
-        version: 1.2.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@dsviz/arch':
+        specifier: ^3.0.0
+        version: 3.0.0
+      '@dsviz/core':
+        specifier: ^3.0.0
+        version: 3.0.0
+      '@dsviz/ds':
+        specifier: ^3.0.0
+        version: 3.0.0
+      '@dsviz/git':
+        specifier: ^3.0.0
+        version: 3.0.0
+      '@dsviz/react':
+        specifier: ^3.0.0
+        version: 3.0.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@dsviz/uml':
+        specifier: ^3.0.0
+        version: 3.0.0
       react:
         specifier: ^19.3.0
         version: 19.3.1
@@ -456,6 +462,42 @@ packages:
 
   '@codemirror/view@6.43.14':
     resolution: {integrity: sha512-hC45YnmJNR1rz42OF57BLoQNFMV12/13drnvibDsR2quNDmldcb4WvYVV81hFQg56i9lcqQMEDqilhX2QDcGQQ==}
+
+  '@dsviz/arch@3.0.0':
+    resolution: {integrity: sha512-LyRNLtOtzTV1FIjW3FQ95xEZB/iTPCKE2lR5XO6+fjzDEWE/WehCDcW5n2SEM/qw7h9LHiunh7zVN1VqWM9xLw==}
+    engines: {node: '>=18'}
+
+  '@dsviz/core@3.0.0':
+    resolution: {integrity: sha512-AzkM7ovDRd8hymr4QEGc4kj7kcPL962qtByd7UVkL5Q1ccxOzYYO9YiHkLzVsMpignJ0CFk/84Hnivl0ZhMu0Q==}
+    engines: {node: '>=18'}
+
+  '@dsviz/ds@3.0.0':
+    resolution: {integrity: sha512-pRnePPRsEgEpp7YocBg25asquTbj9QlhpXiM9Twll+/uPcRCjGljodYP1w5YMoewEI4XhfjpPy6GtUu1fhV13A==}
+    engines: {node: '>=18'}
+
+  '@dsviz/git@3.0.0':
+    resolution: {integrity: sha512-mlUMBj/QwK1kZuOhs8318I8xKogiOa7TI9Rj7oYG9uTyXYmrHiZ3eclu/00cSUV/JnpbKu7iUjGsV0iah8DZVw==}
+    engines: {node: '>=18'}
+
+  '@dsviz/layout@3.0.0':
+    resolution: {integrity: sha512-HbN2iw9KZXYjhChdAfSVho4OawTab7ZxHhVinS7DyduejCDaQLk7Ze23qrsBq4oMzIdPsQcLr1WaVzkHWpPadA==}
+    engines: {node: '>=18'}
+
+  '@dsviz/react@3.0.0':
+    resolution: {integrity: sha512-3pPbXEbGyDZHwPDIpbuyKgUiyBIjC6DOO8wdoCJFU7UT1tKe2zRv8TgiH4VzgEgvAKPziXZqfP+zEykMeO9QlQ==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      react: '>=18'
+      react-dom: '>=18'
+    peerDependenciesMeta:
+      react:
+        optional: true
+      react-dom:
+        optional: true
+
+  '@dsviz/uml@3.0.0':
+    resolution: {integrity: sha512-IQWJx2cYa+hy/a/GIKzGHyzSqXr1TqZxAgMbSpYbV255YqIt7YvEBWfOX5xNJbkcUlDYSeDYbEAby7UaR09+Hg==}
+    engines: {node: '>=18'}
 
   '@electron-internal/extract-zip@1.0.5':
     resolution: {integrity: sha512-+bqFCP98pLI0Tt0XQo1TmlXtwjWchISndDOxCkEcIuUgXWpBnLyRI+2DU+mesvnMMX6L1XDqYNA0lXNDHd/yiA==}
@@ -4294,6 +4336,45 @@ snapshots:
       crelt: 1.0.7
       style-mod: 4.1.4
       w3c-keyname: 2.2.8
+
+  '@dsviz/arch@3.0.0':
+    dependencies:
+      '@dsviz/core': 3.0.0
+      '@dsviz/layout': 3.0.0
+
+  '@dsviz/core@3.0.0': {}
+
+  '@dsviz/ds@3.0.0':
+    dependencies:
+      '@dsviz/core': 3.0.0
+      '@dsviz/layout': 3.0.0
+
+  '@dsviz/git@3.0.0':
+    dependencies:
+      '@dsviz/core': 3.0.0
+
+  '@dsviz/layout@3.0.0':
+    dependencies:
+      '@dsviz/core': 3.0.0
+
+  '@dsviz/react@3.0.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+    dependencies:
+      '@dsviz/core': 3.0.0
+      '@radix-ui/react-select': 2.4.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@radix-ui/react-slider': 1.6.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@radix-ui/react-switch': 1.4.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@radix-ui/react-toggle-group': 1.2.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+    optionalDependencies:
+      react: 19.3.1
+      react-dom: 19.3.1(react@19.3.1)
+    transitivePeerDependencies:
+      - '@types/react'
+      - '@types/react-dom'
+
+  '@dsviz/uml@3.0.0':
+    dependencies:
+      '@dsviz/core': 3.0.0
+      '@dsviz/layout': 3.0.0
 
   '@electron-internal/extract-zip@1.0.5': {}
 

@@ -14,8 +14,7 @@ explanations. `docs/learn/` holds exercises for the four pieces he plans to own.
 
 ```
 apps/site/             the website (Vite + React, static pages): what GitGoose is, how it works, and
-                       "Drawing git graphs"; its figures are drawn with dsviz from a checkout of
-                       DiagramBuilder beside this repository (see apps/site/vite.config.ts)
+                       "Drawing git graphs"; its figures are drawn with dsviz (the @dsviz/* packages)
 apps/desktop/          Electron app (electron-vite)
   src/main/            main process: window, IPC router (ipc.ts), RepoManager + file watcher, settings, menu,
                        avatars, github/ (GitHub's public API, no sign-in: pull request list, avatar lookup),
@@ -86,5 +85,5 @@ pnpm e2e              # builds, then Playwright drives the real app
 pnpm bench            # 100k-commit benchmark (add --check to enforce budgets)
 pnpm dist             # package installers with electron-builder
 pnpm install:local    # build this working tree and install it on this machine (again to update)
-pnpm --filter @gitgoose/site dev   # the website, with ../DiagramBuilder cloned and built (npm run build there)
+pnpm --filter @gitgoose/site dev   # the website
 ```

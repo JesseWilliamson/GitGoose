@@ -1,11 +1,5 @@
 name: Deploy the website to GitHub Pages
 
-# The site (apps/site) draws its figures with dsviz, which is not on npm yet, so the job checks
-# DiagramBuilder out beside this repository and builds it first (see apps/site/vite.config.ts).
-# DiagramBuilder is private: the checkout needs a token with read access to it in the
-# DSVIZ_TOKEN secret (a fine-grained PAT scoped to that repository). Once dsviz is published,
-# replace the alias in the site with normal dependencies and drop the second checkout.
-
 on:
   push:
     branches: [main]
@@ -29,34 +23,20 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          path: GitGoose
-      - uses: actions/checkout@v4
-        with:
-          repository: JesseWilliamson/DiagramBuilder
-          path: DiagramBuilder
-          token: ${{ secrets.DSVIZ_TOKEN || github.token }}
       - uses: pnpm/action-setup@v4
-        with:
-          package_json_file: GitGoose/package.json
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Build dsviz
-        working-directory: DiagramBuilder
-        run: |
-          npm ci
-          npm run build
-      - name: Install (without the Electron download; the site does not need it)
-        working-directory: GitGoose
-        run: pnpm install --frozen-lockfile --ignore-scripts
+          cache: pnpm
+      # Without the install scripts: the site does not need the Electron download.
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Typecheck and build the site
-        working-directory: GitGoose/apps/site
+        working-directory: apps/site
         run: |
           pnpm typecheck
           pnpm build
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: GitGoose/apps/site/dist
+          path: apps/site/dist
       - id: deployment
         uses: actions/deploy-pages@v4
