@@ -2,7 +2,7 @@ import { initRepo, makeFixture, tempDir } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import { chmodSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { hideAiPane, launch } from './app'
+import { hideAiPane, launch, sendComposed } from './app'
 
 /**
  * Waiting on the AI never holds the user up, and an answer is never lost by looking elsewhere.
@@ -68,7 +68,8 @@ test('fix with AI: closing the dialog while it works hides it; the app stays usa
   const { app, page } = await launch(r.dir, { FAKE_AGENT_GATE: gate })
   await set(page, AGENT)
   await page.getByTestId('review-menu').click()
-  await page.getByRole('menuitem', { name: 'Review all uncommitted changes' }).click()
+  await page.getByRole('menuitem', { name: 'Review all uncommitted changes…' }).click()
+  await sendComposed(page, 'review')
   await expect(page.getByTestId('finding')).toHaveCount(1)
 
   rmSync(gate) // the agent holds the next answer
@@ -104,7 +105,8 @@ test('fix with AI: a file edited while the fix was being written is never overwr
   const { app, page } = await launch(r.dir, { FAKE_AGENT_GATE: gate })
   await set(page, AGENT)
   await page.getByTestId('review-menu').click()
-  await page.getByRole('menuitem', { name: 'Review all uncommitted changes' }).click()
+  await page.getByRole('menuitem', { name: 'Review all uncommitted changes…' }).click()
+  await sendComposed(page, 'review')
   await expect(page.getByTestId('finding')).toHaveCount(1)
 
   rmSync(gate)

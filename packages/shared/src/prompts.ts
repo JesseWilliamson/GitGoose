@@ -293,10 +293,16 @@ export interface PromptParts {
   context: string
   /** Shown with the context: what is added only when the request is really sent (linters run then). */
   note?: string
+  /**
+   * The user's own words, from the composer they started the action in. It goes last, after the
+   * context, so the question is the last thing the model reads.
+   */
+  ask?: string
 }
 
 /** The user message these parts make (the system prompt goes separately, or on top for agents). */
-export function joinPrompt(p: Pick<PromptParts, 'instructions' | 'format' | 'context'>): string {
+export function joinPrompt(p: Pick<PromptParts, 'instructions' | 'format' | 'context' | 'ask'>): string {
   const head = [p.instructions.trim(), p.format].filter(Boolean).join('\n')
-  return [head, p.context].filter(Boolean).join('\n\n')
+  const ask = p.ask?.trim() ? `What I asked for:\n${p.ask.trim()}` : ''
+  return [head, p.context, ask].filter(Boolean).join('\n\n')
 }

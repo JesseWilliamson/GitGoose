@@ -11,6 +11,7 @@ import { followLocation, type NavLocation } from './nav'
 import type { ReviewState } from './review'
 import type { WalkthroughState } from './walkthrough'
 import type { ImpactState } from './impact'
+import type { AiAction } from './aiActions'
 
 export type Selection =
   | { kind: 'wip' }
@@ -34,6 +35,8 @@ export type CenterView =
   | { kind: 'review' }
   | { kind: 'walkthrough' }
   | { kind: 'impact' }
+  /** The recompose plan and its editor (the proposal itself lives in lib/ai.ts's useAi). */
+  | { kind: 'recompose' }
 
 export interface RepoView {
   id: string
@@ -62,8 +65,13 @@ export interface RepoView {
   impact: ImpactState | null
   /** The question thread open under the diff, if any: what it is about, and its thread once opened. */
   ask: { anchor: Extract<ThreadAnchor, { kind: 'ask' }>; path: string; threadId: string | null } | null
-  /** The AI panel (Mod+Shift+A): open or not, and its conversation (null: a new one). */
-  chat: { threadId: string | null; nonce?: number }
+  /**
+   * The AI panel (Mod+Shift+A): its conversation (null: a new one), the action waiting in its
+   * composer, and whether the list of earlier conversations has the pane instead. An action put
+   * there by a menu is written out but not sent (lib/aiActions.ts): the pill above the box says
+   * what pressing Enter will do.
+   */
+  chat: { threadId: string | null; nonce?: number; pending?: AiAction; history?: boolean }
   /** Saved threads (newest first), loaded with the repository. */
   askThreads: AskThread[]
   /** Local branches already in HEAD: safe to delete. */

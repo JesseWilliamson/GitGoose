@@ -1,23 +1,19 @@
 import type { ChangedFile, CommitDetails, DiffTarget, StatusEntry } from '@gitgoose/shared'
 import type { Identity, Person, Signature } from '@gitgoose/shared'
-import { Archive, Check, ChevronDown, Copy, Minus, MoreHorizontal, Plus, ShieldAlert, ShieldCheck, Sparkles, Undo2, X } from 'lucide-react'
+import { Archive, Check, ChevronDown, Copy, MessagesSquare, Minus, MoreHorizontal, Plus, ShieldAlert, ShieldCheck, Sparkles, Undo2, X } from 'lucide-react'
 import clsx from 'clsx'
 import { DropdownMenu } from 'radix-ui'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { copy, discard as discardFiles, lfsLock, lfsPatternFor, lfsTrack, openDiffTool, openInEditor, pop, restoreFileFrom, run, snapshot, stashApply, stashDrop, stashToBranch, stashWith, stashWithMessage } from '../lib/actions'
-import { cancelAi, startAi, useAi, useAiEnabled } from '../lib/ai'
+import { cancelAi, openInPanel, startAi, useAi, useAiEnabled } from '../lib/ai'
 import { api } from '../lib/api'
 import { dateTime, opName, relativeTime, sentence, shortHash, stashLabel } from '../lib/format'
 import { avatarSrc } from '../lib/avatar'
 import { addTrailer, isUntouched, splitTemplate } from '../lib/commitMessage'
-import { startReview } from '../lib/review'
+import { composeAction, impactAction, reviewAction, walkthroughAction } from '../lib/aiActions'
 import { openAsk } from '../lib/ask'
-import { useThread } from '../lib/thread'
 import { closeExplanation, explainCommit, useExplanation } from '../lib/explain'
 import { Markdown } from './Markdown'
-import { Thread } from './Thread'
-import { startWalkthrough } from '../lib/walkthrough'
-import { showImpact } from '../lib/impact'
 import { chainBase, ensureLoaded, getLog, reportError, selectCommit, setting, toast, updateRepo, useSetting, useStore, type FileMode, type RepoView } from '../lib/store'
 import { Avatar } from './Avatar'
 import { actOn, clickFile, NO_FILES, pruneFiles, type FileSelection } from '../lib/fileSelection'
@@ -140,11 +136,11 @@ function WipPanel({ view }: { view: RepoView }) {
               <Button size="sm" variant="ghost" data-testid="review-menu" title="Review, explain or assess these changes"><Sparkles size={12} /> Review</Button>
             </DropdownMenu.Trigger>
             <DM.Content align="end">
-              <DM.Item reason={aiWhy} onSelect={() => startReview(id, { kind: 'working' })}>Review all uncommitted changes</DM.Item>
-              <DM.Item reason={firstReason(aiWhy, whyNotWithoutStaged(staged.length))} onSelect={() => startReview(id, { kind: 'staged' })}>Review staged changes</DM.Item>
-              <DM.Item reason={aiWhy} onSelect={() => startWalkthrough(id, { kind: 'working' })}>Walk me through these changes</DM.Item>
+              <DM.Item reason={aiWhy} onSelect={() => composeAction(id, reviewAction({ kind: 'working' }))}>Review all uncommitted changes…</DM.Item>
+              <DM.Item reason={firstReason(aiWhy, whyNotWithoutStaged(staged.length))} onSelect={() => composeAction(id, reviewAction({ kind: 'staged' }))}>Review staged changes…</DM.Item>
+              <DM.Item reason={aiWhy} onSelect={() => composeAction(id, walkthroughAction({ kind: 'working' }))}>Walk me through these changes…</DM.Item>
               <DM.Separator />
-              <DM.Item onSelect={() => showImpact(id, { kind: 'working' })}>What could these changes affect?</DM.Item>
+              <DM.Item onSelect={() => composeAction(id, impactAction({ kind: 'working' }))}>What could these changes affect?…</DM.Item>
             </DM.Content>
           </DropdownMenu.Root>
         )}
@@ -491,19 +487,6 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
   )
 }
 
-/**
- * Explain grows into a conversation: the explanation was the first turn of a thread, and the
- * follow-ups go to the same agent session, so "and why not X?" needs no repeating of the diff.
- */
-function ExplainFollowUp({ repoId, hash, threadId }: { repoId: string; hash: string; threadId: string }) {
-  const thread = useThread(repoId, { kind: 'explain', hash }, threadId)
-  if (!thread) return null
-  return (
-    <Thread thread={thread} repoId={repoId} hideFeature testids={{ root: 'explain-thread' }} placeholder="Ask a follow-up (Enter sends)"
-      className={clsx('mt-2 -mx-2 -mb-2 border-t border-border', thread.turns.some((t) => !t.feature) && 'max-h-[60vh]')} />
-  )
-}
-
 /** Questions asked about this commit's code (Ask about lines), each reopening its thread. */
 function CommitQuestions({ view, hash }: { view: RepoView; hash: string }) {
   const threads = view.askThreads.filter((t) => t.rev === hash)
@@ -783,13 +766,16 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
                 <div className="mb-1 flex items-center gap-1 text-2xs text-hint">
                   <Sparkles size={11} /> <span className="flex-1">AI explanation</span>
                   {shown.requestId && <Button size="sm" variant="ghost" onClick={explain}>Stop</Button>}
+                  {shown.threadId && !shown.requestId && (
+                    <button title="Ask a follow-up in the AI pane" data-testid="open-chat" className="rounded p-0.5 hover:bg-accent"
+                      onClick={() => openInPanel(view.id, shown.threadId!)}><MessagesSquare size={12} /></button>
+                  )}
                   <button title="Close" className="rounded p-0.5 hover:bg-accent" onClick={() => closeExplanation(view.id, d.hash)}><X size={12} /></button>
                 </div>
                 <div data-testid="ai-explanation-text">
                   {shown.text ? <Markdown text={shown.text} /> : (shown.requestId ? <span className="flex items-center gap-2 text-muted-foreground"><Spinner /> Thinking…</span> : null)}
                 </div>
                 {shown.error && <div className="mt-1 text-xs text-destructive">{shown.error}</div>}
-                {shown.threadId && <ExplainFollowUp repoId={view.id} hash={d.hash} threadId={shown.threadId} />}
               </div>
             )}
           </div>

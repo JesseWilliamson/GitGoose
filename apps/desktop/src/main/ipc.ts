@@ -144,6 +144,8 @@ export function createHandlers(
     aiThreadCancel: async (threadId) => ai.cancelThread(threadId),
     aiThreadClose: async (threadId) => ai.closeThread(threadId),
     aiThreads: async (repoId) => ai.listThreads(repoId),
+    aiThreadsStale: (repoId) => ai.staleThreads(repoId),
+    aiThreadResult: (threadId) => ai.threadResult(threadId),
     aiThreadDelete: async (repoId, threadId) => ai.deleteThread(repoId, threadId),
     aiThreadPermission: async (permissionId, answer) => ai.answerPermission(permissionId, answer),
     aiThreadArtifact: (threadId, kind, json) => ai.checkArtifact(threadId, kind, json),

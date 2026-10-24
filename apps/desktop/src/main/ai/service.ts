@@ -1,9 +1,10 @@
 import type { Repo } from '@gitgoose/git'
 import {
-  commandArgv, defaultTarget, effectivePrompt, openingPromptKind, reduceThread, runningTurn, systemPromptKind, targetCommandLine, targetKey, targetLabel, transcript,
+  commandArgv, defaultTarget, effectivePrompt, openingPromptKind, reduceThread, runningTurn, systemPromptKind, targetCommandLine, targetKey, targetLabel, transcript, turnText,
   type PromptKind, type PromptPreview, type PromptText,
   type AgentInfo, type AiArtifactResult, type AiModelList, type AiPermissionAsk, type AiPermissionRequest, type AiResult, type AiRunOptions, type AiStatus, type AiTarget, type AiTask,
   type AiThread, type AiUpdate, type ArtifactKind, type GitGooseEvent, type PermissionAnswer, type ReviewProfile, type Settings, type ThreadAnchor,
+  isRestorable, staleReason,
 } from '@gitgoose/shared'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
@@ -12,9 +13,10 @@ import { anthropicChat, anthropicModels } from './anthropic'
 import type { SecretFile } from './keyStore'
 import { renderContext } from './context'
 import { extractJson, locateSecret, redactSecrets, repairPlan, scanSecrets, verifyFindings, verifyMermaid, verifyPushChecks, verifyWalkthrough } from '@gitgoose/git'
+import { basisOf, resolveAll } from './basis'
 import { lintForReview } from './linters'
 import {
-  ANCHOR_ARTIFACTS, anchorContext, type PromptContext, anchorOf, anchorTask, artifactProtocol, buildPrompt, cleanCommitMessage, featureLabel, openingMessage, replayMessage, type BuiltPrompt,
+  ANCHOR_ARTIFACTS, anchorContext, type PromptContext, anchorOf, anchorTask, artifactProtocol, buildPrompt, cleanCommitMessage, featureArtifact, featureLabel, openingMessage, replayMessage, type BuiltPrompt,
 } from './prompts'
 
 /**
@@ -422,6 +424,7 @@ export class AiService {
       words: this.words(task.kind, opts.prompt),
       learnings: repo ? settings.reviewLearnings[repo.path] : undefined,
       lint: repo ? (paths, texts, lines) => lintForReview(repo.path, this.deps.settings(), paths, texts, lines) : undefined,
+      ...(opts.ask ? { ask: opts.ask } : {}),
     })
     // A re-review where nothing changed: the last review stands, no need to ask anyone.
     if (task.kind === 'review' && built.review?.skipModel) return { text: '', review: toReview(task, built, '{"summary": "", "findings": []}') }
@@ -441,8 +444,13 @@ export class AiService {
         : task.kind === 'push-checks' ? { text: '', pushChecks: verifyPushChecks(extractJson(text), task.checks, built.pushChecks!.lines) }
         : { text: finish(text), ...extra }
 
-    const keep = opts.keepThread === true && !!repo
-    const rec = await this.newRec(repoId, repo, anchorOf(task), keep)
+    // Every AI action starts in the chat, so the feature usually runs in a conversation that is
+    // already open: its request is that conversation's turn, not a second thread beside it.
+    const existing = opts.thread ? this.threads.get(opts.thread) : undefined
+    if (opts.thread && !existing) throw new AiError('This conversation is closed. Open it again.', 'ai-thread-gone')
+    if (existing && (existing.active || existing.starting)) throw new AiError('The AI is still answering. Wait for it, or stop it.', 'ai-busy')
+    const keep = existing ? existing.keep : opts.keepThread === true && !!repo
+    const rec = existing ?? (await this.newRec(repoId, repo, anchorOf(task), keep))
     rec.built = built
     rec.task = task
     rec.system = built.system
@@ -461,13 +469,15 @@ export class AiService {
     }
     try {
       const out = await this.outgoing(rec, target, built.prompt + protocol, `${built.system}\n\n${built.prompt}${protocol}`)
-      const res = await this.turn(rec, requestId, out, { text: featureLabel(task, built), feature: featureLabel(task, built) }, legacy)
+      const label = featureLabel(task, built)
+      const res = await this.turn(rec, requestId, out, { text: label, feature: label, ...(opts.ask?.trim() ? { ask: opts.ask.trim() } : {}) }, legacy)
       if (res.stopReason === 'cancelled') throw new AiError('Stopped.', 'ai-cancelled')
       return { ...result(res.text, { proposal }), ...(keep ? { threadId: rec.thread.id } : {}) }
     } finally {
       // Kept, but it failed before its first turn (a model the agent does not offer, a refusal):
       // the caller got no threadId and can never close it, so it ends here like a one-shot.
-      if (!keep || !rec.thread.turns.length) this.dispose(rec)
+      // A thread the caller opened itself is never disposed here: it owns it, and still holds it.
+      if (!existing && (!keep || !rec.thread.turns.length)) this.dispose(rec)
       else this.persist(rec)
     }
   }
@@ -552,6 +562,45 @@ export class AiService {
     })
   }
 
+  /**
+   * Which saved conversations no longer describe the repository, and why. Only the ones with a
+   * result to restore (a review, a plan, a walkthrough, an impact) can be out of date; the rest
+   * are left out, as are those still good. One pass, each distinct anchor resolved once.
+   */
+  async staleThreads(repoId: string): Promise<Record<string, string>> {
+    const repo = this.deps.repo(repoId)
+    const threads = this.saved(repo.path).filter((t) => isRestorable(t.anchor) && t.basis)
+    const now = await resolveAll(repo, threads.map((t) => t.anchor))
+    const out: Record<string, string> = {}
+    for (const t of threads) {
+      const reason = staleReason(t.anchor, t.basis, now.get(JSON.stringify(t.anchor)) ?? null)
+      if (reason) out[t.id] = reason
+    }
+    return out
+  }
+
+  /**
+   * The result a conversation owns, so reopening it puts the review (or plan, or walkthrough)
+   * back in the middle of the window. The newest answer that carries one wins: an artifact the
+   * chat sent later is what the user last saw, and before that the feature's own first answer.
+   * It goes through the feature's verifier, exactly like an artifact card, so what comes back is
+   * what Apply would have given — nothing unchecked is ever put on screen.
+   */
+  async threadResult(threadId: string): Promise<AiArtifactResult | null> {
+    const rec = this.threads.get(threadId)
+    if (!rec) return null
+    const feature = featureArtifact(rec.thread.anchor)
+    if (!feature) return null
+    for (const turn of [...rec.thread.turns].reverse()) {
+      if (turn.role !== 'agent' || turn.status !== 'done') continue
+      const artifact = [...turn.blocks].reverse().find((b) => b.type === 'artifact' && b.artifact === feature)
+      if (artifact?.type === 'artifact') return this.checkArtifact(threadId, artifact.artifact, artifact.json)
+      // The feature's own answer: raw JSON the view turned into its result the first time.
+      if (turn.feature) return this.checkArtifact(threadId, feature, turnText(turn))
+    }
+    return null
+  }
+
   deleteThread(repoId: string, threadId: string): void {
     const rec = this.threads.get(threadId)
     if (rec) this.dispose(rec)
@@ -611,9 +660,12 @@ export class AiService {
   private async newRec(repoId: string, repo: Repo | null, anchor: ThreadAnchor, keep: boolean, saved?: AiThread): Promise<ThreadRec> {
     const now = Date.now()
     const head = saved?.head ?? (repo && keep ? (await repo.runner.run(['rev-parse', '--verify', '-q', 'HEAD'], { readOnly: true }).then((r) => r.stdout.trim(), () => '')) : '')
+    // What the anchor pointed at when the conversation started: reopening it may show its
+    // result again only while that is still true (shared/src/basis.ts).
+    const basis = saved?.basis ?? (repo && keep && isRestorable(anchor) ? await basisOf(repo, anchor) : null)
     const thread: AiThread = saved
       ? { ...saved, repoId, turns: saved.turns.map((t) => (t.status === 'running' ? { ...t, status: 'error', error: { message: 'GitGoose closed before the answer finished.' } } : t)) }
-      : { id: randomUUID(), repoId, anchor, title: '', turns: [], createdAt: now, updatedAt: now, head }
+      : { id: randomUUID(), repoId, anchor, title: '', turns: [], createdAt: now, updatedAt: now, head, ...(basis ? { basis } : {}) }
     const rec: ThreadRec = {
       thread, repoId, path: repo?.path ?? null, cwd: repo?.path ?? tmpdir(), keep, sessionId: null, agentLine: null, target: saved?.target ?? null, primed: false,
       // A thread from disk is told its history again from its transcript, when it needs a session.
@@ -778,7 +830,7 @@ export class AiService {
    * goes through reduceThread here and, for kept threads, to the renderer.
    * `legacy` hooks are the one-shot path's (streamed text, the permission modal, file writes).
    */
-  private async turn(rec: ThreadRec, requestId: string, out: Outgoing, user: { text: string; feature?: string }, legacy?: Partial<PromptHooks>): Promise<{ text: string; stopReason: string }> {
+  private async turn(rec: ThreadRec, requestId: string, out: Outgoing, user: { text: string; feature?: string; ask?: string }, legacy?: Partial<PromptHooks>): Promise<{ text: string; stopReason: string }> {
     const abort = new AbortController()
     rec.active = { requestId, abort }
     this.requests.set(requestId, { cancel: () => abort.abort() })
@@ -787,7 +839,7 @@ export class AiService {
     const emit = (update: AiUpdate) => this.update(rec, requestId, update)
     const by = this.byLabel(rec)
     const sent = sentText(rec, out, user.text)
-    emit({ kind: 'turn', text: user.text, at: Date.now(), ...(user.feature ? { feature: user.feature } : {}), ...(by ? { by } : {}), ...(sent ? { sent } : {}) })
+    emit({ kind: 'turn', text: user.text, at: Date.now(), ...(user.feature ? { feature: user.feature } : {}), ...(user.ask ? { ask: user.ask } : {}), ...(by ? { by } : {}), ...(sent ? { sent } : {}) })
     // Saved from the start, so a conversation is in the AI panel's history while its answer streams.
     this.persist(rec)
     try {

@@ -2,7 +2,7 @@ import { initRepo, tempDir } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { dragTo, launch } from './app'
+import { dragTo, launch, sendComposed } from './app'
 
 /**
  * The AI panel's context (docs/specs/006-ai-over-acp.md, "Context chips"): the selection is a
@@ -154,21 +154,25 @@ test('the actions menu: enabled by the chips, disabled with a reason; Review sta
   await page.getByTestId('commit-row').first().click()
   await page.getByTestId('commit-row').nth(1).click({ modifiers: ['Shift'] })
   await expect(panel.getByTestId('ai-context-chip')).toHaveText(/2 commits/)
-  await expect(await action('recompose')).toHaveAttribute('title', 'Recompose 2 commits')
+  await expect(await action('recompose')).toHaveAttribute('title', 'Write a request to recompose 2 commits')
   await expect(await action('explain')).toBeDisabled()
   await expect(await action('explain')).toHaveAttribute('aria-description', 'Select one commit, or drop one here')
   await close()
   await page.getByTestId('commit-row').nth(1).click()
 
-  // Review of the selected commit: the review view opens, and the thread is in the history list.
+  // Review of the selected commit: the action is written into the box, not sent; Enter sends it,
+  // the review view opens, and the thread is in the history list.
   await (await action('review')).click()
+  await sendComposed(page, 'review')
   await expect(page.getByTestId('review')).toBeVisible()
   // New and History are at the right end of the slot's tab strip, not in a header of the pane.
   await page.getByTestId('slot-right').getByTestId('ai-chat-history').click()
   const item = page.locator('[data-testid="ai-chat-history-item"][data-kind="review"]')
   await expect(item).toHaveCount(1)
   await expect(page.getByTestId('ai-chat-history-day').first()).toContainText('Today')
-  await page.keyboard.press('Escape')
+  // The history takes the pane rather than opening over it, so the same button brings it back.
+  await page.getByTestId('slot-right').getByTestId('ai-chat-history').click()
+  await expect(page.getByTestId('ai-chat-history-item')).toHaveCount(0)
   await app.close()
 })
 

@@ -147,6 +147,18 @@ export interface GitGooseApi {
   aiThreadClose(threadId: string): Promise<void>
   /** This repository's saved conversations, most recently used first. */
   aiThreads(repoId: string): Promise<AiThread[]>
+  /**
+   * Which of this repository's conversations no longer describe it: thread id to the sentence
+   * saying why (threads that are still good are left out). Read-only git, worked out once per
+   * distinct anchor, so the history list can mark them all in one call.
+   */
+  aiThreadsStale(repoId: string): Promise<Record<string, string>>
+  /**
+   * The result a conversation owns (a review, a plan, a walkthrough), checked with the feature's
+   * own verifier so reopening it shows exactly what Apply would: the newest answer in the thread
+   * that carries one, or null when it has none. The thread must be open (aiThreadOpen).
+   */
+  aiThreadResult(threadId: string): Promise<AiArtifactResult | null>
   aiThreadDelete(repoId: string, threadId: string): Promise<void>
   /** Answer a permission card in a thread. 'session' also answers the same question for the rest of the session. */
   aiThreadPermission(permissionId: number, answer: Exclude<PermissionAnswer, 'expired'>): Promise<void>
@@ -395,7 +407,7 @@ export const API_METHODS = [
   'respondPrompt', 'openPath', 'openInEditor', 'openTerminal', 'revealPath', 'logError',
   'pullRequests', 'createPullRequest', 'checkoutPullRequest', 'openPullRequest',
   'aiStatus', 'aiConsent', 'aiModels', 'aiLoadModels', 'aiPromptPreview', 'aiRun', 'aiCancel', 'aiRespondPermission', 'aiAgentInfo', 'aiAuthenticate', 'aiSetApiKey',
-  'aiThreadOpen', 'aiThreadSend', 'aiThreadCancel', 'aiThreadClose', 'aiThreads', 'aiThreadDelete', 'aiThreadPermission', 'aiThreadArtifact', 'openExternal',
+  'aiThreadOpen', 'aiThreadSend', 'aiThreadCancel', 'aiThreadClose', 'aiThreads', 'aiThreadsStale', 'aiThreadResult', 'aiThreadDelete', 'aiThreadPermission', 'aiThreadArtifact', 'openExternal',
   'snapshot', 'logPage', 'commitDetails', 'diff', 'fileHistory', 'blame', 'search', 'searchCommits', 'listFiles', 'stashList', 'reflog', 'setGraphFilter', 'submodules', 'updateSubmodules', 'syncSubmodules', 'addSubmodule', 'removeSubmodule', 'worktrees', 'addWorktree', 'removeWorktree', 'lockWorktree', 'pruneWorktrees',
   'lastCommitMessage',
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'codePeek', 'codeGraphStatus', 'reindexCode', 'impact', 'askThreads', 'saveAskThread', 'deleteAskThread', 'reviewLearnings', 'setReviewLearnings', 'linters', 'decideLinter', 'pushCheckPlan', 'pushCheckRules', 'setPushChecks', 'changeInsights', 'applySuggestion', 'writeFileChecked', 'workingText', 'lfsInfo', 'lfsInstall', 'lfsTrack', 'lfsPull', 'lfsLocks', 'lfsLock', 'commandLog', 'bisectMark', 'bisectReset', 'identity', 'setIdentity', 'commitTemplate', 'recentAuthors',

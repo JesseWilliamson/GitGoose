@@ -4,12 +4,8 @@ import { Archive, ChevronDown, FileText, GitBranch, GitCommitHorizontal, GitComp
 import { DropdownMenu } from 'radix-ui'
 import { cherryPick, cherryPickMany, rebase } from '../lib/actions'
 import { removeChip, type ChipKind, type ContextChip } from '../lib/aiContext'
-import { explainCommit } from '../lib/explain'
-import { showImpact } from '../lib/impact'
-import { startReview } from '../lib/review'
+import { composeAction, explainAction, impactAction, recomposeAction, reviewAction, walkthroughAction } from '../lib/aiActions'
 import { getLog, selectCommit, useStore, type RepoView } from '../lib/store'
-import { startWalkthrough } from '../lib/walkthrough'
-import { recomposeWithAi } from './RecomposeDialog'
 import { DM } from './ui'
 import { Badge } from './ui/badge'
 
@@ -19,9 +15,9 @@ import { Badge } from './ui/badge'
  * with them).
  *
  * Chips are references; main reads git when the message is sent (lib/aiContext.ts). The actions
- * only call the starters the menus already call, so a review started here is the same review,
- * and its thread is in the history list like any other. They are a menu, not seven buttons: they
- * are things you do now and then, so they should not take a third of the pane all the time.
+ * compose, exactly as the context menus do (lib/aiActions.ts): picking one writes its request
+ * into the box below for the user to read, change and send. They are a menu, not seven buttons:
+ * they are things you do now and then, so they should not take a third of the pane all the time.
  */
 
 const ICON: Record<ChipKind, LucideIcon> = {
@@ -74,21 +70,21 @@ export function paneActions(view: Pick<RepoView, 'id' | 'snapshot' | 'editable'>
 
   return [
     {
-      name: 'explain', label: 'Explain', icon: Sparkles, what: `Explain commit ${hashes[0]?.slice(0, 7)} in the Details panel`,
+      name: 'explain', label: 'Explain', icon: Sparkles, what: `Write a request to explain commit ${hashes[0]?.slice(0, 7)}`,
       why: noAi || (hashes.length === 1 ? '' : 'Select one commit, or drop one here'),
       run: () => {
         selectCommit(id, hashes[0]!)
-        explainCommit(id, hashes[0]!)
+        composeAction(id, explainAction(hashes[0]!))
       },
     },
-    { name: 'review', label: 'Review', icon: SearchCheck, what: `Review ${what}`, why: noAi || (scope ? '' : need), run: () => startReview(id, scope!) },
-    { name: 'walkthrough', label: 'Walk through', icon: Waypoints, what: `Walk through ${what}`, why: noAi || (scope ? '' : need), run: () => startWalkthrough(id, scope!) },
-    { name: 'impact', label: 'Impact', icon: ListTree, what: `Find what ${what} could affect`, why: scope ? '' : need, run: () => showImpact(id, scope!) },
+    { name: 'review', label: 'Review', icon: SearchCheck, what: `Write a request to review ${what}`, why: noAi || (scope ? '' : need), run: () => composeAction(id, reviewAction(scope!)) },
+    { name: 'walkthrough', label: 'Walk through', icon: Waypoints, what: `Write a request to walk through ${what}`, why: noAi || (scope ? '' : need), run: () => composeAction(id, walkthroughAction(scope!)) },
+    { name: 'impact', label: 'Impact', icon: ListTree, what: `Write a request to find what ${what} could affect`, why: scope ? '' : need, run: () => composeAction(id, impactAction(scope!)) },
     {
       name: 'recompose', label: hashes.length === 1 ? 'Split' : 'Recompose', icon: Scissors,
-      what: hashes.length === 1 ? 'Split this commit into smaller ones' : `Recompose ${hashes.length} commits`,
+      what: hashes.length === 1 ? 'Write a request to split this commit into smaller ones' : `Write a request to recompose ${hashes.length} commits`,
       why: noAi || (!hashes.length ? 'Select commits or drop them here' : editable ? '' : 'Recompose needs non-merge commits on the current branch'),
-      run: () => recomposeWithAi(id, hashes),
+      run: () => composeAction(id, recomposeAction(hashes)),
     },
     {
       name: 'rebase', label: 'Rebase onto…', icon: GitMerge, what: `Rebase ${headBranch ?? 'HEAD'} onto ${refShort}`,
@@ -108,7 +104,9 @@ export function paneActions(view: Pick<RepoView, 'id' | 'snapshot' | 'editable'>
 export function AiContextChips({ view, chips, sentKeys }: { view: RepoView; chips: ContextChip[]; sentKeys: string[] }) {
   const pending = chips.filter((c) => !sentKeys.includes(c.key)).length
   return (
-    <div className="flex flex-wrap items-center gap-1 px-2 pt-2 text-2xs" data-testid="ai-context">
+    // Every commit and every file is its own chip, so a big selection is a tall row: it scrolls
+    // rather than pushing the message box off the pane.
+    <div className="flex max-h-28 flex-wrap items-center gap-1 overflow-y-auto px-2 pt-2 text-2xs" data-testid="ai-context">
       {chips.map((c) => {
         const Icon = ICON[c.kind]
         const sent = sentKeys.includes(c.key)
@@ -118,7 +116,7 @@ export function AiContextChips({ view, chips, sentKeys }: { view: RepoView; chip
             className={clsx('h-row max-w-full rounded-sm border-border bg-card py-0 pr-0.5 pl-1.5 text-2xs font-normal', sent ? 'text-muted-foreground' : 'text-foreground')}>
             <Icon size={11} className={clsx('shrink-0', sent ? 'text-hint' : 'text-primary')} />
             <span className="min-w-0 truncate" data-testid="ai-context-chip-label">{c.label}</span>
-            <button onClick={() => removeChip(view.id, c)} aria-label={`Remove ${c.label}`} title="Do not send this" data-testid="ai-context-chip-remove"
+            <button onClick={() => removeChip(view, c)} aria-label={`Remove ${c.label}`} title="Do not send this" data-testid="ai-context-chip-remove"
               className="shrink-0 rounded-sm p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"><X size={10} /></button>
           </Badge>
         )

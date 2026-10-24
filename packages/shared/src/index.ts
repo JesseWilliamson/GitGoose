@@ -398,5 +398,6 @@ export type SearchField = 'all' | 'message' | 'author' | 'path' | 'hash' | 'cont
 
 export * from './github'
 export * from './ai'
+export * from './basis'
 export * from './prompts'
 export * from './thread'

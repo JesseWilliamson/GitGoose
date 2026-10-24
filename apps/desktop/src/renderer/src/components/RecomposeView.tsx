@@ -4,17 +4,16 @@ import { ArrowDown, ArrowUp, CircleAlert, GripVertical, MessagesSquare, Plus, Re
 import { ContextMenu, DropdownMenu } from 'radix-ui'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { run } from '../lib/actions'
-import { cancelAi, showRepo, startAi, useAi } from '../lib/ai'
-import { dropFinishedJob, dropJob, finishJob, parkJob, registerJob } from '../lib/aiJobs'
+import { cancelAi, openInPanel, useAi } from '../lib/ai'
+import { dropFinishedJob, parkJob } from '../lib/aiJobs'
 import { api, toUiError } from '../lib/api'
+import { recomposeWithAi, showingRecompose, showRecompose } from '../lib/recompose'
 import { splitPath } from '../lib/format'
 import { history, push, redo, undo, type History } from '../lib/history'
 import { addCommit, draftProblems, editMessage, moveCommit, moveUnit, removeEmpty, squashCommits, type Draft } from '../lib/recomposeDraft'
-import { toast, updateRepo, useStore } from '../lib/store'
-import { useThread } from '../lib/thread'
+import { toast, updateRepo, useStore, type RepoView } from '../lib/store'
 import { AiTargetButton } from './AiTargetButton'
-import { Thread } from './Thread'
-import { Button, CM, DM, Modal, ModalFooter, SectionHeader, Spinner } from './ui'
+import { Button, CM, DM, SectionHeader, Spinner } from './ui'
 
 /**
  * Recompose with AI, GitKraken-style: the AI proposes a new set of commits for the selected
@@ -29,113 +28,89 @@ import { Button, CM, DM, Modal, ModalFooter, SectionHeader, Spinner } from './ui
  */
 
 /**
- * Ask for a plan. Waiting does not hold the user: closing the dialog hides it while the request
- * goes on (a job in the status bar), and the plan is there to open when it is ready.
+ * The plan, in the middle of the window (ADR-010), where the review and the walkthrough are:
+ * it is a result you work in, not a question to answer, and keeping it there is what lets the
+ * chat's history put it back on screen later.
  */
-export function recomposeWithAi(repoId: string, hashes: string[]): void {
-  const old = useAi.getState().recompose
-  if (old?.requestId) cancelAi(old.requestId)
-  const r = startAi(repoId, { kind: 'recompose', hashes }, undefined, { keepThread: true })
-  useAi.setState({ recompose: { repoId, hashes, requestId: r.requestId, proposal: null, error: null, hidden: false } })
-  registerJob({
-    id: r.requestId,
-    repoId,
-    key: 'recompose',
-    title: `Recompose ${hashes.length === 1 ? '1 commit' : `${hashes.length} commits`}`,
-    open: showRecompose,
-    stop: () => cancelAi(r.requestId),
-    showing: () => useAi.getState().recompose?.hidden === false,
-  })
-  const mine = (s: ReturnType<typeof useAi.getState>) => s.recompose?.requestId === r.requestId
-  r.done.then(
-    (res) => {
-      if (!mine(useAi.getState())) return dropJob(r.requestId)
-      if (!res?.recompose) {
-        // Cancelled or not set up (already reported).
-        dropJob(r.requestId)
-        return useAi.setState({ recompose: null })
-      }
-      useAi.setState((s) => ({ recompose: { ...s.recompose!, requestId: null, proposal: res.recompose!, threadId: res.threadId } }))
-      finishJob(r.requestId)
-    },
-    (e) => {
-      if (!mine(useAi.getState())) return dropJob(r.requestId)
-      useAi.setState((s) => ({ recompose: { ...s.recompose!, requestId: null, error: toUiError(e).message } }))
-      finishJob(r.requestId, toUiError(e).message)
-    },
-  )
-}
-
-/** Show the recompose dialog again (from the AI jobs chip or the "ready" toast). */
-export function showRecompose(): void {
-  const rc = useAi.getState().recompose
-  if (!rc) return
-  showRepo(rc.repoId)
-  useAi.setState({ recompose: { ...rc, hidden: false } })
-}
-
-export function RecomposeDialog() {
+export function RecomposeView({ view }: { view: RepoView }) {
   const state = useAi((s) => s.recompose)
-  if (!state || state.hidden) return null
+  const leave = () => updateRepo(view.id, { center: { kind: 'graph' } })
+  /** What Esc does, as of this render (the listener below is registered once). */
+  const hideRef = useRef<() => void>(leave)
+  // Esc leaves the view, as it leaves a diff. From inside a field it only leaves the field
+  // first, so typing a message is never one key away from losing the screen; a drag has already
+  // taken the key in the capture phase (it cancels itself).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      const a = document.activeElement
+      if (a instanceof HTMLTextAreaElement || a instanceof HTMLInputElement) return a.blur()
+      hideRef.current()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+  if (!state || state.repoId !== view.id) {
+    hideRef.current = leave
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm text-muted-foreground" data-testid="recompose-empty">
+        <p>No plan here. Select commits and ask for a recompose in the AI chat.</p>
+        <Button onClick={leave}>Back to the graph</Button>
+      </div>
+    )
+  }
   /** Explicit: stop the request, or throw the plan away. */
   const discard = () => {
     if (state.requestId) cancelAi(state.requestId)
     useAi.setState({ recompose: null })
     dropFinishedJob('recompose')
+    leave()
   }
   const n = state.hashes.length
   const title = `Recompose ${n === 1 ? '1 commit' : `${n} commits`}`
-  // Closing the dialog (Esc, a click outside) only hides it: the request (its job is running) or
-  // the plan and its edits (back on the jobs list) stay. An error has been read: closing ends it.
+  // Leaving the view keeps the request (its job is running) or the plan and its edits (back on
+  // the jobs list). An error has been read: leaving ends it.
   const hide = () => {
     if (state.error) return discard()
-    useAi.setState({ recompose: { ...state, hidden: true } })
+    leave()
     const plan = state.proposal
     if (plan) {
       parkJob({
         id: crypto.randomUUID(), repoId: state.repoId, key: 'recompose', title, open: showRecompose,
-        // Shown again some other way (a plan applied from a chat opens the dialog): seen.
-        showing: () => { const rc = useAi.getState().recompose; return rc?.proposal === plan && !rc.hidden },
+        showing: () => useAi.getState().recompose?.proposal === plan && showingRecompose(state.repoId),
       })
     }
   }
   // A new pick while it is still asking: ask the new pick instead (recomposeWithAi stops the old request and its job).
   const restart = () => {
-    recomposeWithAi(state.repoId, state.hashes)
+    recomposeWithAi(state.repoId, state.hashes, state.threadId ? { thread: state.threadId } : {})
   }
+  hideRef.current = hide
   return (
-    <Modal open onClose={hide} title={`${title} with AI`} size={state.proposal ? 'xl' : 'md'} tall={!!state.proposal}
-      onEscapeKeyDown={(e) => {
-        // Esc ends what is in progress first (typing a message; a drag cancels itself, see
-        // Review); only from rest does it close the dialog.
-        const a = document.activeElement
-        if (a instanceof HTMLTextAreaElement || a instanceof HTMLInputElement) { a.blur(); e.preventDefault() }
-      }}>
-      <div data-testid="recompose-dialog" className="space-y-3 text-sm">
-        {state.proposal ? (
-          <Review key={state.requestId ?? 'review'} repoId={state.repoId} proposal={state.proposal} close={discard} threadId={state.threadId} incoming={state.incoming} />
-        ) : state.error ? (
-          <>
-            <div className="flex items-start gap-2 text-destructive" data-testid="recompose-error"><CircleAlert size={15} className="mt-px shrink-0" /> {state.error}</div>
-            <ModalFooter>
-              <AiTargetButton area="recompose" className="mr-auto" />
-              <Button onClick={discard}>Close</Button>
-              <Button variant="primary" onClick={() => recomposeWithAi(state.repoId, state.hashes)}>Try again</Button>
-            </ModalFooter>
-          </>
-        ) : (
-          <>
-            <div className="flex items-center gap-2 text-muted-foreground"><Spinner /> Asking the AI how to split these changes into commits…</div>
-            <p className="text-xs text-hint">You can close this; the plan waits in the status bar.</p>
-            <ModalFooter>
-              <AiTargetButton area="recompose" onPicked={restart} className="mr-auto" />
-              <Button onClick={discard} data-testid="recompose-stop">Stop</Button>
-              <Button variant="primary" onClick={hide} data-testid="recompose-hide">Close</Button>
-            </ModalFooter>
-          </>
-        )}
-      </div>
-    </Modal>
+    <div data-testid="recompose-view" className="flex min-h-0 flex-1 flex-col p-3 text-sm">
+      {state.proposal ? (
+        <Review key={state.requestId ?? 'review'} repoId={state.repoId} proposal={state.proposal} close={discard} threadId={state.threadId} incoming={state.incoming} />
+      ) : state.error ? (
+        <div className="space-y-3">
+          <div className="flex items-start gap-2 text-destructive" data-testid="recompose-error"><CircleAlert size={15} className="mt-px shrink-0" /> {state.error}</div>
+          <div className="flex items-center gap-2">
+            <AiTargetButton area="recompose" className="mr-auto" />
+            <Button onClick={discard}>Close</Button>
+            <Button variant="primary" onClick={restart}>Try again</Button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 text-muted-foreground"><Spinner /> {title}: asking the AI how to split these changes into commits…</div>
+          <p className="text-xs text-hint">You can look at something else; the plan waits in the status bar.</p>
+          <div className="flex items-center gap-2">
+            <AiTargetButton area="recompose" onPicked={restart} className="mr-auto" />
+            <Button onClick={discard} data-testid="recompose-stop">Stop</Button>
+            <Button variant="primary" onClick={hide} data-testid="recompose-hide">Close</Button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -189,12 +164,11 @@ function settle(ghost: HTMLElement, from: { left: number; top: number }, to: DOM
 
 function Review({ repoId, proposal, close, threadId, incoming }: {
   repoId: string; proposal: RecomposeProposal; close: () => void
-  /** The conversation the proposal came from: the chat column talks on in it. */
+  /** The conversation the proposal came from: the AI pane carries on in it. */
   threadId?: string
   /** A plan applied from the chat. */
   incoming?: { commits: RecomposeProposal['commits']; nonce: number }
 }) {
-  const [chat, setChat] = useState(false)
   /** The plan, with everything done to it so far (Ctrl+Z / Ctrl+Shift+Z step through); as it was if the dialog was hidden. */
   // A restored history starts a fresh burst: its last drag's key must not merge with the next
   // drag (the drag counter starts again from 0), or one undo would take back both.
@@ -433,15 +407,17 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
   const empties = draft.filter((c) => !c.units.length).length
 
   return (
-    <div className="flex h-[78vh] flex-col" data-drag={drag?.kind} onKeyDown={onKeyDown}>
+    <div className="flex min-h-0 flex-1 flex-col" data-drag={drag?.kind} onKeyDown={onKeyDown}>
       <div className="mb-2 flex items-center gap-1 text-xs">
         <Button size="sm" variant="ghost" disabled={!hist.past.length} onClick={stepBack} title={`Undo (${isMac ? '⌘' : 'Ctrl+'}Z)`} data-testid="recompose-undo"><Undo2 size={12} /> Undo</Button>
         <Button size="sm" variant="ghost" disabled={!hist.future.length} onClick={stepForward} title={`Redo (${isMac ? '⌘⇧' : 'Ctrl+Shift+'}Z)`} data-testid="recompose-redo"><Redo2 size={12} /> Redo</Button>
         <span className="flex-1" />
         <Button size="sm" variant="ghost" disabled={!hist.past.length} onClick={() => { update(() => structuredClone(proposal.commits)); focus(0) }} data-testid="recompose-reset"
           title="Back to what the AI proposed"><RotateCcw size={12} /> Reset to proposal</Button>
-        <Button size="sm" variant={chat ? 'default' : 'ghost'} onClick={() => setChat(!chat)} data-testid="recompose-chat-toggle"
-          title='Ask the AI to change the plan ("put the tests in their own commit")'><MessagesSquare size={12} /> Chat</Button>
+        {threadId && (
+          <Button size="sm" variant="ghost" onClick={() => openInPanel(repoId, threadId)} data-testid="open-chat"
+            title='Ask the AI to change the plan in the AI pane ("put the tests in their own commit")'><MessagesSquare size={12} /> Chat</Button>
+        )}
       </div>
       {proposal.onRemote.length > 0 && (
         <p className="mb-2 flex items-start gap-1.5 rounded bg-warn/10 px-2 py-1.5 text-xs text-warn" data-testid="recompose-remote">
@@ -553,7 +529,6 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
             </div>
           </div>
         )}
-        {chat && <RecomposeChat repoId={repoId} hashes={proposal.hashes} threadId={threadId} />}
       </div>
 
       <div className="mt-3 flex items-center gap-3">
@@ -571,21 +546,6 @@ function Review({ repoId, proposal, close, threadId, incoming }: {
           Create {draft.length} {draft.length === 1 ? 'commit' : 'commits'}
         </Button>
       </div>
-    </div>
-  )
-}
-
-/**
- * The chat beside the plan. A revised plan comes back as a card; Apply makes it the editor's
- * plan as one undo step (checked first by the same repair as the AI's first proposal).
- */
-function RecomposeChat({ repoId, hashes, threadId }: { repoId: string; hashes: string[]; threadId?: string }) {
-  const thread = useThread(repoId, { kind: 'recompose', hashes }, threadId)
-  return (
-    // Keys typed here are the chat's: Ctrl+Z in its box must not step the plan's history.
-    <div className="flex w-80 shrink-0 flex-col border-l border-border" data-testid="recompose-chat" onKeyDown={(e) => e.stopPropagation()}>
-      {thread ? <Thread thread={thread} repoId={repoId} className="min-h-0 flex-1" placeholder="Put the tests in their own commit…"
-        hint="A revised plan comes back as a card you can apply and undo." /> : <div className="flex flex-1 items-center justify-center"><Spinner /></div>}
     </div>
   )
 }

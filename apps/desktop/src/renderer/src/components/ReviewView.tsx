@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { applySuggestion, dismissFinding, fixWithAi, rememberDismissal, startReview, stopReview, targetFor } from '../lib/review'
 import { api } from '../lib/api'
 import { toast, updateRepo, useStore, type RepoView } from '../lib/store'
-import { RailToggle, ThreadRail, useRailOpen } from './ThreadRail'
+import { OpenChatButton } from './OpenChat'
 import { Button, Spinner } from './ui'
 import { AiTargetButton } from './AiTargetButton'
 
@@ -25,7 +25,6 @@ export function ReviewView({ view }: { view: RepoView }) {
   const r = view.review
   const [showDropped, setShowDropped] = useState(false)
   const focused = useRef<HTMLDivElement>(null)
-  const chat = useRailOpen('review')
   useEffect(() => {
     focused.current?.scrollIntoView({ block: 'center' })
   }, [r?.focus])
@@ -52,7 +51,7 @@ export function ReviewView({ view }: { view: RepoView }) {
         <AiTargetButton area="review" />
         {r.requestId ? <Button onClick={() => stopReview(view.id)}><Spinner /> Stop</Button>
           : <Button onClick={() => startReview(view.id, r.scope, { incremental: true })} title="Only what changed since this review is sent again">Review again</Button>}
-        {result && <RailToggle kind="review" />}
+        {result && <OpenChatButton repoId={view.id} threadId={r.threadId} />}
         <Button variant="ghost" onClick={() => updateRepo(view.id, { center: { kind: 'graph' } })}>Back to graph</Button>
       </div>
       <div className="flex min-h-0 flex-1">
@@ -146,11 +145,6 @@ export function ReviewView({ view }: { view: RepoView }) {
           </div>
         )}
       </div>
-      {chat && result && !r.requestId && (
-        <ThreadRail repoId={view.id} kind="review" anchor={{ kind: 'review', scope: r.scope }} threadId={r.threadId}
-          onThread={(id) => updateRepo(view.id, (v) => (v.review ? { review: { ...v.review, threadId: id } } : {}))}
-          hint="Revised findings come back as a card you can apply." />
-      )}
       </div>
     </div>
   )

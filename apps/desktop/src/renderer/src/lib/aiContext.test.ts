@@ -1,6 +1,6 @@
 import type { Ref } from '@gitgoose/shared'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { addDropped, chipOf, chipsOf, clearDropped, refKey, removeChip, selectionRef, sourceRef, useContextChips } from './aiContext'
+import { addDropped, chipOf, chipsOf, clearDropped, expandRef, refKey, removeChip, selectionRef, sourceRef, useContextChips } from './aiContext'
 import type { Selection } from './store'
 
 // The store reads window.gitgoose when imported; the chips only need the log's subjects.
@@ -33,13 +33,11 @@ describe('what a drag becomes', () => {
 describe('labels', () => {
   it.each<[Parameters<typeof chipOf>[1], string, string]>([
     [{ kind: 'wip' }, 'wip', 'uncommitted changes'],
-    [{ kind: 'commits', hashes: [H('1'), H('2'), H('3')] }, 'commits', '3 commits'],
     [{ kind: 'ref', name: 'refs/heads/feature/x' }, 'branch', 'branch feature/x'],
     [{ kind: 'ref', name: 'refs/remotes/origin/main' }, 'branch', 'branch origin/main'],
     [{ kind: 'ref', name: 'refs/tags/v1' }, 'tag', 'tag v1'],
     [{ kind: 'stash', ref: 'stash@{0}', index: 0 }, 'stash', 'stash@{0}'],
     [{ kind: 'files', rev: 'worktree', paths: ['src/a.ts'] }, 'files', 'a.ts'],
-    [{ kind: 'files', rev: H('1'), paths: ['a', 'b'] }, 'files', '2 files'],
     [{ kind: 'compare', from: H('1'), to: H('2') }, 'compare', '1111111..2222222'],
     [{ kind: 'compare', from: H('1'), to: null }, 'compare', '1111111..working tree'],
   ])('%o', (ref, kind, label) => {
@@ -58,15 +56,33 @@ describe('labels', () => {
   })
 })
 
+describe('a reference as chips', () => {
+  it('is one chip per commit and per file: nothing is rolled up into a count', () => {
+    expect(expandRef({ kind: 'commits', hashes: [H('1'), H('2')] })).toEqual([{ kind: 'commits', hashes: [H('1')] }, { kind: 'commits', hashes: [H('2')] }])
+    expect(expandRef({ kind: 'files', rev: 'worktree', paths: ['a.ts', 'b.ts'] }))
+      .toEqual([{ kind: 'files', rev: 'worktree', paths: ['a.ts'] }, { kind: 'files', rev: 'worktree', paths: ['b.ts'] }])
+    // One of a thing is already one chip, and nothing else splits.
+    expect(expandRef({ kind: 'wip' })).toEqual([{ kind: 'wip' }])
+    expect(expandRef({ kind: 'commits', hashes: [H('1')] })).toEqual([{ kind: 'commits', hashes: [H('1')] }])
+  })
+})
+
 describe('the selection chip', () => {
   it('is there for the selection, first, and follows it', () => {
     expect(chipsOf(view({ kind: 'commit', hash: H('1') })).map((c) => c.label)).toEqual(['commit 1111111 Fix the parser'])
     expect(chipsOf(view({ kind: 'wip' })).map((c) => c.label)).toEqual(['uncommitted changes'])
   })
 
+  it('several selected commits are several chips, each removable on its own', () => {
+    const sel = view({ kind: 'commits', hashes: [H('1'), H('2'), H('3')], anchor: H('1'), cursor: H('3') })
+    expect(chipsOf(sel).map((c) => c.label)).toEqual(['commit 1111111 Fix the parser', 'commit 2222222', 'commit 3333333'])
+    removeChip(sel, chipsOf(sel)[1]!)
+    expect(chipsOf(sel).map((c) => c.label)).toEqual(['commit 1111111 Fix the parser', 'commit 3333333'])
+  })
+
   it('removed, it stays away for the same selection only', () => {
     const [chip] = chipsOf(view({ kind: 'commit', hash: H('1') }))
-    removeChip('r', chip!)
+    removeChip(view({ kind: 'commit', hash: H('1') }), chip!)
     expect(chipsOf(view({ kind: 'commit', hash: H('1') }))).toEqual([])
     // The hook clears the removal when the selection is another one (see useChips); here the chip of that other selection is shown regardless.
     expect(chipsOf(view({ kind: 'commit', hash: H('2') })).map((c) => c.label)).toEqual(['commit 2222222'])
@@ -96,10 +112,19 @@ describe('dropped chips', () => {
     addDropped('r', { kind: 'commits', hashes: [H('1')] })
     const sel = view({ kind: 'commit', hash: H('1') })
     const [commit, topic] = chipsOf(sel)
-    removeChip('r', topic!)
-    removeChip('r', commit!)
+    removeChip(sel, topic!)
+    removeChip(sel, commit!)
     expect(chipsOf(sel)).toEqual([])
     expect(useContextChips.getState().r!.dropped).toEqual([])
+  })
+
+  it('a drop of several commits is one chip each, and × takes off just that one', () => {
+    addDropped('r', { kind: 'commits', hashes: [H('1'), H('2'), H('3')] })
+    const sel = view({ kind: 'wip' })
+    const chips = chipsOf(sel)
+    expect(chips.map((c) => c.label)).toEqual(['uncommitted changes', 'commit 1111111 Fix the parser', 'commit 2222222', 'commit 3333333'])
+    removeChip(sel, chips[2]!)
+    expect(chipsOf(sel).map((c) => c.label)).toEqual(['uncommitted changes', 'commit 1111111 Fix the parser', 'commit 3333333'])
   })
 
   it('chips are per repository', () => {
