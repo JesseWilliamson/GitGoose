@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Drawing git graphs</title>
+    <meta name="description" content="How git clients draw commit graphs: ordering rows, assigning lanes, straight versus curved branches, pinning main, folding merges, capping lanes, and the recipe GitGoose follows." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Source+Code+Pro:wght@400;500;600&display=swap" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='3' width='26' height='26' rx='7' fill='%231ab3d6'/%3E%3Ccircle cx='11' cy='9' r='2.6' fill='white'/%3E%3Ccircle cx='11' cy='23' r='2.6' fill='white'/%3E%3Ccircle cx='21' cy='15' r='2.6' fill='white'/%3E%3Cpath d='M11 9v14M21 15c0-4-6-3-10-6' stroke='white' stroke-width='2.2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E" />
+    <script>try { const t = localStorage.getItem('gitgoose-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}</script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="../src/pages/graphs.tsx"></script>
+  </body>
+</html>
