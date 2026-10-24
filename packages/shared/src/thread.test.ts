@@ -14,6 +14,25 @@ describe('reduceThread', () => {
     expect(t.turns[1]!.blocks).toEqual([{ type: 'text', text: 'Because it is.' }])
   })
 
+  it("a feature started from the chat shows the user's own words, and still folds its answer as the feature's", () => {
+    const t = fold(empty(), 'r1', [
+      { kind: 'turn', text: 'Review: Staged changes', feature: 'Review: Staged changes', ask: 'Only the error handling, please.', sent: 'the whole prompt', at: 5 },
+    ])
+    const [user, agent] = t.turns
+    expect(user!.blocks).toEqual([{ type: 'text', text: 'Only the error handling, please.' }])
+    // Not marked as the feature's: the view shows what was asked, with the prompt under "Sent".
+    expect(user!.feature).toBe(undefined)
+    expect(user!.sent).toBe('the whole prompt')
+    expect(agent!.feature).toBe('Review: Staged changes')
+    // The title is still what the conversation is about, not the first line of the question.
+    expect(t.title).toBe('Review: Staged changes')
+  })
+
+  it('a feature run on its own (no words from the user) reads as the feature, as before', () => {
+    const t = fold(empty(), 'r1', [{ kind: 'turn', text: 'Review: Staged changes', feature: 'Review: Staged changes', at: 5 }])
+    expect(t.turns[0]!.feature).toBe('Review: Staged changes')
+  })
+
   it('keeps the order things happened in: text, a tool call, more text', () => {
     const t = fold(empty(), 'r1', [
       { kind: 'turn', text: 'go', at: 1 },

@@ -64,7 +64,7 @@ test('with AI off the AI items are there, greyed, and point to Settings', async 
   const { r } = mergedRepo()
   const { app, page } = await launch(r.dir)
   await row(page, 'after merge').getByText('after merge', { exact: true }).click({ button: 'right' })
-  await expectDisabledWith(page, page.getByRole('menuitem', { name: 'Review this commit with AI' }), 'Turn on AI features in Settings → AI')
+  await expectDisabledWith(page, page.getByRole('menuitem', { name: 'Review this commit with AI…' }), 'Turn on AI features in Settings → AI')
   await expect(page.getByRole('menuitem', { name: 'Split with AI…' })).toHaveAttribute('aria-description', 'Turn on AI features in Settings → AI')
   await app.close()
 })

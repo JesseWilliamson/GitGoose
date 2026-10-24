@@ -10,10 +10,7 @@ import { chainBase, getLog, openRepo, updateRepo, useStore, type RepoView } from
 import { api } from '../lib/api'
 import type { ReactNode } from 'react'
 import type { Ref } from '@gitgoose/shared'
-import { recomposeWithAi } from './RecomposeDialog'
-import { startReview } from '../lib/review'
-import { startWalkthrough } from '../lib/walkthrough'
-import { showImpact } from '../lib/impact'
+import { composeAction, explainAction, impactAction, recomposeAction, reviewAction, walkthroughAction } from '../lib/aiActions'
 import { CM, DM } from './ui'
 import {
   firstReason, whyNotAi, whyNotCheckout, whyNotCherryPick, whyNotClearPushUrl, whyNotCompareChain, whyNotCompareTwo, whyNotCompareWithHead, whyNotCreatePull,
@@ -161,9 +158,9 @@ export function GraphMenu({ repoId }: { repoId: string }) {
           {!whyNotCreatePull(view) && <CM.Item onSelect={() => createPull(repoId, name)}>Create pull request…</CM.Item>}
           <CM.Separator />
           {compareItem}
-          <CM.Item reason={aiWhy} onSelect={() => startReview(repoId, { kind: 'branch', branch: name })}>Review {name} with AI</CM.Item>
-          <CM.Item reason={aiWhy} onSelect={() => startWalkthrough(repoId, { kind: 'branch', branch: name })}>Walk me through {name}</CM.Item>
-          <CM.Item onSelect={() => showImpact(repoId, { kind: 'branch', branch: name })}>What could {name} affect?</CM.Item>
+          <CM.Item reason={aiWhy} onSelect={() => composeAction(repoId, reviewAction({ kind: 'branch', branch: name }))}>Review {name} with AI…</CM.Item>
+          <CM.Item reason={aiWhy} onSelect={() => composeAction(repoId, walkthroughAction({ kind: 'branch', branch: name }))}>Walk me through {name}…</CM.Item>
+          <CM.Item onSelect={() => composeAction(repoId, impactAction({ kind: 'branch', branch: name }))}>What could {name} affect?…</CM.Item>
           <CM.Separator />
           {pinned ? <CM.Item onSelect={() => void pinBranch(repoId, name, false)}>Unpin {name}</CM.Item>
             : <CM.Item onSelect={() => void pinBranch(repoId, name, true)}>Pin {name}</CM.Item>}
@@ -398,10 +395,10 @@ export function GraphMenu({ repoId }: { repoId: string }) {
         <CM.Item reason={editManyWhy} onSelect={() => void squashTogether(repoId, menu.hashes)}>Squash {n} commits into one</CM.Item>
         <CM.Item danger reason={editManyWhy} onSelect={() => void dropCommits(repoId, menu.hashes)}>Drop {n} commits</CM.Item>
         <CM.Separator />
-        <CM.Item reason={firstReason(aiWhy, whyNotRecompose(view, menu.hashes, parentsOf))} onSelect={() => recomposeWithAi(repoId, menu.hashes)}>Recompose with AI…</CM.Item>
-        <CM.Item reason={aiWhy} onSelect={() => startReview(repoId, { kind: 'commits', hashes: menu.hashes })}>Review {n} commits with AI</CM.Item>
-        <CM.Item reason={aiWhy} onSelect={() => startWalkthrough(repoId, { kind: 'commits', hashes: menu.hashes })}>Walk me through {n} commits</CM.Item>
-        <CM.Item onSelect={() => showImpact(repoId, { kind: 'commits', hashes: menu.hashes })}>What could {n} commits affect?</CM.Item>
+        <CM.Item reason={firstReason(aiWhy, whyNotRecompose(view, menu.hashes, parentsOf))} onSelect={() => composeAction(repoId, recomposeAction(menu.hashes))}>Recompose with AI…</CM.Item>
+        <CM.Item reason={aiWhy} onSelect={() => composeAction(repoId, reviewAction({ kind: 'commits', hashes: menu.hashes }))}>Review {n} commits with AI…</CM.Item>
+        <CM.Item reason={aiWhy} onSelect={() => composeAction(repoId, walkthroughAction({ kind: 'commits', hashes: menu.hashes }))}>Walk me through {n} commits…</CM.Item>
+        <CM.Item onSelect={() => composeAction(repoId, impactAction({ kind: 'commits', hashes: menu.hashes }))}>What could {n} commits affect?…</CM.Item>
       </CM.Content>
     )
   }
@@ -442,10 +439,11 @@ export function GraphMenu({ repoId }: { repoId: string }) {
         <CM.Item reason={whyNotFixupStaged(view, hash)} onSelect={() => void fixupInto(repoId, hash)}>Fixup staged changes into this commit</CM.Item>
       </CM.Sub>
       <CM.Item danger reason={editWhy} onSelect={() => void dropCommits(repoId, [hash])}>Drop commit</CM.Item>
-      <CM.Item reason={firstReason(aiWhy, whyNotRecompose(view, [hash], parentsOf))} onSelect={() => recomposeWithAi(repoId, [hash])}>Split with AI…</CM.Item>
-      <CM.Item reason={aiWhy} onSelect={() => startReview(repoId, { kind: 'commits', hashes: [hash] })}>Review this commit with AI</CM.Item>
-      <CM.Item reason={aiWhy} onSelect={() => startWalkthrough(repoId, { kind: 'commits', hashes: [hash] })}>Walk me through this commit</CM.Item>
-      <CM.Item onSelect={() => showImpact(repoId, { kind: 'commits', hashes: [hash] })}>What could this commit affect?</CM.Item>
+      <CM.Item reason={firstReason(aiWhy, whyNotRecompose(view, [hash], parentsOf))} onSelect={() => composeAction(repoId, recomposeAction([hash]))}>Split with AI…</CM.Item>
+      <CM.Item reason={aiWhy} onSelect={() => composeAction(repoId, reviewAction({ kind: 'commits', hashes: [hash] }))}>Review this commit with AI…</CM.Item>
+      <CM.Item reason={aiWhy} onSelect={() => composeAction(repoId, walkthroughAction({ kind: 'commits', hashes: [hash] }))}>Walk me through this commit…</CM.Item>
+      <CM.Item reason={aiWhy} onSelect={() => composeAction(repoId, explainAction(hash))}>Explain this commit…</CM.Item>
+      <CM.Item onSelect={() => composeAction(repoId, impactAction({ kind: 'commits', hashes: [hash] }))}>What could this commit affect?…</CM.Item>
       <CM.Sub label={snap.bisect ? 'Bisect' : 'Bisect: find the commit that broke something'}>
         <CM.Item onSelect={() => void bisectMark(repoId, hash, 'bad')}>{snap.bisect ? 'Mark bad (has the bug)' : 'Start: this commit is bad (has the bug)'}</CM.Item>
         <CM.Item onSelect={() => void bisectMark(repoId, hash, 'good')}>{snap.bisect ? 'Mark good (no bug)' : 'Start: this commit is good (no bug)'}</CM.Item>

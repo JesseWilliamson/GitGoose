@@ -15,11 +15,12 @@ export function applyArtifact(repoId: string, a: AiArtifactResult): boolean {
     case 'plan': {
       const rc = useAi.getState().recompose
       if (!rc?.proposal || rc.repoId !== repoId || rc.hashes.join() !== a.recompose.hashes.join()) {
-        toast({ kind: 'info', title: 'Open the recompose dialog for these commits to apply a plan.' })
+        toast({ kind: 'info', title: 'Open the recompose plan for these commits to apply a new one.' })
         return false
       }
-      // Shown, in case it was hidden: the plan just changed in the editor.
-      useAi.setState({ recompose: { ...rc, hidden: false, incoming: { commits: a.recompose.commits, nonce: Date.now() } } })
+      // Shown, in case the user was looking elsewhere: the plan just changed in the editor.
+      useAi.setState({ recompose: { ...rc, incoming: { commits: a.recompose.commits, nonce: Date.now() } } })
+      updateRepo(repoId, { center: { kind: 'recompose' } })
       return true
     }
     case 'walkthrough': {

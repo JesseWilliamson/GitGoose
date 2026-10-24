@@ -1,7 +1,7 @@
 import { fakeAnthropic, initRepo, makeFixture, tempDir } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import { join } from 'node:path'
-import { hideAiPane, launch } from './app'
+import { launch, sendComposed } from './app'
 
 /**
  * Conversations with the agent (spec 006, threads): the fake agent keeps each session's history
@@ -167,35 +167,36 @@ test('explain grows a follow-up: the same session, so the agent knows the commit
   await app.close()
 })
 
-test('deleting a review conversation from the AI panel: the review chat lets go and starts a new one that works', async () => {
+test('deleting a conversation from the AI pane history: the review lets go of it, and a new chat still answers', async () => {
   const r = initRepo()
   r.commit('root', { 'src/calc.ts': 'export function total(a: number, b: number) {\n  return a + b\n}\n' })
   r.write('src/calc.ts', 'export function total(a: number, b: number) {\n  return a - b\n}\n')
   const { app, page } = await launch(r.dir)
   await set(page, { ...AGENT, reviewProfile: 'assertive' })
   await page.getByTestId('review-menu').click()
-  await page.getByRole('menuitem', { name: 'Review all uncommitted changes' }).click()
+  await page.getByRole('menuitem', { name: 'Review all uncommitted changes…' }).click()
+  await sendComposed(page, 'review')
   await expect(page.getByTestId('finding')).toHaveCount(1)
-  await page.getByTestId('review-chat-toggle').click()
-  const rail = page.getByTestId('review-chat')
-  await expect(rail.getByTestId('thread-feature')).toContainText('Review: Uncommitted changes')
 
-  // The same conversation, from the AI panel's history, deleted there.
-  await page.keyboard.press('ControlOrMeta+Shift+A')
+  // There is one chat and it is the pane: the review's Chat button goes to its conversation.
   const panel = page.getByTestId('ai-chat-panel')
-  await page.getByTestId('ai-chat-history').click()
-  await page.getByTestId('ai-chat-history-item').filter({ hasText: 'Review: Uncommitted changes' }).click()
+  await page.getByTestId('review').getByTestId('open-chat').click()
   await expect(panel.getByTestId('thread-feature')).toContainText('Review: Uncommitted changes')
-  await page.getByTestId('ai-chat-history').click()
-  await page.getByRole('menuitem', { name: 'Delete this conversation' }).click()
-  await hideAiPane(page)
 
-  // The rail holds a new conversation about the same review, and it answers.
-  await expect(rail.getByTestId('thread-feature')).toHaveCount(0)
-  await rail.getByTestId('thread-input').fill('Still there?')
-  await rail.getByTestId('thread-input').press('Enter')
-  await expect(rail.getByTestId('thread-agent')).toHaveText('Turn 1. You said: Still there?.')
-  await expect(rail.getByTestId('thread-error')).toHaveCount(0)
+  // The history takes the pane itself, and each row can be deleted from it.
+  await page.getByTestId('ai-chat-history').click()
+  const row = page.getByTestId('ai-chat-history-item').filter({ hasText: 'Review: Uncommitted changes' })
+  await expect(row).toHaveCount(1)
+  await row.getByTestId('ai-chat-history-delete').click()
+  await expect(page.getByTestId('ai-chat-history-item')).toHaveCount(0)
+  await page.getByTestId('ai-chat-history').click()
+
+  // The review has let go of it (nothing to open), and the fresh conversation answers.
+  await expect(page.getByTestId('review').getByTestId('open-chat')).toHaveCount(0)
+  await panel.getByTestId('thread-input').fill('Still there?')
+  await panel.getByTestId('thread-input').press('Enter')
+  await expect(panel.getByTestId('thread-agent')).toHaveText('Turn 1. You said: Still there?.')
+  await expect(panel.getByTestId('thread-error')).toHaveCount(0)
   await app.close()
 })
 
@@ -206,12 +207,13 @@ test('review chat: revised findings are checked against the change; Apply adds t
   const { app, page } = await launch(r.dir)
   await set(page, { ...AGENT, reviewProfile: 'assertive' })
   await page.getByTestId('review-menu').click()
-  await page.getByRole('menuitem', { name: 'Review all uncommitted changes' }).click()
+  await page.getByRole('menuitem', { name: 'Review all uncommitted changes…' }).click()
+  await sendComposed(page, 'review')
   const review = page.getByTestId('review')
   await expect(review.getByTestId('finding')).toHaveCount(1)
 
-  await review.getByTestId('review-chat-toggle').click()
-  const rail = page.getByTestId('review-chat')
+  await review.getByTestId('open-chat').click()
+  const rail = page.getByTestId('ai-chat-panel')
   // The review itself is the first exchange, shown as one line.
   await expect(rail.getByTestId('thread-feature')).toContainText('Review: Uncommitted changes')
   await rail.getByTestId('thread-input').fill('Anything about docs? FAKE:findings')
@@ -242,12 +244,13 @@ test('recompose chat: a revised plan replaces the editor plan as one undo step',
   await row(C1).click({ modifiers: ['Shift'] })
   await row(C1).click({ button: 'right' })
   await page.getByRole('menuitem', { name: 'Recompose with AI…' }).click()
+  await sendComposed(page, 'recompose')
   // In plan order (oldest first); the list draws them newest at the top.
   const title = (i: number) => page.locator(`[data-testid="recompose-commit"][data-index="${i}"] [data-testid="recompose-title"]`)
   await expect(title(1)).toHaveText('feat: everything else')
 
-  await page.getByTestId('recompose-chat-toggle').click()
-  const chatCol = page.getByTestId('recompose-chat')
+  await page.getByTestId('open-chat').click()
+  const chatCol = page.getByTestId('ai-chat-panel')
   await chatCol.getByTestId('thread-input').fill('Put the first piece last. FAKE:plan')
   await chatCol.getByTestId('thread-input').press('Enter')
   const card = chatCol.getByTestId('thread-artifact')

@@ -42,6 +42,11 @@ describe('prompt words', () => {
     expect(joinPrompt({ instructions: 'Do it.\n', format: 'JSON only.', context: 'the diff' })).toBe('Do it.\nJSON only.\n\nthe diff')
     expect(joinPrompt({ instructions: 'Do it.', format: '', context: 'the diff' })).toBe('Do it.\n\nthe diff')
     expect(joinPrompt({ instructions: '', format: '', context: 'the diff' })).toBe('the diff')
+    // What the user wrote in the chat goes last, after the context: the question is the last
+    // thing the model reads, as it is for the context chips.
+    expect(joinPrompt({ instructions: 'Do it.', format: '', context: 'the diff', ask: '  only the tests  ' }))
+      .toBe('Do it.\n\nthe diff\n\nWhat I asked for:\nonly the tests')
+    expect(joinPrompt({ instructions: 'Do it.', format: '', context: 'the diff', ask: '   ' })).toBe('Do it.\n\nthe diff')
   })
 
   it('every kind has words, and every area edits at least one kind', () => {

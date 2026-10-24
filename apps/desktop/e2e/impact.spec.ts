@@ -1,7 +1,7 @@
 import { initRepo } from '@gitgoose/fixtures'
 import { expect, test } from '@playwright/test'
 import { join } from 'node:path'
-import { launch } from './app'
+import { launch, sendComposed } from './app'
 
 const FAKE = join(import.meta.dirname, 'fake-agent.mjs')
 const AGENT_CMD = `"${process.execPath}" "${FAKE}"`
@@ -19,7 +19,8 @@ test('impact of uncommitted changes: touched definitions, uses elsewhere, tests;
 
   // Local, no AI needed.
   await page.getByTestId('review-menu').click()
-  await page.getByRole('menuitem', { name: 'What could these changes affect?' }).click()
+  await page.getByRole('menuitem', { name: 'What could these changes affect?…' }).click()
+  await sendComposed(page, 'impact')
   const view = page.getByTestId('impact')
   await expect(view.getByTestId('impact-symbols')).toContainText('changedtotalfunction')
   await expect(view.getByTestId('impact-caller')).toHaveCount(4)

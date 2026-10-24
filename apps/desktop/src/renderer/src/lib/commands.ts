@@ -2,9 +2,7 @@ import { DEFAULT_LAYOUT, isPaneVisible, wideGraph } from '@gitgoose/shared'
 import {
   lfsPull, lfsTrack, snapshot, addRemote, addSubmodule, applyPatchFile, updateSubmodules, addWorktree, applyPatchFromClipboard, cleanupBranches, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, reopen, stash, undo,
 } from './actions'
-import { startReview } from './review'
-import { startWalkthrough } from './walkthrough'
-import { showImpact } from './impact'
+import { composeAction, impactAction, reviewAction, walkthroughAction } from './aiActions'
 import { modName } from './keys'
 import { saveSettings, toggleLine, useStore } from './store'
 import { toggleChat } from './thread'
@@ -49,15 +47,16 @@ export function commandEntries(): CommandEntry[] {
     add('Repository', 'Add worktree…', () => addWorktree(id))
     add('Layout', active.line ? 'Line view: show all commits' : 'Line view: show only the selected line of history',
       () => toggleLine(id), `${modName()}+L`)
-    add('Repository', 'What could the uncommitted changes affect?', () => showImpact(id, { kind: 'working' }))
+    add('Repository', 'What could the uncommitted changes affect?', () => composeAction(id, impactAction({ kind: 'working' })))
     if ((useStore.getState().settings?.aiProvider ?? 'off') !== 'off') {
       add('AI', isPaneVisible(settings!.layout, 'ai') ? 'Hide the AI pane' : 'Chat with the AI about this repository', () => toggleChat(), `${modName()}+Shift+A`)
-      add('AI', 'Review uncommitted changes', () => startReview(id, { kind: 'working' }))
-      add('AI', 'Review staged changes', () => startReview(id, { kind: 'staged' }))
-      add('AI', 'Review what will be pushed', () => startReview(id, { kind: 'outgoing' }))
-      add('AI', 'Walk me through the uncommitted changes', () => startWalkthrough(id, { kind: 'working' }))
-      if (active.snapshot.head.branch) add('AI', `Walk me through ${active.snapshot.head.branch}`, () => startWalkthrough(id, { kind: 'branch', branch: active.snapshot.head.branch! }))
-      if (active.snapshot.head.branch) add('AI', `Review ${active.snapshot.head.branch} since it branched`, () => startReview(id, { kind: 'branch', branch: active.snapshot.head.branch! }))
+      // Each of these writes its request into the AI pane's message box; Enter sends it.
+      add('AI', 'Review uncommitted changes…', () => composeAction(id, reviewAction({ kind: 'working' })))
+      add('AI', 'Review staged changes…', () => composeAction(id, reviewAction({ kind: 'staged' })))
+      add('AI', 'Review what will be pushed…', () => composeAction(id, reviewAction({ kind: 'outgoing' })))
+      add('AI', 'Walk me through the uncommitted changes…', () => composeAction(id, walkthroughAction({ kind: 'working' })))
+      if (active.snapshot.head.branch) add('AI', `Walk me through ${active.snapshot.head.branch}…`, () => composeAction(id, walkthroughAction({ kind: 'branch', branch: active.snapshot.head.branch! })))
+      if (active.snapshot.head.branch) add('AI', `Review ${active.snapshot.head.branch} since it branched…`, () => composeAction(id, reviewAction({ kind: 'branch', branch: active.snapshot.head.branch! })))
       if (active.review) add('AI', 'Show the last review', () => useStore.setState((s) => ({ repos: { ...s.repos, [id]: { ...s.repos[id]!, center: { kind: 'review' } } } })))
     }
     if (active.lfs?.installed) add('Repository', 'Track files with Git LFS…', () => lfsTrack(id))

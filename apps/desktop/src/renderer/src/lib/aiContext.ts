@@ -33,11 +33,12 @@ export interface ContextChip {
 
 interface PerRepo {
   dropped: AiContextRef[]
-  /** The key of the selection chip the user removed, while that selection stays. */
-  dismissed: string | null
+  /** Keys of the selection's chips the user removed, and the selection they were removed from. */
+  dismissed: string[]
+  dismissedFor: string | null
 }
 
-const EMPTY: PerRepo = { dropped: [], dismissed: null }
+const EMPTY: PerRepo = { dropped: [], dismissed: [], dismissedFor: null }
 
 export const useContextChips = create<Record<string, PerRepo>>(() => ({}))
 
@@ -64,6 +65,17 @@ export function sourceRef(source: DragSource): AiContextRef {
     case 'stash': return { kind: 'stash', ref: source.ref, index: source.index }
     case 'files': return { kind: 'files', rev: source.rev, paths: source.paths }
   }
+}
+
+/**
+ * A reference as the chips that stand for it: one per commit, one per file. Three selected
+ * commits are three chips, not "3 commits" — the point of the row is to say exactly what is
+ * attached, and to let one of them be taken off without redoing the selection.
+ */
+export function expandRef(ref: AiContextRef): AiContextRef[] {
+  if (ref.kind === 'commits' && ref.hashes.length > 1) return ref.hashes.map((h) => ({ kind: 'commits', hashes: [h] }))
+  if (ref.kind === 'files' && ref.paths.length > 1) return ref.paths.map((path) => ({ kind: 'files', rev: ref.rev, paths: [path] }))
+  return [ref]
 }
 
 const short = (h: string) => h.slice(0, 7)
@@ -110,7 +122,11 @@ export function chipsOf(view: Pick<RepoView, 'id' | 'selected'>, state: PerRepo 
     out.push(c)
   }
   const sel = selectionRef(view.selected)
-  if (sel && refKey(sel) !== state.dismissed) add(chipOf(view.id, sel, true, view.selected.kind === 'compare' ? `${view.selected.fromLabel}..${view.selected.toLabel}` : undefined))
+  const compare = view.selected.kind === 'compare' ? `${view.selected.fromLabel}..${view.selected.toLabel}` : undefined
+  for (const ref of sel ? expandRef(sel) : []) {
+    const chip = chipOf(view.id, ref, true, compare)
+    if (!state.dismissed.includes(chip.key)) add(chip)
+  }
   for (const ref of state.dropped) add(chipOf(view.id, ref))
   return out
 }
@@ -120,26 +136,32 @@ export function useChips(view: RepoView): ContextChip[] {
   const state = useContextChips((s) => s[view.id]) ?? EMPTY
   const sel = selectionRef(view.selected)
   const selKey = sel ? refKey(sel) : null
-  // A removed selection chip stays removed only while the selection is the same one.
+  // Removed selection chips stay removed only while the selection is the same one.
   useEffect(() => {
-    if (state.dismissed && state.dismissed !== selKey) set(view.id, { dismissed: null })
-  }, [view.id, state.dismissed, selKey])
+    if (state.dismissedFor !== null && state.dismissedFor !== selKey) set(view.id, { dismissed: [], dismissedFor: null })
+  }, [view.id, state.dismissedFor, selKey])
   return chipsOf(view, state)
 }
 
-/** Something was dropped on the panel: it becomes a chip (the same thing twice is one chip). */
+/**
+ * Something was dropped on the panel: it becomes chips (the same thing twice is one chip). A
+ * drop of several commits is kept as one reference each, so the × on one of them takes off
+ * that one and leaves the rest.
+ */
 export function addDropped(repoId: string, source: DragSource): void {
-  const ref = sourceRef(source)
-  forgetSent(refKey(ref))
-  if (!of(repoId).dropped.some((r) => refKey(r) === refKey(ref))) set(repoId, { dropped: [...of(repoId).dropped, ref] })
+  for (const ref of expandRef(sourceRef(source))) {
+    forgetSent(refKey(ref))
+    if (!of(repoId).dropped.some((r) => refKey(r) === refKey(ref))) set(repoId, { dropped: [...of(repoId).dropped, ref] })
+  }
 }
 
-/** The × on a chip. */
-export function removeChip(repoId: string, chip: ContextChip): void {
-  const state = of(repoId)
-  set(repoId, {
+/** The × on a chip. One of the selection's stays off until the selection changes. */
+export function removeChip(view: Pick<RepoView, 'id' | 'selected'>, chip: ContextChip): void {
+  const state = of(view.id)
+  const sel = selectionRef(view.selected)
+  set(view.id, {
     dropped: state.dropped.filter((r) => refKey(r) !== chip.key),
-    ...(chip.fromSelection ? { dismissed: chip.key } : {}),
+    ...(chip.fromSelection ? { dismissed: [...state.dismissed, chip.key], dismissedFor: sel ? refKey(sel) : null } : {}),
   })
 }
 

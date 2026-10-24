@@ -13,9 +13,11 @@ import { ARTIFACT_KINDS, type AiBlock, type AiThread, type AiTurn, type AiUpdate
 export function reduceThread(thread: AiThread, requestId: string, update: AiUpdate): AiThread {
   if (update.kind === 'turn') {
     if (thread.turns.some((t) => t.requestId === requestId)) return thread
+    // The user's own words, when they wrote some, read as an ordinary user turn: a feature
+    // started from the chat composer shows what was asked, not the feature's name.
     const user: AiTurn = {
-      id: `${requestId}:u`, role: 'user', requestId, blocks: [{ type: 'text', text: update.text }], at: update.at,
-      ...(update.feature ? { feature: update.feature } : {}), ...(update.sent ? { sent: update.sent } : {}),
+      id: `${requestId}:u`, role: 'user', requestId, blocks: [{ type: 'text', text: update.ask ?? update.text }], at: update.at,
+      ...(update.feature && !update.ask ? { feature: update.feature } : {}), ...(update.sent ? { sent: update.sent } : {}),
     }
     const agent: AiTurn = {
       id: `${requestId}:a`, role: 'agent', requestId, blocks: [], status: 'running', at: update.at,

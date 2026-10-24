@@ -1,7 +1,7 @@
 import { initRepo } from '@gitgoose/fixtures'
 import { expect, test } from '@playwright/test'
 import { join } from 'node:path'
-import { launch } from './app'
+import { launch, sendComposed } from './app'
 
 const FAKE = join(import.meta.dirname, 'fake-agent.mjs')
 const AGENT_CMD = `"${process.execPath}" "${FAKE}"`
@@ -17,7 +17,8 @@ test('walkthrough of a commit: summary, effort, checked groups, diagram, reading
   const { app, page } = await launch(r.dir)
   await page.evaluate((p) => window.gitgoose.setSettings(p as never), AGENT)
   await page.locator(`[data-testid="commit-row"][data-hash="${fix}"]`).click({ button: 'right' })
-  await page.getByRole('menuitem', { name: 'Walk me through this commit' }).click()
+  await page.getByRole('menuitem', { name: 'Walk me through this commit…' }).click()
+  await sendComposed(page, 'walkthrough')
 
   const w = page.getByTestId('walkthrough')
   await expect(w.getByTestId('walkthrough-summary')).toHaveText('Changes 2 files to make totals right.')

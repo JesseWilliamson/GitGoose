@@ -7,7 +7,7 @@ import { targetFor } from '../lib/review'
 import { ensureLoaded, updateRepo, type RepoView } from '../lib/store'
 import { startWalkthrough, stopWalkthrough } from '../lib/walkthrough'
 import { MermaidDiagram } from './MermaidDiagram'
-import { RailToggle, ThreadRail, useRailOpen } from './ThreadRail'
+import { OpenChatButton } from './OpenChat'
 import { Button, SectionHeader, Spinner } from './ui'
 import { AiTargetButton } from './AiTargetButton'
 
@@ -27,7 +27,6 @@ const LAYER: Record<ReadingLayer, string> = {
 export function WalkthroughView({ view }: { view: RepoView }) {
   const w = view.walkthrough
   const [showTrivial, setShowTrivial] = useState(false)
-  const chat = useRailOpen('walkthrough')
   if (!w) return null
   const r = w.result
   const open = (path: string) => r && updateRepo(view.id, { center: { kind: 'file', target: targetFor(r, path), mode: 'diff' } })
@@ -44,7 +43,7 @@ export function WalkthroughView({ view }: { view: RepoView }) {
         {r && <EffortBadge effort={r.effort} why={r.effortWhy} />}
         <AiTargetButton area="walkthrough" />
         {w.requestId ? <Button onClick={() => stopWalkthrough(view.id)}><Spinner /> Stop</Button> : <Button onClick={() => startWalkthrough(view.id, w.scope)}>Again</Button>}
-        {r && <RailToggle kind="walkthrough" />}
+        {r && <OpenChatButton repoId={view.id} threadId={w.threadId} />}
         <Button variant="ghost" onClick={() => updateRepo(view.id, { center: { kind: 'graph' } })}>Back to graph</Button>
       </div>
       <div className="flex min-h-0 flex-1">
@@ -111,11 +110,6 @@ export function WalkthroughView({ view }: { view: RepoView }) {
           </>
         )}
       </div>
-      {chat && r && !w.requestId && (
-        <ThreadRail repoId={view.id} kind="walkthrough" anchor={{ kind: 'walkthrough', scope: w.scope }} threadId={w.threadId}
-          onThread={(id) => updateRepo(view.id, (v) => (v.walkthrough ? { walkthrough: { ...v.walkthrough, threadId: id } } : {}))}
-          hint="A revised walkthrough comes back as a card you can apply." />
-      )}
       </div>
     </div>
   )

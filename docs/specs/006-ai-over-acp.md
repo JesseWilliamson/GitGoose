@@ -1,12 +1,89 @@
 # 006: AI features over the Agent Client Protocol
 
 PLAN-2 §9b, PLAN-4 5a (threads). Code: `apps/desktop/src/main/ai/` (acp.ts, service.ts,
-prompts.ts, anthropic.ts, keyStore.ts), `packages/shared/src/ai.ts` and `thread.ts`, renderer
-`lib/ai.ts`, `lib/thread.ts`, `lib/artifacts.ts`, `lib/markdown.ts`, `components/Thread.tsx`,
-`components/AiDialogs.tsx`, `components/AiPanel.tsx`, `components/AiChatPanel.tsx`. Tests:
-`main/ai/*.test.ts`, `shared/src/thread.test.ts`, `renderer/src/lib/markdown.test.ts`,
-`e2e/ai.spec.ts` and `e2e/thread.spec.ts`, against `e2e/fake-agent.mjs` (a real ACP agent over
-stdio, scripted; `FAKE_AGENT_MODELS=1` gives it a model option) and `fakeAnthropic`. No test talks to a real agent or API.
+prompts.ts, basis.ts, anthropic.ts, keyStore.ts), `packages/shared/src/ai.ts`, `thread.ts` and
+`basis.ts`, renderer `lib/ai.ts`, `lib/aiActions.ts`, `lib/thread.ts`, `lib/threadRestore.ts`,
+`lib/artifacts.ts`, `lib/markdown.ts`, `components/Thread.tsx`, `components/AiDialogs.tsx`,
+`components/AiPanel.tsx`, `components/AiChatPanel.tsx`, `components/AiChatHistory.tsx`,
+`components/RecomposeView.tsx`. Tests:
+`main/ai/*.test.ts`, `shared/src/thread.test.ts`, `shared/src/basis.test.ts`,
+`renderer/src/lib/markdown.test.ts`, `e2e/ai.spec.ts` and `e2e/thread.spec.ts`, against
+`e2e/fake-agent.mjs` (a real ACP agent over stdio, scripted; `FAKE_AGENT_MODELS=1` gives it a
+model option) and `fakeAnthropic`. No test talks to a real agent or API.
+
+## Everything the AI does is a chat
+
+There is one way in, and it is the AI pane. A menu item never sends anything: it **composes**
+(`lib/aiActions.ts`). Picking *Review this commit with AI…*, *Recompose with AI…*, *Walk me
+through main…* brings the pane forward with a new conversation about that thing and its request
+already written in the message box, with a pill above saying what Enter will do and an × to
+drop it and just chat instead. Nothing leaves the machine until the user presses Enter.
+
+Two things follow from that, and they are the point:
+
+- **You see what you are about to ask, and can change it.** "Review these 3 commits." is a line
+  of text, so "…but only the error handling" is an edit, not a feature request. What the user
+  writes is sent *after* the context, as the last thing the model reads (`PromptParts.ask`),
+  while the feature's own instructions and its fixed answer format are unchanged: the result is
+  still checked by the same verifier and still lands in the same view.
+- **The conversation and the result are one thing.** The feature's request runs *in* the
+  conversation the user started it in (`AiRunOptions.thread`), so there is no thread beside the
+  chat: the chat's history is the log of everything the AI has ever been asked in this
+  repository. The thread shows what the user wrote as an ordinary user turn (`AiUpdate.ask`),
+  with the full prompt under *Sent*.
+
+Buttons inside a result that mean "do it now" (*Review again*, *Assess impact*, *Again*, the ✨
+on a commit) still run straight away — they are not a menu, and the user is already looking at
+the answer they are replacing. They are threads all the same.
+
+The AI pane's own *Actions* menu composes exactly like the context menus: it writes into the box
+the user is already in.
+
+**There is exactly one chat, and it is the pane.** Results used to carry a rail of their own
+beside them (a review's chat, the recompose plan's chat column, the follow-up box under an
+explanation), which meant two places to talk to the model and two histories to keep straight.
+Those are gone. A result that has a conversation shows a **Chat** button
+(`components/OpenChat.tsx`, `data-testid="open-chat"`) that takes the pane to it; one that has
+none — an impact nobody has asked the model about — shows nothing.
+
+## Reopening a conversation, and when it has gone stale
+
+Every kept conversation is in the pane's history, grouped by day, and the history **takes the
+pane** rather than opening a menu over it (`components/AiChatHistory.tsx`): the log of what the
+AI has been asked is one of the two things the pane is for, and a menu that closes the moment
+you look away is a poor place for a list you read and scroll. The History button in the tab
+strip is a toggle, so the same button hands the conversation back; each row has a delete, and
+deleting one keeps the list open. Opening a conversation shows it in the chat. A conversation about a **review, a walkthrough, an impact or a plan** also owns a view in
+the middle of the window, and opening it puts that back — but only while it is still about this
+repository.
+
+- **The basis.** When such a thread starts, main records what its anchor resolved to
+  (`AiThread.basis`, built by `main/ai/basis.ts` with read-only git): the commits, a ref and the
+  tip it had, and for scopes that take in uncommitted work a digest of the diff and of the
+  untracked files. `aiThreadsStale(repoId)` works the same thing out now and compares them with
+  the pure rules in `shared/src/basis.ts`, each distinct anchor resolved once, so the whole
+  history list is marked in one pass.
+- **What counts as moved:** the commits are gone or different, the branch has moved or been
+  deleted, the index or the working tree has changed. What deliberately does *not*: where a
+  branch forked from. `origin/main` moves on every fetch, and a review of `my-feature` is about
+  the commits on `my-feature`; marking it stale daily would teach the user to ignore the mark.
+- **Still valid → the result comes back.** It is read out of the conversation itself
+  (`aiThreadResult`: the newest artifact of the feature's kind, else the feature's own first
+  answer) and run through the feature's own verifier, so what appears is exactly what Apply
+  would have given, checked against the repository. Nothing is kept in a second place. An
+  impact is worked out locally, so reopening one simply does it again.
+- **Not valid → it is marked, and nothing is restored.** The history row says *out of date* with
+  the reason on hover, and the chat carries a banner — "Out of date. The commits have changed
+  since." — with *Ask again*, which composes the same question about the repository as it is.
+  The conversation is still there to read and to follow up; what it will not do is put a review
+  whose line numbers mean nothing back on screen looking exactly like a fresh one. A
+  conversation saved before basis was recorded is treated the same way: not knowing is not the
+  same as being fine.
+
+The recompose plan lives in the middle of the window (`CenterView` `recompose`), beside the
+review and the walkthrough, rather than in a modal — which is both where a thing you work in
+belongs (ADR-010) and what lets the history put it back. Leaving it (Esc, Back) only leaves it:
+the plan and its edits wait on the AI jobs chip, as they did when it was a dialog.
 
 ## Settings → AI
 
@@ -26,10 +103,10 @@ Every AI area has the same picker (`components/ModelPicker.tsx`): *who* (Default
 preset, the custom command if set, the Anthropic API if a key is saved) and *model*. Settings →
 AI only sets the default. An area's pick is remembered for that area alone (settings
 `aiAreaTargets`: commit, explain, review, walkthrough, impact, recompose, ask, chat, conflict,
-push-checks, error); Default follows Settings. Thread views show it under the turns, so one
-placement covers every chat (Recompose, Review, Walkthrough, Impact, Explain, Ask, AI pane);
-Recompose also shows it while the plan is being asked for, and a new pick there restarts the
-request on it.
+push-checks, error); Default follows Settings. The AI pane shows it under the turns, and each
+result view shows its own in its header; Recompose also shows it while the plan is being asked
+for, and a new pick there restarts the request on it. The area a conversation belongs to comes
+from its anchor (`areaOfAnchor`), so a review chat in the pane uses the review area's pick.
 
 A request carries its `AiTarget` (`{ provider, agent?, agentCommand?, model? }`); main fills the
 blanks from settings. `targetKey` (`agent:<command line>` or `anthropic`) names the process: it is
@@ -73,18 +150,21 @@ lists are kept under, and which process a session lives in.
 | Commit details → **Explain** | `git show` of the commit | streams into a box under the message |
 | Attention bar → **Explain** | the failed action and git's output | a kept thread, streamed into the AI panel (a modal only with no repository open) |
 | Conflict file → **Ask AI** (agent only) | the file path; the agent reads the file | a *proposal* dialog: Use this resolution / Discard; with no proposal, its note as a thread in the AI panel |
-| Review, Walkthrough, Impact → **Chat** | the feature's context (the change, numbered) and what you write | a thread in a rail beside the result |
-| Explain box → **Ask a follow-up** | what you write (the session has the commit) | the thread grows under the explanation |
-| Recompose → **Chat** | what you write (the session has the pieces) | a thread beside the plan; revised plans as cards |
+| Review, Walkthrough, Impact → **Chat** | the feature's context (the change, numbered) and what you write | the result's own conversation, in the AI pane |
+| Explain box → **Chat** | what you write (the session has the commit) | the explanation's conversation, in the AI pane |
+| Recompose → **Chat** | what you write (the session has the pieces) | the plan's conversation in the AI pane; revised plans as cards |
 | Diff selection → **Ask** | the lines, their function, definitions, history; then what you write | a thread under the diff (spec 007) |
 | **AI pane** (Mod+Shift+A, View → Show AI; a tab in the right slot by default, movable: ADR-010) | the repository's name and HEAD, the **context chips** (git output for each, below), then what you write | a free-standing thread; its history lists every kept thread of the repository, by day |
 
 ### Context chips (the AI panel)
 
-Above the panel's composer is a row of chips: what the next message will carry. The **selection**
-is a chip by itself (`commit a1b2c3d subject`, `3 commits`, `uncommitted changes`, `a..b`);
-× removes it and it stays removed while the selection is the same, then comes back with the next
-one. A **drop** on the panel adds chips: a branch or tag, commits, a stash, files. The panel is
+Above the panel's composer is a row of chips: what the next message will carry. **One chip per
+commit and per file**, never a count: three selected commits are three chips
+(`commit a1b2c3d subject`), not "3 commits" (`expandRef` in `lib/aiContext.ts`). The row is what
+says exactly what is attached, so rolling things up into a number defeats it, and it means one
+of them can be taken off without redoing the selection. A long row scrolls rather than pushing
+the message box off the pane. × removes a chip of the selection and it stays removed while the
+selection is the same, then comes back with the next one. A **drop** on the panel adds chips: a branch or tag, commits, a stash, files. The panel is
 a drop target of kind `ai` in the window's drag handling (ADR-009), so the badge says "Add branch
 x to the AI conversation" and nothing in the repository changes. The same thing twice is one
 chip. A message sends the chips and uses up the dropped ones; the selection's chip stays while
@@ -123,20 +203,25 @@ out (saved threads keep 20k characters of it, as for every feature). Consent nam
 a disabled one says why in its tooltip): *Explain* (one commit), *Review*, *Walk through*, *Impact*
 (commits, a branch, or the uncommitted changes; chips you dropped win over the selection),
 *Recompose* / *Split* (editable commits of the current branch), *Rebase onto…* (a dropped
-branch), *Cherry-pick onto HEAD* (commits). They call the same starters as the menus, so their
-threads are in the history list at once; the list refreshes while it is open.
+branch), *Cherry-pick onto HEAD* (commits). The AI ones compose into the box below, exactly as
+the context menus do; *Rebase* and *Cherry-pick* are git and run at once. While an action waits
+in the box the chips are not shown: the feature builds its own context from its scope, so a chip
+promising to be sent would be a lie.
 
-**History.** Grouped by the day a conversation was last used (Today, Yesterday, dates); each line
-shows the kind (Chat, Review, Explain, …) and its title, a spinner while its turn runs, a check
-on the open one. A turn saved as running with nothing answering it (the app quit mid-answer) is
-listed as stopped.
+**History.** The pane itself, under the History toggle. Grouped by the day a conversation was
+last used (Today, Yesterday, dates); each row shows its title, then the kind (Chat, Review,
+Explain, …) and the time, with *opens its review* where opening it restores the middle view,
+*out of date* where it no longer can, a spinner while its turn runs and a check on the open
+one. Each row has a delete on hover. A turn saved as running with nothing answering it (the app
+quit mid-answer) is listed as stopped. The list, and the staleness marks, refresh while it is
+open.
 
 **Waiting never blocks, and answers are not lost.** Every long request (explain, review,
 walkthrough, impact, recompose, fix, conflict help) is an *AI job* (`lib/aiJobs.ts`): a chip in
 the status bar shows what is running and how many answers are ready, with Open / Stop / Dismiss,
-and a toast with Open says when an answer arrives while its view is not on screen. Closing the
-Fix, Recompose or proposal dialog only hides it (the request, or the result and its edits, wait
-on the chip); Stop and Discard are the explicit ways to throw one away. A commit's explanation
+and a toast with Open says when an answer arrives while its view is not on screen. Closing the Fix
+or proposal dialog, or leaving the recompose plan, only hides it (the request, or the result and
+its edits, wait on the chip); Stop and Discard are the explicit ways to throw one away. A commit's explanation
 belongs to the commit, not to the panel showing it (`lib/explain.ts`): selecting another commit
 and coming back, or restarting, shows it again from the kept `explain` thread. The commit
 message and push checks are short inline waits and are not jobs.

@@ -2,7 +2,7 @@ import { initRepo, tempDir } from '@gitgoose/fixtures'
 import { expect, test } from '@playwright/test'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { launch } from './app'
+import { launch, sendComposed } from './app'
 
 const FAKE = join(import.meta.dirname, 'fake-agent.mjs')
 const AGENT_CMD = `"${process.execPath}" "${FAKE}"`
@@ -16,7 +16,8 @@ test('AI review: verified findings in the review view and the diff gutter; inven
   await page.evaluate((p) => window.gitgoose.setSettings(p as never), AGENT)
 
   await page.getByTestId('review-menu').click()
-  await page.getByRole('menuitem', { name: 'Review all uncommitted changes' }).click()
+  await page.getByRole('menuitem', { name: 'Review all uncommitted changes…' }).click()
+  await sendComposed(page, 'review')
   const review = page.getByTestId('review')
   await expect(review.getByTestId('finding')).toHaveCount(1)
   const finding = review.getByTestId('finding')
@@ -41,7 +42,8 @@ test('AI review: verified findings in the review view and the diff gutter; inven
 
 async function reviewed(page: import('@playwright/test').Page) {
   await page.getByTestId('review-menu').click()
-  await page.getByRole('menuitem', { name: 'Review all uncommitted changes' }).click()
+  await page.getByRole('menuitem', { name: 'Review all uncommitted changes…' }).click()
+  await sendComposed(page, 'review')
   await expect(page.getByTestId('finding')).toHaveCount(1)
   return page.getByTestId('finding')
 }
@@ -135,7 +137,8 @@ test('secrets are never sent as they are; linters run once allowed; tool finding
   await page.evaluate((p) => window.gitgoose.setSettings(p as never), { ...AGENT, reviewLinter: `"${process.execPath}" "${script}" {files}` })
 
   await page.getByTestId('review-menu').click()
-  await page.getByRole('menuitem', { name: 'Review all uncommitted changes' }).click()
+  await page.getByRole('menuitem', { name: 'Review all uncommitted changes…' }).click()
+  await sendComposed(page, 'review')
   // First the linter: asked once for this repository.
   const dialog = page.getByTestId('choice-dialog')
   await expect(dialog).toContainText('Allow it here?')
@@ -159,7 +162,8 @@ test('secrets are never sent as they are; linters run once allowed; tool finding
 
   // A full review: the linter is not asked about a second time; the secret is, and Cancel sends nothing.
   await page.getByTestId('review-menu').click()
-  await page.getByRole('menuitem', { name: 'Review all uncommitted changes' }).click()
+  await page.getByRole('menuitem', { name: 'Review all uncommitted changes…' }).click()
+  await sendComposed(page, 'review')
   await expect(dialog).toContainText('looks like a secret')
   await dialog.getByRole('button', { name: 'Cancel' }).click()
   await expect(page.getByTestId('review')).toHaveCount(0)

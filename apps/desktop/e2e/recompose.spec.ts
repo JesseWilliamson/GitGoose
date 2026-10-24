@@ -2,7 +2,7 @@ import { initRepo, tempDir } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { launch, openTarget } from './app'
+import { launch, openTarget, sendComposed } from './app'
 
 const FAKE = join(import.meta.dirname, 'fake-agent.mjs')
 const AGENT_CMD = `"${process.execPath}" "${FAKE}"`
@@ -35,6 +35,7 @@ test('recompose: the AI proposes, you reorder and edit, Create commits rewrites,
   await row(page, C1).click({ modifiers: ['Shift'] })
   await row(page, C1).click({ button: 'right' })
   await page.getByRole('menuitem', { name: 'Recompose with AI…' }).click()
+  await sendComposed(page, 'recompose')
 
   // The fake agent's plan: the last piece (notes.md… whichever came last) alone first, then the rest.
   const commits = page.getByTestId('recompose-commit')
@@ -61,14 +62,14 @@ test('recompose: the AI proposes, you reorder and edit, Create commits rewrites,
   await expect(plannedTitle(page, 0)).toHaveText('feat: everything else')
   await page.keyboard.press('ControlOrMeta+Shift+z')
   await expect(plannedTitle(page, 0)).toHaveText('feat: a and b')
-  // Esc while typing only leaves the field; a second Esc, from rest, would close the dialog.
+  // Esc while typing only leaves the field; a second Esc, from rest, would leave the view.
   await page.getByTestId('recompose-message').focus()
   await page.keyboard.press('Escape')
-  await expect(page.getByTestId('recompose-dialog')).toHaveCount(1)
+  await expect(page.getByTestId('recompose-view')).toHaveCount(1)
   await expect(page.getByTestId('recompose-message')).not.toBeFocused()
 
   await page.getByTestId('recompose-apply').click()
-  await expect(page.getByTestId('recompose-dialog')).toHaveCount(0)
+  await expect(page.getByTestId('recompose-view')).toHaveCount(0)
   const subjects = r.git('log', '--format=%s', '-4').trim().split('\n')
   expect(subjects[0]).toBe('docs: later')
   expect(subjects[1]).toMatch(/^chore: .* first$/)
@@ -82,7 +83,7 @@ test('recompose: the AI proposes, you reorder and edit, Create commits rewrites,
   await app.close()
 })
 
-test('closing the dialog only hides it: the plan arrives later, and its edits survive closing it again', async () => {
+test('leaving the plan only leaves it: the plan arrives later, and its edits survive leaving it again', async () => {
   const { r, C1, C2, C3 } = setup()
   const gate = join(tempDir(), 'gate') // the fake agent holds its answer until this exists
   const { app, page } = await launch(r.dir, { FAKE_AGENT_GATE: gate })
@@ -91,7 +92,8 @@ test('closing the dialog only hides it: the plan arrives later, and its edits su
   await row(page, C1).click({ modifiers: ['Shift'] })
   await row(page, C1).click({ button: 'right' })
   await page.getByRole('menuitem', { name: 'Recompose with AI…' }).click()
-  const dialog = page.getByTestId('recompose-dialog')
+  await sendComposed(page, 'recompose')
+  const dialog = page.getByTestId('recompose-view')
   await expect(dialog).toContainText('Asking the AI')
   await page.getByTestId('recompose-hide').click()
   await expect(dialog).toHaveCount(0)
@@ -102,7 +104,7 @@ test('closing the dialog only hides it: the plan arrives later, and its edits su
   await expect(page.getByTestId('recompose-commit')).toHaveCount(2)
   await planned(page, 0).getByTestId('recompose-up').click()
   await expect(plannedTitle(page, 0)).toHaveText('feat: everything else')
-  // Esc hides the editor; the jobs chip brings it back as it was.
+  // Esc leaves the editor; the jobs chip brings it back as it was.
   await page.keyboard.press('Escape')
   await expect(dialog).toHaveCount(0)
   await page.getByTestId('ai-jobs').click()
@@ -124,9 +126,10 @@ test('a plan put aside is only applied to its own branch', async () => {
   await row(page, C1).click({ modifiers: ['Shift'] })
   await row(page, C1).click({ button: 'right' })
   await page.getByRole('menuitem', { name: 'Recompose with AI…' }).click()
+  await sendComposed(page, 'recompose')
   await expect(page.getByTestId('recompose-commit')).toHaveCount(2)
   await page.keyboard.press('Escape')
-  await expect(page.getByTestId('recompose-dialog')).toHaveCount(0)
+  await expect(page.getByTestId('recompose-view')).toHaveCount(0)
 
   // Meanwhile another branch is checked out (here, outside the app).
   r.git('checkout', '-q', '-b', 'elsewhere')
@@ -151,6 +154,7 @@ test('a plan put aside and then shown by applying one from its chat leaves nothi
   await row(page, C1).click({ modifiers: ['Shift'] })
   await row(page, C1).click({ button: 'right' })
   await page.getByRole('menuitem', { name: 'Recompose with AI…' }).click()
+  await sendComposed(page, 'recompose')
   await expect(page.getByTestId('recompose-commit')).toHaveCount(2)
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('ai-jobs')).toHaveText(/1 answer ready/)
@@ -163,7 +167,7 @@ test('a plan put aside and then shown by applying one from its chat leaves nothi
   await panel.getByTestId('thread-input').fill('Put the first piece last. FAKE:plan')
   await panel.getByTestId('thread-input').press('Enter')
   await panel.getByTestId('thread-artifact').getByTestId('artifact-apply').click()
-  await expect(page.getByTestId('recompose-dialog')).toHaveCount(1)
+  await expect(page.getByTestId('recompose-view')).toHaveCount(1)
   await expect(page.locator('[data-testid="recompose-commit"][data-index="1"] [data-testid="recompose-title"]')).toHaveText('test: the first piece on its own')
   await expect(page.getByTestId('ai-jobs')).toHaveCount(0)
   await page.getByTestId('recompose-discard').click()
@@ -190,6 +194,7 @@ test('squashing in the review, and refusing a selection that is not a range', as
   await row(page, C1).click()
   await row(page, C1).click({ button: 'right' })
   await page.getByRole('menuitem', { name: 'Split with AI…' }).click()
+  await sendComposed(page, 'recompose')
   const commits = page.getByTestId('recompose-commit')
   await expect(commits).toHaveCount(2)
   await planned(page, 0).click()
@@ -200,7 +205,7 @@ test('squashing in the review, and refusing a selection that is not a range', as
   await expect(commits).toHaveCount(1)
   await expect(page.getByTestId('recompose-apply')).toHaveText('Create 1 commit')
   await page.getByTestId('recompose-apply').click()
-  await expect(page.getByTestId('recompose-dialog')).toHaveCount(0)
+  await expect(page.getByTestId('recompose-view')).toHaveCount(0)
   // C2 and C3 sit above the rebuilt C1, with their own messages and new parents. The squashed
   // commit's message starts with the first proposed commit's (oldest first, as git squashes).
   expect(r.git('log', '--format=%s', '-3').trim().split('\n')).toEqual(['docs: later', 'more wip', 'chore: notes.md first'])
@@ -216,6 +221,7 @@ test('move a change to another commit or a new one; empty commits block until re
   await row(page, C1).click({ modifiers: ['Shift'] })
   await row(page, C1).click({ button: 'right' })
   await page.getByRole('menuitem', { name: 'Recompose with AI…' }).click()
+  await sendComposed(page, 'recompose')
   const commits = page.getByTestId('recompose-commit')
   await expect(commits).toHaveCount(2)
   // The first proposed commit has one change; move it into the second: the first is now empty.
@@ -238,7 +244,7 @@ test('move a change to another commit or a new one; empty commits block until re
   await planned(page, 1).click()
   await page.getByTestId('recompose-message').fill('chore: split out')
   await page.getByTestId('recompose-apply').click()
-  await expect(page.getByTestId('recompose-dialog')).toHaveCount(0)
+  await expect(page.getByTestId('recompose-view')).toHaveCount(0)
   expect(r.git('log', '--format=%s', '-3').trim().split('\n')).toEqual(['docs: later', 'chore: split out', 'feat: everything else'])
   await app.close()
 })
@@ -332,6 +338,7 @@ test('drag: a hunk onto a commit, a hunk into the open space for a new commit, a
   await row(page, C1).click({ modifiers: ['Shift'] })
   await row(page, C1).click({ button: 'right' })
   await page.getByRole('menuitem', { name: 'Recompose with AI…' }).click()
+  await sendComposed(page, 'recompose')
   const commits = page.getByTestId('recompose-commit')
   await expect(commits).toHaveCount(2)
   await expect(page.getByTestId('recompose-unit')).toHaveCount(1)
@@ -360,7 +367,7 @@ test('drag: a hunk onto a commit, a hunk into the open space for a new commit, a
   await expect(page.getByTestId('recompose-unit')).toHaveCount(2)
   await expect(planned(page, 2)).toContainText('1 file')
   // Released over nothing in particular, a hunk goes back where it was.
-  const box = (await page.getByTestId('recompose-dialog').boundingBox())!
+  const box = (await page.getByTestId('recompose-view').boundingBox())!
   d = await drag(page, page.getByTestId('recompose-unit').first(), { x: box.x + box.width - 40, y: box.y + box.height - 20 })
   await d.drop()
   await expect(page.getByTestId('recompose-unit')).toHaveCount(2)
@@ -375,7 +382,7 @@ test('drag: a hunk onto a commit, a hunk into the open space for a new commit, a
   await page.keyboard.press('Escape')
   await page.mouse.up()
   await expect(page.locator('.drag-float')).toHaveCount(0)
-  await expect(page.getByTestId('recompose-dialog')).toHaveCount(1)
+  await expect(page.getByTestId('recompose-view')).toHaveCount(1)
   await expect(plannedTitle(page, 0)).toHaveText(first!)
   d = await drag(page, planned(page, 0), () => upperEdge(1), async () => (await plannedTitle(page, 1).textContent()) === first)
   await d.drop()
@@ -401,12 +408,13 @@ test("recompose asks the area's model, and its chat can switch models", async ()
   await row(page, C1).click({ modifiers: ['Shift'] })
   await row(page, C1).click({ button: 'right' })
   await page.getByRole('menuitem', { name: 'Recompose with AI…' }).click()
+  await sendComposed(page, 'recompose')
   await expect(page.getByTestId('recompose-commit')).toHaveCount(2)
   // The session was switched to the picked model before the plan was asked for.
   expect(readFileSync(log, 'utf8').split('\n---\n')[0]).toBe('set model fast')
 
-  await page.getByTestId('recompose-chat-toggle').click()
-  const chat = page.getByTestId('recompose-chat')
+  await page.getByTestId('open-chat').click()
+  const chat = page.getByTestId('ai-chat-panel')
   const model = (await openTarget(page, 'recompose', chat)).getByTestId('model-picker-model')
   // The list came from the session that answered: no "Load models…" needed.
   await expect(model).toHaveText('Fake Fast')

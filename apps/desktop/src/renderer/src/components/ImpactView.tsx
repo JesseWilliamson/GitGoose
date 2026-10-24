@@ -6,7 +6,7 @@ import { useAiEnabled } from '../lib/ai'
 import { indexingText } from '../lib/codegraph'
 import { assessImpact, showImpact } from '../lib/impact'
 import { updateRepo, type RepoView } from '../lib/store'
-import { RailToggle, ThreadRail, useRailOpen } from './ThreadRail'
+import { OpenChatButton } from './OpenChat'
 import { Button, SectionHeader, Spinner } from './ui'
 import { AiTargetButton } from './AiTargetButton'
 
@@ -20,7 +20,6 @@ const CHANGE_STYLE = { changed: 'bg-warn/15 text-warn', added: 'bg-add/15 text-a
 export function ImpactView({ view }: { view: RepoView }) {
   const st = view.impact
   const aiOn = useAiEnabled()
-  const chat = useRailOpen('impact')
   if (!st) return null
   const r = st.result
   const risk = new Map(r?.assessment?.risks.map((x) => [x.id, x.why]) ?? [])
@@ -43,7 +42,7 @@ export function ImpactView({ view }: { view: RepoView }) {
             : <Button onClick={() => assessImpact(view.id)} data-testid="assess-impact"><Sparkles size={13} /> Assess impact</Button>
         )}
         <Button onClick={() => showImpact(view.id, st.scope)}>Again</Button>
-        {aiOn && r && <RailToggle kind="impact" />}
+        {aiOn && r && <OpenChatButton repoId={view.id} threadId={st.threadId} />}
         <Button variant="ghost" onClick={() => updateRepo(view.id, { center: { kind: 'graph' } })}>Back to graph</Button>
       </div>
       <div className="flex min-h-0 flex-1">
@@ -97,11 +96,6 @@ export function ImpactView({ view }: { view: RepoView }) {
           </>
         )}
       </div>
-      {aiOn && chat && r && !st.requestId && (
-        <ThreadRail repoId={view.id} kind="impact" anchor={{ kind: 'impact', scope: st.scope }} threadId={st.threadId}
-          onThread={(id) => updateRepo(view.id, (v) => (v.impact ? { impact: { ...v.impact, threadId: id } } : {}))}
-          hint="Ask what a change to one of these definitions could break, or which tests to run." />
-      )}
       </div>
     </div>
   )

@@ -9,7 +9,6 @@ import { api, toUiError } from '../lib/api'
 import { fileDiffRows } from '../lib/diffLayout'
 import { acceptFix, showFix } from '../lib/review'
 import { toast, useStore } from '../lib/store'
-import { RecomposeDialog } from './RecomposeDialog'
 import { Button, Modal, Spinner, ModalFooter } from './ui'
 import { AiTargetButton } from './AiTargetButton'
 
@@ -23,7 +22,6 @@ export function AiDialogs() {
       <OutputDialog />
       <ProposalDialog />
       <FixDialog />
-      <RecomposeDialog />
     </>
   )
 }

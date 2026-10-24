@@ -113,6 +113,20 @@ export function useClipboardLock(): void {
   test.afterEach(() => rmSync(lock, { recursive: true, force: true }))
 }
 
+/**
+ * Every AI action goes through the chat: a menu item writes its request into the AI pane's
+ * message box and sends nothing (lib/aiActions.ts). This is the second half — read it, send it
+ * — which every test of an AI feature does right after picking its menu item.
+ */
+export async function sendComposed(page: Page, action?: string): Promise<void> {
+  const pill = page.getByTestId('ai-pending-action')
+  await expect(pill).toBeVisible()
+  if (action) await expect(pill).toHaveAttribute('data-action', action)
+  const box = page.getByTestId('ai-chat-panel').locator('textarea')
+  await expect(box).not.toHaveValue('')
+  await box.press('Enter')
+}
+
 /** Close the AI pane from its tab menu (the pane chrome has the Hide; the pane itself has no close button). */
 export async function hideAiPane(page: Page): Promise<void> {
   await page.getByTestId('pane-menu-ai').click()

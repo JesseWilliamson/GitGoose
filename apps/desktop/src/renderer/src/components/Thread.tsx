@@ -33,7 +33,7 @@ export interface ThreadTestIds {
   agent?: string
 }
 
-export function Thread({ thread, repoId, testids = {}, placeholder, hint, hintTitle, hideFeature, className, above, actions, context, onSent }: {
+export function Thread({ thread, repoId, testids = {}, placeholder, hint, hintTitle, hideFeature, className, above, actions, context, onSent, seed, seedKey, submit }: {
   thread: AiThread
   repoId: string
   testids?: ThreadTestIds
@@ -44,6 +44,15 @@ export function Thread({ thread, repoId, testids = {}, placeholder, hint, hintTi
   /** Context chips to send with the next message (main renders them); `onSent` runs after a message went out. */
   context?: AiContextRef[]
   onSent?: () => void
+  /**
+   * Words written into the box for the user to read, edit and send: an AI action composed from
+   * a menu (lib/aiActions.ts). `seedKey` changes when a new one arrives, and only then is the
+   * box rewritten — typing is never overwritten under the user's hands.
+   */
+  seed?: string
+  seedKey?: string
+  /** What Enter does instead of an ordinary message (a composed action runs its feature). */
+  submit?: (text: string) => Promise<boolean>
   placeholder?: string
   /** Shown (centred, short) while the thread has no turns; `hintTitle` is the longer explanation on hover. */
   hint?: string
@@ -52,8 +61,13 @@ export function Thread({ thread, repoId, testids = {}, placeholder, hint, hintTi
   hideFeature?: boolean
   className?: string
 }) {
-  const [text, setText] = useState('')
+  const [text, setText] = useState(seed ?? '')
   const [sending, setSending] = useState(false)
+  // A newly composed action replaces what is in the box; nothing else does.
+  useEffect(() => {
+    if (seedKey !== undefined) setText(seed ?? '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seedKey])
   const end = useRef<HTMLDivElement>(null)
   const running = runningTurn(thread)
   const last = thread.turns.at(-1)
@@ -67,7 +81,7 @@ export function Thread({ thread, repoId, testids = {}, placeholder, hint, hintTi
   const send = async (message = text) => {
     if (!message.trim() || sending || running) return
     setSending(true)
-    const ok = await sendMessage(thread.id, message, context)
+    const ok = submit ? await submit(message) : await sendMessage(thread.id, message, context)
     setSending(false)
     if (ok) onSent?.()
     if (ok && message === text) setText('')
