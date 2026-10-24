@@ -18,9 +18,12 @@ rules (git only through `GitRunner`, the two performance rules, the definition o
 every PR here. ADR-003 holds the decisions already made about the graph; this plan amends it where
 it says so and nowhere else.
 
-The website's page *Drawing git graphs* (`apps/site`, built with dsviz) draws every idea below on
-a small history with the controls live. Read it beside this plan: a figure there is the picture a
-PR here has to produce.
+dsviz's example *Ways to draw a commit graph* (the examples page of
+https://jessewilliamson.github.io/DiagramBuilder/, code editable in place) draws the main ideas
+below on one history with the controls live. A fuller set of figures (the walk stepped row by row
+with its slot array, the three row orders, pinning, a branch on top of main, folding and capping,
+the viewport) is parked on the `claude/website` branch as a website for GitGoose, for when one is
+wanted. Read them beside this plan: a figure there is the picture a PR here has to produce.
 
 ## Where the graph is today
 
@@ -48,7 +51,7 @@ missing, step 5 a clip without a marker, step 6 done.
 ## The model
 
 Every picture of a commit graph is two choices, and the vocabulary below is used in the code, the
-specs and the website, so one word means one thing everywhere:
+specs and the figures, so one word means one thing everywhere:
 
 | word | meaning |
 |---|---|
@@ -61,7 +64,7 @@ specs and the website, so one word means one thing everywhere:
 | **cap** | the number of columns drawn; past it, a `~` on every row a hidden column crosses |
 
 Two decisions from ADR-003 stand: lanes are straight (a line never moves sideways; the report's
-"compact" style is on the website for comparison only), and the layout is a single streaming pass
+"compact" style is in dsviz for comparison only), and the layout is a single streaming pass
 whose state is the slot array, so pushing page 2 never changes page 1. Every piece below keeps
 both, and the paging-equivalence test in `layout.test.ts` is the guard.
 
@@ -88,7 +91,7 @@ Wave 3 is the look, and comes last so it does not fight the mechanics.
 **Why.** Three small things in `packages/graph` that every later piece needs. Colour by column
 means a line that curves into another column changes colour at the bend, which reads as two
 branches. A merge parent that takes the leftmost free slot draws its edge across every column in
-between; the "everything shown" figure on the website shows the crossings. And the trunk reservation
+between; the dsviz example with everything shown has the crossings. And the trunk reservation
 is a special case of a general rule, pinning, that PR 3 and PR 4 both want.
 
 **Design.**
@@ -263,8 +266,8 @@ whole-edge curves); the look should be decided once over all of it, with the rep
 the brief: straight lanes, main left with a fixed colour, colour per line, no idle lines, hiding
 one click away, curves or corners as a setting.
 
-**Design.** A spec first (`docs/specs/009-graph-v2.md`, from `TEMPLATE.md`), with the website's
-figures as its pictures, then one PR per layout (comfy, compact). Points to settle in the spec:
+**Design.** A spec first (`docs/specs/009-graph-v2.md`, from `TEMPLATE.md`), with figures drawn
+with dsviz as its pictures, then one PR per layout (comfy, compact). Points to settle in the spec:
 
 - Nodes: ring (comfy) and avatar (compact) stay; a folded merge is a ring with a plus in both; the
   tilde is the cut mark in both; HEAD's outer ring stays.
@@ -286,24 +289,24 @@ layout, light and dark, in the e2e suite.
 **Why.** Every layout change here is a change to a 250-line pure function, and the hard part is
 knowing what picture is right before writing it. `@dsviz/git` runs the same walk with the report's
 layouts as options (`lanes`, `pin`, `fold`, `maxLanes`, `bend`), on a history small enough to read,
-with the before/after animated because commits are keyed by hash. The website's page is that
-playground published.
+with the before/after animated because commits are keyed by hash. dsviz's examples page is that
+playground published, and its editor runs changed code in place.
 
 **Design.**
 
-- A layout change is tried as a figure on the website first (a new `Figure` in
-  `apps/site/src/figures/git.tsx`, a new option in dsviz if needed), then ported to
-  `packages/graph` with the same history as a test fixture. `tools/fixtures` gains a
-  `fromHistory(commits)` helper that builds a real repository from the website's commit lists, so
-  the picture on the page and the e2e test see the same history.
+- A layout change is tried as a figure in dsviz first (in the examples page's editor, or as a new
+  registry example; a new option in `@dsviz/git` if needed), then ported to `packages/graph` with
+  the same history as a test fixture. `tools/fixtures` gains a `fromHistory(commits)` helper that
+  builds a real repository from the figure's commit list, so the picture and the e2e test see the
+  same history.
 - Exercises in `docs/learn/`, in the series' format (file, tests, the idea in one paragraph, do it,
   questions, extensions): 09 nearest free slot and crossing counts (PR 1); 10 checkpoints and
   replay (PR 4); 11 the edge index (PR 6). Each is written when its PR lands, from the PR's tests.
 
 ## Not doing, and why
 
-- **Compact (curved) lanes.** The report's enthusiasts and ADR-003 agree on straight lanes. The
-  website shows compact lanes so the choice is visible, not because the app will offer it.
+- **Compact (curved) lanes.** The report's enthusiasts and ADR-003 agree on straight lanes. dsviz
+  draws compact lanes so the choice is visible, not because the app will offer it.
 - **A temporal topological sort in the app.** git's `--date-order` is one, and with a commit-graph
   file its first page costs 10 ms (ADR-004). Sorting in the app would mean waiting for the whole
   log.

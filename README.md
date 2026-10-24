@@ -28,9 +28,6 @@ pnpm dev
 
 See `CLAUDE.md` for the layout and conventions, `docs/PLAN.md` for the plan, and `docs/adr/` for
 the decisions behind the architecture. `docs/learn/` has hands-on exercises for the core ideas.
-The website in `apps/site` (deployed by `.github/workflows/pages.yml`) describes the app, how it
-works, and how git clients draw commit graphs; `docs/PLAN-6-graph.md` is the plan for the graph's
-redesign.
 
 | command | |
 |---|---|
@@ -39,4 +36,3 @@ redesign.
 | `pnpm bench` | 100k-commit benchmark; `--check` enforces the budgets |
 | `pnpm dist` | build installers for this OS |
 | `pnpm install:local` | build this working tree and install it as your everyday GitGoose; run again to update |
-| `pnpm --filter @gitgoose/site dev` | the website (figures drawn with [dsviz](https://github.com/JesseWilliamson/DiagramBuilder)) |
