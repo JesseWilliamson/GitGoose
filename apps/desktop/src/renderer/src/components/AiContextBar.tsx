@@ -22,6 +22,13 @@ import { Badge } from './ui/badge'
  * only call the starters the menus already call, so a review started here is the same review,
  * and its thread is in the history list like any other. They are a menu, not seven buttons: they
  * are things you do now and then, so they should not take a third of the pane all the time.
+ *
+ * An action pressed here answers here: the ones that ask the AI something (`inChat`) put their
+ * conversation in the pane as it starts, so the press leaves a record in the chat ("Walkthrough
+ * of the uncommitted changes", then the answer) and a follow-up goes to the same agent session.
+ * The view it belongs to still opens in the centre. The two git actions (rebase, cherry-pick)
+ * and Impact ask nobody anything, so they have nothing to say here: they report as they always
+ * do, with a toast and Undo.
  */
 
 const ICON: Record<ChipKind, LucideIcon> = {
@@ -78,17 +85,17 @@ export function paneActions(view: Pick<RepoView, 'id' | 'snapshot' | 'editable'>
       why: noAi || (hashes.length === 1 ? '' : 'Select one commit, or drop one here'),
       run: () => {
         selectCommit(id, hashes[0]!)
-        explainCommit(id, hashes[0]!)
+        explainCommit(id, hashes[0]!, { inChat: true })
       },
     },
-    { name: 'review', label: 'Review', icon: SearchCheck, what: `Review ${what}`, why: noAi || (scope ? '' : need), run: () => startReview(id, scope!) },
-    { name: 'walkthrough', label: 'Walk through', icon: Waypoints, what: `Walk through ${what}`, why: noAi || (scope ? '' : need), run: () => startWalkthrough(id, scope!) },
+    { name: 'review', label: 'Review', icon: SearchCheck, what: `Review ${what}`, why: noAi || (scope ? '' : need), run: () => startReview(id, scope!, { inChat: true }) },
+    { name: 'walkthrough', label: 'Walk through', icon: Waypoints, what: `Walk through ${what}`, why: noAi || (scope ? '' : need), run: () => startWalkthrough(id, scope!, { inChat: true }) },
     { name: 'impact', label: 'Impact', icon: ListTree, what: `Find what ${what} could affect`, why: scope ? '' : need, run: () => showImpact(id, scope!) },
     {
       name: 'recompose', label: hashes.length === 1 ? 'Split' : 'Recompose', icon: Scissors,
       what: hashes.length === 1 ? 'Split this commit into smaller ones' : `Recompose ${hashes.length} commits`,
       why: noAi || (!hashes.length ? 'Select commits or drop them here' : editable ? '' : 'Recompose needs non-merge commits on the current branch'),
-      run: () => recomposeWithAi(id, hashes),
+      run: () => recomposeWithAi(id, hashes, { inChat: true }),
     },
     {
       name: 'rebase', label: 'Rebase onto…', icon: GitMerge, what: `Rebase ${headBranch ?? 'HEAD'} onto ${refShort}`,

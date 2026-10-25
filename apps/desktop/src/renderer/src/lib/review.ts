@@ -1,6 +1,6 @@
 import type { DiffTarget, ReviewFinding, ReviewProfile, ReviewResult, ReviewScope } from '@gitgoose/shared'
 import { api, toUiError } from './api'
-import { cancelAi, centerJob, scopeLabel, showRepo, startAi, useAi } from './ai'
+import { cancelAi, centerJob, openInPanel, scopeLabel, showRepo, startAi, useAi } from './ai'
 import { dropFinishedJob, dropJob, finishJob, registerJob } from './aiJobs'
 import { choose, setting, toast, updateRepo, useStore, type RepoView } from './store'
 import { ask, run } from './actions'
@@ -25,13 +25,14 @@ export interface ReviewState {
  * `incremental`, the last review of the same change is the starting point: only hunks that
  * changed since are sent, and its findings carry over while their lines are unchanged.
  */
-export function startReview(id: string, scope: ReviewScope, opts: { incremental?: boolean } = {}): void {
+export function startReview(id: string, scope: ReviewScope, opts: { incremental?: boolean; inChat?: boolean } = {}): void {
   const old = useStore.getState().repos[id]?.review
   if (old?.requestId) cancelAi(old.requestId)
   const profile = setting('reviewProfile') as ReviewProfile
   const same = old?.result && JSON.stringify(old.scope) === JSON.stringify(scope) && old.profile === profile
   const previous = opts.incremental && same ? { findings: old!.result!.findings.filter((f) => !old!.dismissed.includes(f.id)), hunkKeys: old!.result!.hunkKeys, contextKey: old!.result!.contextKey } : undefined
-  const run = startAi(id, { kind: 'review', scope, profile, previous }, undefined, { before: () => askAboutLinters(id), keepThread: true })
+  const run = startAi(id, { kind: 'review', scope, profile, previous }, undefined,
+    { before: () => askAboutLinters(id), keepThread: true, ...(opts.inChat ? { onThread: (threadId) => openInPanel(id, threadId) } : {}) })
   updateRepo(id, { review: { scope, profile, requestId: run.requestId, result: null, error: null, dismissed: [], focus: null }, center: { kind: 'review' } })
   centerJob(run, id, 'review', `Review of ${scopeLabel(scope)}`)
   const mine = (v: RepoView) => v.review?.requestId === run.requestId

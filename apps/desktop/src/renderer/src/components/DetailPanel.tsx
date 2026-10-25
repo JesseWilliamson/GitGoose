@@ -446,15 +446,8 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
         data-testid="commit-body"
         className="mt-2 w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-sm outline-none focus:border-primary"
       />
-      {aiOn && (
-        <div className="mt-2 flex min-w-0 items-center gap-2">
-          <AiTargetButton area="commit" />
-          <Button size="sm" variant="ghost" onClick={() => void writeMessage()} disabled={!writing && stagedCount === 0} data-testid="ai-commit-message"
-            title={writing ? 'Stop' : 'Write the message with AI, from the staged changes'}>
-            {writing ? <><Spinner /> Stop</> : <><Sparkles size={13} /> Write</>}
-          </Button>
-        </div>
-      )}
+      {/* One control row: what the commit will be (amend, options) and who writes its message, with
+          the commit itself at the right edge. Three half-empty rows were taller than the fields. */}
       <div className="mt-2 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground" title="Amend the previous commit instead of making a new one">
@@ -474,8 +467,17 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
               <DM.Item onSelect={() => useStore.setState({ dialog: { kind: 'identity', repoId: id, onSaved: () => setIdentityTick((t) => t + 1) } })}>Change who you commit as…</DM.Item>
             </DM.Content>
           </DropdownMenu.Root>
+          {aiOn && (
+            <>
+              <AiTargetButton area="commit" />
+              <Button size="sm" variant="ghost" className="shrink-0" onClick={() => void writeMessage()} disabled={!writing && stagedCount === 0} data-testid="ai-commit-message"
+                title={writing ? 'Stop' : 'Write the message with AI, from the staged changes'}>
+                {writing ? <><Spinner /> Stop</> : <><Sparkles size={13} /> Write</>}
+              </Button>
+            </>
+          )}
         </div>
-        <Button variant="primary" disabled={!canCommit} onClick={() => void commit()} data-testid="commit-button" title={`Commit (${modName()}+Enter)`}>
+        <Button variant="primary" className="shrink-0" disabled={!canCommit} onClick={() => void commit()} data-testid="commit-button" title={`Commit (${modName()}+Enter)`}>
           {view.busy === 'Commit' ? <Spinner /> : <Check size={14} />}
           {amend ? 'Amend' : stagedCount ? `Commit ${stagedCount} ${stagedCount === 1 ? 'file' : 'files'}` : 'Commit'}
         </Button>

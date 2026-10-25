@@ -117,7 +117,7 @@ test('drop a branch on the pane: a chip; the same twice is one; it is used up by
   await app.close()
 })
 
-test('the actions menu: enabled by the chips, disabled with a reason; Review starts a review thread that is in the history list at once', async () => {
+test('the actions menu: enabled by the chips, disabled with a reason; Review starts a review thread that is in the chat and in the history list at once', async () => {
   const r = repoWithTopic()
   const { app, page } = await launch(r.dir)
   await set(page, AGENT)
@@ -160,13 +160,18 @@ test('the actions menu: enabled by the chips, disabled with a reason; Review sta
   await close()
   await page.getByTestId('commit-row').nth(1).click()
 
-  // Review of the selected commit: the review view opens, and the thread is in the history list.
+  // Review of the selected commit: the review view opens, and the press leaves a record in the
+  // chat itself (the pane shows the review's conversation, so a follow-up goes to that session).
   await (await action('review')).click()
   await expect(page.getByTestId('review')).toBeVisible()
+  await expect(panel.getByTestId('thread-feature')).toBeVisible()
+  await expect(panel.getByTestId('thread-feature-answer')).toBeVisible()
   // New and History are at the right end of the slot's tab strip, not in a header of the pane.
   await page.getByTestId('slot-right').getByTestId('ai-chat-history').click()
   const item = page.locator('[data-testid="ai-chat-history-item"][data-kind="review"]')
   await expect(item).toHaveCount(1)
+  // It is the conversation the pane has open, not just one in the list.
+  await expect(item).toHaveAttribute('data-current', 'true')
   await expect(page.getByTestId('ai-chat-history-day').first()).toContainText('Today')
   await page.keyboard.press('Escape')
   await app.close()

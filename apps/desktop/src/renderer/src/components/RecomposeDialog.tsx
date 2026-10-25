@@ -4,7 +4,7 @@ import { ArrowDown, ArrowUp, CircleAlert, GripVertical, MessagesSquare, Plus, Re
 import { ContextMenu, DropdownMenu } from 'radix-ui'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { run } from '../lib/actions'
-import { cancelAi, showRepo, startAi, useAi } from '../lib/ai'
+import { cancelAi, openInPanel, showRepo, startAi, useAi } from '../lib/ai'
 import { dropFinishedJob, dropJob, finishJob, parkJob, registerJob } from '../lib/aiJobs'
 import { api, toUiError } from '../lib/api'
 import { splitPath } from '../lib/format'
@@ -32,10 +32,11 @@ import { Button, CM, DM, Modal, ModalFooter, SectionHeader, Spinner } from './ui
  * Ask for a plan. Waiting does not hold the user: closing the dialog hides it while the request
  * goes on (a job in the status bar), and the plan is there to open when it is ready.
  */
-export function recomposeWithAi(repoId: string, hashes: string[]): void {
+export function recomposeWithAi(repoId: string, hashes: string[], opts: { inChat?: boolean } = {}): void {
   const old = useAi.getState().recompose
   if (old?.requestId) cancelAi(old.requestId)
-  const r = startAi(repoId, { kind: 'recompose', hashes }, undefined, { keepThread: true })
+  const r = startAi(repoId, { kind: 'recompose', hashes }, undefined,
+    { keepThread: true, ...(opts.inChat ? { onThread: (threadId) => openInPanel(repoId, threadId) } : {}) })
   useAi.setState({ recompose: { repoId, hashes, requestId: r.requestId, proposal: null, error: null, hidden: false } })
   registerJob({
     id: r.requestId,

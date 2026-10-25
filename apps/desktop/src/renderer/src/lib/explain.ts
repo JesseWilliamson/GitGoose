@@ -1,7 +1,7 @@
 import { isPaneVisible, showPane, turnText } from '@gitgoose/shared'
 import { useEffect } from 'react'
 import { create } from 'zustand'
-import { cancelAi, showRepo, startAi } from './ai'
+import { cancelAi, openInPanel, showRepo, startAi } from './ai'
 import { dropJob, finishJob, registerJob } from './aiJobs'
 import { api, toUiError } from './api'
 import { ensureLoaded, saveSettings, setting, updateRepo, useStore } from './store'
@@ -48,9 +48,10 @@ function showCommit(repoId: string, hash: string): void {
   void ensureLoaded(repoId, hash)
 }
 
-export function explainCommit(repoId: string, hash: string): void {
+export function explainCommit(repoId: string, hash: string, opts: { inChat?: boolean } = {}): void {
   const k = keyOf(repoId, hash)
-  const run = startAi(repoId, { kind: 'explain-commit', hash }, (text) => patch(k, { text }), { keepThread: true })
+  const run = startAi(repoId, { kind: 'explain-commit', hash }, (text) => patch(k, { text }),
+    { keepThread: true, ...(opts.inChat ? { onThread: (threadId) => openInPanel(repoId, threadId) } : {}) })
   useExplains.setState({ [k]: { text: '', requestId: run.requestId, error: null } })
   registerJob({
     id: run.requestId,
