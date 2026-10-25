@@ -34,3 +34,46 @@ test('the diff header groups its controls: layout, view tabs, one ⋯ menu with 
   await page.keyboard.press('Escape')
   await app.close()
 })
+
+test('a working-copy file keeps its stage/discard buttons in the header, and the bar under it only appears when the diff has something to say', async () => {
+  const r = makeFixture('linear')
+  r.write('file.txt', 'line 5\nline 5\nCHANGED\nline 5\nline 5\n')
+  const { app, page } = await launch(r.dir)
+  await page.getByTestId('wip-row').click()
+  await page.getByTestId('unstaged-file').first().click()
+  const view = page.getByTestId('file-view')
+  const header = view.locator('div').first()
+  await expect(header.getByTestId('stage-file')).toBeVisible()
+  await expect(header.getByTestId('discard-file')).toBeVisible()
+  // They sit with the other controls: after the view tabs, before ⋯.
+  const x = async (locator: ReturnType<typeof view.locator>) => (await locator.boundingBox())!.x
+  const xs = [await x(view.getByTestId('mode-blame')), await x(view.getByTestId('stage-file')), await x(view.getByTestId('file-menu'))]
+  expect(xs).toEqual([...xs].sort((a, b) => a - b))
+  // Nothing to say about the diff itself, so no second bar.
+  await expect(view.getByTestId('diff-hint')).toHaveCount(0)
+
+  // Selecting lines brings it back, with what can be done with them.
+  await page.getByTestId('diff-line').filter({ hasText: 'CHANGED' }).click()
+  await expect(view.getByTestId('diff-hint')).toBeVisible()
+  await expect(view.getByTestId('stage-lines')).toBeVisible()
+
+  await page.getByTestId('stage-file').click()
+  await expect(page.getByTestId('staged-file')).toHaveCount(1)
+  await page.getByTestId('staged-file').first().click()
+  await expect(view.getByTestId('unstage-file')).toBeVisible()
+  await app.close()
+})
+
+test('a hunk header is tall enough for its buttons', async () => {
+  const r = makeFixture('linear')
+  r.write('file.txt', 'line 5\nline 5\nCHANGED\nline 5\nline 5\n')
+  const { app, page } = await launch(r.dir)
+  await page.getByTestId('wip-row').click()
+  await page.getByTestId('unstaged-file').first().click()
+  const button = page.getByTestId('stage-hunk').first()
+  const row = page.getByTestId('diff-lines').locator('div', { has: page.getByTestId('stage-hunk') }).last()
+  const [b, h] = [(await button.boundingBox())!, (await row.boundingBox())!]
+  expect(b.y).toBeGreaterThanOrEqual(h.y - 0.5)
+  expect(b.y + b.height).toBeLessThanOrEqual(h.y + h.height + 0.5)
+  await app.close()
+})

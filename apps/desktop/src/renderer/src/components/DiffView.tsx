@@ -1,7 +1,7 @@
 import type { BlameLine, Commit, DiffTarget, FileDiff, HunkSelection, ReviewFinding } from '@gitgoose/shared'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import clsx from 'clsx'
-import { Ellipsis, MessageCircleQuestion, X } from 'lucide-react'
+import { Ellipsis, Minus, Plus, X } from 'lucide-react'
 import { DropdownMenu } from 'radix-ui'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AskPanel } from './AskPanel'
@@ -21,10 +21,7 @@ import { heatByCommit, heatColor } from '../lib/heat'
 import { avatarSrc } from '../lib/avatar'
 import { codeLineHeight, ensureLoaded, reportError, saveSettings, updateRepo, useSetting, type FileMode, type RepoView } from '../lib/store'
 import { Button, DM, Segmented, Spinner } from './ui'
-import { modName } from '../lib/keys'
 import { findingsFor } from '../lib/review'
-import { askAbout } from '../lib/ask'
-import { useAiEnabled } from '../lib/ai'
 
 
 export function FileView({ view, target, mode }: { view: RepoView; target: DiffTarget; mode: FileMode }) {
@@ -59,6 +56,7 @@ export function FileView({ view, target, mode }: { view: RepoView; target: DiffT
         )}
         <Segmented label="View" value={mode} onChange={setMode} testId={(m) => `mode-${m}`}
           options={[{ value: 'diff', label: 'Diff' }, { value: 'history', label: 'History' }, { value: 'blame', label: 'Blame' }]} />
+        {mode === 'diff' && <FileActions view={view} target={target} />}
         <FileMenu view={view} target={target} mode={mode} rev={rev} />
         <button onClick={close} title="Close (Esc)" aria-label="Close" className="no-drag flex size-row-lg items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><X size={16} /></button>
       </div>
@@ -191,37 +189,17 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
   const [svgView, setSvgView] = useState<SvgView>(lastSvgView)
   const pickSvgView = (v: SvgView) => { lastSvgView = v; setSvgView(v) }
   const peekRev = target.kind === 'commit' ? target.hash : target.kind === 'range' ? target.to : null
-  // Text selected in the diff, as a range of new-side lines: what "Ask about these lines" covers.
-  const aiOn = useAiEnabled()
-  const [selLines, setSelLines] = useState<{ start: number; end: number } | null>(null)
-  useEffect(() => {
-    if (!aiOn) return
-    const onSel = () => {
-      const s = window.getSelection()
-      const root = scrollRef.current
-      if (!s || s.isCollapsed || !root || !s.anchorNode || !root.contains(s.anchorNode) || !s.focusNode || !root.contains(s.focusNode)) return setSelLines(null)
-      const lineOf = (n: Node) => Number((n instanceof Element ? n : n.parentElement)?.closest('[data-new]')?.getAttribute('data-new') ?? NaN)
-      const a = lineOf(s.anchorNode)
-      const b = lineOf(s.focusNode)
-      setSelLines(Number.isFinite(a) && Number.isFinite(b) ? { start: Math.min(a, b), end: Math.max(a, b) } : null)
-    }
-    document.addEventListener('selectionchange', onSel)
-    return () => document.removeEventListener('selectionchange', onSel)
-  }, [aiOn])
-  const askAboutSelection = () => {
-    if (!selLines || !diff) return
-    const code = diff.hunks.flatMap((h) => h.lines).filter((l) => l.newNo !== undefined && l.newNo >= selLines.start && l.newNo <= selLines.end && l.kind !== '-').map((l) => l.text).join('\n')
-    askAbout(view.id, peekRev, target.path, selLines.start, selLines.end, code)
-    window.getSelection()?.removeAllRanges()
-    setSelLines(null)
-  }
+  // A hunk header carries buttons (h-row 24), so it is a row of its own height rather than a code
+  // line's: at small code sizes the buttons used to stick out of it.
+  const hunkH = Math.max(lineH, 28)
   // Wrapped lines have different heights, so the virtualizer measures each row; otherwise rows
   // are a fixed height derived from the code font size (no measuring, cheaper scrolling).
   const virt = useVirtualizer({
-    count: items.length, getScrollElement: () => scrollRef.current, estimateSize: () => lineH, overscan: 30,
+    count: items.length, getScrollElement: () => scrollRef.current, overscan: 30,
+    estimateSize: (i) => (items[i]?.kind === 'hunk' ? hunkH : lineH),
     ...(wrap ? { measureElement: (el: Element) => el.getBoundingClientRect().height } : {}),
   })
-  useEffect(() => virt.measure(), [lineH, wrap, split, virt])
+  useEffect(() => virt.measure(), [lineH, hunkH, wrap, split, virt])
 
   if (diff === undefined) return <div className="flex flex-1 items-center justify-center text-hint"><Spinner /></div>
   if (diff === null) return <div className="flex flex-1 items-center justify-center text-sm text-hint">No changes to show</div>
@@ -239,6 +217,26 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
     })
   }
   const selectionHunks = (): HunkSelection[] => [...sel.entries()].filter(([, s]) => s.size).map(([hunk, s]) => ({ hunk, lines: [...s] }))
+
+  /**
+   * One line's stage/unstage button, shown in its gutter on hover. The affordance used to be a
+   * sentence above the diff telling people to click lines; a + where the line is says it without
+   * words, and takes one click instead of select-then-press. Selection still does ranges.
+   */
+  const lineButton = (hunk: number, line: number, kind: string) => {
+    if (!editable || kind === ' ') return null
+    const staged = target.kind === 'staged'
+    const label = staged ? 'Unstage this line' : 'Stage this line'
+    return (
+      <button data-testid="line-apply" title={label} aria-label={label} style={{ height: lineH }}
+        onMouseDown={(e) => { e.preventDefault(); e.stopPropagation() }}
+        onClick={(e) => { e.stopPropagation(); apply(staged ? 'unstage' : 'stage', [{ hunk, lines: [line] }]) }}
+        className={clsx('absolute top-0 left-0 z-10 hidden w-[18px] items-center justify-center rounded-sm font-sans text-background group-hover:flex',
+          staged ? 'bg-muted-foreground hover:brightness-110' : 'bg-add hover:brightness-110')}>
+        {staged ? <Minus size={12} /> : <Plus size={12} />}
+      </button>
+    )
+  }
 
   const toggle = (hunk: number, line: number, shift: boolean) => {
     if (!editable) return
@@ -258,37 +256,26 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
     anchor.current = { hunk, line }
   }
 
-  const fileActions = target.kind === 'commit' || target.kind === 'range' ? null : (
+  /** What is selected, and what can be done with it: only here while a selection exists. */
+  const selectionActions = selectedCount === 0 || target.kind === 'commit' || target.kind === 'range' ? null : (
     <div className="flex items-center gap-2">
-      {selectedCount > 0 && (
-        <>
-          <span className="text-xs text-muted-foreground">{selectedCount} {selectedCount === 1 ? 'line' : 'lines'} selected</span>
-          {target.kind !== 'staged' && <Button size="sm" variant="primary" data-testid="stage-lines" onClick={() => apply('stage', selectionHunks())}>Stage lines</Button>}
-          {target.kind === 'staged' && <Button size="sm" variant="primary" onClick={() => apply('unstage', selectionHunks())}>Unstage lines</Button>}
-          {target.kind === 'unstaged' && <Button size="sm" onClick={() => apply('discard', selectionHunks())}>Discard lines</Button>}
-          <Button size="sm" variant="ghost" onClick={() => setSel(new Map())}>Clear</Button>
-          <span className="mx-1 h-4 w-px bg-border" />
-        </>
-      )}
-      {target.kind !== 'staged' ? (
-        <>
-          <Button size="sm" onClick={() => void run(view.id, 'Stage', () => api.stagePaths(view.id, [target.path]), { quiet: true })}>Stage file</Button>
-          <Button size="sm" variant="ghost" onClick={() => void discard(view.id, [target.path])}>
-            {target.kind === 'untracked' ? 'Delete file' : 'Discard file'}
-          </Button>
-        </>
-      ) : (
-        <Button size="sm" onClick={() => void run(view.id, 'Unstage', () => api.unstagePaths(view.id, [target.path]), { quiet: true })}>Unstage file</Button>
-      )}
+      <span className="text-xs text-muted-foreground">{selectedCount} {selectedCount === 1 ? 'line' : 'lines'} selected</span>
+      {target.kind !== 'staged' && <Button size="sm" variant="primary" data-testid="stage-lines" onClick={() => apply('stage', selectionHunks())}>Stage lines</Button>}
+      {target.kind === 'staged' && <Button size="sm" variant="primary" onClick={() => apply('unstage', selectionHunks())}>Unstage lines</Button>}
+      {target.kind === 'unstaged' && <Button size="sm" onClick={() => apply('discard', selectionHunks())}>Discard lines</Button>}
+      <Button size="sm" variant="ghost" onClick={() => setSel(new Map())}>Clear</Button>
     </div>
   )
 
   const isSvg = !diff.binary && /\.svg$/i.test(target.path)
   const asImage = (diff.binary && !!imageMime(target.path)) || (isSvg && svgView === 'image')
 
+  const hint = diff.oldPath ? `Renamed from ${diff.oldPath}`
+    : !asImage && !editable && ignoreWhitespace && target.kind !== 'commit' && target.kind !== 'range' ? 'Whitespace changes are hidden, so line and hunk staging are off (Settings → Diff).' : ''
+
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      {(fileActions || diff.oldPath || isSvg) && (
+      {(selectionActions || hint || isSvg) && (
         <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border px-3 text-xs">
           {isSvg && (
             <div className="flex shrink-0 items-center gap-1" data-testid="svg-view">
@@ -300,11 +287,8 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
               ))}
             </div>
           )}
-          <span className="min-w-0 flex-1 truncate text-muted-foreground" data-testid="diff-hint">
-            {diff.oldPath ? `Renamed from ${diff.oldPath}` : asImage ? '' : editable ? `Click lines to select them; shift-click for a range; ${modName()}+click a name to peek.`
-              : editable === false && ignoreWhitespace && target.kind !== 'commit' && target.kind !== 'range' ? 'Whitespace changes are hidden, so line and hunk staging are off (Settings → Diff).' : ''}
-          </span>
-          {fileActions}
+          <span className="min-w-0 flex-1 truncate text-muted-foreground" data-testid="diff-hint">{hint}</span>
+          {selectionActions}
         </div>
       )}
       {asImage ? (
@@ -326,9 +310,10 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
           <div style={{ height: virt.getTotalSize(), position: 'relative', minWidth: '100%' }} className={wrap ? 'w-full' : 'w-max'}>
             {virt.getVirtualItems().map((vi) => {
               const it = items[vi.index]!
+              const h = it.kind === 'hunk' ? hunkH : lineH
               const style = {
                 position: 'absolute' as const, top: 0, left: 0, minWidth: '100%', transform: `translateY(${vi.start}px)`,
-                ...(wrap ? { minHeight: lineH, right: 0 } : { height: lineH, lineHeight: `${lineH}px` }),
+                ...(wrap ? { minHeight: h, right: 0 } : { height: h, lineHeight: `${h}px` }),
               }
               const hunk = diff.hunks[it.hunk]!
               if (it.kind === 'hunk') {
@@ -358,11 +343,12 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
                   return (
                     <div data-testid="diff-cell" data-kind={l.kind} data-side={side} data-new={side === 'right' ? l.newNo : undefined}
                       onMouseDown={(e) => { if (l.kind !== ' ' && e.button === 0 && e.detail === 1) { e.preventDefault(); toggle(it.hunk, li, e.shiftKey) } }}
-                      className={clsx('flex w-1/2 min-w-0 whitespace-pre-wrap break-all', side === 'right' && 'border-l border-border',
+                      className={clsx('group flex w-1/2 min-w-0 whitespace-pre-wrap break-all', side === 'right' && 'border-l border-border',
                         l.kind === '+' && 'bg-add-bg', l.kind === '-' && 'bg-del-bg', l.kind !== ' ' && editable && 'cursor-pointer',
                         selected && 'ring-1 ring-primary ring-inset brightness-125')}>
                       <span className={clsx('relative w-10 shrink-0 pr-1 text-right text-hint', selected && 'bg-select')}>
                         {side === 'right' && marker(findingAt(l.newNo))}
+                        {lineButton(it.hunk, li, l.kind)}
                         {side === 'left' ? (l.oldNo ?? '') : (l.newNo ?? '')}
                       </span>
                       <span className="min-w-0 flex-1 pr-2 pl-2">{textOf(li)}</span>
@@ -384,10 +370,11 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
                   onMouseDown={(e) => { if (line.kind !== ' ' && e.button === 0 && e.detail === 1) { e.preventDefault(); toggle(it.hunk, it.line, e.shiftKey) } }}
                   onDoubleClick={() => { if (target.kind !== 'commit') void openInEditor(`${view.snapshot.path}/${target.path}`, line.newNo ?? line.oldNo ?? 1) }}
                   title={target.kind !== 'commit' ? 'Double-click to open in your editor at this line' : undefined}
-                  className={clsx('flex', wrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre', line.kind === '+' && 'bg-add-bg', line.kind === '-' && 'bg-del-bg',
+                  className={clsx('group flex', wrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre', line.kind === '+' && 'bg-add-bg', line.kind === '-' && 'bg-del-bg',
                     line.kind !== ' ' && editable && 'cursor-pointer', selected && 'ring-1 ring-primary ring-inset brightness-125')}>
                   <span className={clsx('sticky left-0 flex w-[84px] shrink-0 self-stretch bg-background text-right text-hint', selected && 'bg-select')}>
                     {line.kind !== '-' && marker(findingAt(line.newNo))}
+                    {lineButton(it.hunk, it.line, line.kind)}
                     <span className="w-9 pr-1">{line.oldNo ?? ''}</span>
                     <span className="w-9 pr-1">{line.newNo ?? ''}</span>
                     <span className={clsx('w-3 text-center', line.kind === '+' && 'text-add', line.kind === '-' && 'text-destructive')}>{line.kind === ' ' ? '' : line.kind}</span>
@@ -398,12 +385,6 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
             })}
           </div>
         </div>
-      )}
-      {selLines && (
-        <button onMouseDown={(e) => e.preventDefault()} onClick={askAboutSelection} data-testid="ask-selection"
-          className="absolute top-12 right-5 z-10 flex items-center gap-1.5 rounded-full border border-primary/40 bg-popover px-3 py-1 text-xs font-medium text-primary shadow-lg">
-          <MessageCircleQuestion size={13} /> Ask about line{selLines.end > selLines.start ? `s ${selLines.start}-${selLines.end}` : ` ${selLines.start}`}
-        </button>
       )}
       {peek && <CodePeekPanel repoId={view.id} repoPath={view.snapshot.path} name={peek} rev={peekRev} onClose={() => setPeek(null)} />}
       {view.ask && view.ask.path === target.path && <AskPanel repoId={view.id} ask={view.ask} />}
@@ -424,6 +405,27 @@ function LineText({ text, tokens, ranges, kind, noNewline }: {
       ))}
       {noNewline && <span className="ml-2 text-hint" title="No newline at end of file">⏎̸</span>}
     </>
+  )
+}
+
+/**
+ * Stage / unstage / discard this whole file, in the view's own bar beside the layout and mode
+ * controls. They are the file's actions, not the diff's, so they live with the file's title
+ * instead of in a second bar under it; the diff's bar below is now only there when the diff has
+ * something to say (a rename, an SVG's view, a line selection).
+ */
+function FileActions({ view, target }: { view: RepoView; target: DiffTarget }) {
+  if (target.kind === 'commit' || target.kind === 'range') return null
+  if (target.kind === 'staged') {
+    return <Button size="sm" data-testid="unstage-file" onClick={() => void run(view.id, 'Unstage', () => api.unstagePaths(view.id, [target.path]), { quiet: true })}>Unstage file</Button>
+  }
+  return (
+    <div className="flex shrink-0 items-center gap-2">
+      <Button size="sm" data-testid="stage-file" onClick={() => void run(view.id, 'Stage', () => api.stagePaths(view.id, [target.path]), { quiet: true })}>Stage file</Button>
+      <Button size="sm" variant="ghost" data-testid="discard-file" onClick={() => void discard(view.id, [target.path])}>
+        {target.kind === 'untracked' ? 'Delete file' : 'Discard file'}
+      </Button>
+    </div>
   )
 }
 

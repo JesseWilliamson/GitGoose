@@ -41,6 +41,35 @@ test('stages selected lines from the diff view', async () => {
   await app.close()
 })
 
+test('the + in a line\'s gutter stages that line on its own; staged, it becomes a -', async () => {
+  const r = makeFixture('linear')
+  r.write('file.txt', 'line 5\nline 5\nKEEP ME\nline 5\nline 5\nline 5\nNOT YET\n')
+  const { app, page } = await launch(r.dir)
+  await page.getByTestId('wip-row').click()
+  await page.getByTestId('unstaged-file').first().click()
+  const keep = page.getByTestId('diff-line').filter({ hasText: 'KEEP ME' })
+  // The button is the affordance that replaced the "click lines to select them" sentence: it is
+  // in the gutter, it appears on hover, and one press stages that line and nothing else.
+  const plus = keep.getByTestId('line-apply')
+  await expect(plus).toBeHidden()
+  await keep.hover()
+  await expect(plus).toBeVisible()
+  await plus.click()
+  await expect(page.getByTestId('staged-file')).toHaveCount(1)
+  const staged = r.git('show', ':file.txt')
+  expect(staged).toContain('KEEP ME')
+  expect(staged).not.toContain('NOT YET')
+
+  // The same button in the staged diff takes the line back out again.
+  await page.getByTestId('staged-file').first().click()
+  const line = page.getByTestId('diff-line').filter({ hasText: 'KEEP ME' })
+  await line.hover()
+  await line.getByTestId('line-apply').click()
+  await expect(page.getByTestId('staged-file')).toHaveCount(0)
+  expect(r.git('show', ':file.txt')).not.toContain('KEEP ME')
+  await app.close()
+})
+
 test('shift-click selects a run of files, ctrl-click adds one; staging from one of them stages them all', async () => {
   const r = makeFixture('linear')
   for (const f of ['a.txt', 'b.txt', 'c.txt', 'd.txt', 'e.txt']) r.write(f, `${f}\n`)
