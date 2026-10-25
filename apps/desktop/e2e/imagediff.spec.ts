@@ -17,8 +17,10 @@ test('an image change shows before and after, with sizes and dimensions, and swi
   const { app, page } = await launch(r.dir)
   await page.getByTestId('unstaged-file').filter({ hasText: 'logo.png' }).click()
   const diff = page.getByTestId('image-diff')
-  // The text-diff hint (click lines to select them) means nothing for an image.
-  await expect(page.getByTestId('diff-hint')).toHaveText('')
+  // Nothing a diff bar could say about an image, so there is no bar: the file's own buttons are
+  // in the header, and lines cannot be selected here.
+  await expect(page.getByTestId('diff-hint')).toHaveCount(0)
+  await expect(page.getByTestId('file-view').getByTestId('stage-file')).toBeVisible()
   await expect(page.getByTestId('commit-count')).toHaveText('2 commits')
   await expect(diff.getByTestId('image-old')).toContainText('Before · 69 B · 1×1')
   await expect(diff.getByTestId('image-new')).toContainText(`After · ${WIDE_PNG.length} B · 2×1`)

@@ -72,7 +72,7 @@ test('a failing pre-commit hook shows its output; Skip hooks commits anyway', as
   await app.close()
 })
 
-test('with AI on, the target button, Write and Commit all fit in the footer without overlapping', async () => {
+test('with AI on, the target button, Write and Commit share one footer row without overlapping', async () => {
   const r = setup()
   const { app, page } = await launch(r.dir, isolatedGlobal())
   await page.evaluate(() => window.gitgoose.setSettings({ aiProvider: 'agent', aiAgent: 'claude' } as never))
@@ -91,5 +91,8 @@ test('with AI on, the target button, Write and Commit all fit in the footer with
   }
   const overlap = (a: Rect, b: Rect) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
   for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) expect(overlap(rects[i]!, rects[j]!), `${i} overlaps ${j}`).toBe(false)
+  // All three are the one control row, not a stack of half-empty ones: same centre line.
+  const middle = (r: Rect) => r.y + r.height / 2
+  for (const rect of rects) expect(Math.abs(middle(rect) - middle(rects[0]!))).toBeLessThan(2)
   await app.close()
 })

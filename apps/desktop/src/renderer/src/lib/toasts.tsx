@@ -23,7 +23,6 @@ function ToastBody({ toast: t, onDismiss }: { toast: Toast; onDismiss: () => voi
   return (
     <div role="status" data-kind={t.kind} className="w-96 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-popover p-3 text-sm text-foreground shadow-xl shadow-black/30">
       <div className="flex items-start gap-2">
-        <span className={`mt-1 size-2 shrink-0 rounded-full ${t.kind === 'success' ? 'bg-add' : 'bg-primary'}`} />
         <div className="min-w-0 flex-1">
           <div className="font-medium">{t.title}</div>
           {t.detail && (
