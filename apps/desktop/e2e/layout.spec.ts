@@ -297,3 +297,36 @@ test('the keyboard shows and hides panes; hide side panels and reset from the pa
   await expect.poll(() => width(page, 'slot-right')).toBeGreaterThan(300)
   await app.close()
 })
+
+test('workspace layouts: choosing one moves the panes, the palette switches, Reset layout returns to it', async () => {
+  const r = makeFixture('linear')
+  const { app, page } = await launch(r.dir)
+  await wide(app)
+  await expect(page.getByTestId('commit-row').first()).toBeVisible()
+  const paneIn = (slot: string) => page.getByTestId(`slot-${slot}`).locator('[data-pane]:visible')
+
+  // Two stacks: the AI under the graph, Details alone and wide on the right.
+  await page.evaluate(() => window.gitgoose.setSettings({ layoutPreset: 'stacks' }))
+  await expect(paneIn('bottom')).toHaveAttribute('data-pane', 'ai')
+  await expect(paneIn('right')).toHaveAttribute('data-pane', 'details')
+  await expect(page.getByTestId('slot-farRight')).toHaveCount(0)
+  await expect.poll(() => width(page, 'slot-right')).toBeGreaterThan(600)
+
+  // Adjusted by hand, then Reset layout: back to the chosen layout, not the default.
+  await movePaneVia(page, 'details', 'left')
+  await expect(page.getByTestId('slot-right')).toHaveCount(0)
+  await page.keyboard.press('ControlOrMeta+p')
+  await page.getByTestId('palette-input').fill('Reset layout')
+  await page.keyboard.press('Enter')
+  await expect(paneIn('right')).toHaveAttribute('data-pane', 'details')
+  await expect(paneIn('bottom')).toHaveAttribute('data-pane', 'ai')
+
+  // The palette has every layout by name.
+  await page.keyboard.press('ControlOrMeta+p')
+  await page.getByTestId('palette-input').fill('Workspace layout: Review')
+  await page.keyboard.press('Enter')
+  await expect(page.getByTestId('slot-left')).toHaveCount(0)
+  await expect(paneIn('farRight')).toHaveAttribute('data-pane', 'ai')
+  expect((await page.evaluate(() => window.gitgoose.getSettings())).layoutPreset).toBe('review')
+  await app.close()
+})

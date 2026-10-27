@@ -1,4 +1,4 @@
-import { DEFAULT_LAYOUT, isPaneVisible, wideGraph } from '@gitgoose/shared'
+import { isPaneVisible, PRESET_IDS, PRESETS, wideGraph } from '@gitgoose/shared'
 import {
   lfsPull, lfsTrack, snapshot, addRemote, addSubmodule, applyPatchFile, updateSubmodules, addWorktree, applyPatchFromClipboard, cleanupBranches, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, reopen, stash, undo,
 } from './actions'
@@ -80,7 +80,11 @@ export function commandEntries(): CommandEntry[] {
   add('App', 'Clone repository…', () => useStore.setState({ dialog: { kind: 'clone' } }))
   add('App', 'New repository…', () => void initRepo())
   add('App', 'Settings', () => useStore.setState({ page: 'settings' }))
-  add('Layout', 'Reset layout (panes and sizes)', () => void saveSettings({ layout: structuredClone(DEFAULT_LAYOUT) }))
+  add('Layout', 'Reset layout (panes and sizes)', () => void saveSettings({ layout: structuredClone(PRESETS[settings?.layoutPreset ?? 'reading'].layout) }))
+  // Every workspace layout, by name; the one in use again resets it.
+  for (const id of PRESET_IDS) {
+    add('Layout', `Workspace layout: ${PRESETS[id].label}`, () => void saveSettings({ layoutPreset: id, layout: structuredClone(PRESETS[id].layout) }), PRESETS[id].description)
+  }
   add('Layout', 'Hide side panels', () => void saveSettings({ layout: wideGraph(settings!.layout) }))
   add('App', 'Keyboard shortcuts', () => useStore.setState({ dialog: { kind: 'shortcuts' } }), '?')
   if (settings) {

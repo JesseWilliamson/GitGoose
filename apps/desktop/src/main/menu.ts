@@ -1,7 +1,7 @@
-import { isPaneVisible } from '@gitgoose/shared'
+import { isPaneVisible, PRESET_IDS, PRESETS } from '@gitgoose/shared'
 import { app, Menu, type MenuItemConstructorOptions } from 'electron'
 import { broadcast } from './ipc'
-import { getSettings, onSettingsChanged } from './settings'
+import { getSettings, onSettingsChanged, setSettings } from './settings'
 
 /**
  * Native menu. Items that are app commands send a 'command' event; the renderer owns the logic
@@ -29,11 +29,13 @@ function syncPaneChecks(): void {
     const checked = isPaneVisible(layout, pane)
     if (item && item.checked !== checked) item.checked = checked
   }
+  const preset = menu.getMenuItemById(`preset-${getSettings().layoutPreset}`)
+  if (preset && !preset.checked) preset.checked = true
 }
 
 /** Built once at startup. */
 export function installMenu(): void {
-  onSettingsChanged((_s, changed) => { if (changed.has('layout')) syncPaneChecks() })
+  onSettingsChanged((_s, changed) => { if (changed.has('layout') || changed.has('layoutPreset')) syncPaneChecks() })
   const layout = getSettings().layout
   const cmd = (name: string) => () => broadcast({ type: 'command', name })
   const isMac = process.platform === 'darwin'
@@ -98,6 +100,14 @@ export function installMenu(): void {
         { label: 'Toggle Bottom Panel', accelerator: 'CmdOrCtrl+J', click: cmd('toggle-bottom'), registerAccelerator: false },
         { label: 'Hide Side Panels', click: cmd('layout-wide-graph') },
         { label: 'Reset Layout', click: cmd('layout-default') },
+        {
+          // The arrangements to start from (layout.ts PRESETS); picking the current one again resets it.
+          label: 'Workspace Layout',
+          submenu: PRESET_IDS.map((id): MenuItemConstructorOptions => ({
+            id: `preset-${id}`, label: PRESETS[id].label, type: 'radio', checked: getSettings().layoutPreset === id,
+            click: () => setSettings({ layoutPreset: id, layout: structuredClone(PRESETS[id].layout) }),
+          })),
+        },
         // Holding Shift shows the line for as long as it is held; this keeps it on.
         { label: 'Line View', accelerator: 'CmdOrCtrl+L', click: cmd('line-view'), registerAccelerator: false },
         { type: 'separator' },

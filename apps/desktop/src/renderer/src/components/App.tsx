@@ -1,4 +1,4 @@
-import { DEFAULT_LAYOUT, wideGraph, type Settings } from '@gitgoose/shared'
+import { PRESETS, wideGraph, type Settings } from '@gitgoose/shared'
 import { useEffect } from 'react'
 import { applyPatchFile, applyPatchFromClipboard, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, redo, showHistory, showWorkingCopy, stash, undo } from '../lib/actions'
 import { comboOf, keymap } from '../lib/keys'
@@ -54,7 +54,7 @@ function useCommands() {
         case 'toggle-bottom': return toggleBottom()
         // The View menu's checkbox: show or hide, unlike the key, which also focuses.
         case 'toggle-ai-pane': return togglePane('ai')
-        case 'layout-default': return void saveSettings({ layout: structuredClone(DEFAULT_LAYOUT) })
+        case 'layout-default': return void saveSettings({ layout: structuredClone(PRESETS[setting('layoutPreset')].layout) })
         case 'layout-wide-graph': return void saveSettings({ layout: wideGraph(setting('layout')) })
         case 'back': return goBack()
         case 'forward': return goForward()

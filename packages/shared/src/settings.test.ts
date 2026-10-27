@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { PRESETS } from './layout'
 import { defaultSettings, migrateSettings, validatePatch, validateSetting } from './settings'
 
 describe('settings schema', () => {
@@ -59,6 +60,16 @@ describe('settings schema', () => {
     const on = migrateSettings({ settingsVersion: 2, compactRows: true })
     expect('compactRows' in on).toBe(false)
     expect(on.settingsVersion).toBe(5)
+  })
+
+  it('choosing a workspace layout moves the panes to it, unless the patch places them itself', () => {
+    expect(validatePatch({ layoutPreset: 'stacks' }).layout).toEqual(PRESETS.stacks.layout)
+    // A copy: changing the stored layout must never change the preset.
+    expect(validatePatch({ layoutPreset: 'stacks' }).layout).not.toBe(PRESETS.stacks.layout)
+    const own = { ...PRESETS.reading.layout, left: { ...PRESETS.reading.layout.left, size: 300 } }
+    expect(validatePatch({ layoutPreset: 'stacks', layout: own }).layout).toEqual(own)
+    expect(validatePatch({ layoutPreset: 'nonsense' }).layoutPreset).toBe('reading')
+    expect('layout' in validatePatch({ theme: 'dark' })).toBe(false)
   })
 
   it('leaves the old graph layout setting behind', () => {

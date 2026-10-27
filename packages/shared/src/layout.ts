@@ -52,6 +52,78 @@ export const DEFAULT_LAYOUT: PaneLayout = {
   bottom: { panes: [], active: null, size: DEFAULT_SIZES.bottom, collapsed: false },
 }
 
+/**
+ * Arrangements to start from (Settings → Appearance → Workspace layout, and the palette). Each is
+ * only a PaneLayout with a name: choosing one replaces the layout, and from there the panes move
+ * and resize as always. Reset layout goes back to the chosen one. They are the options of the
+ * workspace redesign brief, to live with side by side before settling on one.
+ */
+export type PresetId = 'reading' | 'stacks' | 'drawer' | 'tabs' | 'review' | 'history' | 'chat' | 'graph'
+
+export interface Preset {
+  label: string
+  /** One line: what is where, and what it is good for. */
+  description: string
+  layout: PaneLayout
+}
+
+type Arrangement = Partial<Record<Slot, { panes: PaneId[]; size?: number; collapsed?: boolean }>>
+
+/** A layout from just what differs: every slot not named is empty at its default size. */
+function arrange(a: Arrangement): PaneLayout {
+  const out = {} as PaneLayout
+  for (const s of SLOTS) {
+    const x = a[s]
+    out[s] = { panes: x?.panes ?? [], active: x?.panes[0] ?? null, size: x?.size ?? DEFAULT_SIZES[s], collapsed: x?.collapsed ?? false }
+  }
+  return out
+}
+
+export const PRESETS: Record<PresetId, Preset> = {
+  reading: {
+    label: 'Reading pane',
+    description: 'Branches, graph, details over the diff, AI: four columns, nothing behind a tab (option A).',
+    layout: DEFAULT_LAYOUT,
+  },
+  stacks: {
+    label: 'Two stacks',
+    description: 'The graph over the AI chat on the left, details over a wide diff on the right (option B).',
+    layout: arrange({ left: { panes: ['branches'], size: 208 }, right: { panes: ['details'], size: 680 }, bottom: { panes: ['ai'], size: 320 } }),
+  },
+  drawer: {
+    label: 'AI drawer',
+    description: 'Branches, graph and details as columns; the AI in a drawer under the graph, like an editor\'s terminal.',
+    layout: arrange({ left: { panes: ['branches'] }, right: { panes: ['details'], size: 520 }, bottom: { panes: ['ai'], size: 240 } }),
+  },
+  tabs: {
+    label: 'Tabs',
+    description: 'Details and the AI as tabs in one column, as before the redesign (the diff stays in Details).',
+    layout: arrange({ left: { panes: ['branches'] }, right: { panes: ['details', 'ai'], size: 400 } }),
+  },
+  review: {
+    label: 'Review',
+    description: 'A narrow graph to step through commits, a wide diff, the AI beside it; branches hidden (option C).',
+    layout: arrange({ right: { panes: ['details'], size: 720 }, farRight: { panes: ['ai'], size: 340 } }),
+  },
+  history: {
+    label: 'History',
+    description: 'The graph gets the room: branches and a narrow details column; the AI hidden until asked for (option C).',
+    layout: arrange({ left: { panes: ['branches'] }, right: { panes: ['details'], size: 360 } }),
+  },
+  chat: {
+    label: 'Chat',
+    description: 'A narrow graph and a wide AI chat, with details as a tab behind it (option C).',
+    layout: arrange({ farRight: { panes: ['ai', 'details'], size: 640 } }),
+  },
+  graph: {
+    label: 'Graph only',
+    description: 'Every side column collapsed: the graph alone, with the panes a shortcut away.',
+    layout: arrange({ left: { panes: ['branches'], collapsed: true }, right: { panes: ['details'], collapsed: true }, farRight: { panes: ['ai'], collapsed: true } }),
+  },
+}
+
+export const PRESET_IDS = Object.keys(PRESETS) as PresetId[]
+
 /** The slot a pane is in, or null when it is hidden. */
 export function slotOf(layout: PaneLayout, pane: PaneId): Slot | null {
   return SLOTS.find((s) => layout[s].panes.includes(pane)) ?? null

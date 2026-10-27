@@ -2,7 +2,7 @@ import type { GraphFilter } from './index'
 import type { AiArea, AiModelList, AiTarget, AiThread, PushCheck, ReviewLearning } from './ai'
 import type { PromptKind, PromptText } from './prompts'
 import { askToThread } from './thread'
-import { DEFAULT_LAYOUT, normalizeLayout, type PaneLayout } from './layout'
+import { DEFAULT_LAYOUT, normalizeLayout, PRESET_IDS, PRESETS, type PaneLayout, type PresetId } from './layout'
 
 /**
  * Every setting in one table. The settings page, defaults, validation and migration all come
@@ -74,6 +74,10 @@ export const SETTINGS = {
   fileTree: bool(false, { label: 'Show changed files as a tree', section: 'Appearance', keywords: 'folder list view' }),
   dateFormat: choice('relative', [{ value: 'relative', label: 'Relative (3 days ago)' }, { value: 'absolute', label: 'Absolute (12 Mar 2026)' }, { value: 'both', label: 'Both' }],
     { label: 'Dates', section: 'Appearance' }),
+  layoutPreset: choice<PresetId>('reading', PRESET_IDS.map((id) => ({ value: id, label: PRESETS[id].label })), {
+    label: 'Workspace layout', section: 'Appearance', keywords: 'panes columns arrangement reading stacks drawer tabs review history chat preset',
+    description: 'Where the panes start out. Drag them to adjust; Reset layout comes back to this.',
+  }),
   // There was a graphStyle setting (comfy or compact rows) until ADR-011 made one density; a stored
   // value is a key this list no longer has, so migrateSettings leaves it behind.
 
@@ -283,6 +287,9 @@ export function validateSetting<K extends SettingKey>(key: K, value: unknown): S
 export function validatePatch(patch: Record<string, unknown>): Partial<Settings> {
   const out: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(patch)) if (k in SETTINGS) out[k] = validateSetting(k as SettingKey, v)
+  // Choosing a workspace layout is choosing its arrangement: the panes move to it, unless the
+  // patch says where they go itself.
+  if (out.layoutPreset !== undefined && out.layout === undefined) out.layout = structuredClone(PRESETS[out.layoutPreset as PresetId].layout)
   return out as Partial<Settings>
 }
 

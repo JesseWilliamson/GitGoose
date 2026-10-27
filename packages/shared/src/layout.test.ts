@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  DEFAULT_LAYOUT, DEFAULT_SIZES, PANES, SLOTS, activatePane, fold, hidePane, isPaneVisible, movePane, normalizeLayout,
+  DEFAULT_LAYOUT, DEFAULT_SIZES, PANES, PRESET_IDS, PRESETS, SLOTS, activatePane, fold, hidePane, isPaneVisible, movePane, normalizeLayout,
   setCollapsed, setSize, showPane, slotOf, unfold, wideGraph, type PaneLayout,
 } from './layout'
 
@@ -132,6 +132,23 @@ describe('folding the far right column in a narrow window', () => {
     expect(unfold(normalizeLayout(stored))).toEqual(L)
     // A fold mark on an open column means nothing and is dropped.
     expect(normalizeLayout({ ...stored, farRight: { ...stored.farRight, collapsed: false } }).farRight.folded).toBeUndefined()
+  })
+})
+
+describe('presets', () => {
+  it('are valid layouts: each one survives being stored and repaired unchanged', () => {
+    for (const id of PRESET_IDS) {
+      const l = PRESETS[id].layout
+      expect(normalizeLayout(JSON.parse(JSON.stringify(l))), id).toEqual(l)
+    }
+  })
+
+  it('start from the reading pane, and each one shows every pane or keeps it a shortcut away', () => {
+    expect(PRESETS.reading.layout).toBe(DEFAULT_LAYOUT)
+    // Hidden panes come back where they belong (showPane), so a preset may leave one out.
+    for (const id of PRESET_IDS) for (const p of PANES) expect(slotOf(showPane(PRESETS[id].layout, p), p), `${id} ${p}`).not.toBeNull()
+    expect(slotOf(PRESETS.history.layout, 'ai')).toBeNull()
+    expect(slotOf(PRESETS.stacks.layout, 'ai')).toBe('bottom')
   })
 })
 
