@@ -33,8 +33,8 @@ test('the AI panel: follow-ups continue the conversation; Shift+Enter is a new l
   const { app, page } = await launch(r.dir)
   await set(page, { aiProvider: 'agent', aiAgent: 'custom', aiAgentCommand: AGENT_CMD })
   const panel = await chat(page, 'hello')
-  // The pane is the AI tab of the right slot (ADR-010), opened with the shortcut.
-  await expect(page.getByTestId('slot-right').getByTestId('ai-chat-panel')).toBeVisible()
+  // The pane is the far right column (ADR-011), opened with the shortcut.
+  await expect(page.getByTestId('slot-farRight').getByTestId('ai-chat-panel')).toBeVisible()
   // First use asks before anything is sent, naming what goes along.
   await expect(page.getByTestId('ai-consent')).toContainText("the repository's name and current commit")
   await page.getByTestId('ai-consent-ok').click()
@@ -69,11 +69,11 @@ test('a collapsed slot holding the AI pane opens when an answer arrives in its t
   await page.keyboard.press('ControlOrMeta+p')
   await page.getByTestId('palette-input').fill('Hide side panels')
   await page.keyboard.press('Enter')
-  await expect.poll(async () => (await page.getByTestId('slot-right').boundingBox())?.width ?? 0).toBeLessThan(2)
+  await expect.poll(async () => (await page.getByTestId('slot-farRight').boundingBox())?.width ?? 0).toBeLessThan(2)
   // The turn ends (stopped here; any end of a turn is an answer to look at).
   await page.evaluate(() => window.gitgoose.aiThreadCancel((document.querySelector('[data-thread]') as HTMLElement).dataset.thread!))
-  await expect.poll(async () => (await page.getByTestId('slot-right').boundingBox())?.width ?? 0).toBeGreaterThan(200)
-  await expect(page.getByTestId('slot-right').getByTestId('ai-chat-panel')).toBeVisible()
+  await expect.poll(async () => (await page.getByTestId('slot-farRight').boundingBox())?.width ?? 0).toBeGreaterThan(200)
+  await expect(page.getByTestId('slot-farRight').getByTestId('ai-chat-panel')).toBeVisible()
   await app.close()
 })
 

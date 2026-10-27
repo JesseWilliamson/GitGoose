@@ -27,6 +27,9 @@ async function dragPaneTo(page: Page, pane: string, zone: string) {
   throw new Error(`the drag of ${pane} never showed ${zone}`)
 }
 
+/** Wide enough for all four columns, so the AI pane is not folded away (ADR-011). */
+const wide = (app: ElectronApplication) => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1440, 800))
+
 async function movePaneVia(page: Page, pane: string, to: string) {
   await page.getByTestId(`pane-menu-${pane}`).click()
   await page.getByRole('menuitem', { name: `Move to ${to}` }).click()
@@ -77,18 +80,74 @@ test('dragging a divider resizes a side panel, and the size survives a restart',
   await second.app.close()
 })
 
-test('the default arrangement: branches left, details and AI as tabs on the right, nothing below', async () => {
+test('the default arrangement is the reading pane: branches, graph, details, AI, each in its own column', async () => {
   const r = makeFixture('linear')
   const { app, page } = await launch(r.dir)
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1440, 900))
   await expect(page.getByTestId('slot-left')).toContainText('Branches')
-  await expect(page.getByTestId('slot-right').getByTestId('pane-tab-details')).toBeVisible()
-  await expect(page.getByTestId('slot-right').getByTestId('pane-tab-ai')).toBeVisible()
   await expect(page.getByTestId('slot-right').locator('[data-pane]:visible')).toHaveAttribute('data-pane', 'details')
+  await expect(page.getByTestId('slot-farRight').locator('[data-pane]:visible')).toHaveAttribute('data-pane', 'ai')
+  // Nothing used together is a tab behind something else.
+  await expect(page.getByTestId('slot-right').getByTestId('pane-tab-ai')).toHaveCount(0)
+  await expect(page.getByTestId('ai-chat-panel')).toBeVisible()
   await expect(page.getByTestId('slot-bottom')).toHaveCount(0)
   await expect(page.getByTestId('pane-drop-left')).toHaveCount(0)
+  // Left to right, with the graph wide enough for its messages.
+  const x = async (id: string) => (await page.getByTestId(id).boundingBox())!.x
   const graph = (await page.getByTestId('graph-scroll').boundingBox())!
-  expect((await page.getByTestId('slot-left').boundingBox())!.x).toBeLessThan(graph.x)
-  expect((await page.getByTestId('slot-right').boundingBox())!.x).toBeGreaterThan(graph.x)
+  expect(await x('slot-left')).toBeLessThan(graph.x)
+  expect(await x('slot-right')).toBeGreaterThan(graph.x)
+  expect(await x('slot-farRight')).toBeGreaterThan(await x('slot-right'))
+  expect(graph.width).toBeGreaterThanOrEqual(380)
+  await app.close()
+})
+
+test('a narrow window folds the AI column away and a wide one brings it back; Mod+Shift+A opens it anyway', async () => {
+  const r = makeFixture('linear')
+  const { app, page } = await launch(r.dir) // 1024 px wide: four columns do not fit
+  const size = (w: number) => app.evaluate(({ BrowserWindow }, w) => BrowserWindow.getAllWindows()[0]!.setContentSize(w, 640), w)
+  await expect(page.getByTestId('commit-row').first()).toBeVisible()
+  await expect.poll(() => width(page, 'slot-farRight')).toBeLessThan(2)
+  // Details keeps its width instead of being squeezed to its minimum.
+  expect(await width(page, 'slot-right')).toBeGreaterThan(400)
+  // Folded by the window, not hidden: the pane is still in its slot, and wide again it is back.
+  await size(1500)
+  await expect.poll(() => width(page, 'slot-farRight')).toBeGreaterThan(250)
+  await size(1024)
+  await expect.poll(() => width(page, 'slot-farRight')).toBeLessThan(2)
+  // Asked for while narrow, it opens and stays open through a resize that stays narrow.
+  await page.keyboard.press('ControlOrMeta+Shift+A')
+  await expect(page.getByTestId('thread-input')).toBeFocused()
+  await expect.poll(() => width(page, 'slot-farRight')).toBeGreaterThan(200)
+  await size(1100)
+  await page.waitForTimeout(300)
+  expect(await width(page, 'slot-farRight')).toBeGreaterThan(200)
+  // The fold is never saved as the user's choice: a collapse the user made stays through any width.
+  await app.close()
+})
+
+test('a file opens in Details beside the graph, follows the selection, and is still open on coming back', async () => {
+  const r = makeFixture('linear')
+  r.commit('two files', { 'alpha.txt': 'a\n', 'beta.txt': 'b\n' })
+  const two = r.head()
+  r.commit('one more', { 'gamma.txt': 'g\n' })
+  const { app, page } = await launch(r.dir)
+  const view = page.getByTestId('slot-right').getByTestId('file-view')
+  const row = (hash: string) => page.locator(`[data-testid="commit-row"][data-hash="${hash}"]`)
+  // Selecting a commit shows its first file, with the graph still on screen.
+  await row(two).click()
+  await expect(view).toContainText('alpha.txt')
+  await expect(page.getByTestId('graph-scroll')).toBeVisible()
+  // A click in the list opens another file of the same commit.
+  await page.getByTestId('commit-file').filter({ hasText: 'beta.txt' }).click()
+  await expect(view).toContainText('beta.txt')
+  await expect(page.getByTestId('commit-file').filter({ hasText: 'beta.txt' })).toHaveAttribute('data-selected', 'true')
+  // Another commit: its own first file, no close needed.
+  await row(r.head()).click()
+  await expect(view).toContainText('gamma.txt')
+  // Back: the file you were reading.
+  await row(two).click()
+  await expect(view).toContainText('beta.txt')
   await app.close()
 })
 
@@ -101,14 +160,15 @@ test('Details moves to the left from its tab menu, and the move survives a resta
   await expect(page.getByTestId('slot-left').getByTestId('pane-tab-details')).toBeVisible()
   await expect(page.getByTestId('slot-left').getByTestId('pane-tab-branches')).toBeVisible()
   await expect(page.getByTestId('slot-left').locator('[data-pane]:visible')).toHaveAttribute('data-pane', 'details')
-  // Left of the graph; the right slot holds only the AI pane now (its title alone is the strip).
+  // Left of the graph; the right slot had only Details, so it is gone, and the AI stays far right.
   const graph = (await page.getByTestId('graph-scroll').boundingBox())!
   const left = (await page.getByTestId('slot-left').boundingBox())!
   expect(left.x + left.width).toBeLessThanOrEqual(graph.x + 1)
-  await expect(page.getByTestId('slot-right').locator('[data-pane]:visible')).toHaveAttribute('data-pane', 'ai')
+  await expect(page.getByTestId('slot-right')).toHaveCount(0)
+  await expect(page.getByTestId('slot-farRight').locator('[data-pane]')).toHaveAttribute('data-pane', 'ai')
   // The slot a pane is in is greyed in its menu.
-  await page.getByTestId('pane-menu-ai').click()
-  await expect(page.getByRole('menuitem', { name: 'Move to right' })).toHaveAttribute('data-disabled', '')
+  await page.getByTestId('pane-menu-details').click()
+  await expect(page.getByRole('menuitem', { name: 'Move to left' })).toHaveAttribute('data-disabled', '')
   await page.keyboard.press('Escape')
   await first.app.close()
 
@@ -120,6 +180,7 @@ test('Details moves to the left from its tab menu, and the move survives a resta
 test('dragging the AI tab to the bottom edge puts it under the graph; Hide, then View → Show AI, brings it back', async () => {
   const r = makeFixture('linear')
   const { app, page } = await launch(r.dir)
+  await wide(app)
   await dragPaneTo(page, 'ai', 'pane-drop-bottom')
   await expect(page.getByTestId('slot-bottom').getByTestId('ai-chat-panel')).toBeVisible()
   await expect(page.getByTestId('slot-bottom').locator('[data-pane]:visible')).toHaveAttribute('data-pane', 'ai')
@@ -127,7 +188,8 @@ test('dragging the AI tab to the bottom edge puts it under the graph; Hide, then
   const bottom = (await page.getByTestId('slot-bottom').boundingBox())!
   expect(bottom.y).toBeGreaterThanOrEqual(graph.y + graph.height - 1)
   expect(bottom.height).toBeGreaterThan(150)
-  // Details is alone on the right now, and the drop zones went away with the drag.
+  // The far right column went with its only pane, and the drop zones went away with the drag.
+  await expect(page.getByTestId('slot-farRight')).toHaveCount(0)
   await expect(page.getByTestId('slot-right').locator('[data-pane]:visible')).toHaveAttribute('data-pane', 'details')
   await expect(page.getByTestId('pane-drop-bottom')).toHaveCount(0)
   expect(await viewItem(app, 'Show AI')).toEqual({ checked: true })
@@ -139,11 +201,11 @@ test('dragging the AI tab to the bottom edge puts it under the graph; Hide, then
   await expect(page.getByTestId('ai-chat-panel')).toHaveCount(0)
   await expect.poll(() => viewItem(app, 'Show AI')).toEqual({ checked: false })
 
-  // View → Show AI: back in its home slot, as a tab next to Details.
+  // View → Show AI: back in its home slot, the far right column.
   await app.evaluate(({ Menu }) => {
     Menu.getApplicationMenu()!.items.find((i) => i.label === 'View')!.submenu!.items.find((i) => i.label === 'Show AI')!.click()
   })
-  await expect(page.getByTestId('slot-right').getByTestId('ai-chat-panel')).toBeVisible()
+  await expect(page.getByTestId('slot-farRight').getByTestId('ai-chat-panel')).toBeVisible()
   await expect(page.getByTestId('slot-right').getByTestId('pane-tab-details')).toBeVisible()
   await expect.poll(() => viewItem(app, 'Show AI')).toEqual({ checked: true })
   await app.close()
@@ -152,6 +214,7 @@ test('dragging the AI tab to the bottom edge puts it under the graph; Hide, then
 test('a tab dropped on another slot\'s tab strip lands at that position', async () => {
   const r = makeFixture('linear')
   const { app, page } = await launch(r.dir)
+  await wide(app)
   const tab = page.getByTestId('pane-tab-ai')
   const strip = page.getByTestId('tabs-left')
   for (let attempt = 0; attempt < 4; attempt++) {
@@ -174,6 +237,7 @@ test('a tab dropped on another slot\'s tab strip lands at that position', async 
 test('Mod+J collapses and expands the bottom slot, and does nothing while it is empty', async () => {
   const r = makeFixture('linear')
   const { app, page } = await launch(r.dir)
+  await wide(app)
   await page.keyboard.press('ControlOrMeta+j')
   await expect(page.getByTestId('slot-bottom')).toHaveCount(0)
   await movePaneVia(page, 'ai', 'bottom')
@@ -189,9 +253,10 @@ test('Mod+Shift+A shows the AI pane and focuses it, then hides it from its own c
   const r = makeFixture('linear')
   const { app, page } = await launch(r.dir)
   await expect(page.getByTestId('commit-row').first()).toBeVisible()
-  await expect(page.getByTestId('ai-chat-panel')).toHaveCount(0) // behind the Details tab
+  await page.getByTestId('commit-row').first().click()
+  await expect(page.getByTestId('thread-input')).not.toBeFocused()
   await page.keyboard.press('ControlOrMeta+Shift+A')
-  await expect(page.getByTestId('slot-right').getByTestId('ai-chat-panel')).toBeVisible()
+  await expect(page.getByTestId('slot-farRight').getByTestId('ai-chat-panel')).toBeVisible()
   await expect(page.getByTestId('thread-input')).toBeFocused()
   await page.keyboard.press('ControlOrMeta+Shift+A')
   await expect(page.getByTestId('ai-chat-panel')).toHaveCount(0)
@@ -200,7 +265,7 @@ test('Mod+Shift+A shows the AI pane and focuses it, then hides it from its own c
   await page.keyboard.press('ControlOrMeta+p')
   await page.getByTestId('palette-input').fill('Reset layout')
   await page.keyboard.press('Enter')
-  await expect(page.getByTestId('slot-right').getByTestId('pane-tab-ai')).toBeVisible()
+  await expect(page.getByTestId('slot-farRight').getByTestId('pane-tab-ai')).toBeVisible()
   await expect(page.getByTestId('slot-right').locator('[data-pane]:visible')).toHaveAttribute('data-pane', 'details')
   await app.close()
 })
@@ -215,16 +280,17 @@ test('the keyboard shows and hides panes; hide side panels and reset from the pa
   await page.keyboard.press('ControlOrMeta+b')
   await expect.poll(() => width(page, 'slot-left')).toBeGreaterThan(150)
 
-  // A file's diff opens over the graph and closes back to it.
+  // A file's diff opens in Details; the graph stays.
   await page.getByTestId('wip-row').click()
   await page.getByTestId('unstaged-file').first().click()
-  await expect(page.getByTestId('file-view')).toBeVisible()
-  await expect(page.getByTestId('graph-scroll')).toHaveCount(0)
+  await expect(page.getByTestId('slot-right').getByTestId('file-view')).toBeVisible()
+  await expect(page.getByTestId('graph-scroll')).toBeVisible()
 
   await page.keyboard.press('ControlOrMeta+p')
   await page.getByTestId('palette-input').fill('Hide side panels')
   await page.keyboard.press('Enter')
   await expect.poll(() => width(page, 'slot-right')).toBeLessThan(2)
+  await expect.poll(() => width(page, 'slot-farRight')).toBeLessThan(2)
   await page.keyboard.press('ControlOrMeta+p')
   await page.getByTestId('palette-input').fill('Reset layout')
   await page.keyboard.press('Enter')

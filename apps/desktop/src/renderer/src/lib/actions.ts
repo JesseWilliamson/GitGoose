@@ -1,9 +1,11 @@
-import { parseGitHubRemote, type DiffTarget, type GraphFilter, type PullMode, type Ref, type RepoSnapshot, type ResetMode, type Worktree } from '@gitgoose/shared'
+import { parseGitHubRemote, showPane, type DiffTarget, type GraphFilter, type PullMode, type Ref, type RepoSnapshot, type ResetMode, type Worktree } from '@gitgoose/shared'
 import { addDropped } from './aiContext'
 import { api, toUiError, type UiError } from './api'
 import type { DropPlan } from './dnd'
+import { ownerOf } from './openFile'
+import { changeLayout } from './panes'
 import { withPushChecks } from './pushchecks'
-import { activeRepo, addRepo, alertConflicts, ensureLoaded, choose, onSnapshot, openRepo, refreshAux, reportError, setting, toast, updateRepo, useStore } from './store'
+import { activeRepo, addRepo, alertConflicts, ensureLoaded, choose, onSnapshot, openRepo, refreshAux, reportError, setting, toast, updateRepo, useStore, type FileMode } from './store'
 
 /** The undo entry ids an action produced: a single id, an array of them (multi-step actions), or none. */
 function undoIdsOf(result: unknown): number[] {
@@ -972,4 +974,18 @@ export function copy(text: string, what = 'Copied'): void {
 
 export function currentId(): string | null {
   return activeRepo()?.id ?? null
+}
+
+/**
+ * Open a file in Details (ADR-011), from anywhere: a file list, a review finding, the omni search,
+ * a file's history. Selects what the file belongs to when that is something else (lib/openFile.ts),
+ * brings Details into view, and leaves the centre alone: a review you clicked a finding in stays.
+ */
+export function openFile(id: string, target: DiffTarget, mode: FileMode = 'diff'): void {
+  const v = useStore.getState().repos[id]
+  if (!v) return
+  const selected = ownerOf(target, v.selected)
+  updateRepo(id, { selected, file: { target, mode } })
+  if (selected !== v.selected && selected.kind === 'commit') void ensureLoaded(id, selected.hash)
+  changeLayout((l) => showPane(l, 'details'))
 }

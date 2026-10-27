@@ -129,7 +129,7 @@ test('a co-authored commit stacks the avatars and names everyone on the row', as
   await app.close()
 })
 
-test('Tower look: two-line rows beside hollow nodes, text indented by the lanes, no month headings', async () => {
+test('one line per commit beside hollow nodes, text indented by the lanes, no month headings', async () => {
   const r = makeFixture('linear')
   for (let i = 0; i < 12; i++) {
     r.checkout('-b', `b${i}`, 'main~4')
@@ -142,16 +142,16 @@ test('Tower look: two-line rows beside hollow nodes, text indented by the lanes,
   })
   const { app, page } = await launch(r.dir)
   const head = page.locator(`[data-testid="commit-row"][data-hash="${r.head()}"]`)
-  // Author and refs on the first line, hash and subject on the second; the avatar is HTML beside them.
+  // Refs, subject, then the author's avatar and name; HEAD starts selected, so it shows its SHA.
   await expect(head.getByTestId('row-author')).toHaveText('Ada Lovelace')
   await expect(head.getByTestId('row-sha')).toHaveText(r.head().slice(0, 7))
   await expect(head.getByTestId('row-avatar')).toContainText('AL')
   await expect(head.locator('[data-testid="ref-pill"][data-ref="refs/heads/main"]')).toBeVisible()
   // No month headings: the first row of a month is as tall as any other, its node centred.
   const plain = page.getByTestId('commit-row').filter({ hasText: 'Commit 4' })
-  expect((await head.boundingBox())!.height).toBe(52)
-  expect((await plain.boundingBox())!.height).toBe(52)
-  await expect(head.locator('[data-testid="commit-node"] circle').last()).toHaveAttribute('cy', '26')
+  expect((await head.boundingBox())!.height).toBe(28)
+  expect((await plain.boundingBox())!.height).toBe(28)
+  await expect(head.locator('[data-testid="commit-node"] circle').last()).toHaveAttribute('cy', '14')
   await expect(page.getByTestId('month-header')).toHaveCount(0)
   // Nodes are hollow: the page colour inside, the lane colour as the ring.
   await expect(plain.locator('[data-testid="commit-node"] circle').last()).toHaveAttribute('fill', 'var(--gs-bg)')
@@ -184,81 +184,44 @@ test('Tower look: two-line rows beside hollow nodes, text indented by the lanes,
   await app.close()
 })
 
-test('compact rows: GitKraken\'s graph, avatar nodes, pills on the left, messages in one column', async () => {
-  const r = makeFixture('linear')
-  for (let i = 0; i < 12; i++) {
-    r.checkout('-b', `b${i}`, 'main~4')
-    r.commit(`work on b${i}`, { [`b${i}.txt`]: 'x\n' })
-  }
-  r.checkout('main')
+test('one line per commit: branches before the message, the SHA on the selected row, merges muted', async () => {
+  const r = makeFixture('branches')
   const { app, page } = await launch(r.dir)
-  // Wide enough for the branch / tag column (a narrow pane puts the pills after the message: see below).
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1800, 640))
-  await page.evaluate(() => window.gitgoose.setSettings({ graphStyle: 'compact' }))
   const head = page.locator(`[data-testid="commit-row"][data-hash="${r.head()}"]`)
-  await expect.poll(async () => (await head.boundingBox())!.height).toBe(32)
-  await expect(page.getByTestId('graph-header')).toContainText('Commit message')
-  // The pill is in the column on the left, joined to the node by a line; the node is the
-  // author's avatar (initials until an image loads), with the lane band and strip behind it.
-  await expect(head.getByTestId('refs-cell').locator('[data-testid="ref-pill"][data-ref="refs/heads/main"]')).toBeVisible()
-  await expect(head.locator('svg [data-testid="ref-line"]')).toHaveCount(1)
-  await expect(head.getByTestId('avatar-node')).toContainText('AL')
-  await expect(head.getByTestId('lane-strip')).toHaveCount(1)
-  await expect(head.getByTestId('row-avatar')).toHaveCount(0)
-  // A commit without refs has an empty column and no connector.
-  const plain = page.getByTestId('commit-row').filter({ hasText: 'Commit 3' })
-  await expect(plain.locator('svg [data-testid="ref-line"]')).toHaveCount(0)
-  await expect(plain.getByTestId('refs-cell').locator('[data-testid="ref-pill"]')).toHaveCount(0)
-  // Columns, not an indent: every message starts at the same x however many lanes are open
-  // beside it, right under the header's "Commit message".
-  const xs = await page.locator('[data-testid="commit-row"] [data-testid="row-body"]').evaluateAll((els) => els.map((el) => el.getBoundingClientRect().x))
-  expect(xs.length).toBeGreaterThan(10)
-  expect(new Set(xs).size).toBe(1)
-  const title = (await page.getByTestId('graph-header').getByText('Commit message').boundingBox())!
-  expect(Math.abs(title.x - xs[0]!)).toBeLessThan(1)
+  await expect(head).toBeVisible()
+  // Branch pills come first, then the message: labels on the commit, read before it.
+  const pill = (await head.locator('[data-testid="ref-pill"][data-ref="refs/heads/main"]').boundingBox())!
+  const subject = (await head.getByTestId('row-subject').boundingBox())!
+  expect(pill.x).toBeLessThan(subject.x)
+  // The SHA is on the selected row only, where you would copy it (HEAD starts selected).
+  await expect(head.getByTestId('row-sha')).toHaveText(r.head().slice(0, 7))
+  const other = page.getByTestId('commit-row').nth(2)
+  await other.click()
+  await expect(head.getByTestId('row-sha')).toHaveCount(0)
+  await expect(other.getByTestId('row-sha')).toBeVisible()
+  await expect(page.getByTestId('row-sha')).toHaveCount(1)
+  // A merge's message says where history came from, not what changed: it is muted.
+  const merge = page.getByTestId('commit-row').filter({ has: page.locator('svg[data-node="merge"]') }).first()
+  await expect(merge.getByTestId('row-subject')).toHaveClass(/text-muted-foreground/)
+  await expect(head.getByTestId('row-subject')).not.toHaveClass(/text-muted-foreground/)
   await app.close()
 })
 
-test('compact rows in a narrow pane: the message keeps 40% of the row, the pills follow it, columns give way', async () => {
-  const r = makeFixture('linear')
-  for (let i = 0; i < 12; i++) {
-    r.checkout('-b', `b${i}`, 'main~4')
-    r.commit(`work on b${i}`, { [`b${i}.txt`]: 'x\n' })
-  }
-  r.checkout('main')
-  const { app, page } = await launch(r.dir)
-  // The 1280 px window of the UI audit, with the sidebar and Details open: a pane of about 715 px.
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1280, 800))
-  await page.evaluate(() => window.gitgoose.setSettings({ graphStyle: 'compact' }))
-  const head = page.locator(`[data-testid="commit-row"][data-hash="${r.head()}"]`)
-  await expect.poll(async () => (await head.boundingBox())!.height).toBe(32)
-  // The pills are after the message, not in a column of their own; the connector line goes with the column.
-  await expect(head.getByTestId('refs-cell')).toHaveCount(0)
-  await expect(head.getByTestId('refs-inline').locator('[data-testid="ref-pill"][data-ref="refs/heads/main"]')).toBeVisible()
-  await expect(head.locator('svg [data-testid="ref-line"]')).toHaveCount(0)
-  await expect(page.getByTestId('graph-header')).not.toContainText('Branch / Tag')
-  // The message column has at least 40% of the row (it had 90 px of 715).
-  const row = (await head.boundingBox())!
-  const body = (await head.getByTestId('row-body').boundingBox())!
-  expect(body.width).toBeGreaterThanOrEqual(row.width * 0.4)
-  // Widen the window and the column comes back.
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1800, 800))
-  await expect(head.getByTestId('refs-cell')).toBeVisible()
-  await app.close()
-})
-
-test('compact rows: author and date are columns, lined up on the right whatever the date says', async () => {
+test('author and date line up on the right; in a narrow graph the name, then the date, give way', async () => {
   const r = makeFixture('linear')
   // Dates the row shows differently: "2 h ago", "3 days ago", and the fixture's absolute ones.
   const now = Math.floor(Date.now() / 1000)
   r.git('commit', '-q', '--allow-empty', '-m', 'three days old', `--date=${now - 3 * 86400} +0000`)
   r.git('commit', '-q', '--allow-empty', '-m', 'two hours old', `--date=${now - 2 * 3600} +0000`)
   const { app, page } = await launch(r.dir)
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1400, 640))
-  await page.evaluate(() => window.gitgoose.setSettings({ graphStyle: 'compact', dateFormat: 'relative' }))
+  await page.evaluate(() => window.gitgoose.setSettings({ dateFormat: 'relative' }))
+  // Wide: the graph is past 600 px, so every row has the author's name and the date.
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1800, 640))
   const dates = page.getByTestId('row-date')
   await expect(dates.first()).toHaveText('2 h ago')
+  await expect(dates.first()).toBeVisible()
   await expect(dates.nth(1)).toHaveText('3 days ago')
+  await expect(page.getByTestId('row-author').first()).toContainText('Ada')
   for (const id of ['row-date', 'row-author']) {
     const boxes = await page.getByTestId(id).evaluateAll((els) => els.map((el) => {
       const b = el.getBoundingClientRect()
@@ -267,6 +230,12 @@ test('compact rows: author and date are columns, lined up on the right whatever 
     expect(boxes.length).toBeGreaterThan(3)
     expect(new Set(boxes.map((b) => b.join())).size, `${id} columns line up`).toBe(1)
   }
+  // Narrow (the reading pane in a 1024 px window leaves the graph about 320 px): the picture
+  // stays, the name and the date go, and the message keeps the room.
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1024, 640))
+  await expect(dates.first()).toBeHidden()
+  await expect(page.getByTestId('row-avatar').first()).toBeVisible()
+  await expect(page.getByTestId('row-author').first()).toBeHidden()
   await app.close()
 })
 
@@ -283,17 +252,13 @@ test('a commit message with a long unbroken token wraps instead of scrolling sid
   await app.close()
 })
 
-test('a detached HEAD gets a HEAD pill, in both layouts', async () => {
+test('a detached HEAD gets a HEAD pill', async () => {
   const r = makeFixture('linear')
   r.git('checkout', '-q', 'HEAD~2')
   const head = r.git('rev-parse', 'HEAD').trim()
   const { app, page } = await launch(r.dir)
   const row = page.locator(`[data-testid="commit-row"][data-hash="${head}"]`)
   await expect(row.getByTestId('head-pill')).toHaveText('HEAD')
-  await expect(page.getByTestId('head-pill')).toHaveCount(1)
-  await page.evaluate(() => window.gitgoose.setSettings({ graphStyle: 'compact' }))
-  // In this window's narrow pane the pills follow the message; with the column they would be in refs-cell.
-  await expect(row.getByTestId('refs-inline').getByTestId('head-pill')).toBeVisible()
   await expect(page.getByTestId('head-pill')).toHaveCount(1)
   // On a branch, the branch's pill says where HEAD is: no HEAD pill.
   r.checkout('main')
@@ -360,7 +325,7 @@ test('Commit order: topological keeps each branch together, and switching reload
     r.commit(`m${i}`, { [`m${i}.txt`]: 'x\n' })
   }
   const { app, page } = await launch(r.dir)
-  const subjects = () => page.locator('[data-testid="commit-row"] [data-testid="row-sha"] + span').allTextContents()
+  const subjects = () => page.locator('[data-testid="commit-row"] [data-testid="row-subject"]').allTextContents()
   await expect.poll(subjects).toEqual(['m3', 's3', 'm2', 's2', 'm1', 's1', 'A'])
   await page.evaluate(() => window.gitgoose.setSettings({ commitOrder: 'topo' }))
   // Each branch in one block; which block comes first is git's choice.

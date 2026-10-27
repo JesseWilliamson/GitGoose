@@ -98,7 +98,6 @@ export function installMenu(): void {
         { label: 'Toggle Bottom Panel', accelerator: 'CmdOrCtrl+J', click: cmd('toggle-bottom'), registerAccelerator: false },
         { label: 'Hide Side Panels', click: cmd('layout-wide-graph') },
         { label: 'Reset Layout', click: cmd('layout-default') },
-        { label: 'Toggle Comfy / Compact Graph', click: cmd('toggle-graph-style') },
         // Holding Shift shows the line for as long as it is held; this keeps it on.
         { label: 'Line View', accelerator: 'CmdOrCtrl+L', click: cmd('line-view'), registerAccelerator: false },
         { type: 'separator' },

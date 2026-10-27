@@ -1,6 +1,6 @@
 # ADR-010: Panes: movable slots, tabs, and the AI pane docked
 
-**Status:** accepted (PLAN-5 §5)
+**Status:** accepted (PLAN-5 §5); amended by ADR-011 (a fourth slot, `farRight`, and the file diff moves into Details)
 
 ## Context
 

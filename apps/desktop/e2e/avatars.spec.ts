@@ -92,14 +92,6 @@ test('GitHub avatars by default, without signing in; initials only until an imag
   await page.getByTestId('commit-row').filter({ hasText: 'from octocat' }).click()
   const img = page.getByTestId('detail-panel').locator('img[src^="gitgoose-avatar:"]').first()
   await expect.poll(() => img.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth)).toBe(1)
-
-  // Compact rows draw the author as the graph node: the same, inside the lane-coloured ring.
-  await page.evaluate(() => window.gitgoose.setSettings({ graphStyle: 'compact' }))
-  const node = (subject: string) => page.getByTestId('commit-row').filter({ hasText: subject }).first().getByTestId('avatar-node')
-  await expect(node('by grace')).toHaveAttribute('data-avatar', 'loaded')
-  await expect(node('by grace').locator('text')).toHaveCount(0)
-  await expect(node('Commit 4')).toHaveAttribute('data-avatar', 'failed')
-  await expect(node('Commit 4')).toContainText('AL')
   await app.close()
   avatars.server.close()
   await gh.close()

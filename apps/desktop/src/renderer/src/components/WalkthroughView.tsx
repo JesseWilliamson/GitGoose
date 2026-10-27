@@ -3,6 +3,7 @@ import clsx from 'clsx'
 import { BookOpen } from 'lucide-react'
 import { useState } from 'react'
 import { relativeTime } from '../lib/format'
+import { openFile } from '../lib/actions'
 import { targetFor } from '../lib/review'
 import { ensureLoaded, updateRepo, type RepoView } from '../lib/store'
 import { startWalkthrough, stopWalkthrough } from '../lib/walkthrough'
@@ -29,7 +30,7 @@ export function WalkthroughView({ view }: { view: RepoView }) {
   const [showTrivial, setShowTrivial] = useState(false)
   if (!w) return null
   const r = w.result
-  const open = (path: string) => r && updateRepo(view.id, { center: { kind: 'file', target: targetFor(r, path), mode: 'diff' } })
+  const open = (path: string) => r && openFile(view.id, targetFor(r, path))
   const layers = r ? (['contract', 'implementation', 'tests', 'config', 'docs'] as ReadingLayer[]).map((l) => [l, r.hunks.filter((h) => h.layer === l && !h.trivial)] as const).filter(([, hs]) => hs.length) : []
   const trivial = r?.hunks.filter((h) => h.trivial) ?? []
   return (

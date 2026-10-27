@@ -4,22 +4,17 @@
 
 ## Behaviour
 
-- Opening a repository shows the graph, Tower-style: hollow nodes on coloured lanes, and beside
-  them two-line rows (the **Comfy** layout) (avatar; author, branch/tag pills and date; short SHA and subject). A row's
-  text starts just past the lanes open at that point in history, so busy stretches indent, up to
-  twelve lanes; a node in a lane past that is left out rather than pinned on another branch's
-  line. Every row is the same height: there are no month headings (they made rows uneven and
-  broke up the lines; the date is on every row).
-- Settings → Appearance → Graph layout also offers **Compact**, GitKraken's graph: each commit
-  on one 32px line in fixed columns under a header (Branch / Tag, Graph, Commit message, Author,
-  Date, SHA). The node is the author's avatar ringed in the lane colour (a merge is a plain dot),
-  with a faint band in the lane colour from the node to a solid strip at the graph column's edge.
-  Branch and tag pills sit in a 160px column on the left, joined to their node by a line in the
-  lane colour. The graph column is one width on every row (the widest the loaded history has
-  been, up to eight lanes; wider lanes are clipped, and the header shows "›"), so every message
-  starts at the same x instead of indenting by the lanes open beside it. Author and SHA drop out
-  when the pane is narrow, then the date; the message never does. The View menu and the command palette switch between
-  the two layouts. (Comfy was called "comfortable"; a saved old value reads as comfy.)
+- Opening a repository shows the graph: hollow nodes on coloured lanes, and beside them one
+  28px line per commit (ADR-011): the commit's branch and tag pills, then its subject, then the
+  author (a 16px avatar, with the name when the graph is wide enough) and the date in narrow
+  columns on the right, lined up from row to row. A merge's subject is muted; the short SHA shows
+  on the selected row only. A row's text starts just past the lanes open at that point in
+  history, so busy stretches indent, up to eight lanes; a node in a lane past that is left out
+  rather than pinned on another branch's line. Every row is the same height: there are no month
+  headings (they made rows uneven and broke up the lines; the date is on every row).
+- The graph pane is a CSS container: below 600px wide the author's name gives way to the avatar
+  alone, below 360px the date goes too; the message never does. There is one density and no
+  setting for it (there were two, Comfy and Compact, until ADR-011; a saved choice is ignored).
 - A detached HEAD gets a **HEAD** pill on its commit, in the checked-out branch's colours: with no
   branch checked out, nothing else says "you are here".
 - A commit with `Co-authored-by:` trailers shows one avatar per person, stacked as on GitHub, and
