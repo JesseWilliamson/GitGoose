@@ -25,6 +25,21 @@ client's model, where the graph is the inbox and a commit opens beside it as one
   are unchanged; `farRight` is one more slot like the others (tabs, drag, Move to, collapse).
   The window's right edge drop zone now means `farRight`, the outermost column; `right` takes a
   drop on its tab strip or through Move to right.
+- **A narrow window folds the AI column.** Below `FOLD_BELOW` (1360 px) the four columns do not
+  fit at a usable size, so when the window crosses below it, `fold` collapses `farRight` and marks
+  it `folded`; whenever the window is wide again, `unfold` opens it. The mark is data in the layout
+  (it survives a restart) and `setCollapsed`, `showPane` and `movePane` clear it, so the window
+  never reopens something the user closed. Only the crossing folds: Mod+Shift+A opens the AI in a
+  narrow window and it stays open until the window next becomes narrow. At 1024 px this gives
+  branches 224, the graph 320, Details 480: the same Details width as before this ADR.
+- **The columns' widths are applied as one row** (`useColumnWidths`, the group's `setLayout`):
+  each column at its stored width or 0, the graph the rest. Collapsing one panel at a time let the
+  panel library give the freed width to its next neighbour, which with `farRight` is often
+  another column (even a folded one) rather than the graph.
+- **Workbenches get the width.** While the centre holds recompose or the conflict wizard, Details
+  is shown collapsed (view state only, never saved): both were designed for far more than the
+  graph's width, and neither uses Details. Review, walkthrough and impact keep Details, because
+  their findings open files in it.
 - `normalizeLayout` upgrades a stored layout from before `farRight` that still has the AI beside
   Details in `right` (the old default): the AI moves out to `farRight` and `right` widens to at
   least 480 px. An AI pane the user had put elsewhere stays there, and once `farRight` is stored
@@ -51,6 +66,10 @@ review, walkthrough, impact, recompose, reflog, command log). A file is not a ta
   (the performance rule: cost follows what is on screen). A file the user opened shows at once.
 - The file view has no close button and Esc no longer closes it: there is nothing behind it to
   go back to. In a narrow Details its controls wrap onto a second line instead of hiding the name.
+- A working-copy diff has a footer for the line selection, present whether or not lines are
+  selected (a hint, or the selection's Stage / Discard). It used to be a bar that appeared above
+  the lines on the first click, which moved every line down before the second click of a double
+  click; in Details' shorter diff that opened the wrong line in the editor.
 
 **One graph density.** The `graphStyle` setting is gone, with the compact layout
 (`lib/graphColumns.ts`, avatar nodes, lane bands, the fixed branch / tag column) and the comfy
@@ -64,9 +83,7 @@ key the settings no longer have and is dropped on read.
 ## Consequences
 
 - At 1440 px everything is on screen at a usable size: the graph about 410 px, Details 480 px.
-  At 1024 px (the e2e window) the panel library shrinks each column to its minimum and the graph
-  keeps 320 px; it works, but Details is cramped. A narrow window would be better served by
-  collapsing the AI to a rail automatically; that is left for a follow-up rather than guessed at.
+  Below 1360 px the AI column folds away (see above) and comes back on demand.
 - The diff gets Details' width, about 470 px by default: fine for unified diffs, too narrow for
   split. Widening Details or hiding the AI pane is the way to a split diff.
 - Every graph change is now designed and tested once. The bench budgets do not change: they
