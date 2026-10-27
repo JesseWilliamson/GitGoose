@@ -1,14 +1,18 @@
 /**
- * Window layout as data (ADR-010). The window has three slots around a fixed centre: `left` and
- * `right` (widths) and `bottom` (a height, under the graph). Each slot holds an ordered list of
+ * Window layout as data (ADR-010, ADR-011). The window has four slots around a fixed centre:
+ * `left`, `right` and `farRight` (widths, `farRight` outside `right`) and `bottom` (a height, under
+ * the graph). Each slot holds an ordered list of
  * panes, one of them active, shown as tabs. Which pane lives where is the user's choice; a pane
  * in no slot is hidden. Everything here is a pure function from layout to layout, so the
  * renderer only renders it and the tests can state every rule. Kept as plain data so it persists
  * as one setting and is repaired on read.
  */
 
-export type Slot = 'left' | 'right' | 'bottom'
-export const SLOTS: Slot[] = ['left', 'right', 'bottom']
+export type Slot = 'left' | 'right' | 'farRight' | 'bottom'
+export const SLOTS: Slot[] = ['left', 'right', 'farRight', 'bottom']
+
+/** How a slot is named to the user ("Move to far right"). */
+export const SLOT_TITLES: Record<Slot, string> = { left: 'left', right: 'right', farRight: 'far right', bottom: 'bottom' }
 
 export type PaneId = 'branches' | 'details' | 'ai'
 export const PANES: PaneId[] = ['branches', 'details', 'ai']
@@ -23,17 +27,28 @@ export interface SlotState {
   /** Width (left, right) or height (bottom) in CSS px. */
   size: number
   collapsed: boolean
+  /**
+   * Collapsed by the window being narrow, not by the user (see `fold`): it opens again by itself
+   * when the window is wide again. Absent otherwise.
+   */
+  folded?: true
 }
 
 export type PaneLayout = Record<Slot, SlotState>
 
-export const DEFAULT_SIZES: Record<Slot, number> = { left: 224, right: 340, bottom: 260 }
+/** `right` holds Details with the file's diff under it (ADR-011), so it is the wide one. */
+export const DEFAULT_SIZES: Record<Slot, number> = { left: 224, right: 480, farRight: 320, bottom: 260 }
 /** The slot a hidden pane comes back to. */
-export const DEFAULT_SLOT: Record<PaneId, Slot> = { branches: 'left', details: 'right', ai: 'right' }
+export const DEFAULT_SLOT: Record<PaneId, Slot> = { branches: 'left', details: 'right', ai: 'farRight' }
 
+/**
+ * The reading pane (ADR-011): branches, the graph, the commit (details over its diff), the AI. Four
+ * columns, so nothing you use together is a tab behind something else.
+ */
 export const DEFAULT_LAYOUT: PaneLayout = {
   left: { panes: ['branches'], active: 'branches', size: DEFAULT_SIZES.left, collapsed: false },
-  right: { panes: ['details', 'ai'], active: 'details', size: DEFAULT_SIZES.right, collapsed: false },
+  right: { panes: ['details'], active: 'details', size: DEFAULT_SIZES.right, collapsed: false },
+  farRight: { panes: ['ai'], active: 'ai', size: DEFAULT_SIZES.farRight, collapsed: false },
   bottom: { panes: [], active: null, size: DEFAULT_SIZES.bottom, collapsed: false },
 }
 
@@ -48,8 +63,40 @@ export function isPaneVisible(layout: PaneLayout, pane: PaneId): boolean {
   return !!s && !layout[s].collapsed && layout[s].active === pane
 }
 
+/**
+ * Collapse or open a slot. A real change is the user's, so it forgets that the window had folded
+ * the slot; setting what is already so changes nothing (the panel reporting a fold back as a
+ * resize must not make the fold look like the user's).
+ */
 export function setCollapsed(layout: PaneLayout, slot: Slot, collapsed: boolean): PaneLayout {
-  return { ...layout, [slot]: { ...layout[slot], collapsed } }
+  if (layout[slot].collapsed === collapsed) return layout
+  return { ...layout, [slot]: { ...unfolded(layout[slot]), collapsed } }
+}
+
+/** A slot state without the window's fold mark. */
+function unfolded(st: SlotState): SlotState {
+  const { folded: _, ...rest } = st
+  return rest
+}
+
+/**
+ * Below this window width the four columns do not fit at a usable size (ADR-011): the far right
+ * column folds away, and the graph and Details keep their room.
+ */
+export const FOLD_BELOW = 1360
+
+/** The window became narrow: fold the far right column, remembering that it was the window's doing. */
+export function fold(layout: PaneLayout): PaneLayout {
+  const st = layout.farRight
+  if (!st.panes.length || st.collapsed) return layout
+  return { ...layout, farRight: { ...st, collapsed: true, folded: true } }
+}
+
+/** The window is wide again: open what the window folded, and nothing the user collapsed. */
+export function unfold(layout: PaneLayout): PaneLayout {
+  const st = layout.farRight
+  if (!st.folded) return layout
+  return { ...layout, farRight: { ...unfolded(st), collapsed: false } }
 }
 
 export function setSize(layout: PaneLayout, slot: Slot, size: number): PaneLayout {
@@ -76,7 +123,7 @@ export function movePane(layout: PaneLayout, pane: PaneId, slot: Slot, index?: n
   const panes = [...out[slot].panes]
   const at = index === undefined ? panes.length : Math.max(0, Math.min(panes.length, Math.round(index)))
   panes.splice(at, 0, pane)
-  out[slot] = { ...out[slot], panes, active: pane, collapsed: false }
+  out[slot] = { ...unfolded(out[slot]), panes, active: pane, collapsed: false }
   return out
 }
 
@@ -84,7 +131,7 @@ export function movePane(layout: PaneLayout, pane: PaneId, slot: Slot, index?: n
 export function showPane(layout: PaneLayout, pane: PaneId): PaneLayout {
   const slot = slotOf(layout, pane)
   if (!slot) return movePane(layout, pane, DEFAULT_SLOT[pane])
-  return { ...layout, [slot]: { ...layout[slot], active: pane, collapsed: false } }
+  return { ...layout, [slot]: { ...unfolded(layout[slot]), active: pane, collapsed: false } }
 }
 
 /** Remove a pane from the window. It comes back with `showPane`. */
@@ -103,15 +150,20 @@ export function activatePane(layout: PaneLayout, pane: PaneId): PaneLayout {
 
 /** The graph gets the room: the side slots collapse (their panes stay). */
 export function wideGraph(layout: PaneLayout): PaneLayout {
-  return setCollapsed(setCollapsed(layout, 'left', true), 'right', true)
+  return setCollapsed(setCollapsed(setCollapsed(layout, 'left', true), 'right', true), 'farRight', true)
 }
 
 const isPane = (x: unknown): x is PaneId => typeof x === 'string' && (PANES as string[]).includes(x)
 
 /**
  * Repair a stored layout: every pane at most once, unknown ids dropped, a slot's active tab one
- * of its panes, bad sizes reset. The two-slot layout of before panes could move (`left` and
- * `right` with only a size and collapsed) upgrades to the default arrangement with its widths.
+ * of its panes, bad sizes reset. Two older shapes upgrade:
+ *
+ * - the two-slot layout of before panes could move (`left` and `right` with only a size and
+ *   collapsed): the default arrangement, with its widths;
+ * - a layout from before `farRight` (ADR-011) with the AI pane still beside Details in `right`,
+ *   which was the default: the AI moves out to `farRight`, and `right` widens to fit the diff. An
+ *   AI pane the user had put somewhere else stays there.
  */
 export function normalizeLayout(raw: unknown): PaneLayout {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Partial<Record<Slot, Partial<SlotState>>>
@@ -136,7 +188,17 @@ export function normalizeLayout(raw: unknown): PaneLayout {
       active: hasPanes ? (st.active && panes.includes(st.active) ? st.active : panes[0] ?? null) : out[s].active,
       size: typeof st.size === 'number' && st.size >= 80 && st.size <= 2000 ? st.size : DEFAULT_SIZES[s],
       collapsed: st.collapsed === true,
+      ...(st.folded === true && st.collapsed === true ? { folded: true as const } : {}),
     }
+  }
+  if (hasPanes && !r.farRight && out.right.panes.includes('details') && out.right.panes.includes('ai')) {
+    out.right = {
+      ...out.right,
+      panes: out.right.panes.filter((p) => p !== 'ai'),
+      active: out.right.active === 'ai' ? 'details' : out.right.active,
+      size: Math.max(out.right.size, DEFAULT_SIZES.right),
+    }
+    out.farRight = { ...out.farRight, panes: ['ai'], active: 'ai' }
   }
   return out
 }

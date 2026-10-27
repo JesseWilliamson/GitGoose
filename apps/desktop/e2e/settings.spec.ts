@@ -19,8 +19,8 @@ test('opens the settings page, searches it, and closes with Esc', async () => {
   // Settings without a description are still found by their keywords.
   await page.getByTestId('settings-search').fill('unified')
   await expect(page.getByTestId('setting-diffLayout')).toBeVisible()
-  await page.getByTestId('settings-search').fill('comfortable')
-  await expect(page.getByTestId('setting-graphStyle')).toBeVisible()
+  await page.getByTestId('settings-search').fill('dates')
+  await expect(page.getByTestId('setting-dateFormat')).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('settings-page')).toHaveCount(0)
   await expect(page.getByTestId('commit-row').first()).toBeVisible()
@@ -41,7 +41,7 @@ test('every Appearance control shares one column edge, and the nav follows the s
     const b = el.getBoundingClientRect()
     return { isSwitch: !!sw, x: b.x, width: b.width, right: b.right }
   }))
-  expect(boxes.length).toBeGreaterThan(8)
+  expect(boxes.length).toBeGreaterThan(7)
   const fills = boxes.filter((b) => !b.isSwitch)
   const switches = boxes.filter((b) => b.isSwitch)
   expect(switches.length).toBeGreaterThan(0)
@@ -172,15 +172,17 @@ test('discard asks first when the confirmation setting is on', async () => {
   await app.close()
 })
 
-test('one-line graph rows and hiding tags change the graph', async () => {
+test('hiding tags changes the graph, and there is no graph layout to choose', async () => {
   const r = makeFixture('tags')
   const { app, page } = await launch(r.dir)
   await expect(page.locator('[data-testid="ref-pill"][data-ref="refs/tags/v0.2"]')).toBeVisible()
-  // Two-line rows are 52px, one-line rows 28px.
-  expect((await page.getByTestId('commit-row').first().boundingBox())!.height).toBe(52)
-  await set(page, { graphStyle: 'compact', showTags: false })
+  // One density (ADR-011): one-line rows, and no setting for it.
+  expect((await page.getByTestId('commit-row').first().boundingBox())!.height).toBe(28)
+  await set(page, { showTags: false })
   await expect(page.locator('[data-testid="ref-pill"][data-ref="refs/tags/v0.2"]')).toHaveCount(0)
-  await expect.poll(async () => (await page.getByTestId('commit-row').first().boundingBox())!.height).toBe(32)
+  await page.keyboard.press('ControlOrMeta+,')
+  await page.getByTestId('settings-search').fill('compact')
+  await expect(page.locator('[data-testid="setting-graphStyle"]')).toHaveCount(0)
   await app.close()
 })
 

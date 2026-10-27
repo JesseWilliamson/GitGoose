@@ -308,7 +308,7 @@ test('what is not in the matrix is not a target: no badge, nothing happens', asy
     [branch(page, 'topic'), workspace(page, 'stashes')],
     [branch(page, 'topic'), workspace(page, 'history')],
     // A branch onto a commit that is not HEAD's: Tower has no meaning for it.
-    [pill(page, 'refs/heads/topic'), row(page, A).getByTestId('row-sha')],
+    [pill(page, 'refs/heads/topic'), row(page, A).getByTestId('row-subject')],
   ] as const) {
     await from.hover()
     await page.mouse.down()

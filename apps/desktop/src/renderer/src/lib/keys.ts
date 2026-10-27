@@ -38,7 +38,6 @@ export const COMMANDS: KeyCommand[] = [
   // Mod+L, not the plan's Mod+Shift+L: that one has been Fetch for a long time.
   { id: 'line-view', label: 'Show only the selected line of history, or everything again', defaults: ['mod+l'] },
   { id: 'ai-chat', label: 'Show the AI pane and focus it, or hide it when it has focus', defaults: ['mod+shift+a'] },
-  { id: 'toggle-graph-style', label: 'Switch the graph between comfy and compact', defaults: [] },
   // Tower's Workspace keys are Mod+1…5; here Mod+1…9 switch tabs (and Mod+0 is Actual Size), so
   // the Workspace takes Mod+Alt and the same digits. In the sidebar, Mod+0 goes to HEAD's branch too.
   { id: 'ws-working-copy', label: 'Workspace: Working Copy', defaults: ['mod+alt+1'] },

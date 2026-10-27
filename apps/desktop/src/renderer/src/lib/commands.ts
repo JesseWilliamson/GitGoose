@@ -84,9 +84,6 @@ export function commandEntries(): CommandEntry[] {
   add('Layout', 'Hide side panels', () => void saveSettings({ layout: wideGraph(settings!.layout) }))
   add('App', 'Keyboard shortcuts', () => useStore.setState({ dialog: { kind: 'shortcuts' } }), '?')
   if (settings) {
-    const compact = settings.graphStyle === 'compact'
-    add('Layout', compact ? 'Graph: comfy (two-line rows)' : 'Graph: compact (one-line rows)',
-      () => void saveSettings({ graphStyle: compact ? 'comfy' : 'compact' }), 'Also in Settings → Appearance')
     const topo = settings.commitOrder === 'topo'
     add('Layout', topo ? 'Commit order: by date' : 'Commit order: topological',
       () => void saveSettings({ commitOrder: topo ? 'date' : 'topo' }), 'Also in Settings → Graph')

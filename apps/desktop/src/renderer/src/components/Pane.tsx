@@ -1,4 +1,4 @@
-import { PANE_TITLES, SLOTS, activatePane, hidePane, movePane, type PaneId, type Slot, type SlotState } from '@gitgoose/shared'
+import { PANE_TITLES, SLOT_TITLES, SLOTS, activatePane, hidePane, movePane, type PaneId, type Slot, type SlotState } from '@gitgoose/shared'
 import clsx from 'clsx'
 import { Ellipsis } from 'lucide-react'
 import { DropdownMenu } from 'radix-ui'
@@ -135,7 +135,7 @@ function PaneMenu({ pane, slot, open, onOpenChange }: { pane: PaneId; slot: Slot
         </DropdownMenu.Trigger>
         <DM.Content align="end">
           {SLOTS.map((s) => (
-            <DM.Item key={s} reason={s === slot ? `Already in the ${s} slot` : undefined} onSelect={() => changeLayout((l) => movePane(l, pane, s))}>Move to {s}</DM.Item>
+            <DM.Item key={s} reason={s === slot ? `Already in the ${SLOT_TITLES[s]} slot` : undefined} onSelect={() => changeLayout((l) => movePane(l, pane, s))}>Move to {SLOT_TITLES[s]}</DM.Item>
           ))}
           <DM.Separator />
           <DM.Item onSelect={() => changeLayout((l) => hidePane(l, pane))}>Hide</DM.Item>
@@ -155,7 +155,8 @@ function PaneActions({ pane, view }: { pane: PaneId | null; view: RepoView }) {
 
 /**
  * While a pane tab is in the air: a strip along the left, right and bottom edge of the workspace
- * to drop it on. They are what makes an empty slot reachable.
+ * to drop it on. They are what makes an empty slot reachable. The right edge is the outermost
+ * column, `farRight`; `right` (inside it) takes a drop on its tab strip, or Move to right.
  */
 export function PaneDropZones() {
   const dragging = usePaneDrag((s) => s.dragging)
@@ -182,7 +183,7 @@ export function PaneDropZones() {
   return (
     <>
       {zone('left', 'inset-y-0 left-0 w-6 border-r-2')}
-      {zone('right', 'inset-y-0 right-0 w-6 border-l-2')}
+      {zone('farRight', 'inset-y-0 right-0 w-6 border-l-2')}
       {zone('bottom', 'inset-x-0 bottom-0 h-6 border-t-2')}
     </>
   )

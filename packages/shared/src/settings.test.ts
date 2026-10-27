@@ -55,24 +55,20 @@ describe('settings schema', () => {
     expect(validatePatch({ githubHttps: true, avatars: 'gravatar' })).toEqual({ avatars: 'github' })
   })
 
-  it('migrates a v2 file: compact rows become the compact graph layout', () => {
+  it('migrates a v2 file: the compact rows switch is gone (the graph has one density)', () => {
     const on = migrateSettings({ settingsVersion: 2, compactRows: true })
-    expect(on.graphStyle).toBe('compact')
     expect('compactRows' in on).toBe(false)
-    const off = migrateSettings({ settingsVersion: 2, compactRows: false })
-    expect(off.graphStyle).toBe('comfy')
-    expect(off.settingsVersion).toBe(5)
+    expect(on.settingsVersion).toBe(5)
+  })
+
+  it('leaves the old graph layout setting behind', () => {
+    expect('graphStyle' in migrateSettings({ settingsVersion: 5, graphStyle: 'compact' })).toBe(false)
+    expect(validatePatch({ graphStyle: 'compact' } as never)).toEqual({})
   })
 
   it('has a complete default set', () => {
     const d = defaultSettings()
     expect(d.contextLines).toBe(3)
     expect(d.avatars).toBe('github')
-    expect(d.graphStyle).toBe('comfy')
-  })
-
-  it('reads the layout saved before the rename (comfortable) as comfy', () => {
-    expect(validateSetting('graphStyle', 'comfortable')).toBe('comfy')
-    expect(validateSetting('graphStyle', 'compact')).toBe('compact')
   })
 })

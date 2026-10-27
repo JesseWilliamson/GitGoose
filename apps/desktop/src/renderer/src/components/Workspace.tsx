@@ -1,10 +1,9 @@
-import { setCollapsed, setSize, type Slot } from '@gitgoose/shared'
+import { FOLD_BELOW, fold, setCollapsed, setSize, unfold, type Slot } from '@gitgoose/shared'
 import { Group, Panel, Separator, usePanelRef } from 'react-resizable-panels'
-import { useEffect, useRef } from 'react'
-import { saveLayout } from '../lib/panes'
+import { useEffect, useRef, type RefObject } from 'react'
+import { changeLayout, saveLayout } from '../lib/panes'
 import { setting, useSetting, type RepoView } from '../lib/store'
 import { ConflictWizard } from './ConflictWizard'
-import { FileView } from './DiffView'
 import { Graph } from './Graph'
 import { CommandLogView } from './CommandLogView'
 import { ReflogView } from './ReflogView'
@@ -15,18 +14,21 @@ import { RecomposeView } from './RecomposeView'
 import { PaneDropZones, SlotView } from './Pane'
 
 /**
- * The repository window (ADR-010): three slots around a fixed centre. The centre is the graph
- * (or a file's diff, a review, ... that opens over it); the left, right and bottom slots hold
- * panes as tabs. Which pane is in which slot is the `layout` setting (packages/shared/src/layout.ts);
+ * The repository window (ADR-010, ADR-011): four slots around a fixed centre. The centre is the
+ * graph (or a task that takes it over: a review, the conflict wizard, ...); the left, right, far
+ * right and bottom slots hold panes as tabs. A file's diff is not a centre view: it shows in
+ * Details, under the commit it belongs to, so the graph stays in view while you read it. Which pane is in which slot is the `layout` setting (packages/shared/src/layout.ts);
  * the dividers resize a slot (and collapse it, dragged past the minimum), and a slot with no
  * panes is not drawn at all.
  */
 
-const MIN: Record<Slot, number> = { left: 160, right: 260, bottom: 160 }
+const MIN: Record<Slot, number> = { left: 160, right: 280, farRight: 240, bottom: 160 }
 const SEPARATOR = 'bg-border transition-colors hover:bg-primary data-[separator-state=drag]:bg-primary'
 
 export function Workspace({ view }: { view: RepoView }) {
   const layout = useSetting('layout')
+  const root = useRef<HTMLDivElement>(null)
+  useFoldWhenNarrow(root)
   const center = view.center.kind === 'conflicts' ? <ConflictWizard view={view} />
     : view.center.kind === 'reflog' ? <ReflogView view={view} />
     : view.center.kind === 'commands' ? <CommandLogView view={view} />
@@ -34,11 +36,10 @@ export function Workspace({ view }: { view: RepoView }) {
     : view.center.kind === 'walkthrough' ? <WalkthroughView view={view} />
     : view.center.kind === 'impact' ? <ImpactView view={view} />
     : view.center.kind === 'recompose' ? <RecomposeView view={view} />
-    : view.center.kind === 'file' ? <FileView view={view} target={view.center.target} mode={view.center.mode} />
     : <Graph view={view} />
 
   return (
-    <div className="relative flex min-h-0 flex-1" data-testid="workspace">
+    <div ref={root} className="relative flex min-h-0 flex-1" data-testid="workspace">
       <Group orientation="horizontal" className="min-h-0 flex-1">
         {layout.left.panes.length > 0 && <SlotPanel slot="left" view={view} />}
         {layout.left.panes.length > 0 && <Separator id="sep-left" className={`w-px ${SEPARATOR}`} />}
@@ -53,10 +54,37 @@ export function Workspace({ view }: { view: RepoView }) {
         </Panel>
         {layout.right.panes.length > 0 && <Separator id="sep-right" className={`w-px ${SEPARATOR}`} />}
         {layout.right.panes.length > 0 && <SlotPanel slot="right" view={view} />}
+        {layout.farRight.panes.length > 0 && <Separator id="sep-farRight" className={`w-px ${SEPARATOR}`} />}
+        {layout.farRight.panes.length > 0 && <SlotPanel slot="farRight" view={view} />}
       </Group>
       <PaneDropZones />
     </div>
   )
+}
+
+/**
+ * Four columns need about FOLD_BELOW px (ADR-011). When the window becomes narrower than that,
+ * the far right column folds away, so the graph and Details keep their room; when it is wide again
+ * the column comes back. Only the crossing folds: a pane the user opens while the window is narrow
+ * (Mod+Shift+A) stays open while they resize. The fold is part of the layout (layout.ts `fold`),
+ * so a window closed narrow and opened wide unfolds too.
+ */
+function useFoldWhenNarrow(root: RefObject<HTMLDivElement | null>) {
+  useEffect(() => {
+    const el = root.current
+    if (!el) return
+    let wasWide: boolean | null = null
+    const check = () => {
+      const wide = el.clientWidth >= FOLD_BELOW
+      if (wide) changeLayout(unfold)
+      else if (wasWide !== false) changeLayout(fold)
+      wasWide = wide
+    }
+    check()
+    const ro = new ResizeObserver(check)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [root])
 }
 
 /** A slot's panel: its size is a width (left, right) or a height (bottom) and persists per slot. */

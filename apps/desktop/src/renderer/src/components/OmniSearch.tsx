@@ -4,7 +4,7 @@ import { Command } from 'cmdk'
 import { Archive, CornerDownLeft, File, FileDiff, GitBranch, GitCommitHorizontal, Search, Settings2, SquareTerminal, Tag } from 'lucide-react'
 import { Dialog } from 'radix-ui'
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { checkout, openInEditor } from '../lib/actions'
+import { checkout, openFile, openInEditor } from '../lib/actions'
 import { api } from '../lib/api'
 import { commandEntries } from '../lib/commands'
 import { relativeTime, shortHash } from '../lib/format'
@@ -362,11 +362,11 @@ async function runResult(r: OmniResult, alt: boolean, view: RepoView | null, que
       if (alt) return openInEditor(`${view.snapshot.path}/${r.key}`)
       const e = view.snapshot.status.find((x) => x.path === r.key)
       const target: DiffTarget = !e || e.kind === 'untracked' ? { kind: 'untracked', path: r.key } : e.worktree !== '.' ? { kind: 'unstaged', path: r.key } : { kind: 'staged', path: r.key }
-      return updateRepo(id, { center: { kind: 'file', target, mode: 'diff' } })
+      return openFile(id, target)
     }
     case 'file': {
       if (alt || !view.snapshot.head.hash) return openInEditor(`${view.snapshot.path}/${r.key}`)
-      return updateRepo(id, { center: { kind: 'file', target: { kind: 'commit', hash: view.snapshot.head.hash, path: r.key }, mode: 'history' } })
+      return openFile(id, { kind: 'commit', hash: view.snapshot.head.hash, path: r.key }, 'history')
     }
   }
 }

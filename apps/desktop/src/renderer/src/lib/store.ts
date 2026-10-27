@@ -26,9 +26,18 @@ export type Selection =
 
 export type FileMode = 'diff' | 'history' | 'blame'
 
+/** A file in Details: which version of which file, and how (its diff, its history, its blame). */
+export interface OpenFile {
+  target: DiffTarget
+  mode: FileMode
+}
+
+/**
+ * What the centre shows: the graph, or a task that takes it over. A file's diff is not one of
+ * these (ADR-011): it shows in Details, under its commit, with the graph still in view (`file`).
+ */
 export type CenterView =
   | { kind: 'graph' }
-  | { kind: 'file'; target: DiffTarget; mode: FileMode }
   | { kind: 'conflicts' }
   | { kind: 'reflog' }
   | { kind: 'commands' }
@@ -45,6 +54,12 @@ export interface RepoView {
   logVersion: number
   selected: Selection
   center: CenterView
+  /**
+   * The file opened in Details (a click in a file list, a review finding, the omni search). It is
+   * shown only while it belongs to the selection; otherwise Details shows the selection's first
+   * file (see lib/openFile.ts), so nothing has to close it when the selection moves on.
+   */
+  file: OpenFile | null
   /** Commits that drop / move / drag can edit: the current branch back to its last merge, newest first. */
   editable: string[]
   /** Undone operations that can be redone, newest first. */
@@ -340,9 +355,9 @@ function swapIn(id: string, log: LogData): void {
   // Back/forward history follows first, so the change below matches its current entry and is not
   // recorded as a step of its own.
   swapListeners.forEach((l) => l(id, follow))
-  const here: NavLocation = { repoId: id, selected: v.selected, center: v.center, line: v.line }
+  const here: NavLocation = { repoId: id, selected: v.selected, center: v.center, file: v.file, line: v.line }
   const next = follow(here)
-  if (next !== here) updateRepo(id, { selected: next.selected, center: next.center, line: next.line })
+  if (next !== here) updateRepo(id, { selected: next.selected, center: next.center, file: next.file, line: next.line })
 }
 
 /**
@@ -543,6 +558,7 @@ function newView(snap: RepoSnapshot): RepoView {
     id: snap.id, snapshot: snap, logVersion: 0,
     selected: snap.status.length ? { kind: 'wip' } : snap.head.hash ? { kind: 'commit', hash: snap.head.hash } : { kind: 'wip' },
     center: snap.operation && snap.status.some((e) => e.kind === 'unmerged') ? { kind: 'conflicts' } : { kind: 'graph' },
+    file: null,
     editable: [], redo: [], stashes: [], undo: [], remotes: [], merged: [], pins: [], lastFetched: null, worktrees: [], submodules: [], lfs: null, pulls: null, pullsLoading: false, review: null, walkthrough: null, impact: null, ask: null, chat: { threadId: null }, askThreads: [], remoteTags: null, progress: null, busy: null, worktreeTick: 0,
     codegraph: { state: 'indexing', done: 0, total: 0 },
     line: null,
