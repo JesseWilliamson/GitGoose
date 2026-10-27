@@ -212,7 +212,9 @@ function WipPanel({ view }: { view: RepoView }) {
           <Button size="sm" onClick={() => updateRepo(id, { center: { kind: 'conflicts' } })}>Resolve…</Button>
         </div>
       )}
-      <div className="flex min-h-0 flex-1 flex-col">
+      {/* No min-h-0: the lists stop shrinking at their least (FitSection's three rows each), so with
+          a file under them the commit box stays below them and the top of Details scrolls instead. */}
+      <div className="flex flex-1 flex-col">
         <FitSection testId="unstaged" header={
           <SectionHeader right={unstaged.length > 0 && (
             <span className="flex gap-1 normal-case">

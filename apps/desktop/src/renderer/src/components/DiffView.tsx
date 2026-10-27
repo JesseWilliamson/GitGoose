@@ -274,7 +274,10 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      {(selectionActions || hint || isSvg) && (
+      {/* Only what does not change on a click lives above the lines: a bar that appeared when a line
+          was selected pushed every line down between the two clicks of a double-click, which then
+          opened the wrong line. The selection's actions have a footer of their own instead. */}
+      {(hint || isSvg) && (
         <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border px-3 text-xs">
           {isSvg && (
             <div className="flex shrink-0 items-center gap-1" data-testid="svg-view">
@@ -287,9 +290,9 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
             </div>
           )}
           <span className="min-w-0 flex-1 truncate text-muted-foreground" data-testid="diff-hint">{hint}</span>
-          {selectionActions}
         </div>
       )}
+
       {asImage ? (
         <ImageDiff repoId={view.id} target={target} path={target.path} />
       ) : diff.binary ? (
@@ -383,6 +386,13 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
               )
             })}
           </div>
+        </div>
+      )}
+      {/* A working-copy diff keeps a footer for the line selection, there whether or not lines are
+          selected: selecting never moves a line, nor covers one. */}
+      {editable && !asImage && !diff.binary && diff.hunks.length > 0 && (
+        <div className="flex h-9 shrink-0 items-center gap-2 border-t border-border px-3 text-xs" data-testid="diff-selection">
+          {selectionActions ?? <span className="min-w-0 truncate text-hint">Click a line to select it, Shift-click for a run: then stage or discard just those lines.</span>}
         </div>
       )}
       {peek && <CodePeekPanel repoId={view.id} repoPath={view.snapshot.path} name={peek} rev={peekRev} onClose={() => setPeek(null)} />}

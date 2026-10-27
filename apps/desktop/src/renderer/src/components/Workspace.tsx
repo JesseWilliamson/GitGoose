@@ -1,5 +1,5 @@
-import { FOLD_BELOW, fold, setCollapsed, setSize, unfold, type Slot } from '@gitgoose/shared'
-import { Group, Panel, Separator, usePanelRef } from 'react-resizable-panels'
+import { FOLD_BELOW, fold, setCollapsed, setSize, unfold, type PaneLayout, type Slot } from '@gitgoose/shared'
+import { Group, Panel, Separator, useGroupRef, usePanelRef, type GroupImperativeHandle } from 'react-resizable-panels'
 import { useEffect, useRef, type RefObject } from 'react'
 import { changeLayout, saveLayout } from '../lib/panes'
 import { setting, useSetting, type RepoView } from '../lib/store'
@@ -24,11 +24,20 @@ import { PaneDropZones, SlotView } from './Pane'
 
 const MIN: Record<Slot, number> = { left: 160, right: 280, farRight: 240, bottom: 160 }
 const SEPARATOR = 'bg-border transition-colors hover:bg-primary data-[separator-state=drag]:bg-primary'
+/** The slots that are columns, in the horizontal group with the centre. */
+const COLUMNS = ['left', 'right', 'farRight'] as const
 
 export function Workspace({ view }: { view: RepoView }) {
   const layout = useSetting('layout')
   const root = useRef<HTMLDivElement>(null)
+  const columns = useGroupRef()
   useFoldWhenNarrow(root)
+  // A workbench in the centre (recompose, the conflict wizard) needs the width, and Details has
+  // nothing for it: Details steps aside while it is open and comes back after. Only on screen:
+  // the layout is not changed, so leaving the task restores exactly what was there.
+  const workbench = view.center.kind === 'recompose' || view.center.kind === 'conflicts'
+  const shown = workbench ? { ...layout, right: { ...layout.right, collapsed: true } } : layout
+  useColumnWidths(columns, root, shown)
   const center = view.center.kind === 'conflicts' ? <ConflictWizard view={view} />
     : view.center.kind === 'reflog' ? <ReflogView view={view} />
     : view.center.kind === 'commands' ? <CommandLogView view={view} />
@@ -40,7 +49,7 @@ export function Workspace({ view }: { view: RepoView }) {
 
   return (
     <div ref={root} className="relative flex min-h-0 flex-1" data-testid="workspace">
-      <Group orientation="horizontal" className="min-h-0 flex-1">
+      <Group orientation="horizontal" className="min-h-0 flex-1" groupRef={columns}>
         {layout.left.panes.length > 0 && <SlotPanel slot="left" view={view} />}
         {layout.left.panes.length > 0 && <Separator id="sep-left" className={`w-px ${SEPARATOR}`} />}
         <Panel id="center" minSize={320}>
@@ -53,13 +62,54 @@ export function Workspace({ view }: { view: RepoView }) {
           </Group>
         </Panel>
         {layout.right.panes.length > 0 && <Separator id="sep-right" className={`w-px ${SEPARATOR}`} />}
-        {layout.right.panes.length > 0 && <SlotPanel slot="right" view={view} />}
+        {layout.right.panes.length > 0 && <SlotPanel slot="right" view={view} held={workbench} />}
         {layout.farRight.panes.length > 0 && <Separator id="sep-farRight" className={`w-px ${SEPARATOR}`} />}
         {layout.farRight.panes.length > 0 && <SlotPanel slot="farRight" view={view} />}
       </Group>
       <PaneDropZones />
     </div>
   )
+}
+
+/**
+ * The columns' widths and collapsed flags, applied to the group in one go: each column at its
+ * stored width (0 when collapsed), the centre gets the rest. Collapsing a panel on its own lets
+ * the library hand the freed width to its next neighbour, which since farRight (ADR-011) is often
+ * another column, even a collapsed one, instead of the graph. Applying the whole row means the
+ * screen is what the layout says, whatever changed. Retried for a few frames: a group that has
+ * just mounted has no measurements yet.
+ */
+function useColumnWidths(group: RefObject<GroupImperativeHandle | null>, root: RefObject<HTMLDivElement | null>, layout: PaneLayout) {
+  const key = COLUMNS.map((s) => `${layout[s].panes.length > 0}:${layout[s].collapsed}:${layout[s].size}`).join()
+  useEffect(() => {
+    let frame = 0
+    let tries = 0
+    const apply = () => {
+      const g = group.current
+      const center = root.current?.querySelector<HTMLElement>('[id="center"]')
+      const now = g?.getLayout()
+      const centerPx = center?.getBoundingClientRect().width ?? 0
+      if (!g || !now?.center || !centerPx) {
+        if (++tries < 10) frame = requestAnimationFrame(apply)
+        return
+      }
+      const pxPerPct = centerPx / now.center
+      const next: Record<string, number> = {}
+      let used = 0
+      for (const s of COLUMNS) {
+        if (!(s in now)) continue
+        next[s] = layout[s].collapsed ? 0 : layout[s].size / pxPerPct
+        used += next[s]
+      }
+      next.center = Math.max(0, 100 - used)
+      // Within a couple of pixels everywhere: already there (after a drag, say).
+      if (Object.keys(next).every((k) => Math.abs((now[k] ?? 0) - next[k]!) * pxPerPct < 2)) return
+      g.setLayout(next)
+    }
+    apply()
+    return () => cancelAnimationFrame(frame)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- by `key`: the columns' part of the layout
+  }, [key, group, root])
 }
 
 /**
@@ -88,13 +138,16 @@ function useFoldWhenNarrow(root: RefObject<HTMLDivElement | null>) {
 }
 
 /** A slot's panel: its size is a width (left, right) or a height (bottom) and persists per slot. */
-function SlotPanel({ slot, view }: { slot: Slot; view: RepoView }) {
+/** `held`: shown collapsed for a workbench, not by the user; its size changes then are not saved. */
+function SlotPanel({ slot, view, held = false }: { slot: Slot; view: RepoView; held?: boolean }) {
   const st = useSetting('layout')[slot]
   const ref = usePanelRef()
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Collapse and expand when the setting changes (keyboard toggles, the palette, other windows).
+  // The bottom slot collapses and expands when the setting changes (keyboard toggles, the palette,
+  // other windows). The columns are set all together by useColumnWidths.
   useEffect(() => {
+    if (slot !== 'bottom') return
     let frame = 0
     let tries = 0
     const apply = () => {
@@ -114,7 +167,7 @@ function SlotPanel({ slot, view }: { slot: Slot; view: RepoView }) {
     }
     apply()
     return () => cancelAnimationFrame(frame)
-  }, [st.collapsed, st.size, ref])
+  }, [slot, st.collapsed, st.size, ref])
 
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
 
@@ -122,7 +175,7 @@ function SlotPanel({ slot, view }: { slot: Slot; view: RepoView }) {
     <Panel id={slot} panelRef={ref} defaultSize={st.collapsed ? 0 : st.size} minSize={MIN[slot]} collapsible collapsedSize={0}
       groupResizeBehavior="preserve-pixel-size"
       onResize={(_size, _id, prev) => {
-        if (!prev) return // the initial measurement is not a user change
+        if (!prev || held) return // the initial measurement, or a workbench's doing: not a user change
         // Persist after the drag settles; dragging past the minimum collapses the slot.
         if (timer.current) clearTimeout(timer.current)
         timer.current = setTimeout(() => {

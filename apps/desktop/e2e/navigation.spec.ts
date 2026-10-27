@@ -43,9 +43,11 @@ test('back and forward step through commits, diffs, views and tabs', async () =>
   await expect(fileView).toBeVisible()
   await expect(reflog).toHaveCount(0)
   await back(page)
-  await expect(fileView).toHaveCount(0)
+  // Before the file was opened: the commit selected, the graph showing, and Details showing the
+  // commit's first file, as it always does (ADR-011; this commit has only the one).
   await expect(page.getByTestId('graph-scroll')).toBeVisible()
   await expect(row(page, older)).toHaveAttribute('data-selected', 'true')
+  await expect(fileView).toBeVisible()
 
   // Forward again, all the way to B; past the end nothing happens.
   await forward(page)
