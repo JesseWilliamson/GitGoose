@@ -89,7 +89,12 @@ function useColumnWidths(group: RefObject<GroupImperativeHandle | null>, root: R
       const center = root.current?.querySelector<HTMLElement>('[id="center"]')
       const now = g?.getLayout()
       const centerPx = center?.getBoundingClientRect().width ?? 0
-      if (!g || !now?.center || !centerPx) {
+      // Switching layouts mounts and unmounts columns, and the group learns of them a frame or two
+      // later: apply only once it holds exactly the panels this layout has (a layout for other
+      // panels is an error, and a column that joins late keeps the size it mounted with).
+      const expected = ['center', ...COLUMNS.filter((s) => layout[s].panes.length)].sort().join()
+      const settled = !!now && Object.keys(now).sort().join() === expected
+      if (!g || !now?.center || !centerPx || !settled) {
         if (++tries < 10) frame = requestAnimationFrame(apply)
         return
       }
@@ -97,14 +102,18 @@ function useColumnWidths(group: RefObject<GroupImperativeHandle | null>, root: R
       const next: Record<string, number> = {}
       let used = 0
       for (const s of COLUMNS) {
-        if (!(s in now)) continue
+        if (!layout[s].panes.length) continue
         next[s] = layout[s].collapsed ? 0 : layout[s].size / pxPerPct
         used += next[s]
       }
       next.center = Math.max(0, 100 - used)
       // Within a couple of pixels everywhere: already there (after a drag, say).
       if (Object.keys(next).every((k) => Math.abs((now[k] ?? 0) - next[k]!) * pxPerPct < 2)) return
-      g.setLayout(next)
+      try {
+        g.setLayout(next)
+      } catch {
+        if (++tries < 10) frame = requestAnimationFrame(apply)
+      }
     }
     apply()
     return () => cancelAnimationFrame(frame)
