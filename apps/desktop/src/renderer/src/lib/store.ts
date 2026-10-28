@@ -60,6 +60,11 @@ export interface RepoView {
    * file (see lib/openFile.ts), so nothing has to close it when the selection moves on.
    */
   file: OpenFile | null
+  /**
+   * Reading wide: the file takes the centre, full height, with Details' file list beside it and the
+   * other columns out of the way (Workspace.tsx). Mod+Shift+Enter or the file's header toggles it; Esc ends it.
+   */
+  diffWide: boolean
   /** Commits that drop / move / drag can edit: the current branch back to its last merge, newest first. */
   editable: string[]
   /** Undone operations that can be redone, newest first. */
@@ -559,6 +564,7 @@ function newView(snap: RepoSnapshot): RepoView {
     selected: snap.status.length ? { kind: 'wip' } : snap.head.hash ? { kind: 'commit', hash: snap.head.hash } : { kind: 'wip' },
     center: snap.operation && snap.status.some((e) => e.kind === 'unmerged') ? { kind: 'conflicts' } : { kind: 'graph' },
     file: null,
+    diffWide: false,
     editable: [], redo: [], stashes: [], undo: [], remotes: [], merged: [], pins: [], lastFetched: null, worktrees: [], submodules: [], lfs: null, pulls: null, pullsLoading: false, review: null, walkthrough: null, impact: null, ask: null, chat: { threadId: null }, askThreads: [], remoteTags: null, progress: null, busy: null, worktreeTick: 0,
     codegraph: { state: 'indexing', done: 0, total: 0 },
     line: null,
@@ -687,8 +693,7 @@ function onEvent(e: GitGooseEvent): void {
       commandListeners.forEach((l) => l(e.name))
       break
     case 'settings':
-      set({ settings: e.settings })
-      applyTheme(e.settings)
+      receiveSettings(e.settings)
       break
     case 'ai-text':
     case 'ai-permission':
@@ -752,10 +757,36 @@ export function updateSidebarPrefs(path: string, change: (p: SidebarPrefs) => Si
   void api.setSettings({ sidebar }).catch((e) => reportError('Could not save the sidebar layout', e))
 }
 
-export async function saveSettings(patch: Partial<Settings>): Promise<void> {
-  const settings = await api.setSettings(patch)
+/**
+ * Patches sent to main and not answered yet, oldest first. They show at once and stay laid over
+ * whatever settings arrive meanwhile (another window's broadcast, an earlier save's answer), so
+ * the renderer reads its own writes: a change made right after another (a key pressed as the
+ * window folds a column) starts from it instead of from the settings before it, and does not
+ * write it away.
+ */
+const inFlight: { id: number; patch: Partial<Settings> }[] = []
+let lastSave = 0
+
+function receiveSettings(from: Settings): void {
+  const settings = inFlight.reduce((s, p) => ({ ...s, ...p.patch }), from)
   set({ settings })
   applyTheme(settings)
+}
+
+export async function saveSettings(patch: Partial<Settings>): Promise<void> {
+  const id = ++lastSave
+  inFlight.push({ id, patch })
+  const now = get().settings
+  if (now) receiveSettings(now)
+  try {
+    const settings = await api.setSettings(patch)
+    inFlight.splice(inFlight.findIndex((p) => p.id === id), 1)
+    receiveSettings(settings)
+  } catch (e) {
+    inFlight.splice(inFlight.findIndex((p) => p.id === id), 1)
+    receiveSettings(await api.getSettings())
+    throw e
+  }
 }
 
 /** Settings that are maps the renderer changes one entry at a time. */
