@@ -1,7 +1,7 @@
 import type {
-  BisectState, BlameLine, ChangeInsights, CodePeek, ImpactResult, ReviewScope, ImageSide, LfsInfo, LfsLock, ChangedFile, CommandRecord, CommitOrder, GraphFilter, Identity, Person, Signature, Commit, CommitSummary, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
+  BisectState, BlameLine, ChangeInsights, CodePeek, ImpactResult, ReviewScope, ImageSide, LfsInfo, LfsLock, ChangedFile, CommandRecord, CommitOrder, GraphFilter, Identity, Person, Signature, Commit, CommitSummary, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffStreamOptions, DiffTarget, FileDiff, Head, PullMode,
   LogPage, Ref, Remote, RepoOperation, ReflogEntry, RepoSnapshot, ResetMode, Resolution, SearchField, SelectionRequest,
-  StashEntry, StatusEntry, StraightTips, Submodule, UndoEntry, Worktree,
+  StashEntry, StatusEntry, StreamFile, StreamTarget, StraightTips, Submodule, UndoEntry, Worktree,
 } from '@gitgoose/shared'
 import { countConflicts } from '@gitgoose/shared'
 import { existsSync } from 'node:fs'
@@ -501,6 +501,66 @@ export class Repo {
     const out = await this.read(args)
     const parsed = parseDiff(out, target.path)
     return parsed[0] ?? null
+  }
+
+  /**
+   * The reader's stream (ADR-012): every file of a target with its numbers, and the diffs of the
+   * first files until their changed lines pass the budget, all from one `git diff` (plus the file
+   * list). The reader asks for the rest file by file (`diff`) as they scroll into view, so a
+   * 2,000-file commit costs two cheap listings until someone reads it.
+   */
+  async diffStream(target: StreamTarget, opts: DiffStreamOptions = {}): Promise<StreamFile[]> {
+    const budget = opts.maxLines ?? 6000
+    let revs: string[]
+    if (target.kind === 'commit') {
+      const parents = (await this.read(['rev-list', '--parents', '-n', '1', target.hash])).trim().split(' ').slice(1)
+      revs = [parents[0] ?? (await this.emptyTreeHash()), target.hash]
+    } else if (target.kind === 'range') revs = [target.from, ...(target.to ? [target.to] : [])]
+    else if (target.kind === 'staged') revs = ['--cached']
+    else revs = []
+    const only = opts.paths ? new Set(opts.paths) : null
+    const pathspec = opts.paths ? ['--', ...opts.paths] : ['--']
+    const [ns, nm] = await Promise.all([
+      this.read(['diff', ...revs, '-M', '-z', '--name-status', ...pathspec]),
+      this.read(['diff', ...revs, '-M', '-z', '--numstat', ...pathspec]),
+    ])
+    const files: StreamFile[] = parseChangedFiles(ns, nm)
+    let used = 0
+    const take = (n: number) => {
+      if (used >= budget) return false
+      used += n
+      return true
+    }
+    const want = files.filter((f) => !f.binary && take(f.additions + f.deletions))
+    if (want.length) {
+      // The renamed files' old paths too, or git cannot pair them and lists an add and a delete.
+      const paths = want.flatMap((f) => (f.oldPath ? [f.oldPath, f.path] : [f.path]))
+      const parsed = parseDiff(await this.read(['diff', ...revs, '-M', ...diffArgs(opts), '--', ...paths]))
+      // git lists the files in the same order as the listing above, so they pair by position. The
+      // header's paths are a fallback only: git ends a path with a space in it with a tab there.
+      const byPath = new Map(parsed.map((d) => [d.path.replace(/\t$/, ''), d]))
+      want.forEach((f, i) => {
+        const d = parsed.length === want.length ? parsed[i] : byPath.get(f.path)
+        if (d) f.diff = { ...d, path: f.path, ...(f.oldPath ? { oldPath: f.oldPath } : {}) }
+      })
+    }
+    if (target.kind === 'unstaged') {
+      const status = (this.last ?? (await this.snapshot())).status
+      for (const e of status) {
+        if (e.kind !== 'untracked' || (only && !only.has(e.path))) continue
+        const f: StreamFile = { path: e.path, change: 'added', additions: 0, deletions: 0, binary: false, untracked: true }
+        try {
+          const d = untrackedDiff(e.path, await readFile(join(this.path, e.path)))
+          f.binary = d.binary
+          f.additions = d.hunks[0]?.lines.length ?? 0
+          if (!d.binary && take(f.additions)) f.diff = d
+        } catch {
+          // Gone since the status was read: list it, with nothing to show.
+        }
+        files.push(f)
+      }
+    }
+    return files
   }
 
   /**

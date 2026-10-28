@@ -1,6 +1,6 @@
 import type {
   BlameLine, ChangedFile, ChangeInsights, CodeGraphStatus, CodePeek, CommandRecord, GraphFilter, ImageSide, LfsInfo, LfsLock, Identity, Person, Commit, CommitDetails, CommitSummary, ConflictFile, DiffTarget, FileDiff, RepoSnapshot,
-  ReflogEntry, Remote, SearchField, Submodule, Worktree, StashEntry, UndoEntry,
+  ReflogEntry, Remote, SearchField, Submodule, Worktree, StashEntry, StreamFile, StreamTarget, UndoEntry,
 } from './index'
 import type {
   AgentInfo, AiArtifactResult, AiModelList, PromptPreview, AiPermissionRequest, AiResult, AiRunOptions, AiStatus, AiTarget, AiTask, AiThread, AiUpdate, ArtifactKind, AskThread, ImpactResult, LinterInfo, PermissionAnswer, PushCheck, PushCheckPlan,
@@ -45,6 +45,16 @@ export interface DiffOptions {
   context?: number
   /** Hide whitespace-only changes (-w). Display only: line staging refuses such diffs. */
   ignoreWhitespace?: boolean
+}
+
+export interface DiffStreamOptions extends DiffOptions {
+  /** Only these files (the paths a stream shows), else all. */
+  paths?: string[]
+  /**
+   * Diffs come back for the files in order until their changed lines pass this (default 6,000);
+   * the rest come back with numbers only, and the reader asks for them as they scroll into view.
+   */
+  maxLines?: number
 }
 
 export type PullMode = 'merge' | 'rebase' | 'ff-only'
@@ -188,6 +198,8 @@ export interface GitGooseApi {
   /** `stash: true` also lists untracked files saved in a stash (they live in its third parent). */
   commitDetails(repoId: string, hash: string, opts?: { stash?: boolean }): Promise<CommitDetails>
   diff(repoId: string, target: DiffTarget, opts?: DiffOptions): Promise<FileDiff | null>
+  /** Every file of a commit, range or the working copy, with diffs within a line budget, from one git run (ADR-012). */
+  diffStream(repoId: string, target: StreamTarget, opts?: DiffStreamOptions): Promise<StreamFile[]>
   fileHistory(repoId: string, path: string): Promise<Commit[]>
   blame(repoId: string, path: string, rev?: string): Promise<BlameLine[]>
   search(repoId: string, field: SearchField, query: string): Promise<string[]>
@@ -408,7 +420,7 @@ export const API_METHODS = [
   'pullRequests', 'createPullRequest', 'checkoutPullRequest', 'openPullRequest',
   'aiStatus', 'aiConsent', 'aiModels', 'aiLoadModels', 'aiPromptPreview', 'aiRun', 'aiCancel', 'aiRespondPermission', 'aiAgentInfo', 'aiAuthenticate', 'aiSetApiKey',
   'aiThreadOpen', 'aiThreadSend', 'aiThreadCancel', 'aiThreadClose', 'aiThreads', 'aiThreadsStale', 'aiThreadResult', 'aiThreadDelete', 'aiThreadPermission', 'aiThreadArtifact', 'openExternal',
-  'snapshot', 'logPage', 'commitDetails', 'diff', 'fileHistory', 'blame', 'search', 'searchCommits', 'listFiles', 'stashList', 'reflog', 'setGraphFilter', 'submodules', 'updateSubmodules', 'syncSubmodules', 'addSubmodule', 'removeSubmodule', 'worktrees', 'addWorktree', 'removeWorktree', 'lockWorktree', 'pruneWorktrees',
+  'snapshot', 'logPage', 'commitDetails', 'diff', 'diffStream', 'fileHistory', 'blame', 'search', 'searchCommits', 'listFiles', 'stashList', 'reflog', 'setGraphFilter', 'submodules', 'updateSubmodules', 'syncSubmodules', 'addSubmodule', 'removeSubmodule', 'worktrees', 'addWorktree', 'removeWorktree', 'lockWorktree', 'pruneWorktrees',
   'lastCommitMessage',
   'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'codePeek', 'codeGraphStatus', 'reindexCode', 'impact', 'askThreads', 'saveAskThread', 'deleteAskThread', 'reviewLearnings', 'setReviewLearnings', 'linters', 'decideLinter', 'pushCheckPlan', 'pushCheckRules', 'setPushChecks', 'changeInsights', 'applySuggestion', 'writeFileChecked', 'workingText', 'lfsInfo', 'lfsInstall', 'lfsTrack', 'lfsPull', 'lfsLocks', 'lfsLock', 'commandLog', 'bisectMark', 'bisectReset', 'identity', 'setIdentity', 'commitTemplate', 'recentAuthors',
   'checkout', 'createBranch', 'renameBranch', 'renameBranchInto', 'lastFetched', 'pinnedBranches', 'pinBranch', 'deleteBranch', 'merge', 'rebase', 'reset',

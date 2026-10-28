@@ -171,6 +171,7 @@ export function createHandlers(
     logPage: (id, offset, count) => r(id).logPage(offset, count),
     commitDetails: (id, hash, opts) => r(id).commitDetails(hash, opts),
     diff: (id, target, opts) => r(id).diff(target, opts),
+    diffStream: (id, target, opts) => r(id).diffStream(target, opts),
     fileHistory: (id, path) => r(id).fileHistory(path),
     blame: (id, path, rev) => r(id).blame(path, rev),
     search: (id, field, q) => r(id).search(field, q),
