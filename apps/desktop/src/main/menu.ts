@@ -91,7 +91,7 @@ export function installMenu(): void {
         { label: 'Back', accelerator: isMac ? 'Cmd+[' : 'Alt+Left', click: cmd('back'), registerAccelerator: false },
         { label: 'Forward', accelerator: isMac ? 'Cmd+]' : 'Alt+Right', click: cmd('forward'), registerAccelerator: false },
         { type: 'separator' },
-        // Panes (ADR-010): a checkmark means the pane is on screen; a click shows or hides it.
+        // Panes: a checkmark means the pane is on screen; a click shows or hides it.
         { id: 'show-branches', label: 'Show Branches', type: 'checkbox', checked: isPaneVisible(layout, 'branches'), accelerator: 'CmdOrCtrl+B', click: cmd('toggle-sidebar'), registerAccelerator: false },
         { id: 'show-details', label: 'Show Details', type: 'checkbox', checked: isPaneVisible(layout, 'details'), accelerator: 'CmdOrCtrl+Alt+B', click: cmd('toggle-details'), registerAccelerator: false },
         { id: 'show-ai', label: 'Show AI', type: 'checkbox', checked: isPaneVisible(layout, 'ai'), accelerator: 'CmdOrCtrl+Shift+A', click: cmd('toggle-ai-pane'), registerAccelerator: false },

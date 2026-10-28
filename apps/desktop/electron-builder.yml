@@ -1,5 +1,5 @@
 # Packaging. `pnpm dist` builds installers for the current OS into apps/desktop/release/.
-# Signing and notarization read credentials from the environment (see docs/RELEASING.md);
+# Signing and notarization read credentials from the environment;
 # without them, builds are unsigned, which is fine for local use.
 appId: dev.gitgoose.app
 productName: GitGoose

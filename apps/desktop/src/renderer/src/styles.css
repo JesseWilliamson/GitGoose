@@ -3,7 +3,7 @@
 
 /*
  * THE SCALE. Every size in the renderer comes from here; a number that is not in this list is a
- * bug, not a style (docs/ui-audit.md has the reasoning).
+ * bug, not a style.
  *
  *   Type      text-2xs 11   captions, badges, hints, counts
  *             text-xs  12   secondary text, labels, tabs, tooltips

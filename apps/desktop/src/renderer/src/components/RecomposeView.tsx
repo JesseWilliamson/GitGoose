@@ -28,7 +28,7 @@ import { Button, CM, DM, SectionHeader, Spinner } from './ui'
  */
 
 /**
- * The plan, in the middle of the window (ADR-010), where the review and the walkthrough are:
+ * The plan, in the middle of the window, where the review and the walkthrough are:
  * it is a result you work in, not a question to answer, and keeping it there is what lets the
  * chat's history put it back on screen later.
  */

@@ -34,15 +34,14 @@
  * right; when HEAD arrives it lands there (or in lane 0, if the trunk's line reaches it first).
  *
  * The dashed line to HEAD is always straight: HEAD's lane is HEAD's column from the top of the
- * graph down to HEAD's node, and nothing ever moves it (ADR-003, "The dashed line to HEAD is
- * straight").
+ * graph down to HEAD's node, and nothing ever moves it.
  *
  * The trunk reservation has one cost: a branch sitting on top of the trunk has its tip arrive
  * *before* the trunk tip, so it would open a lane to the right and curve back in. The layout
  * streams, so it cannot know when the tip arrives that its line will reach the trunk. Git can:
  * the snapshot lists the tips whose first-parent chain runs straight down to the trunk tip
- * (`straight.overTrunk`) or to HEAD (`straight.overHead`), and the layout uses them (ADR-003,
- * "A branch on top of a reserved line continues it"):
+ * (`straight.overTrunk`) or to HEAD (`straight.overHead`), and the layout uses them so a branch on
+ * top of a reserved line continues it:
  *   A. A tip in overTrunk arriving while lane 0 is held takes lane 0, and the hold ends.
  *   HEAD on the trunk's line: when HEAD is in overTrunk (on top of the trunk) or a trunk tip is in
  *   overHead (HEAD is an older trunk commit), HEAD's lane is lane 0 from the start, as if it were a

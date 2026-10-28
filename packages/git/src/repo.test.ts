@@ -792,7 +792,7 @@ describe('straight tips (a branch on top of the trunk or HEAD continues its lane
   })
 })
 
-describe('drag-and-drop operations (PLAN-4 phase 4)', () => {
+describe('drag-and-drop operations', () => {
   /** main: base; topic (from base): T1 edits t.txt; pick (from base): P1 adds p.txt, P2 edits shared.txt. */
   function picks() {
     const r = initRepo()

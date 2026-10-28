@@ -7,7 +7,7 @@ import { Button } from './ui'
  *
  * Results used to carry a chat of their own in a rail beside them, which meant two places to
  * talk to the AI and two histories to keep straight. There is one chat now, it is the AI pane,
- * and every result is already a turn in it (spec 006): this button only moves the pane to the
+ * and every result is already a turn in it: this button only moves the pane to the
  * right conversation. Nothing is shown when the result has no conversation — an impact nobody
  * has asked the model about yet.
  */

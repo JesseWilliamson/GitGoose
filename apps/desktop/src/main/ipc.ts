@@ -125,7 +125,7 @@ export function createHandlers(
       // Review, walkthrough and ask read the code graph for context. The tree they need is
       // usually indexed already (HEAD, the index, the working tree); a commit costs only its
       // changed blobs. A first index of a big repository is not waited for: a slightly poorer
-      // context beats a blocked review (ADR-008).
+      // context beats a blocked review.
       const rev = task.kind === 'review' || task.kind === 'walkthrough' ? scopeRev(task.scope) : task.kind === 'ask' ? task.rev : undefined
       if (rev !== undefined && repoId) await Promise.race([codegraph.ensure(repoId, rev).catch(() => {}), new Promise((r) => setTimeout(r, 3000))])
       return ai.run(requestId, repoId, task, opts)

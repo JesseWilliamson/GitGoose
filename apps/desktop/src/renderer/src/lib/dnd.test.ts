@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { decodeDrag, dropPlan, encodeDrag, type DragSource, type DropContext, type DropTarget } from './dnd'
 
 /**
- * The drop matrix of docs/specs/003-branches-and-remotes.md, one describe per row: what a plain
+ * The drop matrix, one describe per row: what a plain
  * drop does, what Alt does, whether it asks first. Then the pairs that must not be targets.
  */
 

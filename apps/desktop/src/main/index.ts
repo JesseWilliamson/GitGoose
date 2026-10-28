@@ -114,7 +114,7 @@ const ai = new AiService({
   anthropicBaseURL: process.env.GITGOOSE_ANTHROPIC_BASE_URL,
 })
 
-// The code graph (ADR-008): parsed in a utility process, one database per repository.
+// The code graph: parsed in a utility process, one database per repository.
 const codegraph = new CodeGraphService({
   dir: join(app.getPath('userData'), 'codegraph'),
   modulePath: join(here, 'indexer.js'),

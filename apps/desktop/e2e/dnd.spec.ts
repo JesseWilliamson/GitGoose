@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { launch, readOrNull } from './app'
 
 /**
- * The drop matrix (docs/specs/003-branches-and-remotes.md), driven in the app: the badge says
+ * The drop matrix, driven in the app: the badge says
  * what will happen, with and without Alt; the drop does it in git; local drops offer Undo and
  * drops that change a remote ask first.
  */

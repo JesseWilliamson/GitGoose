@@ -15,7 +15,7 @@ export interface IndexProgress {
 }
 
 /**
- * Builds the code graph of one repository (see ADR-008).
+ * Builds the code graph of one repository.
  *
  * A sync of a tree lists its files, records (path, blob) for every file a grammar parses, and
  * parses only the blobs the store has not seen. The first sync of a repository parses

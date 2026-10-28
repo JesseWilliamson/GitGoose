@@ -3,7 +3,7 @@ import { create } from 'zustand'
 import { saveSettings, setting } from './store'
 
 /**
- * Doing things with the pane layout (ADR-010). The layout itself and every rule about it are pure
+ * Doing things with the pane layout. The layout itself and every rule about it are pure
  * functions in packages/shared/src/layout.ts; this file only reads the setting, applies one of
  * them and saves the result, which is how every window sees the change.
  */

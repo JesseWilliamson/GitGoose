@@ -244,7 +244,7 @@ export interface ReviewContextInfo {
  * and the tests that cover it. Built locally by Repo.codeContext; the model only reads it.
  */
 export interface CodeContext {
-  /** 'graph': parsed by tree-sitter (ADR-008). 'patterns': line patterns and git grep, while the graph is not ready. */
+  /** 'graph': parsed by tree-sitter. 'patterns': line patterns and git grep, while the graph is not ready. */
   source: 'graph' | 'patterns'
   symbols: {
     name: string
@@ -529,7 +529,7 @@ export interface AiResult {
 /** The error code an AI request fails with when the agent needs the user to log in first. */
 export const AI_AUTH_REQUIRED = 'ai-auth'
 
-// ------------------------------------------------------------------ threads (spec 006, PLAN-4 5a)
+// ------------------------------------------------------------------ threads
 
 /**
  * What a thread is about. The anchor decides the context the agent gets first (a system

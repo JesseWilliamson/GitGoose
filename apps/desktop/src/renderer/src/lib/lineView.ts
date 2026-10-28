@@ -1,7 +1,7 @@
 import type { Edge, Row } from '@gitgoose/graph'
 
 /**
- * The line view (spec 007, "Line view"): View → Line View (Mod+L) and the graph shows only the line
+ * The line view: View → Line View (Mod+L) and the graph shows only the line
  * of history through one commit.
  *
  * A "branch" is not something git stores: a branch name is a pointer, and the line it stands for is

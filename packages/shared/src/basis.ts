@@ -3,7 +3,7 @@ import type { AiThread, ThreadAnchor, ThreadBasis } from './ai'
 /**
  * Whether a saved conversation still describes the repository.
  *
- * Every AI action is a chat (spec 006). A chat about a review, a plan, a walkthrough or an
+ * Every AI action is a chat. A chat about a review, a plan, a walkthrough or an
  * impact owns a *result*, and reopening it puts that result back in the middle of the window —
  * but only while the result is still about this repository. A rebase, an amend or a new commit
  * can make a review's line numbers point at code that no longer exists, and showing it then

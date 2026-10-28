@@ -7,14 +7,14 @@
  *
  * Three layers are timed separately so a regression points at its cause:
  *   1. git:    open the repo and read the first page of the log (LogStream), in date order and in
- *              topological order, each without and with a commit-graph file (ADR-003)
+ *              topological order, each without and with a commit-graph file
  *   2. layout: lane layout for every commit
  *   3. app:    launch Electron, time to the first painted graph rows, then scroll fps; where
  *              the startup time went (the app's performance marks, from process start); and
  *              what the main bundle loads before the window can open
  *   4. sidebar: the 3,000-commit dev repository with 2,000 generated branches and tags (in
  *              folders), every section open: time to the first sidebar rows, rows in the DOM,
- *              and scroll fps through the whole list (PLAN-4 phase 4)
+ *              and scroll fps through the whole list
  */
 import { makeDevRepo, makeLargeRepo } from '@gitgoose/fixtures'
 import { Repo } from '@gitgoose/git'
@@ -84,7 +84,7 @@ async function main() {
   }
 
   // 1. git layer. "Cold" is a repository without a commit-graph file; the app writes one in
-  // the background (ADR-004), after which every log walk is "warm".
+  // the background, after which every log walk is "warm".
   // Topological order is timed both ways too: without generation numbers git must walk all of
   // history before it can print the first commit; with them it walks in increments.
   for (const f of ['commit-graph', 'commit-graphs']) rmSync(join(cache, '.git/objects/info', f), { recursive: true, force: true })

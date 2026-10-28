@@ -1,5 +1,5 @@
 /**
- * Window layout as data (ADR-010). The window has three slots around a fixed centre: `left` and
+ * Window layout as data. The window has three slots around a fixed centre: `left` and
  * `right` (widths) and `bottom` (a height, under the graph). Each slot holds an ordered list of
  * panes, one of them active, shown as tabs. Which pane lives where is the user's choice; a pane
  * in no slot is hidden. Everything here is a pure function from layout to layout, so the

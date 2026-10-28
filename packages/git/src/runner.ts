@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import type { CommandRecord } from '@gitgoose/shared'
 
 /**
- * Every git invocation goes through here. The rules from ADR-001 live in this file:
+ * Every git invocation goes through here. The rules for running git live in this file:
  * - force machine-stable output (no colour, no pager, no path quoting, C locale)
  * - never let git open a terminal prompt or an editor (we provide askpass and messages)
  * - read-only commands skip optional locks so a background refresh never blocks the user's own git
@@ -60,7 +60,7 @@ export interface RunnerOptions {
 /**
  * Are we running inside a flatpak sandbox? Flatpak sets FLATPAK_ID for the app it starts.
  *
- * We ship an AppImage on Linux and no flatpak (ADR-007), so this is false in every artifact we
+ * We ship an AppImage on Linux and no flatpak, so this is false in every artifact we
  * build today. It stays because running the user's own git, with their hooks and credential
  * helpers, is the hard part of any future flatpak.
  */
@@ -69,7 +69,7 @@ export function inFlatpakSandbox(env: NodeJS.ProcessEnv = process.env): boolean 
 }
 
 /**
- * Rewrite a git invocation to run on the host instead of inside the sandbox (ADR-007).
+ * Rewrite a git invocation to run on the host instead of inside the sandbox.
  *
  * flatpak-spawn asks the Flatpak portal to start a process outside the sandbox. It does not
  * inherit our environment or our working directory, so both are passed explicitly: only the

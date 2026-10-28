@@ -221,8 +221,7 @@ export class Repo {
 
   /**
    * The branch tips whose first-parent chain runs straight down to the trunk tip, or to HEAD, so
-   * the graph can draw them continuing that lane instead of opening one to the right (ADR-003, "A
-   * branch on top of a reserved line continues it"). The layout streams and cannot know this when
+   * the graph can draw them continuing that lane instead of opening one to the right. The layout streams and cannot know this when
    * a tip arrives; git can, cheaply:
    *
    * 1. One for-each-ref over refs/heads and refs/remotes prints, for every ref, how far ahead of
@@ -327,7 +326,7 @@ export class Repo {
   }
 
   /**
-   * Write git's commit-graph file if the repository lacks one (see ADR-004).
+   * Write git's commit-graph file if the repository lacks one: generation numbers make the first log page fast.
    *
    * `git log --date-order` (like --topo-order) must never emit a parent before its children.
    * Without generation numbers it can only prove that by walking the entire history first, so
@@ -1090,7 +1089,7 @@ export class Repo {
   /** Definitions per blob id: a file's definitions only change when its content does. */
   private defsCache = new Map<string, Definition[]>()
 
-  /** The repository's code graph (ADR-008), read-only, once the indexer has built it. */
+  /** The repository's code graph, read-only, once the indexer has built it. */
   private graph: GraphStore | null = null
 
   attachGraph(store: GraphStore | null): void {

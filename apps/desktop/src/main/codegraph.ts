@@ -43,7 +43,7 @@ export interface CodeGraphOptions {
 }
 
 /**
- * Keeps each open repository's code graph current (ADR-008).
+ * Keeps each open repository's code graph current.
  *
  * Owns the indexer utility process and talks to it with request ids. On open, and whenever
  * HEAD, the index or the working tree change, it asks for the three trees Peek and Impact

@@ -1,5 +1,5 @@
 /**
- * The code indexer: an Electron utility process (see ADR-008).
+ * The code indexer: an Electron utility process.
  *
  * Parsing is CPU-bound, so it runs here, away from the main process and the window. Main
  * sends one message per request over `process.parentPort`; progress and results come back

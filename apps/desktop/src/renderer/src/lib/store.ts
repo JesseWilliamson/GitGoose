@@ -86,7 +86,7 @@ export interface RepoView {
   busy: string | null
   /** Bumped whenever files change on disk; open diffs reload on it. */
   worktreeTick: number
-  /** The code graph (ADR-008): Peek and Impact wait while it indexes. */
+  /** The code graph: Peek and Impact wait while it indexes. */
   codegraph: CodeGraphStatus
   /**
    * The graph shows only the line of history through `hash` (lib/lineView.ts), until toggled off

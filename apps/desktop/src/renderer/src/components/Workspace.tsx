@@ -15,7 +15,7 @@ import { RecomposeView } from './RecomposeView'
 import { PaneDropZones, SlotView } from './Pane'
 
 /**
- * The repository window (ADR-010): three slots around a fixed centre. The centre is the graph
+ * The repository window: three slots around a fixed centre. The centre is the graph
  * (or a file's diff, a review, ... that opens over it); the left, right and bottom slots hold
  * panes as tabs. Which pane is in which slot is the `layout` setting (packages/shared/src/layout.ts);
  * the dividers resize a slot (and collapse it, dragged past the minimum), and a slot with no

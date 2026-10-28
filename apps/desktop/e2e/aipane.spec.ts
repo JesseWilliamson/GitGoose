@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { dragTo, launch, sendComposed } from './app'
 
 /**
- * The AI panel's context (docs/specs/006-ai-over-acp.md, "Context chips"): the selection is a
+ * The AI panel's context chips: the selection is a
  * chip, drops add chips, main renders them into the message, the action row starts the same
  * features the menus do and their threads are in the history list at once.
  */

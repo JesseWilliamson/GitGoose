@@ -144,7 +144,7 @@ export interface SnapshotGraph {
 /**
  * Tips (commit hashes) whose first-parent chain runs down to the trunk tip (`overTrunk`) or to
  * HEAD (`overHead`). Empty when git is older than 2.41 (no `%(ahead-behind)`), with no trunk, or
- * with no HEAD commit. See ADR-003, "A branch on top of a reserved line continues it".
+ * with no HEAD commit. The lane layout uses them to continue a reserved line.
  */
 export interface StraightTips {
   overTrunk: string[]
@@ -258,7 +258,7 @@ export interface ChangeInsights {
   owners: { name: string; lines: number }[]
 }
 
-/** The state of a repository's code graph (ADR-008): what Peek and Impact wait for. */
+/** The state of a repository's code graph: what Peek and Impact wait for. */
 export interface CodeGraphStatus {
   state: 'off' | 'indexing' | 'ready' | 'error'
   /** Files parsed so far, and to parse, in the sync under way. */

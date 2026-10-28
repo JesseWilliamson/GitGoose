@@ -1,14 +1,13 @@
 # GitGoose — brief for agent sessions
 
-GitGoose is an Electron git client: a clear commit graph and drag-and-drop, speed,
-undo, line staging and conflict wizard. Read `docs/PLAN.md` for the why, `docs/adr/` for decisions
-already made (do not relitigate them in passing), and `docs/specs/` for feature specs.
+GitGoose is an Electron git client: a fast commit graph with drag-and-drop, undo, line staging
+and a conflict wizard.
 
 ## Working with Jesse
 
 Jesse wants to learn, not just receive code. Explain design decisions, point out the interesting
 idea in each change, and leave room for him to implement parts himself when he asks. Plain, direct
-explanations. `docs/learn/` holds exercises for the four pieces he plans to own.
+explanations.
 
 ## Layout
 
@@ -17,7 +16,7 @@ apps/desktop/          Electron app (electron-vite)
   src/main/            main process: window, IPC router (ipc.ts), RepoManager + file watcher, settings, menu,
                        avatars, github/ (GitHub's public API, no sign-in: pull request list, avatar lookup),
                        ai/ (ACP client for the user's agent, Anthropic API fallback),
-                       codegraph.ts + indexer.ts (the code graph service and its utility process, ADR-008)
+                       codegraph.ts + indexer.ts (the code graph service and its utility process)
   src/preload/         the only bridge: builds window.gitgoose from API_METHODS
   src/renderer/src/    React UI: lib/store.ts (zustand + log data), lib/actions.ts (every user action), components/
   e2e/                 Playwright tests that launch the real app (+ fake-agent.mjs, a scripted ACP agent)
@@ -46,7 +45,7 @@ when touching the log, the layout, the graph rendering or the store.
 - Git is run through `GitRunner` only. Parse NUL-separated plumbing output (`-z`, `%x00`,
   `--porcelain=v2`), never human-readable output. Read-only commands pass `readOnly: true`.
 - Every `Repo` method that writes goes through `exclusive()` and records an undo entry when it
-  can be undone (see ADR-005). New write operations need both.
+  can be undone. New write operations need both.
 - Adding an IPC method: add it to `GitGooseApi` and `API_METHODS` in `packages/shared/src/api.ts`
   (the compiler then demands a handler in `apps/desktop/src/main/ipc.ts`). If it writes, add it
   to `WRITES` in ipc.ts so the renderer gets a fresh snapshot right away.

@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { launch, sendComposed } from './app'
 
 /**
- * Conversations with the agent (spec 006, threads): the fake agent keeps each session's history
+ * Conversations with the agent (threads): the fake agent keeps each session's history
  * and answers "Turn N", so continuity is visible; FAKE:… words in a message script the rest.
  */
 const FAKE = join(import.meta.dirname, 'fake-agent.mjs')
@@ -33,7 +33,7 @@ test('the AI panel: follow-ups continue the conversation; Shift+Enter is a new l
   const { app, page } = await launch(r.dir)
   await set(page, { aiProvider: 'agent', aiAgent: 'custom', aiAgentCommand: AGENT_CMD })
   const panel = await chat(page, 'hello')
-  // The pane is the AI tab of the right slot (ADR-010), opened with the shortcut.
+  // The pane is the AI tab of the right slot, opened with the shortcut.
   await expect(page.getByTestId('slot-right').getByTestId('ai-chat-panel')).toBeVisible()
   // First use asks before anything is sent, naming what goes along.
   await expect(page.getByTestId('ai-consent')).toContainText("the repository's name and current commit")

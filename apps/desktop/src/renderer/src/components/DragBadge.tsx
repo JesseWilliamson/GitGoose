@@ -4,7 +4,7 @@ import { currentDrag, decodeDrag, dropPlan, endDrag, type DropContext, type Drop
 import { useStore } from '../lib/store'
 
 /**
- * Drag and drop for the whole window, in one place (ADR-009).
+ * Drag and drop for the whole window, in one place.
  *
  * Drop targets do not handle drag events themselves. Each carries `data-drop-target` (the
  * DropTarget as JSON); graph rows add `data-drop-zones="thirds"` because where on the row matters

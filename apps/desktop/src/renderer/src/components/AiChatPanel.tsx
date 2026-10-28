@@ -16,7 +16,7 @@ const FREE = { kind: 'free' } as const
 const NONE: string[] = []
 
 /**
- * The AI pane (Mod+Shift+A; ADR-010): a conversation about the repository, and the one place
+ * The AI pane (Mod+Shift+A): a conversation about the repository, and the one place
  * everything AI happens. Every AI action is a chat here (lib/aiActions.ts): a menu item writes
  * its request into the box and leaves it for the user to read, change and send, so nothing is
  * ever sent by a click on a menu. Its first message goes with the repository's name and HEAD,

@@ -307,7 +307,7 @@ export function showRepo(repoId: string): void {
 }
 
 /**
- * Show a thread in the AI pane: the pane is shown and activated wherever it lives (ADR-010),
+ * Show a thread in the AI pane: the pane is shown and activated wherever it lives,
  * and whatever the pane was doing instead (the history list, an action waiting to be sent)
  * gives way — this is a request to look at one conversation.
  */

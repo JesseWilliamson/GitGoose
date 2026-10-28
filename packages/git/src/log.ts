@@ -102,7 +102,7 @@ export class LogParser {
  * Both are topological sorts in git (date order only breaks ties by date), so both must be sure
  * no unprinted commit is a child of the next one before printing it. Without generation numbers
  * (the commit-graph file) that means walking all of history first; with them, the first page is
- * as quick as a plain `git log`. Measured in ADR-003.
+ * as quick as a plain `git log` (tools/bench measures both).
  */
 export function orderFlag(order: CommitOrder): string {
   return order === 'topo' ? '--topo-order' : '--date-order'

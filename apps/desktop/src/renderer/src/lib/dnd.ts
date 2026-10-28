@@ -1,16 +1,15 @@
 import type { Ref, RepoSnapshot } from '@gitgoose/shared'
 
 /**
- * Drag and drop: **the target and the modifier decide; there is no chooser menu**
- * (ADR-009). A plain drop does the obvious thing straight away and offers Undo; Alt picks the
+ * Drag and drop: **the target and the modifier decide; there is no chooser menu**.
+ * A plain drop does the obvious thing straight away and offers Undo; Alt picks the
  * one alternative (rebase instead of merge, revert instead of cherry-pick, fixup instead of
  * squash); only drops that change a remote ask first. While dragging, a badge by the pointer
  * says exactly what will happen (components/DragBadge.tsx).
  *
  * This file is the pure part: what is being dragged (`DragSource`), what it is over
  * (`DropTarget`), and `dropPlan`, which turns the two into a label and an operation, as data.
- * The table in docs/specs/003-branches-and-remotes.md is its specification and dnd.test.ts its
- * test list, one case per row. Running an operation is lib/actions.ts's `performDrop`, which
+ * dnd.test.ts is its specification, one case per row of the drop matrix. Running an operation is lib/actions.ts's `performDrop`, which
  * only calls the existing actions.
  */
 

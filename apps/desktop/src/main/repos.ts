@@ -82,7 +82,7 @@ export class RepoManager {
     // runs after the snapshot has gone back and the graph does not wait for it. What changes in
     // between is caught by the window-focus refresh, as it would be without a watcher.
     entry.watching = this.watch(entry)
-    // After the first screen is up, make sure later log walks are fast (ADR-004).
+    // After the first screen is up, make sure later log walks are fast.
     setTimeout(() => void repo.maintainCommitGraph(), 1500)
     this.hooks.opened?.(repo)
     return snapshot
