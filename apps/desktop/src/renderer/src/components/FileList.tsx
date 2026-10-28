@@ -2,7 +2,8 @@ import type { ChangeKind } from '@gitgoose/shared'
 import clsx from 'clsx'
 import { ChevronDown, ChevronRight, Folder, List, ListTree, Search } from 'lucide-react'
 import { ContextMenu } from 'radix-ui'
-import { useState, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { startDrag, type DragSource } from '../lib/dnd'
 import { matchesFilter, treeRows } from '../lib/fileTree'
 import { splitPath } from '../lib/format'
@@ -110,7 +111,7 @@ export function FileListView<T>({ items, pathOf, filter, renderFile, folderActio
   const shown = filter.trim() ? items.filter((i) => matchesFilter(pathOf(i), filter)) : items
   if (!tree) {
     const order = shown.map(pathOf)
-    return <>{shown.map((i) => renderFile(i, { depth: 0, tree: false, order }))}</>
+    return <Rows count={shown.length} render={(k) => renderFile(shown[k]!, { depth: 0, tree: false, order })} />
   }
   const byPath = new Map(shown.map((i) => [pathOf(i), i]))
   const toggle = (path: string) => setCollapsed((c) => {
@@ -122,8 +123,9 @@ export function FileListView<T>({ items, pathOf, filter, renderFile, folderActio
   const rows = treeRows([...byPath.keys()], collapsed)
   const order = rows.filter((r) => r.kind === 'file').map((r) => r.path)
   return (
-    <>
-      {rows.map((r) => r.kind === 'file' ? (
+    <Rows count={rows.length} render={(k) => {
+      const r = rows[k]!
+      return r.kind === 'file' ? (
         <div key={r.path}>{renderFile(byPath.get(r.path)!, { depth: r.depth, tree: true, order })}</div>
       ) : (
         <div key={`dir:${r.path}`} onClick={() => toggle(r.path)} data-testid={testId ? `${testId}-folder` : undefined} data-path={r.path}
@@ -135,8 +137,51 @@ export function FileListView<T>({ items, pathOf, filter, renderFile, folderActio
           <span className="text-2xs text-hint">{r.files.length}</span>
           {folderActions && <span className="hidden shrink-0 items-center gap-1 group-hover:flex" onClick={(e) => e.stopPropagation()}>{folderActions(r.files)}</span>}
         </div>
+      )
+    }} />
+  )
+}
+
+/** Lists up to this long render every row; longer ones only the rows in view. */
+const VIRTUAL_FROM = 200
+const ROW_PX = 24 // h-row
+
+/**
+ * Rows of a file list. A short list renders them all. A long one (a 3,000-file stash) renders only
+ * what is in view: the list does not scroll by itself, it sits in a pane that scrolls (Details),
+ * so the virtualizer follows that ancestor and offsets by where the list starts inside it.
+ */
+function Rows({ count, render }: { count: number; render: (i: number) => ReactNode }) {
+  if (count < VIRTUAL_FROM) return <>{Array.from({ length: count }, (_, i) => render(i))}</>
+  return <VirtualRows count={count} render={render} />
+}
+
+function VirtualRows({ count, render }: { count: number; render: (i: number) => ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [scroller, setScroller] = useState<HTMLElement | null>(null)
+  const [margin, setMargin] = useState(0)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    let p = el.parentElement
+    while (p && !/(auto|scroll)/.test(getComputedStyle(p).overflowY)) p = p.parentElement
+    setScroller(p)
+    if (!p) return
+    const measure = () => setMargin(el.getBoundingClientRect().top - p.getBoundingClientRect().top + p.scrollTop)
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(p)
+    return () => ro.disconnect()
+  }, [])
+  const virt = useVirtualizer({ count, getScrollElement: () => scroller, estimateSize: () => ROW_PX, overscan: 20, scrollMargin: margin })
+  return (
+    <div ref={ref} style={{ height: virt.getTotalSize(), position: 'relative' }} data-testid="file-list-virtual">
+      {virt.getVirtualItems().map((vi) => (
+        <div key={vi.key} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: ROW_PX, transform: `translateY(${vi.start - margin}px)` }}>
+          {render(vi.index)}
+        </div>
       ))}
-    </>
+    </div>
   )
 }
 
