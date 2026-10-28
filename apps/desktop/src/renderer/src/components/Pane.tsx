@@ -7,6 +7,7 @@ import { PANE_MIME, changeLayout, usePaneDrag } from '../lib/panes'
 import { useSetting, type RepoView } from '../lib/store'
 import { AiChatActions, AiChatPanel } from './AiChatPanel'
 import { DetailPanel } from './DetailPanel'
+import { FilePane } from './FilePane'
 import { Sidebar } from './Sidebar'
 import { DM } from './ui'
 
@@ -22,6 +23,7 @@ function PaneBody({ pane, view }: { pane: PaneId; view: RepoView }) {
     case 'branches': return <Sidebar view={view} />
     case 'details': return <DetailPanel view={view} />
     case 'ai': return <AiChatPanel view={view} />
+    case 'diff': return <FilePane view={view} />
   }
 }
 

@@ -27,8 +27,15 @@ async function dragPaneTo(page: Page, pane: string, zone: string) {
   throw new Error(`the drag of ${pane} never showed ${zone}`)
 }
 
-/** Wide enough for all four columns, so the AI pane is not folded away (ADR-011). */
-const wide = (app: ElectronApplication) => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1440, 800))
+/**
+ * Wide enough for all four columns, so the AI pane is not folded away (ADR-011); waits for the
+ * workspace to unfold it, so what the test does next is not overtaken by that change.
+ */
+async function wide(app: ElectronApplication) {
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1440, 800))
+  const page = await app.firstWindow()
+  await expect.poll(() => page.evaluate(async () => !(await window.gitgoose.getSettings()).layout.farRight.folded)).toBe(true)
+}
 
 async function movePaneVia(page: Page, pane: string, to: string) {
   await page.getByTestId(`pane-menu-${pane}`).click()
@@ -326,7 +333,82 @@ test('workspace layouts: choosing one moves the panes, the palette switches, Res
   await page.getByTestId('palette-input').fill('Workspace layout: Review')
   await page.keyboard.press('Enter')
   await expect(page.getByTestId('slot-left')).toHaveCount(0)
-  await expect(paneIn('farRight')).toHaveAttribute('data-pane', 'ai')
+  await expect(paneIn('farRight')).toHaveAttribute('data-pane', 'diff')
+  await expect(paneIn('bottom')).toHaveAttribute('data-pane', 'ai')
   expect((await page.evaluate(() => window.gitgoose.getSettings())).layoutPreset).toBe('review')
+
+  // View → Workspace Layout, and the menu follows what was chosen.
+  const presetItem = (label: string) => app.evaluate(({ Menu }, l) => {
+    const sub = Menu.getApplicationMenu()!.items.find((i) => i.label === 'View')!.submenu!.items.find((i) => i.label === 'Workspace Layout')!.submenu!
+    return sub.items.find((i) => i.label === l)!.checked
+  }, label)
+  expect(await presetItem('Review')).toBe(true)
+  await app.evaluate(({ Menu }) => {
+    Menu.getApplicationMenu()!.items.find((i) => i.label === 'View')!.submenu!.items.find((i) => i.label === 'Workspace Layout')!.submenu!.items.find((i) => i.label === 'Chat')!.click()
+  })
+  await expect(paneIn('farRight')).toHaveAttribute('data-pane', 'ai')
+  await expect(page.getByTestId('slot-right')).toHaveCount(0)
+  await expect.poll(() => presetItem('Chat')).toBe(true)
+  await app.close()
+})
+
+test('reading wide: the file takes the centre, full height, beside its file list; Esc puts everything back', async () => {
+  const r = makeFixture('linear')
+  r.commit('two files', { 'alpha.txt': 'a\n', 'beta.txt': 'b\n' })
+  const { app, page } = await launch(r.dir)
+  await wide(app)
+  await page.getByTestId('commit-row').first().click()
+  const views = page.getByTestId('file-view')
+  await expect(views).toHaveCount(1)
+  const under = (await views.boundingBox())!
+  const work = (await page.getByTestId('workspace').boundingBox())!
+
+  await page.keyboard.press('ControlOrMeta+Shift+Enter')
+  await expect(page.getByTestId('graph-scroll')).toHaveCount(0)
+  // One file view, in the centre now, not also under the details.
+  await expect(views).toHaveCount(1)
+  await expect(page.locator('main').getByTestId('file-view')).toBeVisible()
+  await expect(page.getByTestId('diff-wide')).toHaveAttribute('aria-pressed', 'true')
+  // The details stay beside it for the file list; the other columns step aside.
+  await expect(page.getByTestId('slot-right').getByTestId('commit-file').first()).toBeVisible()
+  await expect.poll(() => width(page, 'slot-left')).toBeLessThan(2)
+  await expect.poll(() => width(page, 'slot-farRight')).toBeLessThan(2)
+  // Full height and far wider than under the details.
+  const big = (await views.boundingBox())!
+  expect(big.height).toBeGreaterThan(work.height - 4)
+  expect(big.width).toBeGreaterThan(under.width * 1.5)
+  // Another file from the list opens there.
+  await page.getByTestId('commit-file').filter({ hasText: 'beta.txt' }).click()
+  await expect(page.locator('main').getByTestId('file-view')).toContainText('beta.txt')
+
+  // Esc: the graph, the columns and the file under the details again; nothing was saved.
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('graph-scroll')).toBeVisible()
+  await expect.poll(() => width(page, 'slot-farRight')).toBeGreaterThan(250)
+  await expect(page.getByTestId('slot-right').getByTestId('file-view')).toContainText('beta.txt')
+  expect((await page.evaluate(() => window.gitgoose.getSettings())).layout.left.collapsed).toBe(false)
+  // The header's button does the same.
+  await page.getByTestId('diff-wide').click()
+  await expect(page.getByTestId('graph-scroll')).toHaveCount(0)
+  await page.getByTestId('diff-wide').click()
+  await expect(page.getByTestId('graph-scroll')).toBeVisible()
+  await app.close()
+})
+
+test('the Review layout gives the diff a column of its own, full height, like an editor\'s main pane', async () => {
+  const r = makeFixture('linear')
+  const { app, page } = await launch(r.dir)
+  await wide(app)
+  await page.evaluate(() => window.gitgoose.setSettings({ layoutPreset: 'review' }))
+  await page.getByTestId('commit-row').first().click()
+  const pane = page.getByTestId('slot-farRight').getByTestId('file-view')
+  await expect(pane).toBeVisible()
+  // Not also under the details, which keep their whole height for the commit and its files.
+  await expect(page.getByTestId('file-view')).toHaveCount(1)
+  const slot = (await page.getByTestId('slot-farRight').boundingBox())!
+  expect((await pane.boundingBox())!.height).toBeGreaterThan(slot.height - 40)
+  // The widest column on screen.
+  expect(slot.width).toBeGreaterThan(await width(page, 'slot-right'))
+  expect(slot.width).toBeGreaterThan((await page.getByTestId('graph-scroll').boundingBox())!.width)
   await app.close()
 })

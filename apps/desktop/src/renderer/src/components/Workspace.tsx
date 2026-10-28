@@ -1,7 +1,9 @@
-import { FOLD_BELOW, fold, setCollapsed, setSize, unfold, type PaneLayout, type Slot } from '@gitgoose/shared'
+import { FOLD_BELOW, fold, setCollapsed, setSize, slotOf, unfold, type PaneLayout, type Slot } from '@gitgoose/shared'
 import { Group, Panel, Separator, useGroupRef, usePanelRef, type GroupImperativeHandle } from 'react-resizable-panels'
 import { useEffect, useRef, type RefObject } from 'react'
 import { changeLayout, saveLayout } from '../lib/panes'
+import { toggleWideDiff } from '../lib/actions'
+import { FilePane } from './FilePane'
 import { setting, useSetting, type RepoView } from '../lib/store'
 import { ConflictWizard } from './ConflictWizard'
 import { Graph } from './Graph'
@@ -32,13 +34,21 @@ export function Workspace({ view }: { view: RepoView }) {
   const root = useRef<HTMLDivElement>(null)
   const columns = useGroupRef()
   useFoldWhenNarrow(root)
-  // A workbench in the centre (recompose, the conflict wizard) needs the width, and Details has
-  // nothing for it: Details steps aside while it is open and comes back after. Only on screen:
-  // the layout is not changed, so leaving the task restores exactly what was there.
-  const workbench = view.center.kind === 'recompose' || view.center.kind === 'conflicts'
-  const shown = workbench ? { ...layout, right: { ...layout.right, collapsed: true } } : layout
+  const held = heldColumns(layout, view)
+  const shown = held.size ? { ...layout, ...Object.fromEntries([...held].map((s) => [s, { ...layout[s], collapsed: true }])) } : layout
   useColumnWidths(columns, root, shown)
-  const center = view.center.kind === 'conflicts' ? <ConflictWizard view={view} />
+  // Esc ends reading wide, unless something else has the key (a menu, a text field).
+  useEffect(() => {
+    if (!view.diffWide) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      toggleWideDiff(view.id, false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [view.diffWide, view.id])
+  const center = view.diffWide ? <FilePane view={view} />
+    : view.center.kind === 'conflicts' ? <ConflictWizard view={view} />
     : view.center.kind === 'reflog' ? <ReflogView view={view} />
     : view.center.kind === 'commands' ? <CommandLogView view={view} />
     : view.center.kind === 'review' ? <ReviewView view={view} />
@@ -50,7 +60,7 @@ export function Workspace({ view }: { view: RepoView }) {
   return (
     <div ref={root} className="relative flex min-h-0 flex-1" data-testid="workspace">
       <Group orientation="horizontal" className="min-h-0 flex-1" groupRef={columns}>
-        {layout.left.panes.length > 0 && <SlotPanel slot="left" view={view} />}
+        {layout.left.panes.length > 0 && <SlotPanel slot="left" view={view} held={held.has('left')} />}
         {layout.left.panes.length > 0 && <Separator id="sep-left" className={`w-px ${SEPARATOR}`} />}
         <Panel id="center" minSize={320}>
           <Group orientation="vertical" className="h-full">
@@ -62,13 +72,27 @@ export function Workspace({ view }: { view: RepoView }) {
           </Group>
         </Panel>
         {layout.right.panes.length > 0 && <Separator id="sep-right" className={`w-px ${SEPARATOR}`} />}
-        {layout.right.panes.length > 0 && <SlotPanel slot="right" view={view} held={workbench} />}
+        {layout.right.panes.length > 0 && <SlotPanel slot="right" view={view} held={held.has('right')} />}
         {layout.farRight.panes.length > 0 && <Separator id="sep-farRight" className={`w-px ${SEPARATOR}`} />}
-        {layout.farRight.panes.length > 0 && <SlotPanel slot="farRight" view={view} />}
+        {layout.farRight.panes.length > 0 && <SlotPanel slot="farRight" view={view} held={held.has('farRight')} />}
       </Group>
       <PaneDropZones />
     </div>
   )
+}
+
+/**
+ * Columns that step aside for what the centre holds, on screen only (the layout is not changed, so
+ * leaving restores exactly what was there):
+ * - a workbench (recompose, the conflict wizard) needs the width and has no use for Details, so
+ *   Details' column steps aside;
+ * - reading wide, the file takes the centre and only Details stays, for its file list.
+ */
+function heldColumns(layout: PaneLayout, view: RepoView): Set<Slot> {
+  const details = slotOf(layout, 'details')
+  if (view.diffWide) return new Set(COLUMNS.filter((s) => s !== details && layout[s].panes.length))
+  if (view.center.kind === 'recompose' || view.center.kind === 'conflicts') return new Set(details && details !== 'bottom' ? [details] : [])
+  return new Set()
 }
 
 /**
@@ -152,6 +176,10 @@ function SlotPanel({ slot, view, held = false }: { slot: Slot; view: RepoView; h
   const st = useSetting('layout')[slot]
   const ref = usePanelRef()
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Read when the delayed save fires, not when it was set: a column held aside since must not
+  // have its on-screen 0 saved as the user's collapse.
+  const heldNow = useRef(held)
+  heldNow.current = held
 
   // The bottom slot collapses and expands when the setting changes (keyboard toggles, the palette,
   // other windows). The columns are set all together by useColumnWidths.
@@ -191,7 +219,7 @@ function SlotPanel({ slot, view, held = false }: { slot: Slot; view: RepoView; h
           // The size now, not the one this event carried: a collapse from the keyboard or the
           // palette may have happened since, and a stale size would undo it.
           const size = ref.current?.getSize()
-          if (!size) return
+          if (!size || heldNow.current) return
           const current = setting('layout')
           const collapsed = size.inPixels < 1
           let next = setCollapsed(current, slot, collapsed)

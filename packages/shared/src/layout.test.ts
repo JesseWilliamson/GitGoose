@@ -12,9 +12,9 @@ describe('pane layout', () => {
     expect(L.right).toMatchObject({ panes: ['details'], active: 'details' })
     expect(L.farRight).toMatchObject({ panes: ['ai'], active: 'ai' })
     expect(L.bottom).toMatchObject({ panes: [], active: null })
-    expect(PANES.map((p) => slotOf(L, p))).toEqual(['left', 'right', 'farRight'])
-    // Nothing used together is a tab behind something else.
-    expect(PANES.every((p) => isPaneVisible(L, p))).toBe(true)
+    expect(PANES.map((p) => slotOf(L, p))).toEqual(['left', 'right', 'farRight', null])
+    // Nothing used together is a tab behind something else; the diff is under Details by default.
+    expect(PANES.filter((p) => p !== 'diff').every((p) => isPaneVisible(L, p))).toBe(true)
   })
 
   it('changes size and collapsed state of one slot only', () => {
@@ -149,6 +149,9 @@ describe('presets', () => {
     for (const id of PRESET_IDS) for (const p of PANES) expect(slotOf(showPane(PRESETS[id].layout, p), p), `${id} ${p}`).not.toBeNull()
     expect(slotOf(PRESETS.history.layout, 'ai')).toBeNull()
     expect(slotOf(PRESETS.stacks.layout, 'ai')).toBe('bottom')
+    // Review gives the diff a column of its own, the widest one.
+    expect(slotOf(PRESETS.review.layout, 'diff')).toBe('farRight')
+    expect(PRESETS.review.layout.farRight.size).toBeGreaterThan(PRESETS.review.layout.right.size * 2)
   })
 })
 
@@ -206,9 +209,9 @@ describe('normalizeLayout', () => {
 
   it('drops unknown ids, repeats and a bad active tab', () => {
     const l = normalizeLayout({
-      left: { panes: ['details', 'diff', 'details', 'branches'], active: 'ai', size: 300, collapsed: false },
+      left: { panes: ['details', 'terminal', 'details', 'branches'], active: 'ai', size: 300, collapsed: false },
       right: { panes: ['details', 'ai'], active: 'ai', size: 420, collapsed: false },
-      bottom: { panes: ['diff', 7, null], active: 'diff', size: 280, collapsed: false },
+      bottom: { panes: ['terminal', 7, null], active: 'terminal', size: 280, collapsed: false },
     })
     expect(l.left).toMatchObject({ panes: ['details', 'branches'], active: 'details' })
     expect(l.right).toMatchObject({ panes: ['ai'], active: 'ai' })

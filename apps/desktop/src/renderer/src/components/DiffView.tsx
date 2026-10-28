@@ -1,7 +1,7 @@
 import type { BlameLine, Commit, DiffTarget, FileDiff, HunkSelection, ReviewFinding } from '@gitgoose/shared'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import clsx from 'clsx'
-import { Ellipsis, Minus, Plus } from 'lucide-react'
+import { Ellipsis, Maximize2, Minimize2, Minus, Plus } from 'lucide-react'
 import { DropdownMenu } from 'radix-ui'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AskPanel } from './AskPanel'
@@ -12,7 +12,8 @@ import { ImageDiff, imageMime } from './ImageDiff'
 type SvgView = 'image' | 'text'
 /** The last choice for SVGs, kept while the app runs: it tends to hold across files. */
 let lastSvgView: SvgView = 'image'
-import { discard, openDiffTool, openFile, openInEditor, restoreFileFrom, run } from '../lib/actions'
+import { discard, openDiffTool, openFile, openInEditor, restoreFileFrom, run, toggleWideDiff } from '../lib/actions'
+import { modName } from '../lib/keys'
 import { api } from '../lib/api'
 import { formatDate, relativeTime, shortHash, splitPath } from '../lib/format'
 import { pairs, segments, splitRows, wordDiff, type Ranges } from '../lib/diffLayout'
@@ -57,6 +58,13 @@ export function FileView({ view, target, mode }: { view: RepoView; target: DiffT
             options={[{ value: 'diff', label: 'Diff' }, { value: 'history', label: 'History' }, { value: 'blame', label: 'Blame' }]} />
           {mode === 'diff' && <FileActions view={view} target={target} />}
           <FileMenu view={view} target={target} mode={mode} rev={rev} />
+          {/* Read wide: the file gets the centre, full height, like an editor's main pane. */}
+          <button onClick={() => toggleWideDiff(view.id)} data-testid="diff-wide" aria-pressed={view.diffWide}
+            title={view.diffWide ? 'Back to the layout (Esc)' : `Read wide (${modName()}+Shift+Enter)`}
+            aria-label={view.diffWide ? 'Back to the layout' : 'Read wide'}
+            className="no-drag flex size-row-lg items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground">
+            {view.diffWide ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+          </button>
         </div>
       </div>
       {mode === 'diff' && <DiffPane view={view} target={target} />}

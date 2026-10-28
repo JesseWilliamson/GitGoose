@@ -90,3 +90,20 @@ key the settings no longer have and is dropped on read.
   measure the log, the layout and painting, not the row's height.
 - Anything that opened a file through `center` now calls `openFile`. A new place that opens a
   file must too; the compiler enforces it, since `center: { kind: 'file' }` no longer type-checks.
+
+## Later: room for big diffs
+
+Living with the layouts showed every one of them squeezing the diff: half of Details' height, or
+one column's width. Two additions give it an editor's main pane:
+
+- **A Diff pane.** `diff` is a pane id: the file Details shows, in a column of its own at full
+  height. While it is in no slot (the default) Details shows the file under the commit as before;
+  while it is on screen, Details is the details only. The selection's first file is shared through
+  `lib/shownFile.ts`, so Details and the Diff pane always show the same file. The Review layout uses
+  it: a narrow graph, the commit's files, and the diff as the widest column.
+- **Reading wide** (`Mod+Shift+Enter`, or the button at the end of the file's header): the file
+  takes the centre at full height, Details stays beside it for its file list, and every other
+  column steps aside on screen only (like a workbench). Esc puts everything back as it was.
+
+The graph's rows also lost the author's name: the picture says who at a glance, the name is on
+hover, and the message keeps the width.

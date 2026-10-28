@@ -116,7 +116,7 @@ test('a co-authored commit stacks the avatars and names everyone on the row', as
   r.commit('Pair work\n\nCo-authored-by: Grace Hopper <grace@example.com>\nCo-authored-by: Alan Turing <alan@example.com>')
   const { app, page } = await launch(r.dir)
   const row = page.getByTestId('commit-row').filter({ hasText: 'Pair work' }).first()
-  await expect(row.getByTestId('row-author')).toHaveText('Ada Lovelace, Grace Hopper and Alan Turing')
+  await expect(row.getByTestId('row-author')).toHaveAttribute('aria-label', 'Ada Lovelace, Grace Hopper and Alan Turing')
   // One avatar each, the author's first: initials show while (or instead of) the images load.
   const stack = row.getByTestId('row-avatar')
   await expect(stack.getByTitle('Ada Lovelace <ada@example.com>')).toBeVisible()
@@ -124,7 +124,7 @@ test('a co-authored commit stacks the avatars and names everyone on the row', as
   await expect(stack.getByTitle('Alan Turing <alan@example.com>')).toBeVisible()
   // A commit with one author is unchanged: one avatar, the name on its own.
   const plain = page.getByTestId('commit-row').filter({ hasText: 'Commit 4' }).first()
-  await expect(plain.getByTestId('row-author')).toHaveText('Ada Lovelace')
+  await expect(plain.getByTestId('row-author')).toHaveAttribute('aria-label', 'Ada Lovelace')
   await expect(plain.getByTestId('row-avatar').locator('[title]')).toHaveCount(1)
   await app.close()
 })
@@ -143,7 +143,7 @@ test('one line per commit beside hollow nodes, text indented by the lanes, no mo
   const { app, page } = await launch(r.dir)
   const head = page.locator(`[data-testid="commit-row"][data-hash="${r.head()}"]`)
   // Refs, subject, then the author's avatar and name; HEAD starts selected, so it shows its SHA.
-  await expect(head.getByTestId('row-author')).toHaveText('Ada Lovelace')
+  await expect(head.getByTestId('row-author')).toHaveAttribute('aria-label', 'Ada Lovelace')
   await expect(head.getByTestId('row-sha')).toHaveText(r.head().slice(0, 7))
   await expect(head.getByTestId('row-avatar')).toContainText('AL')
   await expect(head.locator('[data-testid="ref-pill"][data-ref="refs/heads/main"]')).toBeVisible()
@@ -207,7 +207,7 @@ test('one line per commit: branches before the message, the SHA on the selected 
   await app.close()
 })
 
-test('author and date line up on the right; in a narrow graph the name, then the date, give way', async () => {
+test('the author\'s picture and the date line up on the right, with no names; a very narrow graph drops the date', async () => {
   const r = makeFixture('linear')
   // Dates the row shows differently: "2 h ago", "3 days ago", and the fixture's absolute ones.
   const now = Math.floor(Date.now() / 1000)
@@ -215,13 +215,14 @@ test('author and date line up on the right; in a narrow graph the name, then the
   r.git('commit', '-q', '--allow-empty', '-m', 'two hours old', `--date=${now - 2 * 3600} +0000`)
   const { app, page } = await launch(r.dir)
   await page.evaluate(() => window.gitgoose.setSettings({ dateFormat: 'relative' }))
-  // Wide: the graph is past 600 px, so every row has the author's name and the date.
+  // Wide: every row has the author's picture (the name only on hover) and the date.
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1800, 640))
   const dates = page.getByTestId('row-date')
   await expect(dates.first()).toHaveText('2 h ago')
   await expect(dates.first()).toBeVisible()
   await expect(dates.nth(1)).toHaveText('3 days ago')
-  await expect(page.getByTestId('row-author').first()).toContainText('Ada')
+  await expect(page.getByTestId('row-author').first()).toHaveAttribute('aria-label', 'Ada Lovelace')
+  await expect(page.getByTestId('row-author').first()).not.toContainText('Ada')
   for (const id of ['row-date', 'row-author']) {
     const boxes = await page.getByTestId(id).evaluateAll((els) => els.map((el) => {
       const b = el.getBoundingClientRect()
@@ -230,12 +231,11 @@ test('author and date line up on the right; in a narrow graph the name, then the
     expect(boxes.length).toBeGreaterThan(3)
     expect(new Set(boxes.map((b) => b.join())).size, `${id} columns line up`).toBe(1)
   }
-  // Narrow (the reading pane in a 1024 px window leaves the graph about 320 px): the picture
-  // stays, the name and the date go, and the message keeps the room.
+  // Very narrow (the reading pane in a 1024 px window leaves the graph about 320 px): the picture
+  // stays, the date goes, and the message keeps the room.
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1024, 640))
   await expect(dates.first()).toBeHidden()
   await expect(page.getByTestId('row-avatar').first()).toBeVisible()
-  await expect(page.getByTestId('row-author').first()).toBeHidden()
   await app.close()
 })
 

@@ -35,6 +35,7 @@ export const COMMANDS: KeyCommand[] = [
   { id: 'toggle-sidebar', label: 'Show or hide the Branches pane', defaults: ['mod+b'] },
   { id: 'toggle-details', label: 'Show or hide the Details pane', defaults: ['mod+alt+b'] },
   { id: 'toggle-bottom', label: 'Collapse or expand the bottom panel', defaults: ['mod+j'] },
+  { id: 'wide-diff', label: 'Read the file wide (full height, beside its file list), or go back', defaults: ['mod+shift+enter'] },
   // Mod+L, not the plan's Mod+Shift+L: that one has been Fetch for a long time.
   { id: 'line-view', label: 'Show only the selected line of history, or everything again', defaults: ['mod+l'] },
   { id: 'ai-chat', label: 'Show the AI pane and focus it, or hide it when it has focus', defaults: ['mod+shift+a'] },

@@ -1,6 +1,6 @@
-import { PRESETS, wideGraph, type Settings } from '@gitgoose/shared'
+import { PRESETS, wideGraph, type PresetId, type Settings } from '@gitgoose/shared'
 import { useEffect } from 'react'
-import { applyPatchFile, applyPatchFromClipboard, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, redo, showHistory, showWorkingCopy, stash, undo } from '../lib/actions'
+import { applyPatchFile, applyPatchFromClipboard, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, redo, showHistory, showWorkingCopy, stash, toggleWideDiff, undo } from '../lib/actions'
 import { comboOf, keymap } from '../lib/keys'
 import { goBack, goForward, installMouseNavigation, installNavigation } from '../lib/navigation'
 import { sonnerPresenter } from '../lib/toasts'
@@ -35,6 +35,9 @@ function useCommands() {
     const handle = (name: string) => {
       const s = useStore.getState()
       const id = s.active
+      // View → Workspace Layout: a preset by name (the current one again resets it).
+      const preset = name.startsWith('preset-') ? name.slice('preset-'.length) : ''
+      if (preset in PRESETS) return void saveSettings({ layoutPreset: preset as PresetId, layout: structuredClone(PRESETS[preset as PresetId].layout) })
       switch (name) {
         case 'open-repo': return void openRepoDialog()
         case 'clone-repo': return useStore.setState({ dialog: { kind: 'clone' } })
@@ -71,6 +74,7 @@ function useCommands() {
           else void redo(id)
           return
         case 'close-tab': return void closeTab(id)
+        case 'wide-diff': return toggleWideDiff(id)
         case 'fetch': return void fetchAll(id)
         case 'pull': return void pull(id)
         case 'push': return push(id)

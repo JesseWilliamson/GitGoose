@@ -6,14 +6,13 @@
 
 - Opening a repository shows the graph: hollow nodes on coloured lanes, and beside them one
   28px line per commit (ADR-011): the commit's branch and tag pills, then its subject, then the
-  author (a 16px avatar, with the name when the graph is wide enough) and the date in narrow
-  columns on the right, lined up from row to row. A merge's subject is muted; the short SHA shows
+  author's 16px avatar (the names on hover, never in the row) and the date in narrow columns on
+  the right, lined up from row to row. A merge's subject is muted; the short SHA shows
   on the selected row only. A row's text starts just past the lanes open at that point in
   history, so busy stretches indent, up to eight lanes; a node in a lane past that is left out
   rather than pinned on another branch's line. Every row is the same height: there are no month
   headings (they made rows uneven and broke up the lines; the date is on every row).
-- The graph pane is a CSS container: below 600px wide the author's name gives way to the avatar
-  alone, below 360px the date goes too; the message never does. There is one density and no
+- The graph pane is a CSS container: below 360px wide the date goes; the message never does. There is one density and no
   setting for it (there were two, Comfy and Compact, until ADR-011; a saved choice is ignored).
 - A detached HEAD gets a **HEAD** pill on its commit, in the checked-out branch's colours: with no
   branch checked out, nothing else says "you are here".

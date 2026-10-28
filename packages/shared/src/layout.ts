@@ -14,10 +14,15 @@ export const SLOTS: Slot[] = ['left', 'right', 'farRight', 'bottom']
 /** How a slot is named to the user ("Move to far right"). */
 export const SLOT_TITLES: Record<Slot, string> = { left: 'left', right: 'right', farRight: 'far right', bottom: 'bottom' }
 
-export type PaneId = 'branches' | 'details' | 'ai'
-export const PANES: PaneId[] = ['branches', 'details', 'ai']
+/**
+ * `diff` is the file Details shows, as a pane of its own: full height in a column of its own, the
+ * way an editor's main pane is. While it is in no slot (the default), Details shows the file under
+ * the commit instead.
+ */
+export type PaneId = 'branches' | 'details' | 'ai' | 'diff'
+export const PANES: PaneId[] = ['branches', 'details', 'ai', 'diff']
 
-export const PANE_TITLES: Record<PaneId, string> = { branches: 'Branches', details: 'Details', ai: 'AI' }
+export const PANE_TITLES: Record<PaneId, string> = { branches: 'Branches', details: 'Details', ai: 'AI', diff: 'Diff' }
 
 export interface SlotState {
   /** In tab order. */
@@ -39,7 +44,7 @@ export type PaneLayout = Record<Slot, SlotState>
 /** `right` holds Details with the file's diff under it (ADR-011), so it is the wide one. */
 export const DEFAULT_SIZES: Record<Slot, number> = { left: 224, right: 480, farRight: 320, bottom: 260 }
 /** The slot a hidden pane comes back to. */
-export const DEFAULT_SLOT: Record<PaneId, Slot> = { branches: 'left', details: 'right', ai: 'farRight' }
+export const DEFAULT_SLOT: Record<PaneId, Slot> = { branches: 'left', details: 'right', ai: 'farRight', diff: 'farRight' }
 
 /**
  * The reading pane (ADR-011): branches, the graph, the commit (details over its diff), the AI. Four
@@ -102,8 +107,8 @@ export const PRESETS: Record<PresetId, Preset> = {
   },
   review: {
     label: 'Review',
-    description: 'A narrow graph to step through commits, a wide diff, the AI beside it; branches hidden (option C).',
-    layout: arrange({ right: { panes: ['details'], size: 720 }, farRight: { panes: ['ai'], size: 340 } }),
+    description: 'Like an editor: a narrow graph, the commit\'s files, and the diff tall and wide beside them; the AI under the graph.',
+    layout: arrange({ right: { panes: ['details'], size: 300 }, farRight: { panes: ['diff'], size: 780 }, bottom: { panes: ['ai'], size: 240 } }),
   },
   history: {
     label: 'History',

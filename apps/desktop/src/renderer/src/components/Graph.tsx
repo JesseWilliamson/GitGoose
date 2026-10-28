@@ -62,10 +62,9 @@ function pillsFor(refs: readonly Ref[], headBranch: string | undefined, show: { 
 
 /**
  * The commit graph: one line per commit (ADR-011). The lanes, then the commit's branches and tags,
- * then its message, which gets the room; the author and the date sit in narrow columns on the
- * right so they line up from row to row. The pane is a CSS container: when it is narrow (the
- * reading pane has Details and the AI beside it), the author's name gives way to their picture,
- * then the date goes, without a measurement in script.
+ * then its message, which gets the room; the author's picture and the date sit in narrow columns
+ * on the right so they line up from row to row (the names are on the picture's hover). The pane is
+ * a CSS container: when it is very narrow, the date goes too, without a measurement in script.
  */
 export function Graph({ view }: { view: RepoView }) {
   return <GraphList view={view} />
@@ -549,9 +548,9 @@ const CommitRow = memo(function CommitRow(props: {
         <span className={clsx('min-w-0 flex-1 truncate', (row.merge || props.stash) && 'text-muted-foreground', props.stash && 'italic')}
           data-testid="row-subject">{subject}</span>
         {props.selected && <span className="shrink-0 font-mono text-2xs text-hint" data-testid="row-sha">{shortHash(commit.hash)}</span>}
-        <span className="ml-1.5 flex w-7 shrink-0 items-center gap-1.5 text-xs text-muted-foreground @[600px]:w-32" title={authorsTitle ?? `${commit.authorName} <${commit.authorEmail}>`}>
+        {/* Who: the picture only (the names are on hover), so the message keeps the width. */}
+        <span className="ml-1.5 flex shrink-0 items-center" data-testid="row-author" aria-label={authors} title={authorsTitle ?? `${commit.authorName} <${commit.authorEmail}>`}>
           <span data-testid="row-avatar" className="flex shrink-0"><AvatarStack people={people} size={AVATAR} max={2} /></span>
-          <span className="hidden min-w-0 truncate @[600px]:inline" data-testid="row-author">{authors}</span>
         </span>
         <span style={{ width: look.dateW }} className="hidden shrink-0 truncate text-right text-xs text-hint tabular-nums @[360px]:inline" data-testid="row-date">
           {formatDate(commit.authorDate, look.dateFormat)}

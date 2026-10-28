@@ -989,3 +989,8 @@ export function openFile(id: string, target: DiffTarget, mode: FileMode = 'diff'
   if (selected !== v.selected && selected.kind === 'commit') void ensureLoaded(id, selected.hash)
   changeLayout((l) => showPane(l, 'details'))
 }
+
+/** Read the file wide (the centre, full height) or go back to the layout as it was. */
+export function toggleWideDiff(id: string, on?: boolean): void {
+  updateRepo(id, (v) => ({ diffWide: on ?? !v.diffWide }))
+}

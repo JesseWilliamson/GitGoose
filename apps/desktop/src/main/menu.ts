@@ -1,7 +1,7 @@
 import { isPaneVisible, PRESET_IDS, PRESETS } from '@gitgoose/shared'
 import { app, Menu, type MenuItemConstructorOptions } from 'electron'
 import { broadcast } from './ipc'
-import { getSettings, onSettingsChanged, setSettings } from './settings'
+import { getSettings, onSettingsChanged } from './settings'
 
 /**
  * Native menu. Items that are app commands send a 'command' event; the renderer owns the logic
@@ -102,10 +102,11 @@ export function installMenu(): void {
         { label: 'Reset Layout', click: cmd('layout-default') },
         {
           // The arrangements to start from (layout.ts PRESETS); picking the current one again resets it.
+          // A command, not a write from here: the renderer makes every layout change, in order.
           label: 'Workspace Layout',
           submenu: PRESET_IDS.map((id): MenuItemConstructorOptions => ({
             id: `preset-${id}`, label: PRESETS[id].label, type: 'radio', checked: getSettings().layoutPreset === id,
-            click: () => setSettings({ layoutPreset: id, layout: structuredClone(PRESETS[id].layout) }),
+            click: cmd(`preset-${id}`),
           })),
         },
         // Holding Shift shows the line for as long as it is held; this keeps it on.
