@@ -3,7 +3,7 @@ import { Group, Panel, Separator, useGroupRef, usePanelRef, type GroupImperative
 import { useEffect, useRef, type RefObject } from 'react'
 import { changeLayout, saveLayout } from '../lib/panes'
 import { setting, useSetting, type RepoView } from '../lib/store'
-import { ConflictWizard } from './ConflictWizard'
+import { ChangesScene, ReadScene, ResolveScene } from './Scenes'
 import { Graph } from './Graph'
 import { CommandLogView } from './CommandLogView'
 import { ReflogView } from './ReflogView'
@@ -11,15 +11,14 @@ import { ReviewView } from './ReviewView'
 import { WalkthroughView } from './WalkthroughView'
 import { ImpactView } from './ImpactView'
 import { RecomposeView } from './RecomposeView'
-import { PaneDropZones, SlotView } from './Pane'
+import { SlotView } from './Pane'
+import { BranchTable } from './BranchTable'
 
 /**
- * The repository window (ADR-010, ADR-011): four slots around a fixed centre. The centre is the
- * graph (or a task that takes it over: a review, the conflict wizard, ...); the left, right, far
- * right and bottom slots hold panes as tabs. A file's diff is not a centre view: it shows in
- * Details, under the commit it belongs to, so the graph stays in view while you read it. Which pane is in which slot is the `layout` setting (packages/shared/src/layout.ts);
- * the dividers resize a slot (and collapse it, dragged past the minimum), and a slot with no
- * panes is not drawn at all.
+ * The repository window shows one scene at a time (ADR-012). Browse is the reading pane of ADR-011
+ * with its columns fixed: branches, the graph (or a task that takes it over: a review, the reflog,
+ * recompose), Details with the selection's first file, and the AI. The dividers resize a column
+ * (and collapse it, dragged past the minimum); a column with no pane is not drawn.
  */
 
 const MIN: Record<Slot, number> = { left: 160, right: 280, farRight: 240, bottom: 160 }
@@ -28,6 +27,14 @@ const SEPARATOR = 'bg-border transition-colors hover:bg-primary data-[separator-
 const COLUMNS = ['left', 'right', 'farRight'] as const
 
 export function Workspace({ view }: { view: RepoView }) {
+  // The reading scenes and Resolve take the window (ADR-012); Browse is the panes around the graph.
+  if (view.scene === 'read') return <ReadScene view={view} />
+  if (view.scene === 'changes') return <ChangesScene view={view} />
+  if (view.scene === 'resolve') return <ResolveScene view={view} />
+  return <BrowseScene view={view} />
+}
+
+function BrowseScene({ view }: { view: RepoView }) {
   const layout = useSetting('layout')
   const root = useRef<HTMLDivElement>(null)
   const columns = useGroupRef()
@@ -35,11 +42,11 @@ export function Workspace({ view }: { view: RepoView }) {
   // A workbench in the centre (recompose, the conflict wizard) needs the width, and Details has
   // nothing for it: Details steps aside while it is open and comes back after. Only on screen:
   // the layout is not changed, so leaving the task restores exactly what was there.
-  const workbench = view.center.kind === 'recompose' || view.center.kind === 'conflicts'
-  const shown = workbench ? { ...layout, right: { ...layout.right, collapsed: true } } : layout
+  // The branch table (B) takes the room of Details and the AI while it is open.
+  const workbench = view.center.kind === 'recompose' || view.branchTable
+  const shown = workbench ? { ...layout, right: { ...layout.right, collapsed: true }, ...(view.branchTable ? { farRight: { ...layout.farRight, collapsed: true } } : {}) } : layout
   useColumnWidths(columns, root, shown)
-  const center = view.center.kind === 'conflicts' ? <ConflictWizard view={view} />
-    : view.center.kind === 'reflog' ? <ReflogView view={view} />
+  const center = view.center.kind === 'reflog' ? <ReflogView view={view} />
     : view.center.kind === 'commands' ? <CommandLogView view={view} />
     : view.center.kind === 'review' ? <ReviewView view={view} />
     : view.center.kind === 'walkthrough' ? <WalkthroughView view={view} />
@@ -53,20 +60,16 @@ export function Workspace({ view }: { view: RepoView }) {
         {layout.left.panes.length > 0 && <SlotPanel slot="left" view={view} />}
         {layout.left.panes.length > 0 && <Separator id="sep-left" className={`w-px ${SEPARATOR}`} />}
         <Panel id="center" minSize={320}>
-          <Group orientation="vertical" className="h-full">
-            <Panel id="main" minSize={160}>
-              <main className="flex h-full min-w-0 flex-col">{center}</main>
-            </Panel>
-            {layout.bottom.panes.length > 0 && <Separator id="sep-bottom" className={`h-px ${SEPARATOR}`} />}
-            {layout.bottom.panes.length > 0 && <SlotPanel slot="bottom" view={view} />}
-          </Group>
+          <main className="flex h-full min-w-0">
+            <div className="flex min-w-0 flex-1 flex-col">{center}</div>
+            {view.branchTable && view.center.kind === 'graph' && <BranchTable view={view} />}
+          </main>
         </Panel>
         {layout.right.panes.length > 0 && <Separator id="sep-right" className={`w-px ${SEPARATOR}`} />}
         {layout.right.panes.length > 0 && <SlotPanel slot="right" view={view} held={workbench} />}
         {layout.farRight.panes.length > 0 && <Separator id="sep-farRight" className={`w-px ${SEPARATOR}`} />}
-        {layout.farRight.panes.length > 0 && <SlotPanel slot="farRight" view={view} />}
+        {layout.farRight.panes.length > 0 && <SlotPanel slot="farRight" view={view} held={view.branchTable} />}
       </Group>
-      <PaneDropZones />
     </div>
   )
 }
@@ -146,37 +149,12 @@ function useFoldWhenNarrow(root: RefObject<HTMLDivElement | null>) {
   }, [root])
 }
 
-/** A slot's panel: its size is a width (left, right) or a height (bottom) and persists per slot. */
+/** A column's panel: its width persists per column. */
 /** `held`: shown collapsed for a workbench, not by the user; its size changes then are not saved. */
 function SlotPanel({ slot, view, held = false }: { slot: Slot; view: RepoView; held?: boolean }) {
   const st = useSetting('layout')[slot]
   const ref = usePanelRef()
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  // The bottom slot collapses and expands when the setting changes (keyboard toggles, the palette,
-  // other windows). The columns are set all together by useColumnWidths.
-  useEffect(() => {
-    if (slot !== 'bottom') return
-    let frame = 0
-    let tries = 0
-    const apply = () => {
-      const p = ref.current
-      if (!p) return
-      try {
-        if (st.collapsed && !p.isCollapsed()) p.collapse()
-        else if (!st.collapsed && p.isCollapsed()) p.expand()
-        // A size set elsewhere (Reset layout) applies too; after a drag it already matches.
-        if (!st.collapsed && Math.abs(p.getSize().inPixels - st.size) > 2) p.resize(st.size)
-      } catch (e) {
-        // A panel that has just joined a running group has no measurements for a frame or two
-        // (its defaultSize is right already); try again once the group has laid it out.
-        if (++tries < 10) frame = requestAnimationFrame(apply)
-        else throw e
-      }
-    }
-    apply()
-    return () => cancelAnimationFrame(frame)
-  }, [slot, st.collapsed, st.size, ref])
 
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
 

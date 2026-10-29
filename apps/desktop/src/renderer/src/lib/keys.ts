@@ -34,10 +34,10 @@ export const COMMANDS: KeyCommand[] = [
   { id: 'zoom-reset', label: 'Actual size', defaults: ['mod+0'] },
   { id: 'toggle-sidebar', label: 'Show or hide the Branches pane', defaults: ['mod+b'] },
   { id: 'toggle-details', label: 'Show or hide the Details pane', defaults: ['mod+alt+b'] },
-  { id: 'toggle-bottom', label: 'Collapse or expand the bottom panel', defaults: ['mod+j'] },
   // Mod+L, not the plan's Mod+Shift+L: that one has been Fetch for a long time.
   { id: 'line-view', label: 'Show only the selected line of history, or everything again', defaults: ['mod+l'] },
-  { id: 'ai-chat', label: 'Show the AI pane and focus it, or hide it when it has focus', defaults: ['mod+shift+a'] },
+  // In Read and Changes the AI is the left column's other face (ADR-012), so the same key turns it.
+  { id: 'ai-chat', label: 'The AI: show and focus it, or hide it again', defaults: ['mod+j', 'mod+shift+a'] },
   // Tower's Workspace keys are Mod+1…5; here Mod+1…9 switch tabs (and Mod+0 is Actual Size), so
   // the Workspace takes Mod+Alt and the same digits. In the sidebar, Mod+0 goes to HEAD's branch too.
   { id: 'ws-working-copy', label: 'Workspace: Working Copy', defaults: ['mod+alt+1'] },
@@ -124,7 +124,15 @@ export const FIXED_KEYS: { keys: string; what: string }[] = [
   { keys: 'J / K  or  ↓ / ↑', what: 'Next / previous commit in the graph' },
   { keys: 'PageDown / PageUp, Home / End', what: 'Move through the graph faster' },
   { keys: 'mod+Enter', what: 'Commit (in the message box)' },
-  { keys: 'Esc', what: 'Close the diff or settings and return to the graph' },
+  { keys: '1 / 2 / 3 / 4', what: 'Browse / Read / Changes / Resolve (while an operation is stopped)' },
+  { keys: 'Space / Enter (in the graph)', what: 'Read the selection' },
+  { keys: 'J / K (reading)', what: 'Next / previous commit' },
+  { keys: 'n / p (reading)', what: 'Next / previous file' },
+  { keys: 'Space / Shift+Space (reading)', what: 'A screen down / up, on into the next file' },
+  { keys: 'v (reading)', what: 'Mark the file viewed' },
+  { keys: '\\ (reading)', what: 'Fold the left column for a wider reader' },
+  { keys: 'Shift+R (reading a commit)', what: 'Take the selected lines back out of the working copy' },
+  { keys: 'Esc', what: 'Back: closes what is open, then returns to Browse' },
   { keys: 'mod+1 … 9', what: 'Switch tab' },
   { keys: '?', what: 'This list' },
 ]

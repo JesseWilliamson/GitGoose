@@ -33,7 +33,7 @@ function chromeWindow(): BrowserWindow | undefined {
 
 /** Methods that change the repository. Each runs with the watcher held back, then pushes one snapshot. */
 const WRITES = new Set<ApiMethod>([
-  'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'checkout', 'createBranch',
+  'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'revertLines', 'ignorePaths', 'commit', 'checkout', 'createBranch',
   'renameBranch', 'renameBranchInto', 'pinBranch', 'cherryPickOnto', 'applyFileFrom', 'deleteBranch', 'merge', 'rebase', 'reset', 'cherryPick', 'cherryPickMany', 'recomposeApply', 'dropCommits', 'moveCommits', 'restoreFile', 'applySuggestion', 'writeFileChecked', 'checkoutPullRequest', 'mergeTool', 'lfsInstall', 'lfsTrack', 'lfsPull', 'lfsLock', 'applyPatch', 'setIdentity', 'bisectMark', 'bisectReset', 'setGraphFilter', 'updateSubmodules', 'syncSubmodules', 'addSubmodule', 'removeSubmodule', 'addWorktree', 'removeWorktree', 'lockWorktree', 'pruneWorktrees', 'addRemote', 'removeRemote', 'renameRemote', 'setRemoteUrl', 'pushTags',
   'deleteRemoteTag', 'setUpstream', 'fastForward', 'deleteBranches', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'redo', 'revert', 'createTag',
   'deleteTag', 'fetch', 'pull', 'push', 'deleteRemoteBranch', 'stashPush', 'snapshotWorkTree', 'stashBranch', 'stashApply', 'stashPop',
@@ -203,6 +203,7 @@ export function createHandlers(
     unstagePaths: (id, paths) => r(id).unstagePaths(paths),
     discardPaths: (id, paths) => r(id).discardPaths(paths),
     applySelection: (id, req) => r(id).applySelection(req),
+    revertLines: (id, req) => r(id).revertLines(req),
     ignorePaths: (id, paths) => r(id).ignorePaths(paths),
     commit: (id, message, opts) => r(id).commit(message, opts),
     // Peek and Impact answer from the code graph once the tree they need is indexed; they wait
@@ -309,6 +310,7 @@ export function createHandlers(
     deleteBranches: (id, names, opts) => r(id).deleteBranches(names, opts),
     mergedBranches: (id) => r(id).mergedBranches(),
     compareFiles: (id, from, to) => r(id).compareFiles(from, to),
+    rangeCommits: (id, base, tip, limit) => r(id).rangeCommits(base, tip, limit),
     mergeBase: (id, a, b) => r(id).mergeBase(a, b),
     restoreFile: (id, path, rev, opts) => r(id).restoreFile(path, rev, opts),
     openFileAt: async (id, rev, path) => {

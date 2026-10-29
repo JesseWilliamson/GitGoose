@@ -35,19 +35,35 @@ const LINE_W = 2.5
 const PENDING_DASH = '3 4'
 const STASH_DASH = '2 4'
 
-/** How wide lane `lane` is: LANE_W, or TIGHT_W past the first WIDE_LANES. */
-const laneW = (lane: number) => (lane >= WIDE_LANES ? TIGHT_W : LANE_W)
-/** Where lane `lane` starts, from the left edge of the lanes (not counting PAD). */
-const laneLeft = (lane: number) => Math.min(lane, WIDE_LANES) * LANE_W + Math.max(0, lane - WIDE_LANES) * TIGHT_W
+/**
+ * The spacing a graph is drawn with. The Browse graph uses the full spacing; the narrow graph in the
+ * reading scenes' left column (ADR-012) the same shape at half the pitch, so switching between them
+ * reads as a zoom and the left column keeps room for subjects.
+ */
+export interface LaneGeom {
+  laneW: number
+  tightW: number
+  pad: number
+  /** Node radius and line width. */
+  r: number
+  line: number
+}
+export const WIDE_GEOM: LaneGeom = { laneW: LANE_W, tightW: TIGHT_W, pad: PAD, r: 5.5, line: 2.5 }
+export const NARROW_GEOM: LaneGeom = { laneW: 12, tightW: 8, pad: 4, r: 3.5, line: 2 }
+
+/** How wide lane `lane` is: laneW, or tightW past the first WIDE_LANES. */
+const laneW = (lane: number, g: LaneGeom = WIDE_GEOM) => (lane >= WIDE_LANES ? g.tightW : g.laneW)
+/** Where lane `lane` starts, from the left edge of the lanes (not counting the pad). */
+const laneLeft = (lane: number, g: LaneGeom = WIDE_GEOM) => Math.min(lane, WIDE_LANES) * g.laneW + Math.max(0, lane - WIDE_LANES) * g.tightW
 /** The x of a lane's line and nodes. */
-export const laneX = (lane: number) => PAD + laneLeft(lane) + laneW(lane) / 2
+export const laneX = (lane: number, g: LaneGeom = WIDE_GEOM) => g.pad + laneLeft(lane, g) + laneW(lane, g) / 2
 
 /**
  * How wide the graph part of a row is: just past the lanes it uses. The text of a commit on a busy
  * stretch of history starts further right than one on a quiet stretch, which is what makes the
- * shape of the history readable without a fixed column. Never more than 166 px.
+ * shape of the history readable without a fixed column. Never more than 166 px (83 narrow).
  */
-export const cellWidth = (lanes: number) => PAD + laneLeft(Math.min(MAX_LANES, Math.max(MIN_LANES, lanes)))
+export const cellWidth = (lanes: number, g: LaneGeom = WIDE_GEOM) => g.pad + laneLeft(Math.min(MAX_LANES, Math.max(MIN_LANES, lanes)), g)
 
 /**
  * One row of the graph as SVG. The layout already decided everything; this only draws the
@@ -60,8 +76,9 @@ export const cellWidth = (lanes: number) => PAD + laneLeft(Math.min(MAX_LANES, M
  * A stash is a tinted card with an archive box, and its line down to the commit it was made on
  * is dashed (the layout marks it): a stash sits beside history, it is not part of it.
  */
-export const GraphCell = memo(function GraphCell({ row, width, showPending, isHead, h = ROW_H, stash, lineAbove, lineAboveColor = 0, lineBelow = false }: {
+export const GraphCell = memo(function GraphCell({ row, width, showPending, isHead, h = ROW_H, stash, lineAbove, lineAboveColor = 0, lineBelow = false, geom = WIDE_GEOM }: {
   row: Row
+  geom?: LaneGeom
   width: number
   showPending: boolean
   isHead: boolean
@@ -85,11 +102,12 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
   // the edge would put a dot on top of the last visible lane's line, reading as a commit on a
   // branch it has nothing to do with. The row still shows the lines that pass through it.
   const lane = lineAbove === undefined ? row.lane : 0
-  const cx = laneX(lane)
+  const cx = laneX(lane, geom)
   // The node's whole lane has to fit in the width.
-  const offscreen = cx + laneW(lane) / 2 > width + 2
+  const offscreen = cx + laneW(lane, geom) / 2 > width + 2
   const color = laneColor(row.color)
-  const r = NODE_R
+  const r = geom.r
+  const LINE_W = geom.line
   return (
     <svg width={width} height={h} className="block shrink-0 overflow-hidden" aria-hidden data-node={row.merge ? 'merge' : 'commit'}
       data-offscreen={offscreen || undefined}>
@@ -97,7 +115,7 @@ export const GraphCell = memo(function GraphCell({ row, width, showPending, isHe
         if (e.pending && !showPending) return null
         const dashed = e.pending ? PENDING_DASH : e.stash ? STASH_DASH : undefined
         return (
-          <path key={i} d={edgePath(e.part, laneX(e.from), laneX(e.to), h)} fill="none" stroke={laneColor(e.color)} strokeWidth={e.stash ? 2 : LINE_W}
+          <path key={i} d={edgePath(e.part, laneX(e.from, geom), laneX(e.to, geom), h)} fill="none" stroke={laneColor(e.color)} strokeWidth={e.stash ? 2 : LINE_W}
             strokeLinecap="round" strokeLinejoin="round" strokeDasharray={dashed} opacity={e.pending ? 0.7 : e.stash ? 0.8 : 1}
             data-edge={e.stash ? 'stash' : e.pending ? 'pending' : undefined} />
         )
@@ -140,17 +158,17 @@ function StashNode({ cx, cy, r, color }: { cx: number; cy: number; r: number; co
  * The "uncommitted changes" node: hollow and dashed with a pencil, in HEAD's lane, joined to HEAD
  * below by a straight dashed line (the layout keeps HEAD's column for it all the way down).
  */
-export function WipCell({ width, hasHead, h = ROW_H, lane, color }: {
-  width: number; hasHead: boolean; h?: number; lane: number; color: number
+export function WipCell({ width, hasHead, h = ROW_H, lane, color, geom = WIDE_GEOM }: {
+  width: number; hasHead: boolean; h?: number; lane: number; color: number; geom?: LaneGeom
 }) {
-  const cx = laneX(lane)
+  const cx = laneX(lane, geom)
   const stroke = laneColor(color)
   // A little bigger than a ring: the pencil needs the room.
-  const r = NODE_R + 2
+  const r = geom.r + 2
   const s = r / 9
   return (
     <svg width={width} height={h} className="block shrink-0" aria-hidden data-testid="wip-node" data-lane={lane}>
-      {hasHead && <path d={`M${cx} ${h / 2 + r}V${h}`} stroke={stroke} strokeWidth={LINE_W} strokeDasharray={PENDING_DASH} opacity={0.7} data-testid="wip-line" />}
+      {hasHead && <path d={`M${cx} ${h / 2 + r}V${h}`} stroke={stroke} strokeWidth={geom.line} strokeDasharray={PENDING_DASH} opacity={0.7} data-testid="wip-line" />}
       <circle cx={cx} cy={h / 2} r={r} fill="var(--gs-bg)" stroke={stroke} strokeWidth={2} strokeDasharray="3 2" />
       {/* A pencil: "you are editing here". */}
       <path transform={`translate(${cx} ${h / 2}) scale(${s})`} d="M-3 3l1-3 4-4 2 2-4 4z" fill={stroke} />

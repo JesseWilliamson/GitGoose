@@ -1,6 +1,6 @@
 import { DEFAULT_LAYOUT, wideGraph, type Settings } from '@gitgoose/shared'
 import { useEffect } from 'react'
-import { applyPatchFile, applyPatchFromClipboard, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, redo, showHistory, showWorkingCopy, stash, undo } from '../lib/actions'
+import { applyPatchFile, applyPatchFromClipboard, reviewBranch, fetchAll, initRepo, newBranch, openRepoDialog, openTerminal, pop, pull, push, redo, showHistory, showWorkingCopy, stash, undo } from '../lib/actions'
 import { comboOf, keymap } from '../lib/keys'
 import { goBack, goForward, installMouseNavigation, installNavigation } from '../lib/navigation'
 import { sonnerPresenter } from '../lib/toasts'
@@ -18,9 +18,10 @@ import { Toolbar } from './Toolbar'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Welcome } from './Welcome'
-import { toggleBottom, togglePane } from '../lib/panes'
+import { togglePane } from '../lib/panes'
 import { Workspace } from './Workspace'
 import { toggleChat } from '../lib/thread'
+import { readSelection, SCENES, setFace, setScene, type Scene } from '../lib/scenes'
 
 setToastPresenter(sonnerPresenter)
 
@@ -51,11 +52,26 @@ function useCommands() {
           return void saveSettings({ sidebarTags: name.slice('sidebar-tags-'.length) as Settings['sidebarTags'] })
         case 'toggle-sidebar': return togglePane('branches')
         case 'toggle-details': return togglePane('details')
-        case 'toggle-bottom': return toggleBottom()
         // The View menu's checkbox: show or hide, unlike the key, which also focuses.
-        case 'toggle-ai-pane': return togglePane('ai')
+        case 'toggle-ai-pane': {
+          const v = id ? s.repos[id] : undefined
+          if (v && v.scene !== 'browse') return setFace(v.id, v.read.face === 'ai' ? 'around' : 'ai')
+          return togglePane('ai')
+        }
         case 'layout-default': return void saveSettings({ layout: structuredClone(DEFAULT_LAYOUT) })
         case 'layout-wide-graph': return void saveSettings({ layout: wideGraph(setting('layout')) })
+        case 'scene-browse': case 'scene-read': case 'scene-changes': case 'scene-resolve': {
+          const scene = name.slice('scene-'.length) as Scene
+          if (!id) return
+          if (scene === 'read' && s.repos[id]?.scene !== 'read') return readSelection(id)
+          return setScene(id, scene)
+        }
+        case 'branch-table': {
+          if (!id) return
+          const v = s.repos[id]!
+          if (v.scene !== 'browse') setScene(id, 'browse')
+          return updateRepo(id, { branchTable: !(v.scene === 'browse' && v.branchTable), center: { kind: 'graph' } })
+        }
         case 'back': return goBack()
         case 'forward': return goForward()
       }
@@ -84,7 +100,12 @@ function useCommands() {
         case 'reflog': return updateRepo(id, { center: { kind: 'reflog' } })
         case 'command-log': return updateRepo(id, { center: { kind: 'commands' } })
         case 'line-view': return toggleLine(id)
-        case 'ai-chat': return toggleChat()
+        case 'ai-chat': {
+          // In a reading scene the AI is the left column's other face; in Browse, its pane.
+          const v = s.repos[id]
+          if (v && v.scene !== 'browse') return setFace(id, v.read.face === 'ai' ? 'around' : 'ai')
+          return toggleChat()
+        }
         // Workspace items (the sidebar handles Stashes, Pull Requests and the current branch itself).
         case 'ws-working-copy': return showWorkingCopy(id)
         case 'ws-history': return showHistory(id)
@@ -96,6 +117,46 @@ function useCommands() {
       if (e.key === 'Escape' && useStore.getState().page && !useStore.getState().dialog && !useStore.getState().omni) {
         useStore.setState({ page: null })
         return
+      }
+      // 1–4 switch scenes (ADR-012), when nothing else has the keyboard.
+      if (/^[1-4]$/.test(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey && !isTyping() && !useStore.getState().dialog && !useStore.getState().omni && !useStore.getState().page) {
+        const id = useStore.getState().active
+        const scene = SCENES[Number(e.key) - 1]!
+        if (id) {
+          e.preventDefault()
+          if (scene === 'read' && useStore.getState().repos[id]?.scene !== 'read') readSelection(id)
+          else setScene(id, scene)
+        }
+        return
+      }
+      // Space in Browse reads the selection, when focus is nowhere in particular (the graph's
+      // own list handles it while it has focus; a button with focus would click).
+      if (e.key === ' ' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && (document.activeElement === document.body || document.activeElement === null)
+        && !useStore.getState().dialog && !useStore.getState().omni && !useStore.getState().page) {
+        const id = useStore.getState().active
+        if (id && useStore.getState().repos[id]?.scene === 'browse') {
+          e.preventDefault()
+          readSelection(id)
+          return
+        }
+      }
+      // B in Browse: the branch table beside the graph.
+      if (e.key === 'b' && !e.metaKey && !e.ctrlKey && !e.altKey && !isTyping() && !useStore.getState().dialog && !useStore.getState().omni && !useStore.getState().page) {
+        const v = useStore.getState().repos[useStore.getState().active ?? '']
+        if (v?.scene === 'browse') {
+          e.preventDefault()
+          return runCommand('branch-table')
+        }
+      }
+      // R in Browse: review the current branch in Read.
+      if (e.key === 'r' && !e.metaKey && !e.ctrlKey && !e.altKey && !isTyping() && !useStore.getState().dialog && !useStore.getState().omni && !useStore.getState().page) {
+        const v = useStore.getState().repos[useStore.getState().active ?? '']
+        const ref = v && v.scene === 'browse' && v.snapshot.head.branch ? v.snapshot.refs.find((x) => x.name === `refs/heads/${v.snapshot.head.branch}`) : undefined
+        if (v && ref) {
+          e.preventDefault()
+          void reviewBranch(v.id, ref)
+          return
+        }
       }
       if (e.key === '?' && !isTyping() && !useStore.getState().dialog) {
         e.preventDefault()

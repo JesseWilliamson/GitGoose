@@ -5,14 +5,15 @@ import clsx from 'clsx'
 import { Archive, Cloud, Crosshair, Laptop, Tag } from 'lucide-react'
 import { ContextMenu } from 'radix-ui'
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from 'react'
-import { bisectMark, bisectReset, checkout, checkoutRow, showAllInGraph } from '../lib/actions'
+import { bisectMark, bisectReset, checkout, checkoutRow, readFresh, showAllInGraph } from '../lib/actions'
 import { avatarSrc } from '../lib/avatar'
 import { startDrag, type DropTarget } from '../lib/dnd'
 import { authorLine, formatDate, laneColor, shortHash, stashLabel } from '../lib/format'
 import { lineEnded, lineIndexOf, lineThrough } from '../lib/lineView'
 import { ensureLoaded, getLog, loadMore, selectCommit, selectedHashes, selectionCursor, setLine, updateRepo, useSetting, useStore, type RepoView } from '../lib/store'
 import { AvatarStack, type StackedAuthor } from './Avatar'
-import { cellWidth, GraphCell, ROW_H, WipCell } from './GraphCell'
+import { readSelection } from '../lib/scenes'
+import { cellWidth, GraphCell, NARROW_GEOM, ROW_H, WIDE_GEOM, WipCell, type LaneGeom } from './GraphCell'
 import { GraphMenu } from './menus'
 import { Spinner } from './ui'
 
@@ -67,8 +68,8 @@ function pillsFor(refs: readonly Ref[], headBranch: string | undefined, show: { 
  * reading pane has Details and the AI beside it), the author's name gives way to their picture,
  * then the date goes, without a measurement in script.
  */
-export function Graph({ view }: { view: RepoView }) {
-  return <GraphList view={view} />
+export function Graph({ view, narrow = false }: { view: RepoView; narrow?: boolean }) {
+  return <GraphList view={view} narrow={narrow} />
 }
 
 /** Settings that change how rows render, read once per list and passed down (rows are memoized). */
@@ -80,21 +81,25 @@ export interface RowLook {
   showTags: boolean
   /** The date column's width (DATE_W), the same on every row. */
   dateW: number
+  /** Lane spacing: the full one, or the narrow graph's in the reading scenes' left column. */
+  geom: LaneGeom
+  /** Branch pills shown before "+N". */
+  pills: number
 }
 
 /** Repositories whose first rows have been marked (see GraphList). */
 const rowsMarked = new Set<string>()
 
-function GraphList({ view }: { view: RepoView }) {
+function GraphList({ view, narrow }: { view: RepoView; narrow: boolean }) {
   const rowH = ROW_H
   const dateFormat = useSetting('dateFormat')
   const showRemotes = useSetting('showRemoteBranches')
   const showTags = useSetting('showTags')
   const avatars = useSetting('avatars')
   const log = getLog(view.id)
-  const dateW = DATE_W[dateFormat] ?? 84
-  const look = useMemo<RowLook>(() => ({ rowH, dateFormat, showRemotes, showTags, avatars, dateW }),
-    [rowH, dateFormat, showRemotes, showTags, avatars, dateW])
+  const dateW = narrow ? 52 : DATE_W[dateFormat] ?? 84
+  const look = useMemo<RowLook>(() => ({ rowH, dateFormat: narrow ? 'short' : dateFormat, showRemotes, showTags, avatars, dateW, geom: narrow ? NARROW_GEOM : WIDE_GEOM, pills: narrow ? 1 : 2 }),
+    [rowH, dateFormat, showRemotes, showTags, avatars, dateW, narrow])
   const snap = view.snapshot
 
   // The line view (lib/lineView.ts): only the rows on the line through `anchor`, or all rows.
@@ -193,8 +198,11 @@ function GraphList({ view }: { view: RepoView }) {
   const lastScrolled = useRef(-1)
   useEffect(() => {
     if (selectedIndex >= 0 && selectedIndex !== lastScrolled.current) {
+      // The first time (a graph that has just mounted, like the reading scenes' narrow one), the
+      // selected row goes to the middle, with history on both sides of it.
+      const first = lastScrolled.current < 0
       lastScrolled.current = selectedIndex
-      virt.scrollToIndex(selectedIndex, { align: 'auto' })
+      virt.scrollToIndex(selectedIndex, { align: first ? 'center' : 'auto' })
     }
   }, [selectedIndex, virt])
 
@@ -274,6 +282,8 @@ function GraphList({ view }: { view: RepoView }) {
     else if (e.key === 'PageUp') { e.preventDefault(); select(cur - 20) }
     else if (e.key === 'Home') { e.preventDefault(); select(0) }
     else if (e.key === 'End') { e.preventDefault(); select(lastSelectable) }
+    // Read what is selected: the diff takes the screen (ADR-012).
+    else if ((e.key === ' ' || e.key === 'Enter') && view.scene === 'browse') { e.preventDefault(); readSelection(view.id) }
   }
 
   // The WIP row and the first commit share HEAD's lane; the WIP row makes room for as many
@@ -283,6 +293,7 @@ function GraphList({ view }: { view: RepoView }) {
   return (
     <div className="@container relative flex min-h-0 min-w-0 flex-1 flex-col">
       <BisectBar view={view} />
+      {!narrow && <FreshBar view={view} />}
       <FilterBar view={view} />
       <ContextMenu.Root>
         <ContextMenu.Trigger asChild>
@@ -300,7 +311,7 @@ function GraphList({ view }: { view: RepoView }) {
                 const style = { position: 'absolute' as const, top: 0, left: 0, right: 0, height: item.size, transform: `translateY(${item.start}px)` }
                 const r = rowOf(i)
                 if (r === -1) {
-                  return <WipRow key="wip" style={style} view={view} cellW={cellWidth(visible ? 1 : wipLanes)} look={look} selected={view.selected.kind === 'wip'}
+                  return <WipRow key="wip" style={style} view={view} cellW={cellWidth(visible ? 1 : wipLanes, look.geom)} look={look} selected={view.selected.kind === 'wip'}
                     lane={visible ? 0 : log.layout.headLane} color={log.layout.headColor} />
                 }
                 const commit = log.commits[r]
@@ -327,6 +338,7 @@ function GraphList({ view }: { view: RepoView }) {
                     isHead={commit.hash === snap.head.hash}
                     detachedHead={!!snap.head.detached && commit.hash === snap.head.hash}
                     selected={selectedSet.has(commit.hash)}
+                    fresh={!!view.fresh?.hashes.has(commit.hash)}
                     editable={editableSet.has(commit.hash)}
                     stash={commit.stash ? stashByHash.get(commit.hash) : undefined}
                     bisect={bisectMarks?.get(commit.hash)}
@@ -395,7 +407,7 @@ function WipRow({ style, view, cellW, look, selected, lane, color }: {
       className="group flex items-center text-sm"
     >
       <div className={clsx('pointer-events-none absolute inset-y-0.5 right-1 rounded-sm', selected ? 'bg-select' : 'group-hover:bg-accent')} style={{ left: cellW - 2 }} />
-      <WipCell width={cellW} hasHead={!!view.snapshot.head.hash} h={look.rowH} lane={lane} color={color} />
+      <WipCell width={cellW} hasHead={!!view.snapshot.head.hash} h={look.rowH} lane={lane} color={color} geom={look.geom} />
       <div className="relative flex h-full min-w-0 flex-1 items-center gap-2 pr-3 pl-1 whitespace-nowrap text-muted-foreground italic">
         <span className="min-w-0 truncate">{label}</span>
         {counts}
@@ -422,6 +434,8 @@ const CommitRow = memo(function CommitRow(props: {
   refs: Ref[] | undefined
   headBranch: string | undefined
   isHead: boolean
+  /** New since the last fetch: a dot before the row. */
+  fresh: boolean
   /** HEAD is detached at this commit: it gets a HEAD pill, since no branch pill says "you are here". */
   detachedHead: boolean
   selected: boolean
@@ -446,7 +460,7 @@ const CommitRow = memo(function CommitRow(props: {
   const pills = useMemo(() => (props.refs ? pillsFor(props.refs, props.headBranch, { remotes: look.showRemotes, tags: look.showTags }) : []),
     [props.refs, props.headBranch, look.showRemotes, look.showTags])
   const head = props.detachedHead
-  const cellW = cellWidth(props.lineAbove === undefined ? row.width : 1)
+  const cellW = cellWidth(props.lineAbove === undefined ? row.width : 1, look.geom)
 
   /**
    * Drag the commit (or the selection it is part of) somewhere: onto another row to move or squash
@@ -539,13 +553,14 @@ const CommitRow = memo(function CommitRow(props: {
         style={{ left: cellW - 2, top: 2, bottom: 2 }}
         data-testid="row-tint"
       />
-      <GraphCell row={row} width={cellW} showPending={props.showPending} isHead={props.isHead} h={look.rowH} stash={!!commit.stash}
+      <GraphCell row={row} width={cellW} showPending={props.showPending} isHead={props.isHead} h={look.rowH} stash={!!commit.stash} geom={look.geom}
         lineAbove={props.lineAbove} lineAboveColor={props.lineAboveColor} lineBelow={props.lineBelow} />
       {/* Branches and tags first: they are labels on the commit, read before its message. A merge's
           message is muted (it says where history came from, not what changed); the SHA shows on
           the selected row, where you would copy it. */}
       <div className="relative flex min-w-0 flex-1 items-center gap-1.5 pr-3 pl-1" data-testid="row-body">
-        {marks(2)}
+        {props.fresh && <span className="size-1.5 shrink-0 rounded-full bg-primary" data-testid="row-fresh" title="New since the last fetch" />}
+        {marks(look.pills)}
         <span className={clsx('min-w-0 flex-1 truncate', (row.merge || props.stash) && 'text-muted-foreground', props.stash && 'italic')}
           data-testid="row-subject">{subject}</span>
         {props.selected && <span className="shrink-0 font-mono text-2xs text-hint" data-testid="row-sha">{shortHash(commit.hash)}</span>}
@@ -606,6 +621,27 @@ function HeadPill() {
       className="flex h-[18px] shrink-0 items-center gap-1 rounded-[4px] bg-primary px-1.5 text-2xs font-semibold text-primary-foreground">
       <Crosshair size={10} className="shrink-0" /> HEAD
     </span>
+  )
+}
+
+/**
+ * After a fetch that brought something: how much, which branches moved, and one click to read it
+ * all oldest first (the catch-up workflow). The new commits keep their dot until this is cleared.
+ */
+function FreshBar({ view }: { view: RepoView }) {
+  const f = view.fresh
+  if (!f) return null
+  const n = f.hashes.size
+  const moved = f.moved.filter((m) => m.to).map((m) => m.ref.replace(/^refs\/remotes\//, ''))
+  return (
+    <div className="flex h-7 shrink-0 items-center gap-2 border-b border-border bg-primary/10 px-3 text-xs" data-testid="fresh-bar">
+      <span className="size-1.5 shrink-0 rounded-full bg-primary" />
+      <span className="min-w-0 flex-1 truncate" title={moved.join('\n')}>
+        {n.toLocaleString()} new {n === 1 ? 'commit' : 'commits'} since the fetch{moved.length ? ` · ${moved.slice(0, 3).join(', ')}${moved.length > 3 ? ` and ${moved.length - 3} more` : ''} moved` : ''}
+      </span>
+      <button onClick={() => readFresh(view.id)} className="rounded px-1.5 font-medium text-primary hover:bg-accent" data-testid="fresh-read">Read them</button>
+      <button onClick={() => updateRepo(view.id, { fresh: null })} className="rounded px-1.5 text-muted-foreground hover:bg-accent">Clear</button>
+    </div>
   )
 }
 

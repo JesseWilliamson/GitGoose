@@ -224,17 +224,5 @@ test('one header and one composer box: New and History live in the tab strip, th
   await expect(page.locator('[data-testid^="prompt-button-"]')).toBeVisible()
   await page.keyboard.press('Escape')
 
-  // The tab's ⋯ is there for tests and keyboards but only visible on hover, or while its menu is open.
-  const menu = page.getByTestId('pane-menu-ai')
-  await page.mouse.move(300, 300)
-  await expect(menu).toHaveCSS('opacity', '0')
-  await page.getByTestId('pane-tab-ai').hover()
-  await expect(menu).toHaveCSS('opacity', '1')
-  // A right-click on the tab opens the same menu.
-  await page.mouse.move(300, 300)
-  await page.getByTestId('pane-tab-ai').click({ button: 'right' })
-  await expect(page.getByRole('menuitem', { name: 'Hide' })).toBeVisible()
-  await expect(menu).toHaveCSS('opacity', '1')
-  await page.keyboard.press('Escape')
   await app.close()
 })

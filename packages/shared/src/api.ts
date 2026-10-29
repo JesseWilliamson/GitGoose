@@ -1,6 +1,6 @@
 import type {
   BlameLine, ChangedFile, ChangeInsights, CodeGraphStatus, CodePeek, CommandRecord, GraphFilter, ImageSide, LfsInfo, LfsLock, Identity, Person, Commit, CommitDetails, CommitSummary, ConflictFile, DiffTarget, FileDiff, RepoSnapshot,
-  ReflogEntry, Remote, SearchField, Submodule, Worktree, StashEntry, StreamFile, StreamTarget, UndoEntry,
+  ReflogEntry, Remote, SearchField, Submodule, Worktree, StashEntry, StreamFile, StreamTarget, UndoEntry, FetchDigest,
 } from './index'
 import type {
   AgentInfo, AiArtifactResult, AiModelList, PromptPreview, AiPermissionRequest, AiResult, AiRunOptions, AiStatus, AiTarget, AiTask, AiThread, AiUpdate, ArtifactKind, AskThread, ImpactResult, LinterInfo, PermissionAnswer, PushCheck, PushCheckPlan,
@@ -231,6 +231,8 @@ export interface GitGooseApi {
   unstagePaths(repoId: string, paths: string[]): Promise<void>
   discardPaths(repoId: string, paths: string[]): Promise<UndoId>
   applySelection(repoId: string, req: SelectionRequest): Promise<UndoId>
+  /** Take the selected lines of a commit's change back out of the working copy (undoable). */
+  revertLines(repoId: string, req: { hash: string; path: string; hunks: HunkSelection[]; context?: number }): Promise<UndoId>
   /** Append the paths to the repository's top-level .gitignore. */
   ignorePaths(repoId: string, paths: string[]): Promise<UndoId>
   /** `noVerify` skips the commit hooks. */
@@ -328,6 +330,8 @@ export interface GitGooseApi {
   fixupInto(repoId: string, target: string): Promise<UndoId>
   /** Files that differ between two revisions, or a revision and the working tree (`to` null). */
   compareFiles(repoId: string, from: string, to: string | null): Promise<ChangedFile[]>
+  /** The commits `tip` has that `base` has not, newest first (at most `limit`, default 300). */
+  rangeCommits(repoId: string, base: string, tip: string, limit?: number): Promise<string[]>
   /** Where two revisions forked from each other. */
   mergeBase(repoId: string, a: string, b: string): Promise<string>
   /** Put a working-tree file back to its content at `rev` (undoable). */
@@ -362,7 +366,8 @@ export interface GitGooseApi {
   deleteTag(repoId: string, name: string): Promise<UndoId>
 
   // Remotes
-  fetch(repoId: string, opts?: { remote?: string; prune?: boolean }): Promise<void>
+  /** Fetch, and what it brought (the remote branches that moved, the new commits). */
+  fetch(repoId: string, opts?: { remote?: string; prune?: boolean }): Promise<FetchDigest>
   /** Pull HEAD's upstream, or with `remote` and `branch` that remote branch, into HEAD. */
   pull(repoId: string, opts?: { mode?: PullMode; remote?: string; branch?: string }): Promise<UndoId>
   push(repoId: string, opts?: { force?: boolean; branch?: string; remote?: string; remoteBranch?: string }): Promise<void>
@@ -422,9 +427,9 @@ export const API_METHODS = [
   'aiThreadOpen', 'aiThreadSend', 'aiThreadCancel', 'aiThreadClose', 'aiThreads', 'aiThreadsStale', 'aiThreadResult', 'aiThreadDelete', 'aiThreadPermission', 'aiThreadArtifact', 'openExternal',
   'snapshot', 'logPage', 'commitDetails', 'diff', 'diffStream', 'fileHistory', 'blame', 'search', 'searchCommits', 'listFiles', 'stashList', 'reflog', 'setGraphFilter', 'submodules', 'updateSubmodules', 'syncSubmodules', 'addSubmodule', 'removeSubmodule', 'worktrees', 'addWorktree', 'removeWorktree', 'lockWorktree', 'pruneWorktrees',
   'lastCommitMessage',
-  'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'ignorePaths', 'commit', 'codePeek', 'codeGraphStatus', 'reindexCode', 'impact', 'askThreads', 'saveAskThread', 'deleteAskThread', 'reviewLearnings', 'setReviewLearnings', 'linters', 'decideLinter', 'pushCheckPlan', 'pushCheckRules', 'setPushChecks', 'changeInsights', 'applySuggestion', 'writeFileChecked', 'workingText', 'lfsInfo', 'lfsInstall', 'lfsTrack', 'lfsPull', 'lfsLocks', 'lfsLock', 'commandLog', 'bisectMark', 'bisectReset', 'identity', 'setIdentity', 'commitTemplate', 'recentAuthors',
+  'stagePaths', 'unstagePaths', 'discardPaths', 'applySelection', 'revertLines', 'ignorePaths', 'commit', 'codePeek', 'codeGraphStatus', 'reindexCode', 'impact', 'askThreads', 'saveAskThread', 'deleteAskThread', 'reviewLearnings', 'setReviewLearnings', 'linters', 'decideLinter', 'pushCheckPlan', 'pushCheckRules', 'setPushChecks', 'changeInsights', 'applySuggestion', 'writeFileChecked', 'workingText', 'lfsInfo', 'lfsInstall', 'lfsTrack', 'lfsPull', 'lfsLocks', 'lfsLock', 'commandLog', 'bisectMark', 'bisectReset', 'identity', 'setIdentity', 'commitTemplate', 'recentAuthors',
   'checkout', 'createBranch', 'renameBranch', 'renameBranchInto', 'lastFetched', 'pinnedBranches', 'pinBranch', 'deleteBranch', 'merge', 'rebase', 'reset',
-  'cherryPick', 'cherryPickMany', 'cherryPickOnto', 'applyFileFrom', 'commitsText', 'recomposeApply', 'compareFiles', 'mergeBase', 'restoreFile', 'diffTool', 'mergeTool', 'imagePair', 'savePatches', 'pickPatch', 'applyPatch', 'openFileAt', 'saveFileAt', 'editableCommits', 'dropCommits', 'moveCommits', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'preparedMessage', 'redo', 'redoList', 'revert', 'createTag', 'deleteTag',
+  'cherryPick', 'cherryPickMany', 'cherryPickOnto', 'applyFileFrom', 'commitsText', 'recomposeApply', 'compareFiles', 'rangeCommits', 'mergeBase', 'restoreFile', 'diffTool', 'mergeTool', 'imagePair', 'savePatches', 'pickPatch', 'applyPatch', 'openFileAt', 'saveFileAt', 'editableCommits', 'dropCommits', 'moveCommits', 'rewordCommit', 'squashCommit', 'squashOnto', 'fixupInto', 'preparedMessage', 'redo', 'redoList', 'revert', 'createTag', 'deleteTag',
   'fetch', 'pull', 'push', 'deleteRemoteBranch', 'remotes', 'addRemote', 'removeRemote', 'renameRemote', 'setRemoteUrl',
   'pushTags', 'deleteRemoteTag', 'remoteTags', 'setUpstream', 'fastForward', 'deleteBranches', 'mergedBranches',
   'stashPush', 'snapshotWorkTree', 'stashBranch', 'stashApply', 'stashPop', 'stashDrop',

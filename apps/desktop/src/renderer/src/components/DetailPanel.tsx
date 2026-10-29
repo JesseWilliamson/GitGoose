@@ -137,6 +137,11 @@ function FileMenu({ view, target, children }: { view: RepoView; target: DiffTarg
 
 // ------------------------------------------------------------------ uncommitted changes
 
+/** The working copy's lists and the commit box: in Details (Browse), and as the Changes scene's left column. */
+export function WorkingCopyPanel({ view }: { view: RepoView }) {
+  return <WipPanel view={view} />
+}
+
 function WipPanel({ view }: { view: RepoView }) {
   const aiOn = useAiEnabled()
   const aiWhy = aiOn ? undefined : whyNotAi(undefined)
@@ -209,7 +214,7 @@ function WipPanel({ view }: { view: RepoView }) {
       {view.snapshot.operation && (
         <div className="flex items-center justify-between gap-2 border-b border-border bg-warn/10 px-3 py-2 text-sm">
           <span><b>{sentence(opName(view.snapshot.operation))}</b> in progress{conflicted.length ? `, ${conflicted.length} conflicted` : ''}</span>
-          <Button size="sm" onClick={() => updateRepo(id, { center: { kind: 'conflicts' } })}>Resolve…</Button>
+          <Button size="sm" onClick={() => updateRepo(id, { scene: 'resolve' })}>Resolve…</Button>
         </div>
       )}
       {/* No min-h-0: the lists stop shrinking at their least (FitSection's three rows each), so with

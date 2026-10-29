@@ -173,8 +173,8 @@ describe('normalizeLayout', () => {
   })
 
   it('leaves an AI pane the user had moved elsewhere, and does not upgrade twice', () => {
-    const moved = normalizeLayout({ ...oldDefault, right: { ...oldDefault.right, panes: ['details'] }, bottom: { ...oldDefault.bottom, panes: ['ai'] } })
-    expect(slotOf(moved, 'ai')).toBe('bottom')
+    const moved = normalizeLayout({ ...oldDefault, right: { ...oldDefault.right, panes: ['details'] }, left: { ...oldDefault.left, panes: ['branches', 'ai'] } })
+    expect(slotOf(moved, 'ai')).toBe('left')
     expect(moved.farRight.panes).toEqual([])
     // Once farRight is stored, putting the AI back beside Details is a choice, not an old layout.
     const chosen = movePane(L, 'ai', 'right')
@@ -182,7 +182,7 @@ describe('normalizeLayout', () => {
   })
 
   it('keeps a valid saved arrangement, including a hidden pane', () => {
-    const saved = movePane(hidePane(L, 'branches'), 'ai', 'bottom')
+    const saved = movePane(hidePane(L, 'branches'), 'ai', 'left')
     expect(normalizeLayout(JSON.parse(JSON.stringify(saved)))).toEqual(saved)
     expect(slotOf(normalizeLayout(saved), 'branches')).toBeNull()
   })
@@ -202,5 +202,16 @@ describe('normalizeLayout', () => {
   it('clamps sizes to what is usable', () => {
     const l = normalizeLayout({ left: { panes: [], size: 10 }, right: { panes: [], size: 99999 }, farRight: { panes: [] }, bottom: { panes: [], size: 200 } })
     expect([l.left.size, l.right.size, l.bottom.size]).toEqual([L.left.size, L.right.size, 200])
+  })
+})
+
+describe('no bottom slot (ADR-012)', () => {
+  it('a pane stored in the bottom slot goes back to its own column', () => {
+    const stored = structuredClone(DEFAULT_LAYOUT)
+    stored.farRight = { ...stored.farRight, panes: [], active: null }
+    stored.bottom = { ...stored.bottom, panes: ['ai'], active: 'ai' }
+    const l = normalizeLayout(stored)
+    expect(l.bottom.panes).toEqual([])
+    expect(l.farRight).toMatchObject({ panes: ['ai'], active: 'ai' })
   })
 })

@@ -69,7 +69,7 @@ export function FileView({ view, target, mode }: { view: RepoView; target: DiffT
 // ------------------------------------------------------------------ diff
 
 /** Code panes use the code font settings (Settings → Appearance), set as CSS variables in applyTheme. */
-const CODE_STYLE: React.CSSProperties = {
+export const CODE_STYLE: React.CSSProperties = {
   fontFamily: 'var(--gs-code-font)', fontSize: 'var(--gs-code-size)', tabSize: 'var(--gs-tab-size)' as unknown as number,
 }
 
@@ -402,7 +402,7 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
 }
 
 /** A line's text: syntax colours, with the words that changed (against its paired line) marked. */
-function LineText({ text, tokens, ranges, kind, noNewline }: {
+export function LineText({ text, tokens, ranges, kind, noNewline }: {
   text: string; tokens: { content: string; color?: string }[] | null; ranges: Ranges; kind: ' ' | '+' | '-'; noNewline?: boolean
 }) {
   const segs = segments(text, tokens, ranges)
@@ -473,7 +473,7 @@ function FileMenu({ view, target, mode, rev }: { view: RepoView; target: DiffTar
 
 // ------------------------------------------------------------------ history
 
-function HistoryPane({ view, path }: { view: RepoView; path: string }) {
+export function HistoryPane({ view, path }: { view: RepoView; path: string }) {
   const dateFormat = useSetting('dateFormat')
   const [commits, setCommits] = useState<Commit[] | null>(null)
   useEffect(() => {
@@ -500,7 +500,7 @@ function HistoryPane({ view, path }: { view: RepoView; path: string }) {
 
 // ------------------------------------------------------------------ blame
 
-function BlamePane({ view, path, rev }: { view: RepoView; path: string; rev?: string }) {
+export function BlamePane({ view, path, rev }: { view: RepoView; path: string; rev?: string }) {
   const [lines, setLines] = useState<BlameLine[] | null>(null)
   useEffect(() => {
     setLines(null)

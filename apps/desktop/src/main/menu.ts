@@ -87,6 +87,12 @@ export function installMenu(): void {
     {
       label: 'View',
       submenu: [
+        // Scenes (ADR-012): plain digits, shown here; handled by the window, not the menu.
+        { label: 'Browse', accelerator: '1', click: cmd('scene-browse'), registerAccelerator: false },
+        { label: 'Read', accelerator: '2', click: cmd('scene-read'), registerAccelerator: false },
+        { label: 'Changes', accelerator: '3', click: cmd('scene-changes'), registerAccelerator: false },
+        { label: 'Resolve', accelerator: '4', click: cmd('scene-resolve'), registerAccelerator: false },
+        { type: 'separator' },
         // Like a browser: back to the previous commit, diff or view (and tab), and forward again.
         { label: 'Back', accelerator: isMac ? 'Cmd+[' : 'Alt+Left', click: cmd('back'), registerAccelerator: false },
         { label: 'Forward', accelerator: isMac ? 'Cmd+]' : 'Alt+Right', click: cmd('forward'), registerAccelerator: false },
@@ -94,8 +100,8 @@ export function installMenu(): void {
         // Panes (ADR-010): a checkmark means the pane is on screen; a click shows or hides it.
         { id: 'show-branches', label: 'Show Branches', type: 'checkbox', checked: isPaneVisible(layout, 'branches'), accelerator: 'CmdOrCtrl+B', click: cmd('toggle-sidebar'), registerAccelerator: false },
         { id: 'show-details', label: 'Show Details', type: 'checkbox', checked: isPaneVisible(layout, 'details'), accelerator: 'CmdOrCtrl+Alt+B', click: cmd('toggle-details'), registerAccelerator: false },
-        { id: 'show-ai', label: 'Show AI', type: 'checkbox', checked: isPaneVisible(layout, 'ai'), accelerator: 'CmdOrCtrl+Shift+A', click: cmd('toggle-ai-pane'), registerAccelerator: false },
-        { label: 'Toggle Bottom Panel', accelerator: 'CmdOrCtrl+J', click: cmd('toggle-bottom'), registerAccelerator: false },
+        { id: 'show-ai', label: 'Show AI', type: 'checkbox', checked: isPaneVisible(layout, 'ai'), accelerator: 'CmdOrCtrl+J', click: cmd('toggle-ai-pane'), registerAccelerator: false },
+        { label: 'Branch Table', accelerator: 'B', click: cmd('branch-table'), registerAccelerator: false },
         { label: 'Hide Side Panels', click: cmd('layout-wide-graph') },
         { label: 'Reset Layout', click: cmd('layout-default') },
         // Holding Shift shows the line for as long as it is held; this keeps it on.

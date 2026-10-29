@@ -1,18 +1,11 @@
-import { hidePane, isPaneVisible, setCollapsed, showPane, type PaneId, type PaneLayout } from '@gitgoose/shared'
-import { create } from 'zustand'
+import { hidePane, isPaneVisible, showPane, type PaneId, type PaneLayout } from '@gitgoose/shared'
 import { saveSettings, setting } from './store'
 
 /**
- * Doing things with the pane layout (ADR-010). The layout itself and every rule about it are pure
+ * Doing things with the Browse scene's columns (ADR-010, ADR-012). The layout itself and every rule about it are pure
  * functions in packages/shared/src/layout.ts; this file only reads the setting, applies one of
  * them and saves the result, which is how every window sees the change.
  */
-
-/** A pane tab in a drag: the PaneId. */
-export const PANE_MIME = 'application/x-gitgoose-pane'
-
-/** The pane tab in the air, so the workspace can show its drop zones. */
-export const usePaneDrag = create<{ dragging: PaneId | null }>(() => ({ dragging: null }))
 
 export function saveLayout(next: PaneLayout): void {
   if (JSON.stringify(next) !== JSON.stringify(setting('layout'))) void saveSettings({ layout: next })
@@ -25,11 +18,6 @@ export function changeLayout(f: (l: PaneLayout) => PaneLayout): void {
 /** Keyboard and View menu: show a pane (where it lives, or where it belongs) or hide the one on screen. */
 export function togglePane(pane: PaneId): void {
   changeLayout((l) => (isPaneVisible(l, pane) ? hidePane(l, pane) : showPane(l, pane)))
-}
-
-/** Collapse or expand the bottom slot. Nothing to do while no pane is in it. */
-export function toggleBottom(): void {
-  changeLayout((l) => (l.bottom.panes.length ? setCollapsed(l, 'bottom', !l.bottom.collapsed) : l))
 }
 
 const COMPOSER = '[data-testid="ai-chat-panel"] textarea'

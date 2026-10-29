@@ -225,6 +225,13 @@ export interface StreamFile extends ChangedFile {
   untracked?: boolean
 }
 
+/** What a fetch brought: the remote branches that moved, and the commits new to this repository. */
+export interface FetchDigest {
+  moved: { ref: string; from: string | null; to: string | null }[]
+  /** New commits, newest first (capped). */
+  fresh: string[]
+}
+
 export interface Remote {
   name: string
   fetchUrl: string

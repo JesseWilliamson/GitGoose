@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cellWidth, laneX, MAX_LANES, NODE_R, ROW_H } from '../components/GraphCell'
+import { cellWidth, laneX, MAX_LANES, NARROW_GEOM, NODE_R, ROW_H } from '../components/GraphCell'
 
 describe('graph row geometry', () => {
   it('is one line per commit: a row is h-row-lg, with room for a ring and HEAD\'s outer ring', () => {
@@ -19,5 +19,12 @@ describe('graph row geometry', () => {
     expect(cellWidth(4)).toBe(102)
     expect(cellWidth(8)).toBe(166)
     for (const lanes of [9, 12, 40, 500]) expect(cellWidth(lanes)).toBe(166)
+  })
+})
+
+describe('the narrow graph (reading scenes)', () => {
+  it('is the same shape at half the pitch', () => {
+    expect([0, 1, 2, 3, 4].map((l) => laneX(l, NARROW_GEOM))).toEqual([10, 22, 34, 46, 56])
+    expect(cellWidth(8, NARROW_GEOM)).toBe(84)
   })
 })

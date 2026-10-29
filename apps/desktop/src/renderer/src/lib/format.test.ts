@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { authorLine, hashColor } from './format'
+import { authorLine, hashColor, shortDate } from './format'
 
 describe('hashColor', () => {
   it('gives different people different colours', () => {
@@ -28,5 +28,17 @@ describe('authorLine', () => {
     expect(authorLine('Ada Lovelace', people.slice(0, 1))).toBe('Ada Lovelace and Grace Hopper')
     expect(authorLine('Ada Lovelace', people.slice(0, 2))).toBe('Ada Lovelace, Grace Hopper and Alan Turing')
     expect(authorLine('Ada Lovelace', people)).toBe('Ada Lovelace and 3 others')
+  })
+})
+
+describe('shortDate', () => {
+  const now = Date.UTC(2026, 9, 28, 12) / 1000
+  it('fits six characters: minutes, hours, days, then a day and month, then month and year', () => {
+    expect(shortDate(now - 30, now)).toBe('now')
+    expect(shortDate(now - 300, now)).toBe('5 m')
+    expect(shortDate(now - 2 * 3600, now)).toBe('2 h')
+    expect(shortDate(now - 3 * 86400, now)).toBe('3 d')
+    expect(shortDate(Date.UTC(2026, 8, 18, 12) / 1000, now)).toBe('18 Sep')
+    expect(shortDate(Date.UTC(2024, 8, 18, 12) / 1000, now)).toBe('Sep 24')
   })
 })

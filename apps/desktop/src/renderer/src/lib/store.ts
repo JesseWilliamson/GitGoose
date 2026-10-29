@@ -1,5 +1,5 @@
 import { GraphLayout, type Row } from '@gitgoose/graph'
-import { FIRST_LOG_PAGE, SETTINGS, type LogPage, type SidebarPrefs, type PullRequestList, type CodeGraphStatus, type Commit, type DiffTarget, type GitGooseEvent, type AskThread, type ThreadAnchor, type LfsInfo, type PushCheckResult, type Ref, type Remote, type RepoSnapshot, type Submodule, type Worktree, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitgoose/shared'
+import { FIRST_LOG_PAGE, SETTINGS, type LogPage, type SidebarPrefs, type PullRequestList, type CodeGraphStatus, type Commit, type DiffTarget, type FetchDigest, type GitGooseEvent, type AskThread, type ThreadAnchor, type LfsInfo, type PushCheckResult, type Ref, type Remote, type RepoSnapshot, type Submodule, type Worktree, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitgoose/shared'
 import { create } from 'zustand'
 import { api, toUiError, type UiError } from './api'
 import { onAiEvent } from './ai'
@@ -12,6 +12,7 @@ import type { ReviewState } from './review'
 import type { WalkthroughState } from './walkthrough'
 import type { ImpactState } from './impact'
 import type { AiAction } from './aiActions'
+import { NEW_READ, type ReadState, type Scene } from './scenes'
 
 export type Selection =
   | { kind: 'wip' }
@@ -38,7 +39,6 @@ export interface OpenFile {
  */
 export type CenterView =
   | { kind: 'graph' }
-  | { kind: 'conflicts' }
   | { kind: 'reflog' }
   | { kind: 'commands' }
   | { kind: 'review' }
@@ -60,11 +60,20 @@ export interface RepoView {
    * file (see lib/openFile.ts), so nothing has to close it when the selection moves on.
    */
   file: OpenFile | null
-  /**
-   * Reading wide: the file takes the centre, full height, with Details' file list beside it and the
-   * other columns out of the way (Workspace.tsx). Mod+Shift+Enter or the file's header toggles it; Esc ends it.
-   */
-  diffWide: boolean
+  /** The screen on show (ADR-012): Browse, Read, Changes, or Resolve while an operation is stopped. */
+  scene: Scene
+  /** Read's own state: a branch under review, the left column's face, where each stream was left. */
+  read: ReadState
+  /** Files marked viewed in the reader, by blob pair (lib/stream.ts viewedKey). */
+  viewed: ReadonlySet<string>
+  /** The reading scenes' left column is folded to its rail (\), giving the reader the width. */
+  folded: boolean
+  /** Browse shows the branch table beside the graph (B), in place of Details and the AI. */
+  branchTable: boolean
+  /** What the last fetch brought: commits new since (marked in the graph) and the branches that moved. Null once seen. */
+  fresh: { hashes: ReadonlySet<string>; moved: FetchDigest['moved'] } | null
+  /** A request to scroll the reader to a file (a click in a file list): the reader takes it and clears it. */
+  jump: { path: string; nonce: number } | null
   /** Commits that drop / move / drag can edit: the current branch back to its last merge, newest first. */
   editable: string[]
   /** Undone operations that can be redone, newest first. */
@@ -562,9 +571,16 @@ function newView(snap: RepoSnapshot): RepoView {
   return {
     id: snap.id, snapshot: snap, logVersion: 0,
     selected: snap.status.length ? { kind: 'wip' } : snap.head.hash ? { kind: 'commit', hash: snap.head.hash } : { kind: 'wip' },
-    center: snap.operation && snap.status.some((e) => e.kind === 'unmerged') ? { kind: 'conflicts' } : { kind: 'graph' },
+    center: { kind: 'graph' },
+    // Opened mid-operation: Resolve straight away (nothing is left behind by showing it).
+    scene: snap.operation && snap.status.some((e) => e.kind === 'unmerged') ? 'resolve' : 'browse',
+    read: { ...NEW_READ, anchors: {} },
+    viewed: new Set(),
+    folded: false,
+    jump: null,
+    fresh: null,
+    branchTable: false,
     file: null,
-    diffWide: false,
     editable: [], redo: [], stashes: [], undo: [], remotes: [], merged: [], pins: [], lastFetched: null, worktrees: [], submodules: [], lfs: null, pulls: null, pullsLoading: false, review: null, walkthrough: null, impact: null, ask: null, chat: { threadId: null }, askThreads: [], remoteTags: null, progress: null, busy: null, worktreeTick: 0,
     codegraph: { state: 'indexing', done: 0, total: 0 },
     line: null,
@@ -649,9 +665,11 @@ export function onSnapshot(snap: RepoSnapshot): void {
   const hasConflicts = snap.status.some((e) => e.kind === 'unmerged')
   updateRepo(snap.id, (v) => ({
     snapshot: snap,
-    // Something just stopped on conflicts: show the conflict wizard. Leave it once the operation
-    // is over and nothing is unmerged (a stash pop has no operation, only unmerged files).
-    center: hasConflicts && !hadConflicts ? { kind: 'conflicts' } : !snap.operation && !hasConflicts && v.center.kind === 'conflicts' ? { kind: 'graph' } : v.center,
+    // Leave Resolve once the operation is over and nothing is unmerged (a stash pop has no
+    // operation, only unmerged files). A stop does not open Resolve here: only an operation the
+    // app started does that (actions.run), so a rebase stopped in a terminal lights the tab and
+    // the attention bar, and leaves the user where they are (ADR-012).
+    scene: !snap.operation && !hasConflicts && v.scene === 'resolve' ? 'browse' : v.scene,
   }))
   if (hasConflicts && !hadConflicts) alertConflicts(snap.id, snap)
   else if (!hasConflicts) dismissAttentionKey(`conflicts-${snap.id}`)
@@ -894,7 +912,7 @@ export function alertConflicts(id: string, snap: RepoSnapshot): void {
       ? `Resolve them in the conflict view, then continue the ${op}. Abort puts everything back as it was before the ${op}.`
       : 'Resolve them in the conflict view and mark each file resolved.',
     actions: [
-      { label: 'Resolve conflicts', variant: 'primary', run: () => updateRepo(id, { center: { kind: 'conflicts' } }) },
+      { label: 'Resolve conflicts', variant: 'primary', run: () => updateRepo(id, { scene: 'resolve' }) },
       ...(op ? [{ label: `Abort ${op}`, run: () => void api.abortOperation(id).catch((e) => reportError(`Abort ${op} failed`, e)) }] : []),
     ],
   })

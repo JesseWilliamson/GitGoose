@@ -191,6 +191,12 @@ export function normalizeLayout(raw: unknown): PaneLayout {
       ...(st.folded === true && st.collapsed === true ? { folded: true as const } : {}),
     }
   }
+  // Panes no longer move (ADR-012), and there is no bottom slot: a pane put there goes home.
+  for (const p of out.bottom.panes) {
+    const home = out[DEFAULT_SLOT[p]]
+    out[DEFAULT_SLOT[p]] = { ...home, panes: [...home.panes, p], active: home.active ?? p }
+  }
+  out.bottom = { ...out.bottom, panes: [], active: null }
   if (hasPanes && !r.farRight && out.right.panes.includes('details') && out.right.panes.includes('ai')) {
     out.right = {
       ...out.right,

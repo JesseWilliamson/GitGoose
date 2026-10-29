@@ -73,14 +73,33 @@ export function sentence(s: string): string {
 }
 
 /** A date per Settings → Appearance → Dates. */
-export function formatDate(unixSeconds: number, mode: 'relative' | 'absolute' | 'both' | string): string {
+export function formatDate(unixSeconds: number, mode: 'relative' | 'absolute' | 'both' | 'short' | string): string {
   if (mode === 'absolute') return absoluteDate(unixSeconds)
+  if (mode === 'short') return shortDate(unixSeconds)
   if (mode === 'both') {
     const rel = relativeTime(unixSeconds)
     const abs = absoluteDate(unixSeconds)
     return rel === abs ? abs : `${rel} · ${abs}`
   }
   return relativeTime(unixSeconds)
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/**
+ * A date in at most six characters, for the narrow graph's date column: "now", "5 m", "2 h",
+ * "3 d" within a week, then "18 Sep", then "Sep 24" past this year. Month names are fixed
+ * three-letter ones: a locale's "Sept" does not fit the column.
+ */
+export function shortDate(unixSeconds: number, now = Date.now() / 1000): string {
+  const s = Math.max(0, now - unixSeconds)
+  if (s < 60) return 'now'
+  if (s < 3600) return `${Math.floor(s / 60)} m`
+  if (s < 86400) return `${Math.floor(s / 3600)} h`
+  if (s < 7 * 86400) return `${Math.floor(s / 86400)} d`
+  const d = new Date(unixSeconds * 1000)
+  const year = new Date(now * 1000).getFullYear()
+  return d.getFullYear() === year ? `${d.getDate()} ${MONTHS[d.getMonth()]}` : `${MONTHS[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`
 }
 
 /**

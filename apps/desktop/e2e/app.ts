@@ -142,10 +142,14 @@ export async function sendComposed(page: Page, action?: string): Promise<void> {
   await box.press('Enter')
 }
 
-/** Close the AI pane from its tab menu (the pane chrome has the Hide; the pane itself has no close button). */
+/**
+ * Put the AI away: from inside it, the AI key (Mod+J) hides the AI pane in Browse and turns the
+ * left column back to its other face in the other scenes (ADR-012).
+ */
 export async function hideAiPane(page: Page): Promise<void> {
-  await page.getByTestId('pane-menu-ai').click()
-  await page.getByRole('menuitem', { name: 'Hide' }).click()
+  await page.getByTestId('ai-chat-panel').locator('textarea').focus()
+  await page.keyboard.press('ControlOrMeta+j')
+  await expect(page.getByTestId('ai-chat-panel')).toHaveCount(0)
 }
 
 /**

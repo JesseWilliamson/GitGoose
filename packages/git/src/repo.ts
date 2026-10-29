@@ -1,5 +1,5 @@
 import type {
-  BisectState, BlameLine, ChangeInsights, CodePeek, ImpactResult, ReviewScope, ImageSide, LfsInfo, LfsLock, ChangedFile, CommandRecord, CommitOrder, GraphFilter, Identity, Person, Signature, Commit, CommitSummary, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffStreamOptions, DiffTarget, FileDiff, Head, PullMode,
+  BisectState, BlameLine, ChangeInsights, CodePeek, ImpactResult, ReviewScope, ImageSide, LfsInfo, LfsLock, ChangedFile, CommandRecord, CommitOrder, GraphFilter, Identity, Person, Signature, Commit, CommitSummary, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffStreamOptions, DiffTarget, FetchDigest, HunkSelection, FileDiff, Head, PullMode,
   LogPage, Ref, Remote, RepoOperation, ReflogEntry, RepoSnapshot, ResetMode, Resolution, SearchField, SelectionRequest,
   StashEntry, StatusEntry, StreamFile, StreamTarget, StraightTips, Submodule, UndoEntry, Worktree,
 } from '@gitgoose/shared'
@@ -45,6 +45,9 @@ function diffArgs(opts: DiffOptions = {}): string[] {
   const context = Math.max(1, Math.min(opts.context ?? 3, 100))
   return [...DIFF_ARGS, `-U${context}`, ...(opts.ignoreWhitespace ? ['-w'] : [])]
 }
+
+/** At most this many new commits are marked after a fetch. */
+const FETCH_NEW_MAX = 2000
 
 let nextRepoId = 1
 
@@ -654,6 +657,12 @@ export class Repo {
     return parseChangedFiles(ns, nm)
   }
 
+  /** The commits `tip` has that `base` has not, newest first (at most `limit`): a branch to review. */
+  async rangeCommits(base: string, tip: string, limit = 300): Promise<string[]> {
+    const out = await this.read(['rev-list', `--max-count=${limit}`, `${base}..${tip}`, '--'])
+    return out.split('\n').filter(Boolean)
+  }
+
   /** The best common ancestor of two revisions (where one forked from the other). */
   async mergeBase(a: string, b: string): Promise<string> {
     return (await this.read(['merge-base', a, b])).trim()
@@ -902,6 +911,24 @@ export class Repo {
       }
       await this.git(args, { input: patch })
       return null
+    })
+  }
+
+  /**
+   * Take some lines of a commit's change back out of the working copy: the selected lines of the
+   * commit's diff, applied in reverse to the file as it is now (the reader's Shift+R). The rest of
+   * the commit stays. Undoable: the file's content before is saved.
+   */
+  revertLines(req: { hash: string; path: string; hunks: HunkSelection[]; context?: number }): Promise<number | null> {
+    return this.exclusive(async () => {
+      const diff = await this.diff({ kind: 'commit', hash: req.hash, path: req.path }, { context: req.context })
+      if (!diff) return null
+      const patch = buildPatch(diff, req.hunks, true)
+      if (!patch) return null
+      const head = await this.currentHead()
+      const saved = await this.saveFiles([req.path])
+      await this.git(['apply', '--whitespace=nowarn', '--reverse', '-'], { input: patch })
+      return this.record(`Revert lines of ${req.hash.slice(0, 7)} in ${req.path}`, [{ kind: 'restore-files', files: saved }], head.hash)
     })
   }
 
@@ -2659,11 +2686,27 @@ export class Repo {
       .finally(() => this.opts.onProgress?.(null))
   }
 
-  fetch(opts: { remote?: string; prune?: boolean } = {}): Promise<void> {
+  /**
+   * Fetch, and say what it brought (the fetch digest, ADR-012): each remote branch that moved, and
+   * the commits that are new, at most `FETCH_NEW_MAX` of them, so the graph can mark them.
+   */
+  fetch(opts: { remote?: string; prune?: boolean } = {}): Promise<FetchDigest> {
     return this.exclusive(async () => {
+      const remotes = async () => new Map((await this.refs()).filter((r) => r.kind === 'remote' && !r.name.endsWith('/HEAD')).map((r) => [r.name, r.hash]))
+      const before = await remotes()
       await this.progress(['fetch', '--progress', ...(opts.prune ? ['--prune'] : []), ...(opts.remote ? [opts.remote] : ['--all'])])
       // New commits arrived: extend the commit-graph in the background (incremental with --split).
       void this.maintainCommitGraph({ force: true })
+      const after = await remotes()
+      const moved: FetchDigest['moved'] = []
+      for (const [ref, to] of after) if (before.get(ref) !== to) moved.push({ ref, from: before.get(ref) ?? null, to })
+      for (const [ref, from] of before) if (!after.has(ref)) moved.push({ ref, from, to: null })
+      const tips = moved.flatMap((m) => (m.to ? [m.to] : []))
+      if (!tips.length) return { moved, fresh: [] }
+      // New: reachable from a moved tip and from nothing that was there before the fetch.
+      const was = [...new Set([...before.values()])].map((h) => `^${h}`)
+      const out = await this.read(['rev-list', `--max-count=${FETCH_NEW_MAX}`, ...tips, ...was, '--'])
+      return { moved, fresh: out.split('\n').filter(Boolean) }
     })
   }
 
