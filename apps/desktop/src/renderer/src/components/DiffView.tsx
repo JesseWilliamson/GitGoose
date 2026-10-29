@@ -1,7 +1,7 @@
 import type { BlameLine, Commit, DiffTarget, FileDiff, HunkSelection, ReviewFinding } from '@gitgoose/shared'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import clsx from 'clsx'
-import { Ellipsis, Minus, Plus, X } from 'lucide-react'
+import { Ellipsis, Minus, Plus } from 'lucide-react'
 import { DropdownMenu } from 'radix-ui'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AskPanel } from './AskPanel'
@@ -12,7 +12,7 @@ import { ImageDiff, imageMime } from './ImageDiff'
 type SvgView = 'image' | 'text'
 /** The last choice for SVGs, kept while the app runs: it tends to hold across files. */
 let lastSvgView: SvgView = 'image'
-import { discard, openDiffTool, openInEditor, restoreFileFrom, run } from '../lib/actions'
+import { discard, openDiffTool, openFile, openInEditor, restoreFileFrom, run } from '../lib/actions'
 import { api } from '../lib/api'
 import { formatDate, relativeTime, shortHash, splitPath } from '../lib/format'
 import { pairs, segments, splitRows, wordDiff, type Ranges } from '../lib/diffLayout'
@@ -24,9 +24,13 @@ import { Button, DM, Segmented, Spinner } from './ui'
 import { findingsFor } from '../lib/review'
 
 
+/**
+ * One file in Details, under the commit (or working copy, or comparison) it belongs to (ADR-011):
+ * its diff, its history or its blame. It has no close: what Details shows follows the selection
+ * (lib/openFile.ts), so the way to another file is a click in the list above.
+ */
 export function FileView({ view, target, mode }: { view: RepoView; target: DiffTarget; mode: FileMode }) {
-  const close = () => updateRepo(view.id, { center: { kind: 'graph' } })
-  const setMode = (m: FileMode) => updateRepo(view.id, { center: { kind: 'file', target, mode: m } })
+  const setMode = (m: FileMode) => openFile(view.id, target, m)
   const { dir, name } = splitPath(target.path)
   const where = target.kind === 'commit' ? `in ${shortHash(target.hash)}`
     : target.kind === 'range' ? `${shortHash(target.from)} → ${target.to ? shortHash(target.to) : 'working tree'}`
@@ -35,30 +39,25 @@ export function FileView({ view, target, mode }: { view: RepoView; target: DiffT
   /** The revision this file view is "at", for blame, restore, open and save. */
   const rev = target.kind === 'commit' ? target.hash : target.kind === 'range' ? (target.to ?? undefined) : undefined
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !e.defaultPrevented && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) close()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  })
-
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col" data-testid="file-view">
-      <div className="flex h-10 shrink-0 items-center gap-3 border-b border-border bg-card px-3">
-        <div className="min-w-0 flex-1 truncate text-sm">
+      {/* The name, then the controls; in a narrow Details the controls wrap onto a second line
+          rather than pushing the name out of sight. */}
+      <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border bg-card px-3 py-1.5">
+        <div className="min-w-0 flex-1 basis-48 truncate text-sm" data-testid="file-view-name">
           <span className="text-hint">{dir}</span><span className="font-semibold">{name}</span>
           <span className="ml-2 text-xs text-muted-foreground">{where}</span>
         </div>
-        {mode === 'diff' && (
-          <Segmented label="Diff layout" value={layout} onChange={(l) => void saveSettings({ diffLayout: l })} testId={(l) => `layout-${l}`}
-            options={[{ value: 'unified', label: 'Unified' }, { value: 'split', label: 'Split' }]} />
-        )}
-        <Segmented label="View" value={mode} onChange={setMode} testId={(m) => `mode-${m}`}
-          options={[{ value: 'diff', label: 'Diff' }, { value: 'history', label: 'History' }, { value: 'blame', label: 'Blame' }]} />
-        {mode === 'diff' && <FileActions view={view} target={target} />}
-        <FileMenu view={view} target={target} mode={mode} rev={rev} />
-        <button onClick={close} title="Close (Esc)" aria-label="Close" className="no-drag flex size-row-lg items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"><X size={16} /></button>
+        <div className="ml-auto flex shrink-0 items-center gap-3">
+          {mode === 'diff' && (
+            <Segmented label="Diff layout" value={layout} onChange={(l) => void saveSettings({ diffLayout: l })} testId={(l) => `layout-${l}`}
+              options={[{ value: 'unified', label: 'Unified' }, { value: 'split', label: 'Split' }]} />
+          )}
+          <Segmented label="View" value={mode} onChange={setMode} testId={(m) => `mode-${m}`}
+            options={[{ value: 'diff', label: 'Diff' }, { value: 'history', label: 'History' }, { value: 'blame', label: 'Blame' }]} />
+          {mode === 'diff' && <FileActions view={view} target={target} />}
+          <FileMenu view={view} target={target} mode={mode} rev={rev} />
+        </div>
       </div>
       {mode === 'diff' && <DiffPane view={view} target={target} />}
       {mode === 'history' && <HistoryPane view={view} path={target.path} />}
@@ -70,7 +69,7 @@ export function FileView({ view, target, mode }: { view: RepoView; target: DiffT
 // ------------------------------------------------------------------ diff
 
 /** Code panes use the code font settings (Settings → Appearance), set as CSS variables in applyTheme. */
-const CODE_STYLE: React.CSSProperties = {
+export const CODE_STYLE: React.CSSProperties = {
   fontFamily: 'var(--gs-code-font)', fontSize: 'var(--gs-code-size)', tabSize: 'var(--gs-tab-size)' as unknown as number,
 }
 
@@ -275,7 +274,10 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      {(selectionActions || hint || isSvg) && (
+      {/* Only what does not change on a click lives above the lines: a bar that appeared when a line
+          was selected pushed every line down between the two clicks of a double-click, which then
+          opened the wrong line. The selection's actions have a footer of their own instead. */}
+      {(hint || isSvg) && (
         <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border px-3 text-xs">
           {isSvg && (
             <div className="flex shrink-0 items-center gap-1" data-testid="svg-view">
@@ -288,9 +290,9 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
             </div>
           )}
           <span className="min-w-0 flex-1 truncate text-muted-foreground" data-testid="diff-hint">{hint}</span>
-          {selectionActions}
         </div>
       )}
+
       {asImage ? (
         <ImageDiff repoId={view.id} target={target} path={target.path} />
       ) : diff.binary ? (
@@ -386,6 +388,13 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
           </div>
         </div>
       )}
+      {/* A working-copy diff keeps a footer for the line selection, there whether or not lines are
+          selected: selecting never moves a line, nor covers one. */}
+      {editable && !asImage && !diff.binary && diff.hunks.length > 0 && (
+        <div className="flex h-9 shrink-0 items-center gap-2 border-t border-border px-3 text-xs" data-testid="diff-selection">
+          {selectionActions ?? <span className="min-w-0 truncate text-hint">Click a line to select it, Shift-click for a run: then stage or discard just those lines.</span>}
+        </div>
+      )}
       {peek && <CodePeekPanel repoId={view.id} repoPath={view.snapshot.path} name={peek} rev={peekRev} onClose={() => setPeek(null)} />}
       {view.ask && view.ask.path === target.path && <AskPanel repoId={view.id} ask={view.ask} />}
     </div>
@@ -393,7 +402,7 @@ function DiffPane({ view, target }: { view: RepoView; target: DiffTarget }) {
 }
 
 /** A line's text: syntax colours, with the words that changed (against its paired line) marked. */
-function LineText({ text, tokens, ranges, kind, noNewline }: {
+export function LineText({ text, tokens, ranges, kind, noNewline }: {
   text: string; tokens: { content: string; color?: string }[] | null; ranges: Ranges; kind: ' ' | '+' | '-'; noNewline?: boolean
 }) {
   const segs = segments(text, tokens, ranges)
@@ -464,7 +473,7 @@ function FileMenu({ view, target, mode, rev }: { view: RepoView; target: DiffTar
 
 // ------------------------------------------------------------------ history
 
-function HistoryPane({ view, path }: { view: RepoView; path: string }) {
+export function HistoryPane({ view, path }: { view: RepoView; path: string }) {
   const dateFormat = useSetting('dateFormat')
   const [commits, setCommits] = useState<Commit[] | null>(null)
   useEffect(() => {
@@ -477,10 +486,7 @@ function HistoryPane({ view, path }: { view: RepoView; path: string }) {
       {commits.length === 0 && <div className="p-4 text-sm text-hint">No commits touch this file yet.</div>}
       {commits.map((c) => (
         <button key={c.hash}
-          onClick={() => {
-            updateRepo(view.id, { selected: { kind: 'commit', hash: c.hash }, center: { kind: 'file', target: { kind: 'commit', hash: c.hash, path }, mode: 'diff' } })
-            void ensureLoaded(view.id, c.hash)
-          }}
+          onClick={() => openFile(view.id, { kind: 'commit', hash: c.hash, path }, 'diff')}
           className="flex w-full items-center gap-3 border-b border-border/50 px-4 py-2 text-left text-sm hover:bg-accent">
           <span className="font-mono text-xs text-hint">{shortHash(c.hash)}</span>
           <span className="min-w-0 flex-1 truncate">{c.subject}</span>
@@ -494,7 +500,7 @@ function HistoryPane({ view, path }: { view: RepoView; path: string }) {
 
 // ------------------------------------------------------------------ blame
 
-function BlamePane({ view, path, rev }: { view: RepoView; path: string; rev?: string }) {
+export function BlamePane({ view, path, rev }: { view: RepoView; path: string; rev?: string }) {
   const [lines, setLines] = useState<BlameLine[] | null>(null)
   useEffect(() => {
     setLines(null)

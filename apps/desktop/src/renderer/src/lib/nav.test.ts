@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { COALESCE_MS, equal, followLocation, NavHistory, type FollowHash, type NavLocation } from './nav'
 
 const at = (hash: string, repoId = 'a', center: NavLocation['center'] = { kind: 'graph' }): NavLocation =>
-  ({ repoId, selected: { kind: 'commit', hash }, center, line: null })
+  ({ repoId, selected: { kind: 'commit', hash }, center, file: null, line: null })
 const reflog = (hash: string, repoId = 'a') => at(hash, repoId, { kind: 'reflog' })
 const file = (hash: string, path: string): NavLocation =>
-  at(hash, 'a', { kind: 'file', target: { kind: 'commit', hash, path }, mode: 'diff' })
+  ({ ...at(hash), file: { target: { kind: 'commit', hash, path }, mode: 'diff' } })
 
 /** Records each location a second apart, far outside the coalescing window. */
 function visit(h: NavHistory, ...locs: NavLocation[]): void {
@@ -127,7 +127,7 @@ describe('followLocation', () => {
     expect(moved).toEqual(file('new1', 'x.ts'))
   })
 
-  it('closes a file diff of a commit that is gone, as the selection goes to HEAD', () => {
+  it('closes the file of a commit that is gone, as the selection goes to HEAD', () => {
     expect(followLocation(file('old2', 'x.ts'), follow, followSelected)).toEqual(at('head'))
   })
 
@@ -135,12 +135,13 @@ describe('followLocation', () => {
     const loc: NavLocation = {
       repoId: 'a',
       selected: { kind: 'compare', from: 'old1', to: null, fromLabel: 'old1', toLabel: 'Working tree' },
-      center: { kind: 'file', target: { kind: 'range', from: 'keep', to: 'old1', path: 'x.ts' }, mode: 'diff' },
+      center: { kind: 'graph' },
+      file: { target: { kind: 'range', from: 'keep', to: 'old1', path: 'x.ts' }, mode: 'diff' },
       line: { hash: 'old1' },
     }
     const moved = followLocation(loc, follow, followSelected)
     expect(moved.selected).toMatchObject({ from: 'new1', to: null })
-    expect(moved.center).toMatchObject({ target: { from: 'keep', to: 'new1' } })
+    expect(moved.file).toMatchObject({ target: { from: 'keep', to: 'new1' } })
     expect(moved.line).toEqual({ hash: 'new1' })
   })
 
@@ -148,7 +149,8 @@ describe('followLocation', () => {
     const loc: NavLocation = {
       repoId: 'a',
       selected: { kind: 'compare', from: 'old2', to: 'keep', fromLabel: 'old2', toLabel: 'keep' },
-      center: { kind: 'file', target: { kind: 'range', from: 'old2', to: 'keep', path: 'x.ts' }, mode: 'diff' },
+      center: { kind: 'graph' },
+      file: { target: { kind: 'range', from: 'old2', to: 'keep', path: 'x.ts' }, mode: 'diff' },
       line: null,
     }
     expect(followLocation(loc, follow, followSelected)).toBe(loc)

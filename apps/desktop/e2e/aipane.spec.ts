@@ -166,12 +166,12 @@ test('the actions menu: enabled by the chips, disabled with a reason; Review sta
   await sendComposed(page, 'review')
   await expect(page.getByTestId('review')).toBeVisible()
   // New and History are at the right end of the slot's tab strip, not in a header of the pane.
-  await page.getByTestId('slot-right').getByTestId('ai-chat-history').click()
+  await page.getByTestId('slot-farRight').getByTestId('ai-chat-history').click()
   const item = page.locator('[data-testid="ai-chat-history-item"][data-kind="review"]')
   await expect(item).toHaveCount(1)
   await expect(page.getByTestId('ai-chat-history-day').first()).toContainText('Today')
   // The history takes the pane rather than opening over it, so the same button brings it back.
-  await page.getByTestId('slot-right').getByTestId('ai-chat-history').click()
+  await page.getByTestId('slot-farRight').getByTestId('ai-chat-history').click()
   await expect(page.getByTestId('ai-chat-history-item')).toHaveCount(0)
   await app.close()
 })
@@ -200,15 +200,13 @@ test('one header and one composer box: New and History live in the tab strip, th
   await set(page, AGENT)
   await page.getByTestId('commit-row').nth(1).click()
   const panel = await openPane(page)
-  const strip = page.getByTestId('tabs-right')
+  const strip = page.getByTestId('tabs-farRight')
 
-  // No header of its own: the pane's two buttons are the right end of the slot's strip while AI is in front.
+  // No header of its own: the pane's two buttons are the right end of its slot's strip, and only there.
   await expect(strip.getByTestId('ai-chat-new')).toBeVisible()
   await expect(strip.getByTestId('ai-chat-history')).toBeVisible()
   await expect(panel.getByTestId('ai-chat-new')).toHaveCount(0)
-  await page.getByTestId('pane-tab-details').click()
-  await expect(page.getByTestId('ai-chat-new')).toHaveCount(0)
-  await page.getByTestId('pane-tab-ai').click()
+  await expect(page.getByTestId('tabs-right').getByTestId('ai-chat-new')).toHaveCount(0)
   // The empty state is one short line, not a paragraph.
   await expect(panel.getByTestId('thread-empty')).toHaveText('Ask about this repository, or drop commits, branches and files here')
 
@@ -226,17 +224,5 @@ test('one header and one composer box: New and History live in the tab strip, th
   await expect(page.locator('[data-testid^="prompt-button-"]')).toBeVisible()
   await page.keyboard.press('Escape')
 
-  // The tab's ⋯ is there for tests and keyboards but only visible on hover, or while its menu is open.
-  const menu = page.getByTestId('pane-menu-ai')
-  await page.mouse.move(300, 300)
-  await expect(menu).toHaveCSS('opacity', '0')
-  await page.getByTestId('pane-tab-ai').hover()
-  await expect(menu).toHaveCSS('opacity', '1')
-  // A right-click on the tab opens the same menu.
-  await page.mouse.move(300, 300)
-  await page.getByTestId('pane-tab-ai').click({ button: 'right' })
-  await expect(page.getByRole('menuitem', { name: 'Hide' })).toBeVisible()
-  await expect(menu).toHaveCSS('opacity', '1')
-  await page.keyboard.press('Escape')
   await app.close()
 })

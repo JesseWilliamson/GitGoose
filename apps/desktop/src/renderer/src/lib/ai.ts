@@ -312,16 +312,23 @@ export function showRepo(repoId: string): void {
  * gives way — this is a request to look at one conversation.
  */
 export function openInPanel(repoId: string, threadId: string): void {
-  updateRepo(repoId, (v) => ({ chat: { ...v.chat, threadId, pending: undefined, history: false } }))
-  showAiPane()
+  // Outside Browse the AI is the left column's other face (ADR-012): turn it, and unfold it.
+  updateRepo(repoId, (v) => ({
+    chat: { ...v.chat, threadId, pending: undefined, history: false },
+    ...(v.scene !== 'browse' ? { read: { ...v.read, face: 'ai' as const }, folded: false } : {}),
+  }))
+  if (useStore.getState().repos[repoId]?.scene === 'browse') showAiPane()
 }
 
 /** Is this thread on screen in the AI pane? */
 function panelShows(repoId: string, threadId: string | null): boolean {
   const s = useStore.getState()
-  const chat = s.repos[repoId]?.chat
+  const v = s.repos[repoId]
+  const chat = v?.chat
+  // In Browse the AI pane; elsewhere the left column's AI face (ADR-012).
+  const shown = v?.scene === 'browse' ? isPaneVisible(setting('layout'), 'ai') : v?.read.face === 'ai' && !v.folded
   // Not while the history has the pane: the conversation is not on screen then.
-  return !!threadId && s.active === repoId && !s.page && isPaneVisible(setting('layout'), 'ai') && chat?.threadId === threadId && !chat.history
+  return !!threadId && s.active === repoId && !s.page && !!shown && chat?.threadId === threadId && !chat.history
 }
 
 /** A run's end finishes its job: an answer or an error stays until seen; nothing at all (stopped, not set up) drops it. */
@@ -448,7 +455,7 @@ export function resolveWithAgent(repoId: string, path: string): void {
   const run = startAi(repoId, { kind: 'resolve-conflict', path }, undefined, { keepThread: true })
   const atConflicts = () => {
     const s = useStore.getState()
-    return s.active === repoId && !s.page && s.repos[repoId]?.center.kind === 'conflicts'
+    return s.active === repoId && !s.page && s.repos[repoId]?.scene === 'resolve'
   }
   registerJob({
     id: run.requestId,
@@ -459,7 +466,7 @@ export function resolveWithAgent(repoId: string, path: string): void {
       showRepo(repoId)
       if (answer?.proposal) showProposal(answer.proposal)
       else if (answer?.threadId) openInPanel(repoId, answer.threadId)
-      else updateRepo(repoId, { center: { kind: 'conflicts' } })
+      else updateRepo(repoId, { scene: 'resolve' })
     },
     stop: () => cancelAi(run.requestId),
     showing: () => (answer?.proposal ? proposalShown(answer.proposal) : panelShows(repoId, answer?.threadId ?? null)),

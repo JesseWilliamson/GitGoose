@@ -19,7 +19,7 @@ let navigating = false
 const live = (repoId: string) => !!useStore.getState().repos[repoId]
 
 function locationOf(v: RepoView): NavLocation {
-  return { repoId: v.id, selected: v.selected, center: v.center, line: v.line }
+  return { repoId: v.id, selected: v.selected, center: v.center, file: v.file, line: v.line }
 }
 
 let installed = false
@@ -35,7 +35,7 @@ export function installNavigation(): void {
     const v = s.repos[s.active]
     if (!v) return
     const was = prev.repos[s.active]
-    if (s.active === prev.active && was && was.selected === v.selected && was.center === v.center && was.line === v.line) return
+    if (s.active === prev.active && was && was.selected === v.selected && was.center === v.center && was.file === v.file && was.line === v.line) return
     history.record(locationOf(v), performance.now())
   })
   // A rebase or reorder gives commits new hashes: entries follow them exactly as the view on
@@ -97,7 +97,7 @@ function go(step: -1 | 1): void {
   const missing = unloaded(v, loc)
   const done = getLog(v.id).done
   // One store change for tab and view, so the screen never shows the new tab with the old view.
-  quietly(() => useStore.setState((s) => ({ active: loc.repoId, repos: { ...s.repos, [loc.repoId]: { ...v, selected: loc.selected, center: loc.center, line: loc.line } } })))
+  quietly(() => useStore.setState((s) => ({ active: loc.repoId, repos: { ...s.repos, [loc.repoId]: { ...v, selected: loc.selected, center: loc.center, file: loc.file, line: loc.line } } })))
   const toLoad = done ? [] : [...missing, ...unloadedLine(v, loc)]
   if (missing.length || toLoad.length) void settle(loc.repoId, loc.selected, toLoad)
 }
@@ -112,7 +112,7 @@ async function settle(id: string, selected: Selection, toLoad: string[]): Promis
   }
   const v = current()
   if (!v) return
-  const offGraph = unloaded(v, { repoId: id, selected, center: v.center, line: v.line })
+  const offGraph = unloaded(v, { repoId: id, selected, center: v.center, file: v.file, line: v.line })
   const readable = await Promise.all(offGraph.map((h) => api.commitDetails(id, h).then(() => true, () => false)))
   const now = current()
   if (!now || readable.every(Boolean)) return

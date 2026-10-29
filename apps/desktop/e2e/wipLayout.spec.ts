@@ -36,7 +36,13 @@ test('Unstaged and Staged share the height by content; the identity follows the 
   r.git('add', 'a.txt')
   await expect(page.getByTestId('staged-file')).toHaveCount(1)
   await expect.poll(() => heightOf(staged)).toBeLessThanOrEqual(28 + 40)
-  expect(await heightOf(unstaged)).toBeGreaterThan(3 * (await heightOf(staged)))
+  // Unstaged gets the rest of the details' half of the pane (the file's diff has the other half,
+  // ADR-011): it fills down to Staged, with no gap between them.
+  const u = (await unstaged.boundingBox())!
+  const s = (await staged.boundingBox())!
+  expect(u.height).toBeGreaterThan(s.height)
+  expect(Math.abs(u.y + u.height - s.y)).toBeLessThan(2)
+  await expect(page.getByTestId('file-view')).toBeVisible()
 
   // The identity is information about the commit: it comes after the fields and the buttons.
   const y = async (id: string) => (await page.getByTestId(id).boundingBox())!.y

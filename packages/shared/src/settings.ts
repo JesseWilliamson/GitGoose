@@ -74,14 +74,8 @@ export const SETTINGS = {
   fileTree: bool(false, { label: 'Show changed files as a tree', section: 'Appearance', keywords: 'folder list view' }),
   dateFormat: choice('relative', [{ value: 'relative', label: 'Relative (3 days ago)' }, { value: 'absolute', label: 'Absolute (12 Mar 2026)' }, { value: 'both', label: 'Both' }],
     { label: 'Dates', section: 'Appearance' }),
-  // 'comfy' was 'comfortable' until the layouts were renamed; an old saved value is not an option
-  // any more, so it falls back to the default, which is the same layout.
-  graphStyle: choice('comfy', [
-    { value: 'comfy', label: 'Comfy: two-line rows' },
-    { value: 'compact', label: 'Compact: one-line rows, branches on the left' },
-  ], {
-    label: 'Graph layout', section: 'Appearance', keywords: 'comfy comfortable compact density row height columns tower',
-  }),
+  // There was a graphStyle setting (comfy or compact rows) until ADR-011 made one density; a stored
+  // value is a key this list no longer has, so migrateSettings leaves it behind.
 
   sidebarFolders: bool(true, {
     label: 'Group branches and tags in folders', section: 'Appearance', keywords: 'sidebar tree folder slash',
@@ -307,8 +301,8 @@ export function migrateSettings(stored: Record<string, unknown>): Settings {
     delete s.fontSize
   }
   if (version < 3) {
-    // v2 had a "compact rows" switch; it is now one of the graph layouts.
-    if (s.compactRows === true && s.graphStyle === undefined) s.graphStyle = 'compact'
+    // v2 had a "compact rows" switch. It became a graph layout in v3, and the graph has one
+    // density since ADR-011: nothing to carry over.
     delete s.compactRows
   }
   if (version < 4) {

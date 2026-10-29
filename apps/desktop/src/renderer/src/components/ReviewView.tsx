@@ -3,6 +3,7 @@ import clsx from 'clsx'
 import { Sparkles } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { applySuggestion, dismissFinding, fixWithAi, rememberDismissal, startReview, stopReview, targetFor } from '../lib/review'
+import { openFile } from '../lib/actions'
 import { api } from '../lib/api'
 import { toast, updateRepo, useStore, type RepoView } from '../lib/store'
 import { OpenChatButton } from './OpenChat'
@@ -34,7 +35,7 @@ export function ReviewView({ view }: { view: RepoView }) {
   const byFile = new Map<string, ReviewFinding[]>()
   for (const f of findings) byFile.set(f.path, [...(byFile.get(f.path) ?? []), f])
   const counts = (['critical', 'major', 'minor', 'nit'] as FindingSeverity[]).map((s) => [s, findings.filter((f) => f.severity === s).length] as const).filter(([, n]) => n)
-  const open = (f: ReviewFinding) => updateRepo(view.id, { center: { kind: 'file', target: targetFor(result!, f.path), mode: 'diff' } })
+  const open = (f: ReviewFinding) => openFile(view.id, targetFor(result!, f.path))
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col" data-testid="review">

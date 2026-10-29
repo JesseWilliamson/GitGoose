@@ -47,15 +47,15 @@ test('one search for commits, files, settings and commands; results open where t
   // A setting: the settings page opens, searched for it.
   await page.keyboard.press('ControlOrMeta+k')
   await page.getByTestId('omni-scope-setting').click()
-  await input.fill('graph layout')
+  await input.fill('diff layout')
   await page.keyboard.press('Enter')
-  await expect(page.getByTestId('settings-search')).toHaveValue('Graph layout')
+  await expect(page.getByTestId('settings-search')).toHaveValue('Diff layout')
   await page.keyboard.press('Escape')
 
   // Recent remembers what was picked; ">" limits to commands.
   await page.keyboard.press('ControlOrMeta+k')
   await expect(page.getByTestId('omni-results')).toContainText('Recent')
-  await expect(items.first()).toContainText('Graph layout')
+  await expect(items.first()).toContainText('Diff layout')
   await input.fill('> receipts')
   await expect(page.getByTestId('omni-empty')).toContainText('No results for “receipts”')
   await input.fill('receipts')

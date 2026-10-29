@@ -1,5 +1,5 @@
 import { GraphLayout, type Row } from '@gitgoose/graph'
-import { FIRST_LOG_PAGE, SETTINGS, type LogPage, type SidebarPrefs, type PullRequestList, type CodeGraphStatus, type Commit, type DiffTarget, type GitGooseEvent, type AskThread, type ThreadAnchor, type LfsInfo, type PushCheckResult, type Ref, type Remote, type RepoSnapshot, type Submodule, type Worktree, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitgoose/shared'
+import { FIRST_LOG_PAGE, SETTINGS, type LogPage, type SidebarPrefs, type PullRequestList, type CodeGraphStatus, type Commit, type DiffTarget, type FetchDigest, type GitGooseEvent, type AskThread, type ThreadAnchor, type LfsInfo, type PushCheckResult, type Ref, type Remote, type RepoSnapshot, type Submodule, type Worktree, type SettingKey, type Settings, type StashEntry, type UndoEntry } from '@gitgoose/shared'
 import { create } from 'zustand'
 import { api, toUiError, type UiError } from './api'
 import { onAiEvent } from './ai'
@@ -12,6 +12,7 @@ import type { ReviewState } from './review'
 import type { WalkthroughState } from './walkthrough'
 import type { ImpactState } from './impact'
 import type { AiAction } from './aiActions'
+import { NEW_READ, type ReadState, type Scene } from './scenes'
 
 export type Selection =
   | { kind: 'wip' }
@@ -26,10 +27,18 @@ export type Selection =
 
 export type FileMode = 'diff' | 'history' | 'blame'
 
+/** A file in Details: which version of which file, and how (its diff, its history, its blame). */
+export interface OpenFile {
+  target: DiffTarget
+  mode: FileMode
+}
+
+/**
+ * What the centre shows: the graph, or a task that takes it over. A file's diff is not one of
+ * these (ADR-011): it shows in Details, under its commit, with the graph still in view (`file`).
+ */
 export type CenterView =
   | { kind: 'graph' }
-  | { kind: 'file'; target: DiffTarget; mode: FileMode }
-  | { kind: 'conflicts' }
   | { kind: 'reflog' }
   | { kind: 'commands' }
   | { kind: 'review' }
@@ -45,6 +54,26 @@ export interface RepoView {
   logVersion: number
   selected: Selection
   center: CenterView
+  /**
+   * The file opened in Details (a click in a file list, a review finding, the omni search). It is
+   * shown only while it belongs to the selection; otherwise Details shows the selection's first
+   * file (see lib/openFile.ts), so nothing has to close it when the selection moves on.
+   */
+  file: OpenFile | null
+  /** The screen on show (ADR-012): Browse, Read, Changes, or Resolve while an operation is stopped. */
+  scene: Scene
+  /** Read's own state: a branch under review, the left column's face, where each stream was left. */
+  read: ReadState
+  /** Files marked viewed in the reader, by blob pair (lib/stream.ts viewedKey). */
+  viewed: ReadonlySet<string>
+  /** The reading scenes' left column is folded to its rail (\), giving the reader the width. */
+  folded: boolean
+  /** Browse shows the branch table beside the graph (B), in place of Details and the AI. */
+  branchTable: boolean
+  /** What the last fetch brought: commits new since (marked in the graph) and the branches that moved. Null once seen. */
+  fresh: { hashes: ReadonlySet<string>; moved: FetchDigest['moved'] } | null
+  /** A request to scroll the reader to a file (a click in a file list): the reader takes it and clears it. */
+  jump: { path: string; nonce: number } | null
   /** Commits that drop / move / drag can edit: the current branch back to its last merge, newest first. */
   editable: string[]
   /** Undone operations that can be redone, newest first. */
@@ -340,9 +369,9 @@ function swapIn(id: string, log: LogData): void {
   // Back/forward history follows first, so the change below matches its current entry and is not
   // recorded as a step of its own.
   swapListeners.forEach((l) => l(id, follow))
-  const here: NavLocation = { repoId: id, selected: v.selected, center: v.center, line: v.line }
+  const here: NavLocation = { repoId: id, selected: v.selected, center: v.center, file: v.file, line: v.line }
   const next = follow(here)
-  if (next !== here) updateRepo(id, { selected: next.selected, center: next.center, line: next.line })
+  if (next !== here) updateRepo(id, { selected: next.selected, center: next.center, file: next.file, line: next.line })
 }
 
 /**
@@ -542,7 +571,16 @@ function newView(snap: RepoSnapshot): RepoView {
   return {
     id: snap.id, snapshot: snap, logVersion: 0,
     selected: snap.status.length ? { kind: 'wip' } : snap.head.hash ? { kind: 'commit', hash: snap.head.hash } : { kind: 'wip' },
-    center: snap.operation && snap.status.some((e) => e.kind === 'unmerged') ? { kind: 'conflicts' } : { kind: 'graph' },
+    center: { kind: 'graph' },
+    // Opened mid-operation: Resolve straight away (nothing is left behind by showing it).
+    scene: snap.operation && snap.status.some((e) => e.kind === 'unmerged') ? 'resolve' : 'browse',
+    read: { ...NEW_READ, anchors: {} },
+    viewed: new Set(),
+    folded: false,
+    jump: null,
+    fresh: null,
+    branchTable: false,
+    file: null,
     editable: [], redo: [], stashes: [], undo: [], remotes: [], merged: [], pins: [], lastFetched: null, worktrees: [], submodules: [], lfs: null, pulls: null, pullsLoading: false, review: null, walkthrough: null, impact: null, ask: null, chat: { threadId: null }, askThreads: [], remoteTags: null, progress: null, busy: null, worktreeTick: 0,
     codegraph: { state: 'indexing', done: 0, total: 0 },
     line: null,
@@ -627,9 +665,11 @@ export function onSnapshot(snap: RepoSnapshot): void {
   const hasConflicts = snap.status.some((e) => e.kind === 'unmerged')
   updateRepo(snap.id, (v) => ({
     snapshot: snap,
-    // Something just stopped on conflicts: show the conflict wizard. Leave it once the operation
-    // is over and nothing is unmerged (a stash pop has no operation, only unmerged files).
-    center: hasConflicts && !hadConflicts ? { kind: 'conflicts' } : !snap.operation && !hasConflicts && v.center.kind === 'conflicts' ? { kind: 'graph' } : v.center,
+    // Leave Resolve once the operation is over and nothing is unmerged (a stash pop has no
+    // operation, only unmerged files). A stop does not open Resolve here: only an operation the
+    // app started does that (actions.run), so a rebase stopped in a terminal lights the tab and
+    // the attention bar, and leaves the user where they are (ADR-012).
+    scene: !snap.operation && !hasConflicts && v.scene === 'resolve' ? 'browse' : v.scene,
   }))
   if (hasConflicts && !hadConflicts) alertConflicts(snap.id, snap)
   else if (!hasConflicts) dismissAttentionKey(`conflicts-${snap.id}`)
@@ -671,8 +711,7 @@ function onEvent(e: GitGooseEvent): void {
       commandListeners.forEach((l) => l(e.name))
       break
     case 'settings':
-      set({ settings: e.settings })
-      applyTheme(e.settings)
+      receiveSettings(e.settings)
       break
     case 'ai-text':
     case 'ai-permission':
@@ -736,10 +775,36 @@ export function updateSidebarPrefs(path: string, change: (p: SidebarPrefs) => Si
   void api.setSettings({ sidebar }).catch((e) => reportError('Could not save the sidebar layout', e))
 }
 
-export async function saveSettings(patch: Partial<Settings>): Promise<void> {
-  const settings = await api.setSettings(patch)
+/**
+ * Patches sent to main and not answered yet, oldest first. They show at once and stay laid over
+ * whatever settings arrive meanwhile (another window's broadcast, an earlier save's answer), so
+ * the renderer reads its own writes: a change made right after another (a key pressed as the
+ * window folds a column) starts from it instead of from the settings before it, and does not
+ * write it away.
+ */
+const inFlight: { id: number; patch: Partial<Settings> }[] = []
+let lastSave = 0
+
+function receiveSettings(from: Settings): void {
+  const settings = inFlight.reduce((s, p) => ({ ...s, ...p.patch }), from)
   set({ settings })
   applyTheme(settings)
+}
+
+export async function saveSettings(patch: Partial<Settings>): Promise<void> {
+  const id = ++lastSave
+  inFlight.push({ id, patch })
+  const now = get().settings
+  if (now) receiveSettings(now)
+  try {
+    const settings = await api.setSettings(patch)
+    inFlight.splice(inFlight.findIndex((p) => p.id === id), 1)
+    receiveSettings(settings)
+  } catch (e) {
+    inFlight.splice(inFlight.findIndex((p) => p.id === id), 1)
+    receiveSettings(await api.getSettings())
+    throw e
+  }
 }
 
 /** Settings that are maps the renderer changes one entry at a time. */
@@ -847,7 +912,7 @@ export function alertConflicts(id: string, snap: RepoSnapshot): void {
       ? `Resolve them in the conflict view, then continue the ${op}. Abort puts everything back as it was before the ${op}.`
       : 'Resolve them in the conflict view and mark each file resolved.',
     actions: [
-      { label: 'Resolve conflicts', variant: 'primary', run: () => updateRepo(id, { center: { kind: 'conflicts' } }) },
+      { label: 'Resolve conflicts', variant: 'primary', run: () => updateRepo(id, { scene: 'resolve' }) },
       ...(op ? [{ label: `Abort ${op}`, run: () => void api.abortOperation(id).catch((e) => reportError(`Abort ${op} failed`, e)) }] : []),
     ],
   })

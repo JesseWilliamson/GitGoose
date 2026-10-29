@@ -2,7 +2,7 @@ import { makeFixture } from '@gitgoose/fixtures'
 import { expect, test } from '@playwright/test'
 import { launch } from './app'
 
-test('the diff header groups its controls: layout, view tabs, one ⋯ menu with the version options, then close', async () => {
+test('the diff header groups its controls: layout, view tabs, one ⋯ menu with the version options, and no close', async () => {
   const r = makeFixture('linear')
   const { app, page } = await launch(r.dir)
   await page.getByTestId('commit-row').first().click()
@@ -10,11 +10,15 @@ test('the diff header groups its controls: layout, view tabs, one ⋯ menu with 
   const view = page.getByTestId('file-view')
   await expect(view.getByTestId('layout-unified')).toBeVisible()
 
-  // Left to right: the layout (Unified | Split), the view (Diff | History | Blame), ⋯, ✕.
+  // Left to right: the layout (Unified | Split), the view (Diff | History | Blame), ⋯.
   const x = async (locator: ReturnType<typeof view.locator>) => (await locator.boundingBox())!.x
   const xs = [await x(view.getByTestId('layout-unified')), await x(view.getByTestId('layout-split')), await x(view.getByTestId('mode-diff')),
-    await x(view.getByTestId('mode-blame')), await x(view.getByTestId('file-menu')), await x(view.getByRole('button', { name: 'Close' }))]
+    await x(view.getByTestId('mode-blame')), await x(view.getByTestId('file-menu'))]
   expect(xs).toEqual([...xs].sort((a, b) => a - b))
+  // No close: the file is part of Details and follows the selection (ADR-011), so there is
+  // nothing behind it to go back to, and the graph is still on screen beside it.
+  await expect(view.getByRole('button', { name: 'Close' })).toHaveCount(0)
+  await expect(page.getByTestId('graph-scroll')).toBeVisible()
   // The old stand-alone buttons are gone from the bar.
   await expect(view.getByRole('button', { name: 'This version' })).toHaveCount(0)
   await expect(view.getByRole('button', { name: 'Diff tool' })).toHaveCount(0)
@@ -35,7 +39,7 @@ test('the diff header groups its controls: layout, view tabs, one ⋯ menu with 
   await app.close()
 })
 
-test('a working-copy file keeps its stage/discard buttons in the header, and the bar under it only appears when the diff has something to say', async () => {
+test('a working-copy file keeps its stage/discard buttons in the header; selecting lines shows their actions without moving a line', async () => {
   const r = makeFixture('linear')
   r.write('file.txt', 'line 5\nline 5\nCHANGED\nline 5\nline 5\n')
   const { app, page } = await launch(r.dir)
@@ -52,10 +56,15 @@ test('a working-copy file keeps its stage/discard buttons in the header, and the
   // Nothing to say about the diff itself, so no second bar.
   await expect(view.getByTestId('diff-hint')).toHaveCount(0)
 
-  // Selecting lines brings it back, with what can be done with them.
-  await page.getByTestId('diff-line').filter({ hasText: 'CHANGED' }).click()
-  await expect(view.getByTestId('diff-hint')).toBeVisible()
+  // Selecting lines shows what can be done with them, floating over the diff: nothing moves under
+  // the pointer, so the second click of a double-click lands on the same line as the first.
+  const changed = page.getByTestId('diff-line').filter({ hasText: 'CHANGED' })
+  const before = (await changed.boundingBox())!.y
+  await changed.click()
+  await expect(view.getByTestId('diff-selection')).toBeVisible()
   await expect(view.getByTestId('stage-lines')).toBeVisible()
+  expect((await changed.boundingBox())!.y).toBe(before)
+  await expect(view.getByTestId('diff-hint')).toHaveCount(0)
 
   await page.getByTestId('stage-file').click()
   await expect(page.getByTestId('staged-file')).toHaveCount(1)

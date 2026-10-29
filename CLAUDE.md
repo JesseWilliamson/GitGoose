@@ -19,7 +19,9 @@ apps/desktop/          Electron app (electron-vite)
                        ai/ (ACP client for the user's agent, Anthropic API fallback),
                        codegraph.ts + indexer.ts (the code graph service and its utility process, ADR-008)
   src/preload/         the only bridge: builds window.gitgoose from API_METHODS
-  src/renderer/src/    React UI: lib/store.ts (zustand + log data), lib/actions.ts (every user action), components/
+  src/renderer/src/    React UI: lib/store.ts (zustand + log data), lib/actions.ts (every user action), components/;
+                       scenes (Browse, Read, Changes, Resolve: components/Scenes.tsx, ADR-012) and the reader
+                       (components/DiffStream.tsx over lib/stream.ts rows)
   e2e/                 Playwright tests that launch the real app (+ fake-agent.mjs, a scripted ACP agent)
 packages/shared/       IPC contract (api.ts), data types, pure conflict-marker parser
 packages/git/          everything that runs git: runner, parsers, LogStream, CatFile, patch builder, undo, askpass, Repo,

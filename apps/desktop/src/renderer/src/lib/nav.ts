@@ -5,7 +5,7 @@ import type { CenterView, RepoView, Selection } from './store'
  * store wiring is in lib/navigation.ts.
  *
  * A location is where the user is looking: which tab, what is selected in it, what the centre
- * shows, and whether the graph is narrowed to one line. History is a list with a cursor; going
+ * shows, which file Details shows, and whether the graph is narrowed to one line. History is a list with a cursor; going
  * somewhere new from the middle of the list drops what was ahead, as a browser does.
  *
  * (lib/history.ts is something else: undo and redo for the recompose draft.)
@@ -14,6 +14,7 @@ export interface NavLocation {
   repoId: string
   selected: Selection
   center: CenterView
+  file: RepoView['file']
   line: RepoView['line']
 }
 
@@ -115,9 +116,9 @@ export class NavHistory {
   }
 }
 
-/** The same tab, centre view and line: only the selection may differ. */
+/** The same tab, centre view, open file and line: only the selection may differ. */
 function sameView(a: NavLocation, b: NavLocation): boolean {
-  return a.repoId === b.repoId && equal(a.center, b.center) && equal(a.line, b.line)
+  return a.repoId === b.repoId && equal(a.center, b.center) && equal(a.file, b.file) && equal(a.line, b.line)
 }
 
 /** Structural equality for plain data (what the store holds: objects, arrays, strings, numbers, null). */
@@ -140,8 +141,8 @@ export type FollowHash = (hash: string) => string | null
 /**
  * A location after a rebase or reorder: every commit it names follows to its new hash, so the
  * selection and the diff on screen still agree. The selection is followed by `followSelected`
- * (the store's rule, which falls back to HEAD); a file diff of a commit that is gone gives way to
- * the graph; a revision that is gone in a comparison or a line stays as it was (the object is still
+ * (the store's rule, which falls back to HEAD); a file of a commit that is gone is closed (Details
+ * shows the new selection's own files); a revision that is gone in a comparison or a line stays as it was (the object is still
  * there, so it still shows). Unchanged parts keep their identity, so an unchanged location is equal.
  */
 export function followLocation(loc: NavLocation, follow: FollowHash, followSelected: (sel: Selection) => Selection): NavLocation {
@@ -153,21 +154,21 @@ export function followLocation(loc: NavLocation, follow: FollowHash, followSelec
     const to = sel.to === null ? null : keep(sel.to)
     if (from !== sel.from || to !== sel.to) selected = { ...sel, from, to }
   }
-  let center = loc.center
-  if (center.kind === 'file') {
-    const t = center.target
+  let file = loc.file
+  if (file) {
+    const t = file.target
     if (t.kind === 'commit') {
       const hash = follow(t.hash)
-      if (hash === null) center = { kind: 'graph' }
-      else if (hash !== t.hash) center = { ...center, target: { ...t, hash } }
+      if (hash === null) file = null
+      else if (hash !== t.hash) file = { ...file, target: { ...t, hash } }
     } else if (t.kind === 'range') {
       const from = keep(t.from)
       const to = t.to === null ? null : keep(t.to)
-      if (from !== t.from || to !== t.to) center = { ...center, target: { ...t, from, to } }
+      if (from !== t.from || to !== t.to) file = { ...file, target: { ...t, from, to } }
     }
   }
   let line = loc.line
   if (line && keep(line.hash) !== line.hash) line = { hash: keep(line.hash) }
-  if (selected === loc.selected && center === loc.center && line === loc.line) return loc
-  return { ...loc, selected, center, line }
+  if (selected === loc.selected && file === loc.file && line === loc.line) return loc
+  return { ...loc, selected, file, line }
 }

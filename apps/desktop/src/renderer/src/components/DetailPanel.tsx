@@ -3,8 +3,8 @@ import type { Identity, Person, Signature } from '@gitgoose/shared'
 import { Archive, Check, ChevronDown, Copy, MessagesSquare, Minus, MoreHorizontal, Plus, ShieldAlert, ShieldCheck, Sparkles, Undo2, X } from 'lucide-react'
 import clsx from 'clsx'
 import { DropdownMenu } from 'radix-ui'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { copy, discard as discardFiles, lfsLock, lfsPatternFor, lfsTrack, openDiffTool, openInEditor, pop, restoreFileFrom, run, snapshot, stashApply, stashDrop, stashToBranch, stashWith, stashWithMessage } from '../lib/actions'
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { openFile as openFileIn, copy, discard as discardFiles, lfsLock, lfsPatternFor, lfsTrack, openDiffTool, openInEditor, pop, restoreFileFrom, run, snapshot, stashApply, stashDrop, stashToBranch, stashWith, stashWithMessage } from '../lib/actions'
 import { cancelAi, openInPanel, startAi, useAi, useAiEnabled } from '../lib/ai'
 import { api } from '../lib/api'
 import { dateTime, opName, relativeTime, sentence, shortHash, stashLabel } from '../lib/format'
@@ -18,6 +18,8 @@ import { chainBase, ensureLoaded, getLog, reportError, selectCommit, setting, to
 import { Avatar } from './Avatar'
 import { actOn, clickFile, NO_FILES, pruneFiles, type FileSelection } from '../lib/fileSelection'
 import { ChangeHints } from './ChangeHints'
+import { FileView } from './DiffView'
+import { isShown, shownFile } from '../lib/openFile'
 import { FileListTools, FileListView, FileRow, statusKind } from './FileList'
 import { modName } from '../lib/keys'
 import { Button, CM, DM, SectionHeader, Spinner } from './ui'
@@ -29,23 +31,65 @@ const COMMIT_TASK = { kind: 'commit-message' } as const
 
 const isMac = window.gitgoose?.platform === 'darwin'
 
+/**
+ * The selection's details over the file it shows (ADR-011): the open file when it belongs to the
+ * selection, else the selection's first file, which the panel reports with useFirstFile. The
+ * details take what they need, up to half the pane; the file takes the rest. Lists inside the
+ * details shrink first; when even their least (the working copy's two lists and the commit box)
+ * does not fit, the top half scrolls rather than spill over the file. The first file waits until the selection has been still for a moment (FIRST_FILE_MS), so
+ * holding an arrow key in the graph does not start a diff for every commit it passes; a file the
+ * user opened shows at once.
+ */
 export function DetailPanel({ view }: { view: RepoView }) {
+  const [first, setFirst] = useState<DiffTarget | null>(null)
+  const settled = useSettled(first, FIRST_FILE_MS)
+  const file = shownFile(view, settled)
   return (
     <aside className="flex h-full min-h-0 w-full flex-col bg-card" data-testid="detail-panel">
-      {view.selected.kind === 'wip' ? <WipPanel view={view} />
-        : view.selected.kind === 'commits' ? <MultiPanel view={view} hashes={view.selected.hashes} />
-        : view.selected.kind === 'compare' ? <ComparePanel view={view} sel={view.selected} />
-        : <CommitPanel view={view} hash={view.selected.hash} />}
+      <div className={clsx('flex min-h-0 flex-col overflow-y-auto', file ? 'max-h-1/2 shrink-0' : 'flex-1')} data-testid="details-top">
+        <FirstFile.Provider value={setFirst}>
+          {view.selected.kind === 'wip' ? <WipPanel view={view} />
+            : view.selected.kind === 'commits' ? <MultiPanel view={view} hashes={view.selected.hashes} />
+            : view.selected.kind === 'compare' ? <ComparePanel view={view} sel={view.selected} />
+            : <CommitPanel view={view} hash={view.selected.hash} />}
+        </FirstFile.Provider>
+      </div>
+      {file && (
+        <div className="flex min-h-0 flex-1 flex-col border-t border-border bg-background">
+          <FileView view={view} target={file.target} mode={file.mode} />
+        </div>
+      )}
     </aside>
   )
 }
 
-const isOpen = (view: RepoView, t: DiffTarget) =>
-  view.center.kind === 'file' && view.center.target.kind === t.kind && view.center.target.path === t.path &&
-  (t.kind !== 'commit' || (view.center.target.kind === 'commit' && view.center.target.hash === t.hash))
+const FIRST_FILE_MS = 120
+const FirstFile = createContext<(t: DiffTarget | null) => void>(() => {})
+
+/** A panel says which file is its selection's first (null: none, or not loaded yet). Returns it, for isShown. */
+function useFirstFile(first: DiffTarget | null): DiffTarget | null {
+  const set = useContext(FirstFile)
+  const key = JSON.stringify(first)
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- by content: `first` is a new object every render
+  useEffect(() => set(first), [key, set])
+  return first
+}
+
+/** `value` once it has stayed the same (by content) for `ms`; until then the previous settled value. */
+function useSettled<T>(value: T, ms: number): T | null {
+  const key = JSON.stringify(value)
+  const [settled, setSettled] = useState<{ key: string; value: T } | null>(null)
+  useEffect(() => {
+    if (settled?.key === key) return
+    const t = setTimeout(() => setSettled({ key, value }), ms)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- by content: `value` is a new object every render
+  }, [key, ms])
+  return settled?.value ?? null
+}
 
 function openFile(view: RepoView, target: DiffTarget, mode: FileMode = 'diff') {
-  updateRepo(view.id, { center: { kind: 'file', target, mode } })
+  openFileIn(view.id, target, mode)
 }
 
 /** Right-click menu for a file in any list. Extra items (stage, discard...) come from the caller. */
@@ -93,6 +137,11 @@ function FileMenu({ view, target, children }: { view: RepoView; target: DiffTarg
 
 // ------------------------------------------------------------------ uncommitted changes
 
+/** The working copy's lists and the commit box: in Details (Browse), and as the Changes scene's left column. */
+export function WorkingCopyPanel({ view }: { view: RepoView }) {
+  return <WipPanel view={view} />
+}
+
 function WipPanel({ view }: { view: RepoView }) {
   const aiOn = useAiEnabled()
   const aiWhy = aiOn ? undefined : whyNotAi(undefined)
@@ -119,9 +168,10 @@ function WipPanel({ view }: { view: RepoView }) {
     // The diff follows the click, unless the click took the file out of the selection.
     if (next.paths.includes(path)) openFile(view, t)
   }
-  const isSelected = (section: 'unstaged' | 'staged', path: string, t: DiffTarget) =>
-    sel.section === section && sel.paths.length > 0 ? sel.paths.includes(path) : isOpen(view, t)
   const unstagedTarget = (e: StatusEntry): DiffTarget => (e.kind === 'untracked' ? { kind: 'untracked', path: e.path } : { kind: 'unstaged', path: e.path })
+  const first = useFirstFile(unstaged[0] ? unstagedTarget(unstaged[0]) : staged[0] ? { kind: 'staged', path: staged[0].path } : null)
+  const isSelected = (section: 'unstaged' | 'staged', path: string, t: DiffTarget) =>
+    sel.section === section && sel.paths.length > 0 ? sel.paths.includes(path) : isShown(view, first, t)
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -164,10 +214,12 @@ function WipPanel({ view }: { view: RepoView }) {
       {view.snapshot.operation && (
         <div className="flex items-center justify-between gap-2 border-b border-border bg-warn/10 px-3 py-2 text-sm">
           <span><b>{sentence(opName(view.snapshot.operation))}</b> in progress{conflicted.length ? `, ${conflicted.length} conflicted` : ''}</span>
-          <Button size="sm" onClick={() => updateRepo(id, { center: { kind: 'conflicts' } })}>Resolve…</Button>
+          <Button size="sm" onClick={() => updateRepo(id, { scene: 'resolve' })}>Resolve…</Button>
         </div>
       )}
-      <div className="flex min-h-0 flex-1 flex-col">
+      {/* No min-h-0: the lists stop shrinking at their least (FitSection's three rows each), so with
+          a file under them the commit box stays below them and the top of Details scrolls instead. */}
+      <div className="flex flex-1 flex-col">
         <FitSection testId="unstaged" header={
           <SectionHeader right={unstaged.length > 0 && (
             <span className="flex gap-1 normal-case">
@@ -498,7 +550,7 @@ function CommitQuestions({ view, hash }: { view: RepoView; hash: string }) {
       <div className="mb-1 text-2xs font-semibold text-muted-foreground uppercase">Questions ({threads.length})</div>
       {threads.map((t) => (
         <button key={t.id} className="flex w-full items-baseline gap-2 rounded px-1 py-0.5 text-left text-xs hover:bg-accent"
-          onClick={() => { updateRepo(view.id, { center: { kind: 'file', target: { kind: 'commit', hash, path: t.path }, mode: 'diff' } }); openAsk(view.id, t) }}>
+          onClick={() => { openFile(view, { kind: 'commit', hash, path: t.path }); openAsk(view.id, t) }}>
           <span className="shrink-0 font-mono text-2xs text-hint">{t.path.split('/').pop()}:{t.startLine}</span>
           <span className="min-w-0 flex-1 truncate">{t.messages.find((m) => m.role === 'user')?.text}</span>
         </button>
@@ -546,6 +598,7 @@ function ComparePanel({ view, sel }: { view: RepoView; sel: Extract<RepoView['se
   }, [view.id, sel.from, sel.to, reloadOn])
   const adds = files?.reduce((n, f) => n + f.additions, 0) ?? 0
   const dels = files?.reduce((n, f) => n + f.deletions, 0) ?? 0
+  const first = useFirstFile(files?.[0] ? { kind: 'range', from: sel.from, to: sel.to, path: files[0].path, oldPath: files[0].oldPath } : null)
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="compare-panel">
       <div className="border-b border-border p-3">
@@ -571,7 +624,7 @@ function ComparePanel({ view, sel }: { view: RepoView; sel: Extract<RepoView['se
         {!files ? <div className="p-3"><Spinner /></div> : files.length === 0 ? <div className="p-3 text-sm text-hint">No differences.</div> : <FileListView items={files} pathOf={(f) => f.path} filter={fileFilter} testId="compare" renderFile={(f, layout) => {
           const t: DiffTarget = { kind: 'range', from: sel.from, to: sel.to, path: f.path, oldPath: f.oldPath }
           return (
-            <FileRow key={f.path} {...layout} path={f.path} oldPath={f.oldPath} kind={f.change} selected={isOpen(view, t)} testId="compare-file"
+            <FileRow key={f.path} {...layout} path={f.path} oldPath={f.oldPath} kind={f.change} selected={isShown(view, first, t)} testId="compare-file"
               onClick={() => openFile(view, t)} menu={<FileMenu view={view} target={t} />}
               stats={f.binary ? <span className="text-2xs text-hint">bin</span> : (
                 <span className="shrink-0 font-mono text-2xs"><span className="text-add">+{f.additions}</span> <span className="text-destructive">−{f.deletions}</span></span>
@@ -642,6 +695,7 @@ function MultiPanel({ view, hashes }: { view: RepoView; hashes: string[] }) {
   for (const f of list ?? []) counts.set(f.change, (counts.get(f.change) ?? 0) + 1)
   const adds = list?.reduce((n, f) => n + f.additions, 0) ?? 0
   const dels = list?.reduce((n, f) => n + f.deletions, 0) ?? 0
+  const first = useFirstFile(list?.[0]?.target ?? null)
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="multi-panel">
       <div className="border-b border-border px-3 pt-3 pb-2">
@@ -676,7 +730,7 @@ function MultiPanel({ view, hashes }: { view: RepoView; hashes: string[] }) {
           : list === null ? <div className="p-3 text-sm text-hint">Too many commits that do not follow each other to gather their files.</div>
           : list.length === 0 ? <div className="p-3 text-sm text-hint">No file changes.</div>
           : <FileListView items={list} pathOf={(f) => f.path} filter={fileFilter} testId="multi" renderFile={(f, layout) => (
-            <FileRow key={f.path} {...layout} path={f.path} oldPath={f.oldPath} kind={f.change} selected={isOpen(view, f.target)} testId="multi-file"
+            <FileRow key={f.path} {...layout} path={f.path} oldPath={f.oldPath} kind={f.change} selected={isShown(view, first, f.target)} testId="multi-file"
               onClick={() => openFile(view, f.target)} menu={<FileMenu view={view} target={f.target} />}
               stats={f.binary ? <span className="text-2xs text-hint">bin</span> : (
                 <span className="shrink-0 font-mono text-2xs">
@@ -723,6 +777,8 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
     }, (e) => reportError('Could not load commit', e))
     return () => clearTimeout(spinner)
   }, [hash, view.id])
+  // Its own first file only: while the previous commit's details are still up, none.
+  const first = useFirstFile(details?.hash === hash && details.files[0] ? { kind: 'commit', hash, path: details.files[0].path } : null)
 
   if (!details) return <div className="flex flex-1 items-center justify-center text-hint"><Spinner /></div>
   const d = details
@@ -815,7 +871,7 @@ function CommitPanel({ view, hash }: { view: RepoView; hash: string }) {
         <FileListView items={d.files} pathOf={(f) => f.path} filter={fileFilter} testId="commit" renderFile={(f, layout) => {
           const t: DiffTarget = { kind: 'commit', hash: d.hash, path: f.path }
           return (
-            <FileRow key={f.path} {...layout} path={f.path} oldPath={f.oldPath} kind={f.change} selected={isOpen(view, t)} testId="commit-file"
+            <FileRow key={f.path} {...layout} path={f.path} oldPath={f.oldPath} kind={f.change} selected={isShown(view, first, t)} testId="commit-file"
               drag={{ kind: 'files', rev: d.hash, paths: [f.path], stash: !!stash }}
               onClick={() => openFile(view, t)}
               menu={<FileMenu view={view} target={t} />}

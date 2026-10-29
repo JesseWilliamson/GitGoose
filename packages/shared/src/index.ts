@@ -11,6 +11,7 @@ export * from './avatars'
 export * from './layout'
 export * from './merge3'
 export * from './version'
+export * from './reader'
 
 /** A commit as the graph needs it. Bodies and file lists are fetched lazily (see CommitDetails). */
 /** Enough of a commit to show it in a list of results. */
@@ -206,6 +207,30 @@ export type DiffTarget =
   | { kind: 'commit'; hash: string; path: string }
   /** Between two revisions, or a revision and the working tree (`to: null`). */
   | { kind: 'range'; from: string; to: string | null; path: string; oldPath?: string }
+
+/**
+ * What the reader streams (ADR-012): every file of a commit, of the difference between two
+ * revisions, or of the working copy's unstaged changes (untracked files included) or staged ones.
+ */
+export type StreamTarget =
+  | { kind: 'commit'; hash: string }
+  | { kind: 'range'; from: string; to: string | null }
+  | { kind: 'unstaged' }
+  | { kind: 'staged' }
+
+/** One file of a stream: its numbers, and its diff when it was within the line budget. */
+export interface StreamFile extends ChangedFile {
+  diff?: FileDiff
+  /** An untracked file (only in an `unstaged` stream). */
+  untracked?: boolean
+}
+
+/** What a fetch brought: the remote branches that moved, and the commits new to this repository. */
+export interface FetchDigest {
+  moved: { ref: string; from: string | null; to: string | null }[]
+  /** New commits, newest first (capped). */
+  fresh: string[]
+}
 
 export interface Remote {
   name: string

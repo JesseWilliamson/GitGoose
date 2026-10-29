@@ -1,9 +1,11 @@
-import { parseGitHubRemote, type DiffTarget, type GraphFilter, type PullMode, type Ref, type RepoSnapshot, type ResetMode, type Worktree } from '@gitgoose/shared'
+import { parseGitHubRemote, showPane, type DiffTarget, type FetchDigest, type GraphFilter, type HunkSelection, type PullMode, type Ref, type RepoSnapshot, type ResetMode, type Worktree } from '@gitgoose/shared'
 import { addDropped } from './aiContext'
 import { api, toUiError, type UiError } from './api'
 import type { DropPlan } from './dnd'
+import { ownerOf } from './openFile'
+import { changeLayout } from './panes'
 import { withPushChecks } from './pushchecks'
-import { activeRepo, addRepo, alertConflicts, ensureLoaded, choose, onSnapshot, openRepo, refreshAux, reportError, setting, toast, updateRepo, useStore } from './store'
+import { activeRepo, addRepo, alertConflicts, ensureLoaded, getLog, choose, onSnapshot, openRepo, refreshAux, reportError, setting, toast, updateRepo, useStore, type FileMode } from './store'
 
 /** The undo entry ids an action produced: a single id, an array of them (multi-step actions), or none. */
 function undoIdsOf(result: unknown): number[] {
@@ -37,6 +39,10 @@ export async function run(
   } = {},
 ): Promise<boolean> {
   updateRepo(id, { busy: label })
+  // Where the user was when they started it: if they are still there when it stops on conflicts,
+  // Resolve opens by itself (ADR-012); if they have moved on, only its tab lights up.
+  const before = useStore.getState().repos[id]
+  const startedAt = before && { scene: before.scene, selected: before.selected }
   try {
     const ids = undoIdsOf(await fn())
     if (ids.length) {
@@ -51,7 +57,8 @@ export async function run(
     const snap = await api.snapshot(id).catch(() => null)
     if (snap?.status.some((x) => x.kind === 'unmerged')) {
       onSnapshot(snap)
-      updateRepo(id, { center: { kind: 'conflicts' } })
+      const now = useStore.getState().repos[id]
+      if (now && startedAt && now.scene === startedAt.scene && now.selected === startedAt.selected) updateRepo(id, { scene: 'resolve' })
       // The pushed snapshot may have arrived first (then onSnapshot saw no change): alert anyway.
       alertConflicts(id, snap)
     } else if (!opts.onError?.(toUiError(e))) {
@@ -343,6 +350,28 @@ export async function compareSinceFork(id: string, base: string, branch: string)
   }
 }
 
+/**
+ * Review a branch in Read (R, the branch menu): its commits that its upstream lacks when it has
+ * unpushed ones (reviewing before a push), else those the trunk lacks; oldest first.
+ */
+export async function reviewBranch(id: string, ref: Ref): Promise<void> {
+  const v = useStore.getState().repos[id]
+  if (!v) return
+  const snap = v.snapshot
+  const trunk = snap.refs.find((r) => snap.trunk.includes(r.name) && r.name !== ref.name)
+  const base = ref.upstream && (ref.ahead ?? 0) > 0 ? ref.upstream : trunk?.name ?? ref.upstream
+  if (!base) return void toast({ kind: 'info', title: `Nothing to compare ${shortRef(ref)} with` })
+  try {
+    const hashes = await api.rangeCommits(id, base, ref.name)
+    if (!hashes.length) return void toast({ kind: 'info', title: `${shortRef(ref)} has no commits that ${shortRef(base)} lacks` })
+    await Promise.all(hashes.slice(0, 50).map((h) => ensureLoaded(id, h)))
+    const { reviewCommits } = await import('./scenes')
+    reviewCommits(id, `${shortRef(ref)} (since ${shortRef(base)})`, hashes)
+  } catch (e) {
+    reportError('Could not list the branch\'s commits', e)
+  }
+}
+
 // ------------------------------------------------------------------ GitHub pull requests
 
 /** Does any remote point at GitHub? (Decides whether pull request features show at all.) */
@@ -508,7 +537,21 @@ export async function openInEditor(path: string, line?: number): Promise<void> {
 // ------------------------------------------------------------------ remotes
 
 export const fetchAll = (id: string, opts: { quiet?: boolean } = {}) =>
-  run(id, 'Fetch', () => api.fetch(id, { prune: setting('pruneOnFetch') }), { success: 'Fetched', quiet: opts.quiet })
+  run(id, 'Fetch', async () => noteFetch(id, await api.fetch(id, { prune: setting('pruneOnFetch') })), { success: 'Fetched', quiet: opts.quiet })
+
+/** Keep what a fetch brought (the graph marks the new commits until they are seen). */
+function noteFetch(id: string, d: FetchDigest): void {
+  if (d.fresh.length) updateRepo(id, { fresh: { hashes: new Set(d.fresh), moved: d.moved } })
+}
+
+/** Read the commits the last fetch brought, oldest first, and stop marking them as new. */
+export function readFresh(id: string): void {
+  const v = useStore.getState().repos[id]
+  if (!v?.fresh) return
+  const log = getLog(id)
+  const hashes = [...v.fresh.hashes].filter((h) => log.index.has(h)).sort((a, b) => log.index.get(a)! - log.index.get(b)!)
+  void import('./scenes').then((s) => s.reviewCommits(id, 'new since the fetch', hashes))
+}
 
 const PULL_LABEL: Record<PullMode, string> = { merge: 'Pull', rebase: 'Pull (rebase)', 'ff-only': 'Pull (fast-forward only)' }
 
@@ -972,4 +1015,26 @@ export function copy(text: string, what = 'Copied'): void {
 
 export function currentId(): string | null {
   return activeRepo()?.id ?? null
+}
+
+/**
+ * Open a file in Details (ADR-011), from anywhere: a file list, a review finding, the omni search,
+ * a file's history. Selects what the file belongs to when that is something else (lib/openFile.ts),
+ * brings Details into view, and leaves the centre alone: a review you clicked a finding in stays.
+ */
+export function openFile(id: string, target: DiffTarget, mode: FileMode = 'diff'): void {
+  const v = useStore.getState().repos[id]
+  if (!v) return
+  const selected = ownerOf(target, v.selected)
+  // In a reading scene the reader is where files are read (ADR-012): scroll it to this one.
+  if ((v.scene === 'read' || v.scene === 'changes') && mode === 'diff') {
+    updateRepo(id, { selected, file: { target, mode }, jump: { path: target.path, nonce: Date.now() } })
+  } else updateRepo(id, { selected, file: { target, mode } })
+  if (selected !== v.selected && selected.kind === 'commit') void ensureLoaded(id, selected.hash)
+  if (v.scene === 'browse') changeLayout((l) => showPane(l, 'details'))
+}
+
+/** Take some lines of a commit's change back out of the working copy (the reader's Shift+R). Undoable. */
+export function revertLinesFromCommit(id: string, target: Extract<DiffTarget, { kind: 'commit' }>, _diff: unknown, hunks: HunkSelection[]): Promise<boolean> {
+  return run(id, `Revert ${hunks.reduce((n, h) => n + (h.lines?.length ?? 0), 0)} lines`, () => api.revertLines(id, { hash: target.hash, path: target.path, hunks, context: setting('contextLines') }))
 }

@@ -1,7 +1,7 @@
 import type {
-  BisectState, BlameLine, ChangeInsights, CodePeek, ImpactResult, ReviewScope, ImageSide, LfsInfo, LfsLock, ChangedFile, CommandRecord, CommitOrder, GraphFilter, Identity, Person, Signature, Commit, CommitSummary, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffTarget, FileDiff, Head, PullMode,
+  BisectState, BlameLine, ChangeInsights, CodePeek, ImpactResult, ReviewScope, ImageSide, LfsInfo, LfsLock, ChangedFile, CommandRecord, CommitOrder, GraphFilter, Identity, Person, Signature, Commit, CommitSummary, CommitDetails, ConflictFile, ConflictVersions, DiffOptions, DiffStreamOptions, DiffTarget, FetchDigest, HunkSelection, FileDiff, Head, PullMode,
   LogPage, Ref, Remote, RepoOperation, ReflogEntry, RepoSnapshot, ResetMode, Resolution, SearchField, SelectionRequest,
-  StashEntry, StatusEntry, StraightTips, Submodule, UndoEntry, Worktree,
+  StashEntry, StatusEntry, StreamFile, StreamTarget, StraightTips, Submodule, UndoEntry, Worktree,
 } from '@gitgoose/shared'
 import { countConflicts } from '@gitgoose/shared'
 import { existsSync } from 'node:fs'
@@ -45,6 +45,9 @@ function diffArgs(opts: DiffOptions = {}): string[] {
   const context = Math.max(1, Math.min(opts.context ?? 3, 100))
   return [...DIFF_ARGS, `-U${context}`, ...(opts.ignoreWhitespace ? ['-w'] : [])]
 }
+
+/** At most this many new commits are marked after a fetch. */
+const FETCH_NEW_MAX = 2000
 
 let nextRepoId = 1
 
@@ -504,6 +507,66 @@ export class Repo {
   }
 
   /**
+   * The reader's stream (ADR-012): every file of a target with its numbers, and the diffs of the
+   * first files until their changed lines pass the budget, all from one `git diff` (plus the file
+   * list). The reader asks for the rest file by file (`diff`) as they scroll into view, so a
+   * 2,000-file commit costs two cheap listings until someone reads it.
+   */
+  async diffStream(target: StreamTarget, opts: DiffStreamOptions = {}): Promise<StreamFile[]> {
+    const budget = opts.maxLines ?? 6000
+    let revs: string[]
+    if (target.kind === 'commit') {
+      const parents = (await this.read(['rev-list', '--parents', '-n', '1', target.hash])).trim().split(' ').slice(1)
+      revs = [parents[0] ?? (await this.emptyTreeHash()), target.hash]
+    } else if (target.kind === 'range') revs = [target.from, ...(target.to ? [target.to] : [])]
+    else if (target.kind === 'staged') revs = ['--cached']
+    else revs = []
+    const only = opts.paths ? new Set(opts.paths) : null
+    const pathspec = opts.paths ? ['--', ...opts.paths] : ['--']
+    const [ns, nm] = await Promise.all([
+      this.read(['diff', ...revs, '-M', '-z', '--name-status', ...pathspec]),
+      this.read(['diff', ...revs, '-M', '-z', '--numstat', ...pathspec]),
+    ])
+    const files: StreamFile[] = parseChangedFiles(ns, nm)
+    let used = 0
+    const take = (n: number) => {
+      if (used >= budget) return false
+      used += n
+      return true
+    }
+    const want = files.filter((f) => !f.binary && take(f.additions + f.deletions))
+    if (want.length) {
+      // The renamed files' old paths too, or git cannot pair them and lists an add and a delete.
+      const paths = want.flatMap((f) => (f.oldPath ? [f.oldPath, f.path] : [f.path]))
+      const parsed = parseDiff(await this.read(['diff', ...revs, '-M', ...diffArgs(opts), '--', ...paths]))
+      // git lists the files in the same order as the listing above, so they pair by position. The
+      // header's paths are a fallback only: git ends a path with a space in it with a tab there.
+      const byPath = new Map(parsed.map((d) => [d.path.replace(/\t$/, ''), d]))
+      want.forEach((f, i) => {
+        const d = parsed.length === want.length ? parsed[i] : byPath.get(f.path)
+        if (d) f.diff = { ...d, path: f.path, ...(f.oldPath ? { oldPath: f.oldPath } : {}) }
+      })
+    }
+    if (target.kind === 'unstaged') {
+      const status = (this.last ?? (await this.snapshot())).status
+      for (const e of status) {
+        if (e.kind !== 'untracked' || (only && !only.has(e.path))) continue
+        const f: StreamFile = { path: e.path, change: 'added', additions: 0, deletions: 0, binary: false, untracked: true }
+        try {
+          const d = untrackedDiff(e.path, await readFile(join(this.path, e.path)))
+          f.binary = d.binary
+          f.additions = d.hunks[0]?.lines.length ?? 0
+          if (!d.binary && take(f.additions)) f.diff = d
+        } catch {
+          // Gone since the status was read: list it, with nothing to show.
+        }
+        files.push(f)
+      }
+    }
+    return files
+  }
+
+  /**
    * Both versions of an image for a diff target, read only when an image diff is shown. A side
    * is null when the file does not exist there (added, deleted); over `cap` bytes, only its size
    * comes back, so a huge asset never crosses IPC.
@@ -592,6 +655,12 @@ export class Repo {
       this.read(['diff', '-M', '-z', '--numstat', ...revs, '--']),
     ])
     return parseChangedFiles(ns, nm)
+  }
+
+  /** The commits `tip` has that `base` has not, newest first (at most `limit`): a branch to review. */
+  async rangeCommits(base: string, tip: string, limit = 300): Promise<string[]> {
+    const out = await this.read(['rev-list', `--max-count=${limit}`, `${base}..${tip}`, '--'])
+    return out.split('\n').filter(Boolean)
   }
 
   /** The best common ancestor of two revisions (where one forked from the other). */
@@ -842,6 +911,24 @@ export class Repo {
       }
       await this.git(args, { input: patch })
       return null
+    })
+  }
+
+  /**
+   * Take some lines of a commit's change back out of the working copy: the selected lines of the
+   * commit's diff, applied in reverse to the file as it is now (the reader's Shift+R). The rest of
+   * the commit stays. Undoable: the file's content before is saved.
+   */
+  revertLines(req: { hash: string; path: string; hunks: HunkSelection[]; context?: number }): Promise<number | null> {
+    return this.exclusive(async () => {
+      const diff = await this.diff({ kind: 'commit', hash: req.hash, path: req.path }, { context: req.context })
+      if (!diff) return null
+      const patch = buildPatch(diff, req.hunks, true)
+      if (!patch) return null
+      const head = await this.currentHead()
+      const saved = await this.saveFiles([req.path])
+      await this.git(['apply', '--whitespace=nowarn', '--reverse', '-'], { input: patch })
+      return this.record(`Revert lines of ${req.hash.slice(0, 7)} in ${req.path}`, [{ kind: 'restore-files', files: saved }], head.hash)
     })
   }
 
@@ -2599,11 +2686,27 @@ export class Repo {
       .finally(() => this.opts.onProgress?.(null))
   }
 
-  fetch(opts: { remote?: string; prune?: boolean } = {}): Promise<void> {
+  /**
+   * Fetch, and say what it brought (the fetch digest, ADR-012): each remote branch that moved, and
+   * the commits that are new, at most `FETCH_NEW_MAX` of them, so the graph can mark them.
+   */
+  fetch(opts: { remote?: string; prune?: boolean } = {}): Promise<FetchDigest> {
     return this.exclusive(async () => {
+      const remotes = async () => new Map((await this.refs()).filter((r) => r.kind === 'remote' && !r.name.endsWith('/HEAD')).map((r) => [r.name, r.hash]))
+      const before = await remotes()
       await this.progress(['fetch', '--progress', ...(opts.prune ? ['--prune'] : []), ...(opts.remote ? [opts.remote] : ['--all'])])
       // New commits arrived: extend the commit-graph in the background (incremental with --split).
       void this.maintainCommitGraph({ force: true })
+      const after = await remotes()
+      const moved: FetchDigest['moved'] = []
+      for (const [ref, to] of after) if (before.get(ref) !== to) moved.push({ ref, from: before.get(ref) ?? null, to })
+      for (const [ref, from] of before) if (!after.has(ref)) moved.push({ ref, from, to: null })
+      const tips = moved.flatMap((m) => (m.to ? [m.to] : []))
+      if (!tips.length) return { moved, fresh: [] }
+      // New: reachable from a moved tip and from nothing that was there before the fetch.
+      const was = [...new Set([...before.values()])].map((h) => `^${h}`)
+      const out = await this.read(['rev-list', `--max-count=${FETCH_NEW_MAX}`, ...tips, ...was, '--'])
+      return { moved, fresh: out.split('\n').filter(Boolean) }
     })
   }
 

@@ -56,12 +56,13 @@ test('the search is a real input with its shortcut, and a count sits beside its 
   const { app, page } = await launch(r.dir)
   const toolbar = page.getByTestId('toolbar')
 
-  // A real <input> (shadcn's), about 20 rem wide, with the platform's shortcut as a Kbd on its right.
+  // A real <input> (shadcn's) on the right (the scene tabs have the middle): 9 rem in this
+  // 1024 px window, 14 rem from 1280 px, with the platform's shortcut as a Kbd on its right.
   const search = toolbar.getByTestId('omni-open')
   expect(await search.evaluate((el) => el.tagName)).toBe('INPUT')
   const field = (await search.boundingBox())!
-  expect(field.width).toBeGreaterThan(300)
-  expect(field.width).toBeLessThan(340)
+  expect(field.width).toBeGreaterThan(130)
+  expect(field.width).toBeLessThan(160)
   const kbd = toolbar.locator('kbd')
   await expect(kbd).toHaveText(process.platform === 'darwin' ? '⌘K' : 'Ctrl+K')
   const hint = (await kbd.boundingBox())!

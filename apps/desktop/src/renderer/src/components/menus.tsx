@@ -1,7 +1,7 @@
 import { DropdownMenu } from 'radix-ui'
 import {
  checkoutPull, createPull, openPull, lfsPull, lfsTrack, lfsUntrack, bisectMark, hideInGraph, showInGraph, soloInGraph, unsoloInGraph, addRemote, addSubmodule, addWorktree, removeSubmodule, syncSubmodules, updateSubmodules, lockWorktree, pruneWorktrees, removeWorktree, checkRemoteTags, cleanupBranches, clearPushUrl, deleteRemoteTag, editRemoteUrl, fastForward, fetchAll, fetchRemote, pushBranch, pushTags, pushTo, remoteNames, removeRemote, renameRemote, setUpstream,
- savePatches, stashToBranch, checkout, forcePushBranch, pinBranch, publishBranch, pruneRemote, pull, pullRemoteBranch, revealInHistory, trackRemoteBranch, cherryPick, cherryPickMany, compare, compareSinceFork, copy, fixupInto, pop, reword, squashCommit, squashTogether, stashApply, stashDrop, copyCommits, dropCommits, moveCommits, currentBranchRef, deleteBranch, deleteRemoteBranch, deleteTag,
+ savePatches, stashToBranch, checkout, forcePushBranch, pinBranch, publishBranch, pruneRemote, pull, pullRemoteBranch, revealInHistory, trackRemoteBranch, cherryPick, cherryPickMany, compare, compareSinceFork, reviewBranch, copy, fixupInto, pop, reword, squashCommit, squashTogether, stashApply, stashDrop, copyCommits, dropCommits, moveCommits, currentBranchRef, deleteBranch, deleteRemoteBranch, deleteTag,
   merge, newBranch, newTag, push, rebase, renameBranch, reset, revert, shortRef,
 } from '../lib/actions'
 import { shortHash, stashLabel } from '../lib/format'
@@ -96,9 +96,10 @@ export function GraphMenu({ repoId }: { repoId: string }) {
     /** Remote branches with the same name, the usual thing to track (all remote branches can be typed). */
     const tracking = r.kind === 'local' ? snap.refs.filter((x) => x.kind === 'remote' && x.name !== r.upstream && x.shortName.endsWith(`/${name}`)) : []
     const compareItem = (
-      <CM.Sub label="Compare" reason={whyNotCompareWithHead(snap, r)}>
-        <CM.Item onSelect={() => compare(repoId, snap.head.hash!, r.name, headName, name)}>{name} with {headName}</CM.Item>
-        <CM.Item onSelect={() => void compareSinceFork(repoId, snap.head.hash!, r.name)}>What {name} changed since it forked from {headName}</CM.Item>
+      <CM.Sub label="Compare">
+        {r.kind !== 'tag' && <CM.Item onSelect={() => void reviewBranch(repoId, r)}>Review its commits in Read</CM.Item>}
+        <CM.Item reason={whyNotCompareWithHead(snap, r)} onSelect={() => compare(repoId, snap.head.hash!, r.name, headName, name)}>{name} with {headName}</CM.Item>
+        <CM.Item reason={whyNotCompareWithHead(snap, r)} onSelect={() => void compareSinceFork(repoId, snap.head.hash!, r.name)}>What {name} changed since it forked from {headName}</CM.Item>
       </CM.Sub>
     )
     // One submenu: they are the rarely used ones, and a menu that scrolls hides its own rules.

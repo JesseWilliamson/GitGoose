@@ -1,5 +1,6 @@
 import { _electron as electron, expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { tempDir } from '@gitgoose/fixtures'
+import { FOLD_BELOW } from '@gitgoose/shared'
 import { mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -86,8 +87,22 @@ export async function launch(repo?: string, env: Record<string, string> = {}, op
   page.on('pageerror', (e) => console.error('[renderer]', e.message))
   if (!opts.keepSize) {
     await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]!.setContentSize(size.width, size.height), WINDOW)
+    // The window was resized after it opened, so the workspace folds the AI column a moment later
+    // (ADR-011: below FOLD_BELOW). Wait for that, or a test that opens the AI pane straight away
+    // can see it open and then folded by the late resize. A real window opens at its size.
+    if (repo && WINDOW.width < FOLD_BELOW) await settledFold(page)
   }
   return { app, page }
+}
+
+/** The repository's workspace is on screen and the far right column is folded, or has nothing to fold. */
+async function settledFold(page: Page): Promise<void> {
+  const workspace = page.getByTestId('workspace').first()
+  if (!(await workspace.waitFor({ timeout: 15_000 }).then(() => true, () => false))) return
+  await expect.poll(() => page.evaluate(async () => {
+    const far = (await window.gitgoose.getSettings()).layout.farRight
+    return far.panes.length === 0 || far.collapsed
+  }), { timeout: 10_000 }).toBe(true)
 }
 
 /**
@@ -127,10 +142,14 @@ export async function sendComposed(page: Page, action?: string): Promise<void> {
   await box.press('Enter')
 }
 
-/** Close the AI pane from its tab menu (the pane chrome has the Hide; the pane itself has no close button). */
+/**
+ * Put the AI away: from inside it, the AI key (Mod+J) hides the AI pane in Browse and turns the
+ * left column back to its other face in the other scenes (ADR-012).
+ */
 export async function hideAiPane(page: Page): Promise<void> {
-  await page.getByTestId('pane-menu-ai').click()
-  await page.getByRole('menuitem', { name: 'Hide' }).click()
+  await page.getByTestId('ai-chat-panel').locator('textarea').focus()
+  await page.keyboard.press('ControlOrMeta+j')
+  await expect(page.getByTestId('ai-chat-panel')).toHaveCount(0)
 }
 
 /**

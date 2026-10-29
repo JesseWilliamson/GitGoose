@@ -1,20 +1,15 @@
-import { PANE_TITLES, SLOTS, activatePane, hidePane, movePane, type PaneId, type Slot, type SlotState } from '@gitgoose/shared'
+import { PANE_TITLES, activatePane, type PaneId, type Slot, type SlotState } from '@gitgoose/shared'
 import clsx from 'clsx'
-import { Ellipsis } from 'lucide-react'
-import { DropdownMenu } from 'radix-ui'
-import { useRef, useState, type DragEvent } from 'react'
-import { PANE_MIME, changeLayout, usePaneDrag } from '../lib/panes'
+import { useRef } from 'react'
+import { changeLayout } from '../lib/panes'
 import { useSetting, type RepoView } from '../lib/store'
 import { AiChatActions, AiChatPanel } from './AiChatPanel'
 import { DetailPanel } from './DetailPanel'
 import { Sidebar } from './Sidebar'
-import { DM } from './ui'
 
 /**
- * A slot of the workspace: a strip of tabs (one per pane, the title alone when there is only
- * one) over the active pane's body. Tabs are native drags (PANE_MIME); a tab strip takes a drop
- * and inserts where the pointer is, and the workspace's edge zones (Workspace.tsx) take a drop
- * into a slot that has no strip because it has no panes.
+ * A column of the Browse scene: its pane's title over its body (a strip of tabs only when an older
+ * layout put two panes in one column).
  */
 
 function PaneBody({ pane, view }: { pane: PaneId; view: RepoView }) {
@@ -46,102 +41,31 @@ export function SlotView({ slot, view }: { slot: Slot; view: RepoView }) {
 }
 
 function TabStrip({ slot, state, view }: { slot: Slot; state: SlotState; view: RepoView }) {
-  const strip = useRef<HTMLDivElement>(null)
-  /** Where a dragged tab would land: its index among the other tabs, and the x of the bar that shows it. */
-  const [drop, setDrop] = useState<{ index: number; x: number } | null>(null)
-  const dragging = usePaneDrag((s) => s.dragging)
   const tabbed = state.panes.length > 1
-
-  const whereAt = (e: DragEvent): { index: number; x: number } => {
-    const box = strip.current!.getBoundingClientRect()
-    const tabs = [...strip.current!.querySelectorAll<HTMLElement>('[data-pane-tab]')].filter((t) => t.dataset.paneTab !== dragging)
-    let index = 0
-    let x = tabs.length ? tabs[0]!.getBoundingClientRect().left : box.left
-    for (const t of tabs) {
-      const r = t.getBoundingClientRect()
-      if (e.clientX > r.left + r.width / 2) {
-        index++
-        x = r.right
-      }
-    }
-    return { index, x: x - box.left }
-  }
-
   return (
-    <div ref={strip} className={clsx('relative flex h-strip shrink-0 items-stretch border-b border-border bg-card', drop && 'bg-primary/10')}
-      data-testid={`tabs-${slot}`}
-      onDragOver={(e) => {
-        if (!e.dataTransfer.types.includes(PANE_MIME)) return
-        e.preventDefault()
-        e.dataTransfer.dropEffect = 'move'
-        setDrop(whereAt(e))
-      }}
-      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDrop(null) }}
-      onDrop={(e) => {
-        const pane = e.dataTransfer.getData(PANE_MIME) as PaneId
-        if (!pane) return
-        e.preventDefault()
-        const at = whereAt(e)
-        setDrop(null)
-        usePaneDrag.setState({ dragging: null })
-        changeLayout((l) => movePane(l, pane, slot, at.index))
-      }}>
+    <div className="relative flex h-strip shrink-0 items-stretch border-b border-border bg-card" data-testid={`tabs-${slot}`}>
       {state.panes.map((p) => (
-        <Tab key={p} pane={p} slot={slot} tabbed={tabbed} active={state.active === p} />
+        <Tab key={p} pane={p} tabbed={tabbed} active={state.active === p} />
       ))}
       {/* The `right` slot: the active pane's own actions (the AI pane's New and History). */}
       <div className="ml-auto flex shrink-0 items-center pr-1.5" data-testid={`tabs-${slot}-actions`}><PaneActions pane={state.active} view={view} /></div>
-      {drop && <div className="pointer-events-none absolute inset-y-0 w-0.5 bg-primary" style={{ left: drop.x }} />}
     </div>
   )
 }
 
-function Tab({ pane, slot, tabbed, active }: { pane: PaneId; slot: Slot; tabbed: boolean; active: boolean }) {
-  // The ⋯ menu is opened by its button, by a right-click on the tab (one menu, two ways in), and
-  // stays in the DOM while hidden: it only fades in when the tab is hovered or the menu is open.
-  const [menuOpen, setMenuOpen] = useState(false)
+/**
+ * A pane's title (a tab when an older layout put two panes in one column). Panes no longer move
+ * (ADR-012): each has its column, and View shows or hides it.
+ */
+function Tab({ pane, tabbed, active }: { pane: PaneId; tabbed: boolean; active: boolean }) {
   return (
-    <div draggable data-pane-tab={pane} data-testid={`pane-tab-${pane}`} data-active={active || undefined}
-      title={`${PANE_TITLES[pane]}: drag to move`}
-      onDragStart={(e) => {
-        e.dataTransfer.setData(PANE_MIME, pane)
-        e.dataTransfer.effectAllowed = 'move'
-        // After the browser has taken its drag image: changing the page in dragstart can cancel the drag.
-        setTimeout(() => usePaneDrag.setState({ dragging: pane }), 0)
-      }}
-      onDragEnd={() => usePaneDrag.setState({ dragging: null })}
+    <div data-pane-tab={pane} data-testid={`pane-tab-${pane}`} data-active={active || undefined}
       onClick={() => changeLayout((l) => activatePane(l, pane))}
-      onContextMenu={(e) => { e.preventDefault(); setMenuOpen(true) }}
       // 2 px bottom border on every tab (transparent unless active) so choosing a tab moves nothing.
-      className={clsx('group/tab flex min-w-0 cursor-default items-center gap-1 border-b-2 pr-1 pl-3 text-xs font-medium',
+      className={clsx('flex min-w-0 cursor-default items-center gap-1 border-b-2 px-3 text-xs font-medium',
         tabbed && active ? 'border-primary text-foreground' : tabbed ? 'border-transparent text-muted-foreground hover:text-foreground' : 'border-transparent text-foreground')}>
       <span className="truncate">{PANE_TITLES[pane]}</span>
-      <PaneMenu pane={pane} slot={slot} open={menuOpen} onOpenChange={setMenuOpen} />
     </div>
-  )
-}
-
-function PaneMenu({ pane, slot, open, onOpenChange }: { pane: PaneId; slot: Slot; open: boolean; onOpenChange: (open: boolean) => void }) {
-  return (
-    // React events bubble out of a portal to the component that rendered it: without this stop, a
-    // click on a menu item would also reach the tab and activate it (with a stale layout).
-    <span className="flex items-center" onClick={(e) => e.stopPropagation()}>
-      <DropdownMenu.Root open={open} onOpenChange={onOpenChange}>
-        <DropdownMenu.Trigger asChild>
-          <button aria-label={`${PANE_TITLES[pane]} pane menu`} data-testid={`pane-menu-${pane}`}
-            className="rounded-sm p-0.5 text-muted-foreground opacity-0 group-hover/tab:opacity-100 hover:bg-accent hover:text-foreground focus:opacity-100 data-[state=open]:opacity-100">
-            <Ellipsis size={13} />
-          </button>
-        </DropdownMenu.Trigger>
-        <DM.Content align="end">
-          {SLOTS.map((s) => (
-            <DM.Item key={s} reason={s === slot ? `Already in the ${s} slot` : undefined} onSelect={() => changeLayout((l) => movePane(l, pane, s))}>Move to {s}</DM.Item>
-          ))}
-          <DM.Separator />
-          <DM.Item onSelect={() => changeLayout((l) => hidePane(l, pane))}>Hide</DM.Item>
-        </DM.Content>
-      </DropdownMenu.Root>
-    </span>
   )
 }
 
@@ -151,39 +75,4 @@ function PaneActions({ pane, view }: { pane: PaneId | null; view: RepoView }) {
     case 'ai': return <AiChatActions view={view} />
     default: return null
   }
-}
-
-/**
- * While a pane tab is in the air: a strip along the left, right and bottom edge of the workspace
- * to drop it on. They are what makes an empty slot reachable.
- */
-export function PaneDropZones() {
-  const dragging = usePaneDrag((s) => s.dragging)
-  const [over, setOver] = useState<Slot | null>(null)
-  if (!dragging) return null
-  const zone = (slot: Slot, cls: string) => (
-    <div key={slot} data-testid={`pane-drop-${slot}`}
-      className={clsx('absolute z-30 border-primary/60 bg-primary/15 transition-colors', cls, over === slot && 'bg-primary/50')}
-      onDragOver={(e) => {
-        if (!e.dataTransfer.types.includes(PANE_MIME)) return
-        e.preventDefault()
-        e.dataTransfer.dropEffect = 'move'
-        setOver(slot)
-      }}
-      onDragLeave={() => setOver((o) => (o === slot ? null : o))}
-      onDrop={(e) => {
-        const pane = (e.dataTransfer.getData(PANE_MIME) || dragging) as PaneId
-        e.preventDefault()
-        setOver(null)
-        usePaneDrag.setState({ dragging: null })
-        changeLayout((l) => movePane(l, pane, slot))
-      }} />
-  )
-  return (
-    <>
-      {zone('left', 'inset-y-0 left-0 w-6 border-r-2')}
-      {zone('right', 'inset-y-0 right-0 w-6 border-l-2')}
-      {zone('bottom', 'inset-x-0 bottom-0 h-6 border-t-2')}
-    </>
-  )
 }

@@ -4,7 +4,8 @@ import {
 } from './actions'
 import { composeAction, impactAction, reviewAction, walkthroughAction } from './aiActions'
 import { modName } from './keys'
-import { saveSettings, toggleLine, useStore } from './store'
+import { runCommand, saveSettings, toggleLine, useStore } from './store'
+import { SCENE_TITLES, SCENES } from './scenes'
 import { toggleChat } from './thread'
 
 export interface CommandEntry {
@@ -69,7 +70,7 @@ export function commandEntries(): CommandEntry[] {
     add('Repository', 'Save a snapshot of the working tree (changes stay)', () => void snapshot(id))
     add('Repository', 'Pop latest stash', () => pop(id))
     add('Repository', 'Show uncommitted changes', () => useStore.setState((s) => ({ repos: { ...s.repos, [id]: { ...s.repos[id]!, selected: { kind: 'wip' }, center: { kind: 'graph' } } } })))
-    if (active.snapshot.operation) add('Repository', `Resolve conflicts (${active.snapshot.operation})`, () => useStore.setState((s) => ({ repos: { ...s.repos, [id]: { ...s.repos[id]!, center: { kind: 'conflicts' } } } })))
+    if (active.snapshot.operation) add('Repository', `Resolve conflicts (${active.snapshot.operation})`, () => useStore.setState((s) => ({ repos: { ...s.repos, [id]: { ...s.repos[id]!, scene: 'resolve' } } })))
     add('Repository', 'Reveal in file manager', () => void window.gitgoose.revealPath(active.snapshot.path))
   }
   for (const t of tabs) {
@@ -80,13 +81,12 @@ export function commandEntries(): CommandEntry[] {
   add('App', 'Clone repository…', () => useStore.setState({ dialog: { kind: 'clone' } }))
   add('App', 'New repository…', () => void initRepo())
   add('App', 'Settings', () => useStore.setState({ page: 'settings' }))
+  add('Go to', 'Branch table (clean up, review, compare)', () => runCommand('branch-table'), 'B')
+  for (const sc of SCENES) add('Go to', SCENE_TITLES[sc], () => runCommand(`scene-${sc}`), String(SCENES.indexOf(sc) + 1))
   add('Layout', 'Reset layout (panes and sizes)', () => void saveSettings({ layout: structuredClone(DEFAULT_LAYOUT) }))
   add('Layout', 'Hide side panels', () => void saveSettings({ layout: wideGraph(settings!.layout) }))
   add('App', 'Keyboard shortcuts', () => useStore.setState({ dialog: { kind: 'shortcuts' } }), '?')
   if (settings) {
-    const compact = settings.graphStyle === 'compact'
-    add('Layout', compact ? 'Graph: comfy (two-line rows)' : 'Graph: compact (one-line rows)',
-      () => void saveSettings({ graphStyle: compact ? 'comfy' : 'compact' }), 'Also in Settings → Appearance')
     const topo = settings.commitOrder === 'topo'
     add('Layout', topo ? 'Commit order: by date' : 'Commit order: topological',
       () => void saveSettings({ commitOrder: topo ? 'date' : 'topo' }), 'Also in Settings → Graph')
