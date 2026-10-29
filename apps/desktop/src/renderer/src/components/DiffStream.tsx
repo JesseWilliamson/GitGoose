@@ -361,7 +361,8 @@ export const DiffStream = forwardRef<StreamHandle, Props>(function DiffStream(pr
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1" data-testid={props.testId ?? 'diff-stream'}>
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-        {curBlock && curFile && rows[topRow]?.kind !== 'file' && (
+        {/* Only once the file's own header has scrolled away (not over a block's header band). */}
+        {curBlock && curFile && rows[topRow]?.kind !== 'file' && rows[topRow]?.kind !== 'block' && (
           <div className="absolute inset-x-0 top-0 z-20 shadow-sm" data-testid="stream-sticky">
             <FileHeader view={view} block={curBlock} file={curFile} index={curBlock.files!.indexOf(curFile)}
               layout={stream.layouts.get(fileKey(curBlock, curFile))} state={states.get(fileKey(curBlock, curFile))}
