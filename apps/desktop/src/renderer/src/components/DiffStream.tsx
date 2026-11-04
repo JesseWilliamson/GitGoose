@@ -524,7 +524,8 @@ function FileHeader({ view, block, file, index, layout, state, viewed, onViewed,
   const t = targetOf(block.target, file)
   return (
     <div className={clsx('flex h-8 items-center gap-2 border-y border-border bg-panel px-3 font-sans text-sm', sticky && 'border-t-0')} data-testid={sticky ? 'stream-sticky-file' : 'stream-file'} data-path={file.path}>
-      <span className="w-8 shrink-0 text-2xs text-hint tabular-nums">{index + 1}/{total}</span>
+      {/* As wide as "2476/2476" needs (tabular digits, so ch is exact): a fixed 2 rem ran into the status letter. */}
+      <span className="shrink-0 text-2xs text-hint tabular-nums" style={{ minWidth: `${String(total).length * 2 + 1}ch` }}>{index + 1}/{total}</span>
       <span className={clsx('w-3 shrink-0 text-center font-mono text-2xs font-bold', b.cls)}>{file.untracked ? 'U' : b.letter}</span>
       <span className="min-w-0 truncate" title={file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}>
         <span className="text-hint">{dir}</span><span className="font-semibold">{name}</span>
