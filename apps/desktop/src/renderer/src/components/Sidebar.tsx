@@ -12,7 +12,7 @@ import {
   lfsSetUp, loadPulls, newBranch, newTag, pop, remoteNames, restoreGraphFilter, revealInHistory, showAllInGraph, showBranchHistory, showHistory, showInGraph,
   showWorkingCopy, stashDrop,
 } from '../lib/actions'
-import { relativeTime, stashLabel } from '../lib/format'
+import { relativeTime, shortDate, stashLabel } from '../lib/format'
 import { refShown } from '../lib/graphFilter'
 import { shortcutOf } from '../lib/keys'
 import { isDraggingBranch, startDrag, subscribeDrag, type DropTarget } from '../lib/dnd'
@@ -406,7 +406,7 @@ const SidebarRowView = memo(function SidebarRowView({ row, top, cursor, view, lo
           title={`${s.message}\n${relativeTime(s.date)}\nClick to see its changes, double-click to pop`}
           className={clsx(base, (selected || cursor) && 'bg-select')}>
           <span className="min-w-0 flex-1 truncate">{stashLabel(s.message)}</span>
-          <Meta>{relativeTime(s.date)}</Meta>
+          <Meta>{shortDate(s.date)}</Meta>
         </div>
       )
     }
