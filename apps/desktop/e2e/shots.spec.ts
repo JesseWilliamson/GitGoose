@@ -11,7 +11,8 @@ const SRC = join(import.meta.dirname, '..', '..', '..', '.fixtures')
 const SIZE = { width: 1440, height: 900 }
 
 async function open(repo: string | undefined, theme: string) {
-  const l = await launch(repo, {}, { keepSize: true })
+  // At 2x, as a high-density screen shows it (and as product screenshots are taken).
+  const l = await launch(repo, {}, { keepSize: true, args: [`--force-device-scale-factor=${process.env.SHOTS_SCALE ?? 2}`] })
   await l.app.evaluate(({ BrowserWindow }, s) => BrowserWindow.getAllWindows()[0]!.setContentSize(s.width, s.height), SIZE)
   await l.page.evaluate((t) => window.gitgoose.setSettings({ theme: t as 'dark' }), theme)
   await l.page.waitForTimeout(2500)

@@ -61,8 +61,8 @@ export async function openPrompt(page: Page, area: string): Promise<void> {
 }
 
 /** Launch the built app (out/) with a throwaway profile, optionally opening a repository. */
-export async function launch(repo?: string, env: Record<string, string> = {}, opts: { keepSize?: boolean } = {}): Promise<Launched> {
-  const args = [join(import.meta.dirname, '..', 'out', 'main', 'index.js')]
+export async function launch(repo?: string, env: Record<string, string> = {}, opts: { keepSize?: boolean; args?: string[] } = {}): Promise<Launched> {
+  const args = [...(opts.args ?? []), join(import.meta.dirname, '..', 'out', 'main', 'index.js')]
   // Containers usually run as root, where Chromium refuses to start without this.
   if (process.platform === 'linux') args.unshift('--no-sandbox')
   const start = () => electron.launch({
