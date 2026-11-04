@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { Archive, ArrowDown, ArrowUp, ChevronDown, ChevronRight, GitBranch, RefreshCw, Redo2, Search, Settings, Sparkles, Undo2 } from 'lucide-react'
+import { Archive, ArrowDown, ArrowUp, BookOpen, ChevronDown, ChevronRight, GitBranch, GitCommitVertical, GitMerge, PencilLine, RefreshCw, Redo2, Search, Settings, Sparkles, Undo2 } from 'lucide-react'
 import { DropdownMenu } from 'radix-ui'
 import { fetchAll, newBranch, pull, push, redo, stash, undo } from '../lib/actions'
 import { runCommand, useSetting, useStore, type RepoView } from '../lib/store'
@@ -114,19 +114,31 @@ function UndoChip({ view }: { view: RepoView }) {
  * The scenes (ADR-012), in the middle of the title bar: Browse, Read, Changes with its count, and
  * Resolve only while an operation is stopped on conflicts. Keys 1–4; each scene keeps its place.
  */
+const SCENE_ICONS: Record<(typeof SCENES)[number], React.ReactNode> = {
+  browse: <GitCommitVertical size={14} />, read: <BookOpen size={14} />, changes: <PencilLine size={14} />, resolve: <GitMerge size={14} />,
+}
+/** What each scene is for, in the tab's tooltip: the names are short, this is what they mean. */
+const SCENE_HINTS: Record<(typeof SCENES)[number], string> = {
+  browse: 'the history, branches and the selected commit',
+  read: "the selection's whole diff, across the window",
+  changes: 'your uncommitted changes: stage and commit',
+  resolve: 'settle the conflicts of the operation in progress',
+}
+
 function SceneTabs({ view }: { view: RepoView }) {
   const conflicts = hasConflicts(view)
   const scenes = SCENES.filter((s) => s !== 'resolve' || conflicts || view.scene === 'resolve')
   const count = view.snapshot.status.length
   return (
-    <div className="no-drag flex items-center gap-0.5 rounded-md bg-background p-0.5" role="tablist" data-testid="scene-tabs">
+    <div className="no-drag flex items-center gap-0.5 rounded-lg bg-background p-0.5" role="tablist" data-testid="scene-tabs">
       {scenes.map((s) => {
         const on = view.scene === s
         return (
-          <button key={s} role="tab" aria-selected={on} data-testid={`scene-tab-${s}`} title={`${SCENE_TITLES[s]} (${SCENES.indexOf(s) + 1})`}
+          <button key={s} role="tab" aria-selected={on} data-testid={`scene-tab-${s}`} title={`${SCENE_TITLES[s]}: ${SCENE_HINTS[s]} (${SCENES.indexOf(s) + 1})`}
             onClick={() => (s === 'read' && !on ? readSelection(view.id) : setScene(view.id, s))}
-            className={clsx('flex h-6 items-center gap-1.5 rounded px-2.5 text-xs', on ? 'bg-card font-semibold text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+            className={clsx('flex h-7 items-center gap-1.5 rounded px-3 text-xs font-medium', on ? 'bg-card text-foreground shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:bg-accent hover:text-foreground',
               s === 'resolve' && 'text-warn')}>
+            {SCENE_ICONS[s]}
             {SCENE_TITLES[s]}
             {s === 'changes' && count > 0 && <span className="rounded bg-popover px-1 text-2xs tabular-nums text-muted-foreground">{count}</span>}
           </button>
@@ -163,8 +175,10 @@ function Location({ view }: { view: RepoView }) {
   const value = head.branch ?? (head.hash ? head.hash.slice(0, 7) : 'no commits')
   return (
     <div className="flex min-w-0 shrink items-center gap-1 px-1 text-sm" data-testid="location">
-      <span className="max-w-40 truncate text-muted-foreground" title={path} data-testid="location-repo">{name}</span>
-      <ChevronRight size={14} className="shrink-0 text-hint" />
+      {/* The tab above already names the repository: below 1536 px the branch has the room. */}
+      <span className="hidden max-w-40 truncate text-muted-foreground 2xl:inline" title={path} data-testid="location-repo">{name}</span>
+      <ChevronRight size={14} className="hidden shrink-0 text-hint 2xl:block" />
+      <GitBranch size={14} className="shrink-0 text-muted-foreground 2xl:hidden" />
       <span className={clsx('max-w-48 truncate font-semibold text-foreground', !head.branch && !!head.hash && 'font-mono')} title={head.hash} data-testid="location-head">{value}</span>
     </div>
   )

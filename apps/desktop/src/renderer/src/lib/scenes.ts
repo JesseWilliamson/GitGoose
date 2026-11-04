@@ -100,8 +100,14 @@ export function setFace(id: string, face: Face): void {
   if (v && v.read.face !== face) updateRepo(id, { read: { ...v.read, face } })
 }
 
+/** \ : fold or open the left column. Resolve keeps its own (see RepoView.resolveOpen). */
 export function toggleFolded(id: string): void {
-  updateRepo(id, (v) => ({ folded: !v.folded }))
+  updateRepo(id, (v) => (v.scene === 'resolve' ? { resolveOpen: !v.resolveOpen } : { folded: !v.folded }))
+}
+
+/** Is this scene's left column folded to its rail? */
+export function isFolded(v: { scene: string; folded: boolean; resolveOpen: boolean }): boolean {
+  return v.scene === 'resolve' ? !v.resolveOpen : v.folded
 }
 
 export function setViewed(id: string, key: string, viewed: boolean): void {

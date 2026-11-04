@@ -315,7 +315,7 @@ export function openInPanel(repoId: string, threadId: string): void {
   // Outside Browse the AI is the left column's other face (ADR-012): turn it, and unfold it.
   updateRepo(repoId, (v) => ({
     chat: { ...v.chat, threadId, pending: undefined, history: false },
-    ...(v.scene !== 'browse' ? { read: { ...v.read, face: 'ai' as const }, folded: false } : {}),
+    ...(v.scene !== 'browse' ? { read: { ...v.read, face: 'ai' as const }, folded: false, resolveOpen: true } : {}),
   }))
   if (useStore.getState().repos[repoId]?.scene === 'browse') showAiPane()
 }

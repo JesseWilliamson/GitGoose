@@ -159,3 +159,19 @@ test('cards: take both sides with theirs first; progress and file tabs follow al
   expect(r.git('show', ':f.txt')).toBe(file({ 2: 'ours 2', 6: 'theirs 6', 10: 'same 10', 14: 'theirs 14\nours 14' }))
   await app.close()
 })
+
+test('Resolve gives the conflict the width: its left column starts folded, with its own fold; the result says what to do', async () => {
+  const { r } = mergeRepo()
+  const { app, page } = await launch(r.dir)
+  await expect(page.getByTestId('scene-resolve')).toBeVisible()
+  await expect(page.getByTestId('left-rail')).toBeVisible()
+  await expect(page.getByTestId('merge-next-step')).toContainText('to take that side')
+  // The rail opens it here (\ too, outside the editor, which takes the key); Read keeps its own (open) column.
+  await page.getByTestId('left-rail').getByTitle('Show the column (\\)').click()
+  await expect(page.getByTestId('left-column')).toBeVisible()
+  await page.getByTestId('left-column').getByTitle('Fold the column (\\)').click()
+  await expect(page.getByTestId('left-rail')).toBeVisible()
+  await page.getByTestId('scene-tab-read').click()
+  await expect(page.getByTestId('left-column')).toBeVisible()
+  await app.close()
+})

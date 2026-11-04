@@ -390,6 +390,9 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
   }, [id])
   // A message that is still exactly the template has not been written.
   const canCommit = summary.trim().length > 0 && (stagedCount > 0 || amend) && !view.busy && !(template.current && isUntouched(summary, body, template.current))
+  /** What the commit still needs, in words, or null when it can go (or is going). */
+  const waitingFor = view.busy ? null : stagedCount === 0 && !amend ? 'Stage changes to commit'
+    : !summary.trim() || (template.current && isUntouched(summary, body, template.current)) ? 'Write a summary' : null
   const aiOn = useAiEnabled()
   // After a squash merge (or a merge stopped before its commit) git prepares a message: offer it.
   const prepared = useRef('')
@@ -528,9 +531,13 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
             </>
           )}
         </div>
-        <Button variant="primary" className="shrink-0" disabled={!canCommit} onClick={() => void commit()} data-testid="commit-button" title={`Commit (${modName()}+Enter)`}>
+        {/* Disabled, the button says what it waits for (GitKraken's "Stage changes to commit") in a
+            neutral style: a pale primary button reads as broken, not as "not yet". */}
+        <Button variant={canCommit || view.busy === 'Commit' ? 'primary' : 'default'} className="shrink-0" disabled={!canCommit} onClick={() => void commit()} data-testid="commit-button"
+          title={waitingFor ?? `Commit (${modName()}+Enter)`}>
           {view.busy === 'Commit' ? <Spinner /> : <Check size={14} />}
-          {amend ? 'Amend' : stagedCount ? `Commit ${stagedCount} ${stagedCount === 1 ? 'file' : 'files'}` : 'Commit'}
+          {waitingFor && !view.busy ? waitingFor
+            : amend ? 'Amend' : stagedCount ? `Commit ${stagedCount} ${stagedCount === 1 ? 'file' : 'files'}` : 'Commit'}
         </Button>
       </div>
       {/* Who the commit is by: information about the commit, so it follows the fields and the

@@ -561,7 +561,7 @@ const CommitRow = memo(function CommitRow(props: {
       <div className="relative flex min-w-0 flex-1 items-center gap-1.5 pr-3 pl-1" data-testid="row-body">
         {props.fresh && <span className="size-1.5 shrink-0 rounded-full bg-primary" data-testid="row-fresh" title="New since the last fetch" />}
         {marks(look.pills)}
-        <span className={clsx('min-w-0 flex-1 truncate', (row.merge || props.stash) && 'text-muted-foreground', props.stash && 'italic')}
+        <span className={clsx('min-w-24 flex-1 truncate', (row.merge || props.stash) && 'text-muted-foreground', props.stash && 'italic')}
           data-testid="row-subject">{subject}</span>
         {props.selected && <span className="shrink-0 font-mono text-2xs text-hint" data-testid="row-sha">{shortHash(commit.hash)}</span>}
         <span className="ml-1.5 flex w-7 shrink-0 items-center gap-1.5 text-xs text-muted-foreground @[600px]:w-32" title={authorsTitle ?? `${commit.authorName} <${commit.authorEmail}>`}>
@@ -595,7 +595,9 @@ function RefPill({ pill, color, repoId, hash }: { pill: Pill; color: number; rep
       }}
       title={[pill.local?.name, ...pill.remotes.map((r) => r.name), pill.tag?.name].filter(Boolean).join('\n')}
       className={clsx(
-        'flex h-[18px] max-w-44 min-w-0 shrink cursor-grab items-center gap-1 rounded-[4px] px-1.5 text-2xs font-semibold',
+        // Up to 13 rem, so most branch names show whole; never under 4 rem, so a squeezed row
+        // still shows which branch it is. The subject keeps a floor of its own (row-subject).
+        'flex h-[18px] max-w-52 min-w-16 shrink cursor-grab items-center gap-1 rounded-[4px] px-1.5 text-2xs font-semibold',
         pill.isHead ? 'bg-primary text-primary-foreground' : pill.tag ? 'bg-warn text-black' : 'text-foreground',
       )}
       // The checked-out branch is solid accent and tags solid amber, as in Tower; other branches

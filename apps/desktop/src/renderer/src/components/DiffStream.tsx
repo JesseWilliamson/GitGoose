@@ -435,7 +435,9 @@ export const DiffStream = forwardRef<StreamHandle, Props>(function DiffStream(pr
         <div style={style} className="flex items-center gap-2 border-y border-border/50 bg-card/60 pr-3 pl-3 text-hint">
           <span className="min-w-0 truncate">@@ -{h.oldStart},{h.oldLines} +{h.newStart},{h.newLines} @@ {h.section}</span>
           {editable && (
-            <span className="ml-auto flex shrink-0 gap-1 font-sans">
+            <span className="ml-auto flex shrink-0 items-center gap-1 font-sans">
+              {/* Line staging is the feature people miss: say it where the decision is made, once (the first hunk). */}
+              {b.target.kind === 'unstaged' && r.hunk === 0 && b.files?.[0]?.path === f.path && <span className="mr-1 hidden text-2xs text-hint lg:inline" data-testid="line-stage-hint">or click lines to stage part of it</span>}
               {b.target.kind === 'unstaged' && <Button size="sm" data-testid="stage-hunk" onClick={() => apply(t, 'stage', [{ hunk: r.hunk }])}>Stage hunk</Button>}
               {b.target.kind === 'staged' && <Button size="sm" onClick={() => apply(t, 'unstage', [{ hunk: r.hunk }])}>Unstage hunk</Button>}
               {b.target.kind === 'unstaged' && !f.untracked && <Button size="sm" variant="ghost" onClick={() => apply(t, 'discard', [{ hunk: r.hunk }])}>Discard hunk</Button>}

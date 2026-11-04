@@ -68,6 +68,11 @@ export interface RepoView {
   viewed: ReadonlySet<string>
   /** The reading scenes' left column is folded to its rail (\), giving the reader the width. */
   folded: boolean
+  /**
+   * Resolve's left column is open. It starts folded: resolving a conflict needs the width of both
+   * sides and the result, and the history beside it is wanted now and then, not all the time.
+   */
+  resolveOpen: boolean
   /** Browse shows the branch table beside the graph (B), in place of Details and the AI. */
   branchTable: boolean
   /** What the last fetch brought: commits new since (marked in the graph) and the branches that moved. Null once seen. */
@@ -577,6 +582,7 @@ function newView(snap: RepoSnapshot): RepoView {
     read: { ...NEW_READ, anchors: {} },
     viewed: new Set(),
     folded: false,
+    resolveOpen: false,
     jump: null,
     fresh: null,
     branchTable: false,

@@ -27,7 +27,7 @@ export function StatusBar({ view }: { view: RepoView }) {
           not "/home/me/work/". direction: rtl makes the overflow clip at the start, and the inner
           bdi keeps the path itself reading left to right (without it the rtl block would move the
           leading "/" to the end). */}
-      <span className="max-w-96 min-w-0 truncate" style={{ direction: 'rtl' }} title={snap.path} data-testid="status-path"><bdi dir="ltr">{snap.path}</bdi></span>
+      <span className="max-w-64 min-w-0 truncate text-hint" style={{ direction: 'rtl' }} title={snap.path} data-testid="status-path"><bdi dir="ltr">{snap.path}</bdi></span>
     </div>
   )
 }

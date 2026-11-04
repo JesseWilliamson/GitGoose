@@ -2,7 +2,7 @@ import clsx from 'clsx'
 import { Bot, Check, GitCommitVertical, ListTree, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { revertLinesFromCommit } from '../lib/actions'
-import { readBlocks, saveAnchor, setFace, setLens, setScene, setViewed, toggleFolded, workingBlocks, type Face } from '../lib/scenes'
+import { readBlocks, saveAnchor, setFace, setLens, setScene, setViewed, isFolded, toggleFolded, workingBlocks, type Face } from '../lib/scenes'
 import { getLog, selectCommit, updateRepo, useStore, type RepoView } from '../lib/store'
 import { viewedKey } from '../lib/stream'
 import { useStreamBlocks, type BlockSpec } from '../lib/useStream'
@@ -126,7 +126,7 @@ function SceneStream({ view, specs, handle, endCard, onCurrent }: {
 function LeftColumn({ view, faces, face, onFace, children }: {
   view: RepoView; faces: { id: string; label: string; icon: React.ReactNode }[]; face: string; onFace: (f: string) => void; children: React.ReactNode
 }) {
-  if (view.folded) {
+  if (isFolded(view)) {
     return (
       <div className="flex w-11 shrink-0 flex-col items-center gap-1 border-r border-border bg-card py-2" data-testid="left-rail">
         <button className="rounded p-1.5 text-hint hover:bg-accent hover:text-foreground" title="Show the column (\)" onClick={() => toggleFolded(view.id)}><PanelLeftOpen size={16} /></button>

@@ -134,11 +134,13 @@
 
 :root,
 :root[data-theme='dark'] {
-  --gs-bg: #171719;
-  --gs-panel: #1d1d20;
-  --gs-raised: #252528;
-  --gs-hover: #2c2c30;
-  --gs-line: #343438;
+  /* The canvas (graph, reader) is the darkest; panels sit a clear step above it, so the eye
+     tells the two apart without a border doing all the work. */
+  --gs-bg: #141518;
+  --gs-panel: #1e1f23;
+  --gs-raised: #27282d;
+  --gs-hover: #2b2c31;
+  --gs-line: #33343a;
   --gs-fg: #e7e7e9;
   --gs-muted: #a3a3a8;
   --gs-faint: #909096;
@@ -169,10 +171,10 @@
 
 :root[data-theme='light'] {
   --gs-bg: #ffffff;
-  --gs-panel: #f6f6f7;
+  --gs-panel: #f3f4f6;
   --gs-raised: #ffffff;
-  --gs-hover: #ececee;
-  --gs-line: #e0e0e2;
+  --gs-hover: #e8e9ec;
+  --gs-line: #dfe0e4;
   --gs-fg: #1f2023;
   --gs-muted: #5e5f64;
   --gs-faint: #6b6c72;
