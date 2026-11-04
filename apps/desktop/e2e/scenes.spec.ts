@@ -23,10 +23,15 @@ test('Space reads the selected commit in the Read scene; Esc and the digits move
   await page.getByTestId('commit-row').filter({ hasText: 'Add a module' }).click()
   await page.keyboard.press('Space')
   await expect(page.getByTestId('scene-read')).toBeVisible()
-  // A whole added file that fits flows in two columns, the header saying why.
+  // A whole added file reads inline; its chip turns it into two columns and back.
   await expect(page.getByTestId('stream-file').first()).toHaveAttribute('data-path', 'src/added.ts')
-  await expect(page.getByTestId('layout-chip').first()).toHaveAttribute('data-layout', 'flow')
+  const chip = page.getByTestId('layout-chip').first()
+  await expect(chip).toHaveAttribute('data-layout', 'unified')
+  await chip.click()
+  await expect(chip).toHaveAttribute('data-layout', 'flow')
   await expect(page.getByTestId('flow-row').first()).toBeVisible()
+  await chip.click()
+  await expect(chip).toHaveAttribute('data-layout', 'unified')
   // The narrow graph is beside it, with the commit selected.
   await expect(page.getByTestId('left-column').getByTestId('commit-row').filter({ hasText: 'Add a module' })).toHaveAttribute('data-selected', 'true')
   // Esc goes back to Browse; 2 comes back to Read; 1 to Browse.

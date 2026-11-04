@@ -1,5 +1,6 @@
 import clsx from 'clsx'
-import { Copy, Menu, Minus, Plus, Square, X } from 'lucide-react'
+import { ChevronDown, Copy, Minus, Plus, Square, X } from 'lucide-react'
+import { GooseMark } from './GooseMark'
 import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import { openRepoDialog } from '../lib/actions'
@@ -48,9 +49,13 @@ export function TabBar() {
     <div className={clsx('drag flex h-(--titlebar-h) shrink-0 items-end gap-px border-b border-border bg-background', mac ? 'pl-20' : 'pl-1')} data-testid="tabs"
       // The empty part of the bar (not a tab: those are children). macOS does this itself.
       onDoubleClick={(e) => { if (!mac && !(e.target as HTMLElement).closest('button, [data-tab]')) void api.windowToggleMaximize() }}>
-      {!mac && (
+      {/* The mark is the menu button (the app's own menu lives behind its own name); macOS has
+          the menu bar, so there the mark only says whose window this is. */}
+      {mac ? <GooseMark size={18} className="mr-2 mb-2 shrink-0" /> : (
         <button onClick={() => void api.menuPopup()} aria-label="Menu" title="Menu"
-          className="no-drag mr-1 mb-1 shrink-0 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"><Menu size={15} /></button>
+          className="no-drag mr-1 mb-1 flex shrink-0 items-center gap-0.5 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
+          <GooseMark size={20} /><ChevronDown size={12} />
+        </button>
       )}
       {/* The tabs scroll sideways inside their own strip, so the menu button and the window
           controls on either side stay in view however many repositories are open. */}
@@ -65,7 +70,7 @@ export function TabBar() {
             onClick={() => useStore.setState({ active: id })}
             title={r.snapshot.path}
             className={clsx('no-drag group flex h-8 max-w-56 min-w-28 shrink-0 cursor-default items-center gap-2 rounded-t-md border border-b-0 px-3 text-sm',
-              id === active ? 'border-border bg-card text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground')}>
+              id === active ? 'border-border bg-card text-foreground shadow-[inset_0_2px_0_var(--gs-accent)]' : 'border-transparent text-muted-foreground hover:text-foreground')}>
             <span className="min-w-0 flex-1 truncate">{r.snapshot.name}</span>
             <button onClick={(e) => { e.stopPropagation(); void closeTab(id) }} title="Close tab"
               className="rounded p-0.5 opacity-0 group-hover:opacity-100 hover:bg-accent"><X size={12} /></button>

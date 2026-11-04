@@ -99,11 +99,10 @@ export function chooseLayout(shape: FileShape, room: ReaderRoom, forced?: Reader
   if (forced === 'unified') return { layout: 'unified', reason: 'chosen' }
   if (forced === 'split' && !shape.oneSided) return { layout: 'split', reason: 'chosen' }
   if (forced === 'flow' && shape.oneSided) return { layout: 'flow', reason: 'chosen' }
-  if (shape.oneSided) {
-    if (shape.lines > 2 * room.screenRows * 2) return { layout: 'unified', reason: 'longer than 2 screens' }
-    if (longest + SPARE_COLUMNS <= room.flowColumn) return { layout: 'flow', reason: `longest ${longest} ≤ ${room.flowColumn - SPARE_COLUMNS}` }
-    return { layout: 'unified', reason: `longest ${longest} > ${room.flowColumn - SPARE_COLUMNS}` }
-  }
+  // A one-sided file reads inline, like every other diff. Two columns (flow) saved room, but
+  // reviewers read a file wrapped into a second column as a side-by-side diff (the amendment
+  // to ADR-012): it is still there, chosen from the file's layout chip.
+  if (shape.oneSided) return { layout: 'unified', reason: `${shape.oneSided} file` }
   if (longest + SPARE_COLUMNS <= room.splitSide) return { layout: 'split', reason: `longest ${longest} ≤ ${room.splitSide - SPARE_COLUMNS} a side` }
   return { layout: 'unified', reason: `longest ${longest} > ${room.splitSide - SPARE_COLUMNS} a side` }
 }

@@ -31,14 +31,10 @@ describe('fileShape', () => {
 
 describe('chooseLayout', () => {
   const added = (n: number, width: number) => fileShape(diff(Array.from({ length: n }, () => ['+', 'x'.repeat(width)] as ['+', string])))
-  it('flows a one-sided file that fits a column, with two to spare', () => {
-    expect(chooseLayout(added(65, 64), ROOM)).toEqual({ layout: 'flow', reason: 'longest 64 ≤ 68' })
-    expect(chooseLayout(added(65, 68), ROOM).layout).toBe('flow')
-    expect(chooseLayout(added(65, 69), ROOM).layout).toBe('unified')
-  })
-  it('does not flow a file longer than two screens', () => {
-    expect(chooseLayout(added(4 * 41, 10), ROOM).layout).toBe('flow')
-    expect(chooseLayout(added(4 * 41 + 1, 10), ROOM)).toEqual({ layout: 'unified', reason: 'longer than 2 screens' })
+  it('reads a one-sided file inline; two columns only when chosen', () => {
+    expect(chooseLayout(added(65, 64), ROOM)).toEqual({ layout: 'unified', reason: 'added file' })
+    expect(chooseLayout(added(4 * 41, 10), ROOM).layout).toBe('unified')
+    expect(chooseLayout(added(65, 64), ROOM, 'flow').layout).toBe('flow')
   })
   it('a tab-indented line is measured as it shows, so it can stop fitting', () => {
     const tabbed = fileShape(diff(Array.from({ length: 10 }, () => ['+', '\t\t\t' + 'x'.repeat(58)] as ['+', string])), 4)

@@ -1,9 +1,10 @@
-import { Download, FolderGit2, FolderOpen, FolderPlus } from 'lucide-react'
+import { BookOpen, Download, FolderGit2, FolderOpen, FolderPlus, ListChecks, Undo2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { initRepo, openRepoDialog, reopen } from '../lib/actions'
 import { shortcutOf } from '../lib/keys'
 import { useStore } from '../lib/store'
 import { Kbd } from './ui'
+import { GooseMark } from './GooseMark'
 
 /**
  * The no-repository screen. Three ways in, each a card that says what it does (a new user
@@ -19,9 +20,7 @@ export function Welcome() {
     <div className="flex flex-1 flex-col items-center overflow-y-auto bg-background px-4 pt-[12vh]" data-testid="welcome">
       <div className="w-full max-w-[600px]">
         <div className="mb-8 flex items-center gap-4">
-          <div className="flex size-12 items-center justify-center rounded-lg bg-primary/15 text-primary">
-            <FolderGit2 size={26} />
-          </div>
+          <GooseMark size={48} className="rounded-lg shadow-lg shadow-primary/20" />
           <div>
             <h1 className="text-base font-semibold">GitGoose</h1>
             <p className="text-sm text-muted-foreground">The history at a glance, every change undoable.</p>
@@ -62,6 +61,13 @@ export function Welcome() {
         )}
       </div>
 
+      {/* What sets the app apart, once, where a new user has the time to read it. */}
+      <div className="mt-10 grid w-full max-w-[600px] grid-cols-3 gap-6 px-1" data-testid="welcome-tips">
+        <Tip icon={<Undo2 size={16} />} title="Undo anything">Checkout, reset, rebase, drop: {shortcutOf('undo', keys) || 'Ctrl+Z'} takes it back.</Tip>
+        <Tip icon={<ListChecks size={16} />} title="Stage single lines">Click the lines you mean; commit just those.</Tip>
+        <Tip icon={<BookOpen size={16} />} title="Read a commit">Space opens its whole diff across the window.</Tip>
+      </div>
+
       <p className="mt-auto py-4 text-xs text-hint" data-testid="welcome-shortcuts">
         {shortcutOf('search', keys)} search · {shortcutOf('palette', keys)} commands · ? shortcuts
       </p>
@@ -83,5 +89,14 @@ function Action({ label, icon, keys, onClick, children }: { label: string; icon:
         <span className="block text-xs text-muted-foreground">{children}</span>
       </span>
     </button>
+  )
+}
+
+function Tip({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="flex items-center gap-2 text-sm font-medium text-foreground"><span className="text-primary">{icon}</span>{title}</span>
+      <span className="text-xs leading-relaxed text-muted-foreground">{children}</span>
+    </div>
   )
 }

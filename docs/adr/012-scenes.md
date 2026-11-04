@@ -79,3 +79,13 @@ left to PLAN-6 (its tilde marker), not changed here.
   easy to revisit: the working copy is its own scene (Changes), the AI is the left column's face,
   modified files Split when they fit, branch housekeeping stays beside the graph, and Resolve
   opens by itself.
+
+## Amendment (November 2026): one-sided files read inline
+
+Five rounds of screenshot reviews against GitKraken, Tower, GitButler and Sublime Merge (three
+independent judges a round) kept reading Flow, a one-sided file wrapped into two newspaper
+columns, as a side-by-side diff of two versions. A layout that is regularly misread costs more
+than the screen it saves, so the automatic choice for an added or deleted file is now Unified,
+like every other diff. Flow is still there, chosen from the file's layout chip (which toggles
+Unified and Flow for a one-sided file). Deleted files also start collapsed ("deleted, 31 lines"),
+and in a commit of more than 30 files a run of deletes in one folder is one row.

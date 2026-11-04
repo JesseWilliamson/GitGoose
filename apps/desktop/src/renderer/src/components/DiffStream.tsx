@@ -551,7 +551,9 @@ function FileHeader({ view, block, file, index, layout, state, viewed, onViewed,
       {layout && layout.reason && (
         <button className="shrink-0 rounded px-1.5 text-2xs text-muted-foreground hover:bg-accent" data-testid="layout-chip" data-layout={layout.layout}
           title={`${LAYOUT_NAMES[layout.layout]}${forced ? ' (chosen by you)' : `, chosen because ${layout.reason}`}. Click for another layout.`}
-          onClick={() => onState({ forced: NEXT_LAYOUT[forced ?? 'auto'] })}>
+          // A one-sided file has two layouts (inline, two columns): the chip toggles them. A
+          // modified one cycles through all three and back to automatic.
+          onClick={() => onState({ forced: file.additions === 0 || file.deletions === 0 ? (layout.layout === 'flow' ? 'unified' : 'flow') : NEXT_LAYOUT[forced ?? 'auto'] })}>
           {/* The layout in words; the reason ("longest 64 ≤ 68") is the tooltip's, not the header's. */}
           {LAYOUT_NAMES[layout.layout]}{forced && ' · chosen'}
         </button>

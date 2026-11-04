@@ -100,7 +100,8 @@
   --color-ours: var(--gs-ours);
   --color-theirs: var(--gs-theirs);
 
-  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* Inter, bundled (no network): the same face on every platform, made for dense UI text. */
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
 }
 
@@ -144,14 +145,17 @@
   --gs-fg: #e7e7e9;
   --gs-muted: #a3a3a8;
   --gs-faint: #909096;
-  --gs-accent: #4c8dff;
+  /* GitGoose's own colour, indigo: the primary action, focus and selection. Blue keeps its one
+     meaning, "yours" in a merge (--gs-ours). #6c63ff is the balance point in dark: 4.3 : 1 under white
+     text and on the canvas (the blue it replaces was 3.3 : 1 under white). */
+  --gs-accent: #6c63ff;
   --gs-accent-fg: #ffffff;
   --gs-add: #5fd18b;
   --gs-add-bg: rgba(46, 160, 67, 0.16);
   --gs-del: #ff7b7b;
   --gs-del-bg: rgba(248, 81, 73, 0.15);
   --gs-warn: #e5b04a;
-  --gs-select: rgba(76, 141, 255, 0.3);
+  --gs-select: rgba(108, 99, 255, 0.3);
   --gs-ours: #4c8dff;
   --gs-theirs: #e0a03a;
   /* Graph lane colours, one per column (cycled). The GitKraken rainbow, reordered so that
@@ -180,14 +184,14 @@
   --gs-fg: #1f2023;
   --gs-muted: #5e5f64;
   --gs-faint: #6b6c72;
-  --gs-accent: #2f6fe4;
+  --gs-accent: #5a4ee6;
   --gs-accent-fg: #ffffff;
   --gs-add: #1a7f37;
   --gs-add-bg: rgba(46, 160, 67, 0.12);
   --gs-del: #cf222e;
   --gs-del-bg: rgba(248, 81, 73, 0.1);
   --gs-warn: #9a6700;
-  --gs-select: rgba(47, 111, 228, 0.18);
+  --gs-select: rgba(90, 78, 230, 0.16);
   --gs-ours: #2f6fe4;
   --gs-theirs: #b86e00;
   --lane-0: #0b8fb0;
@@ -211,6 +215,9 @@ body,
 
 body {
   margin: 0;
+  /* Inter's tabular digits everywhere numbers line up is opt-in (tabular-nums); its disambiguated
+     forms (a straight-tailed l, an open 4) make hashes and counts read cleanly. */
+  font-feature-settings: 'cv05', 'cv08', 'ss03';
   background: var(--gs-bg);
   color: var(--gs-fg);
   font-family: var(--font-sans);

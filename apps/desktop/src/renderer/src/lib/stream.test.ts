@@ -19,9 +19,10 @@ const block = (files: StreamFile[] | null, key = 'c1'): StreamBlock => ({ key, t
 const kinds = (rows: { kind: string }[]) => rows.map((r) => r.kind)
 
 describe('buildStream', () => {
-  it('flows a one-sided file: left column then right, half the rows', () => {
+  it('flows a one-sided file when two columns are chosen: left column then right, half the rows', () => {
     const f = file('a.ts', Array.from({ length: 5 }, (_, i) => ['+', `line ${i}`] as ['+', string]), { change: 'added' })
-    const s = buildStream([block([f])], ROOM, new Map())
+    expect(buildStream([block([f])], ROOM, new Map()).layouts.get(fileKey(block([f]), f))!.layout).toBe('unified')
+    const s = buildStream([block([f])], ROOM, new Map([[fileKey(block([f]), f), { forced: 'flow' }]]))
     expect(kinds(s.rows)).toEqual(['block', 'file', 'flow', 'flow', 'flow'])
     expect(s.rows.slice(2).map((r) => r.kind === 'flow' && [r.left, r.right])).toEqual([[0, 3], [1, 4], [2, null]])
     expect(s.layouts.get(fileKey(block([f]), f))!.layout).toBe('flow')
@@ -53,7 +54,7 @@ describe('buildStream', () => {
     expect(s.rows[1]).toMatchObject({ collapsed: 'generated' })
     expect(s.rows[3]).toMatchObject({ lines: 15 })
     const opened = buildStream([b], ROOM, new Map([[fileKey(b, lock), { open: true }]]))
-    expect(kinds(opened.rows).slice(0, 4)).toEqual(['block', 'file', 'flow', 'file'])
+    expect(kinds(opened.rows).slice(0, 4)).toEqual(['block', 'file', 'hunk', 'line'])
   })
 
   it('a block whose files have not arrived is one loading row; the end card closes the stream', () => {
