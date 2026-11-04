@@ -2,7 +2,7 @@ import type { Row } from '@gitgoose/graph'
 import type { AvatarSource, Commit, Ref, StashEntry } from '@gitgoose/shared'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import clsx from 'clsx'
-import { Archive, Cloud, Crosshair, Laptop, Tag } from 'lucide-react'
+import { Archive, Cloud, Crosshair, Tag } from 'lucide-react'
 import { ContextMenu } from 'radix-ui'
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { bisectMark, bisectReset, checkout, checkoutRow, readFresh, showAllInGraph } from '../lib/actions'
@@ -602,11 +602,15 @@ function RefPill({ pill, color, repoId, hash }: { pill: Pill; color: number; rep
       )}
       // The checked-out branch is solid accent and tags solid amber, as in Tower; other branches
       // take a tint of their lane so the pill still says which line of history it sits on.
-      style={pill.isHead || pill.tag ? undefined : { background: `color-mix(in srgb, ${laneColor(color)} 28%, transparent)` }}
+      // A branch you have is filled; one that is only on a remote is an outline (nothing of it is
+      // here). The cloud says "on a remote" on either. One glyph, not a laptop on every pill.
+      style={pill.isHead || pill.tag ? undefined : pill.local
+        ? { background: `color-mix(in srgb, ${laneColor(color)} 28%, transparent)` }
+        : { boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${laneColor(color)} 70%, transparent)` }}
+      data-remote-only={!pill.local && !pill.tag ? true : undefined}
     >
       {pill.tag ? <Tag size={10} className="shrink-0" /> : null}
       <span className="truncate">{pill.label}</span>
-      {pill.local && !pill.isHead && <Laptop size={10} className="shrink-0 opacity-70" />}
       {pill.remotes.length > 0 && <Cloud size={10} className="shrink-0 opacity-70" />}
     </span>
   )

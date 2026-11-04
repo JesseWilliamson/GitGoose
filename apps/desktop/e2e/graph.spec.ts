@@ -338,3 +338,15 @@ test('Commit order: topological keeps each branch together, and switching reload
   await expect.poll(subjects).toEqual(['m3', 's3', 'm2', 's2', 'm1', 's1', 'A'])
   await app.close()
 })
+
+test('a branch you have is a filled pill, one only on a remote an outline; the cloud says it is on a remote', async () => {
+  const r = makeFixture('with-remote') // main is one commit ahead of origin/main
+  const { app, page } = await launch(r.dir)
+  const remoteOnly = page.locator('[data-testid="ref-pill"][data-ref="refs/remotes/origin/main"]')
+  await expect(remoteOnly).toHaveAttribute('data-remote-only', 'true')
+  await expect(remoteOnly.locator('svg')).toHaveCount(1)
+  const local = page.locator('[data-testid="ref-pill"][data-ref="refs/heads/main"]')
+  await expect(local).toBeVisible()
+  await expect(local).not.toHaveAttribute('data-remote-only', 'true')
+  await app.close()
+})
