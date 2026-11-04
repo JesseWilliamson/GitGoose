@@ -535,9 +535,9 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
         </div>
         {/* The button always says what it does; while it waits, it is a primary outline (not a pale
             primary, which reads as broken) and the reason sits beside it. */}
-        {waitingFor && <span className="min-w-0 truncate text-2xs text-hint" data-testid="commit-waiting">{waitingFor}</span>}
+        {waitingFor && <span className="min-w-0 truncate text-xs text-muted-foreground" data-testid="commit-waiting">{waitingFor}</span>}
         <Button variant={canCommit || view.busy === 'Commit' ? 'primary' : 'default'}
-          className={clsx('shrink-0', waitingFor && 'border-primary/50 bg-primary/10 text-primary disabled:opacity-100')} disabled={!canCommit} onClick={() => void commit()} data-testid="commit-button"
+          className={clsx('shrink-0', waitingFor && 'border-primary/30 bg-transparent text-primary/60 disabled:opacity-100')} disabled={!canCommit} onClick={() => void commit()} data-testid="commit-button"
           title={waitingFor ?? `Commit (${modName()}+Enter)`}>
           {view.busy === 'Commit' ? <Spinner /> : <Check size={14} />}
           {amend ? 'Amend' : stagedCount ? `Commit ${stagedCount} ${stagedCount === 1 ? 'file' : 'files'}` : 'Commit'}

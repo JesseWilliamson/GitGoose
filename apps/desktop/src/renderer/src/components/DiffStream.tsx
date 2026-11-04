@@ -403,6 +403,23 @@ export const DiffStream = forwardRef<StreamHandle, Props>(function DiffStream(pr
     if (r.kind === 'block-empty') return <div style={style} className="px-4 py-3 font-sans text-xs text-hint" data-testid="stream-empty">No changes.</div>
     const f = b.files![r.file]!
     const key = fileKey(b, f)
+    if (r.kind === 'file' && r.group) {
+      const g = r.group
+      return (
+        <div style={style} className="pt-1">
+          <div className="flex h-8 items-center gap-2 border-y border-border bg-panel px-3 font-sans text-sm" data-testid="stream-group" data-dir={g.dir}>
+            <span className="font-mono text-2xs font-semibold text-destructive">D</span>
+            <span className="min-w-0 truncate"><span className="text-muted-foreground">{g.dir || 'the root folder'}</span></span>
+            <span className="shrink-0 text-xs">{g.count.toLocaleString()} files deleted</span>
+            <span className="shrink-0 font-mono text-2xs text-destructive">−{g.lines.toLocaleString()}</span>
+            <button className="ml-auto flex items-center gap-1 rounded px-1.5 py-0.5 text-2xs text-hint hover:bg-accent hover:text-foreground" data-testid="stream-group-show"
+              onClick={() => setState(g.key, { open: true })}>
+              <span className="font-medium text-primary">Show {g.count.toLocaleString()} files</span><ChevronRight size={12} />
+            </button>
+          </div>
+        </div>
+      )
+    }
     if (r.kind === 'file') {
       return (
         <div style={style} className="pt-1">

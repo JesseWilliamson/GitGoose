@@ -86,3 +86,30 @@ describe('helpers', () => {
     expect(cellsFor(r, 2).unified).toBe(142)
   })
 })
+
+describe('grouping deleted files', () => {
+  const del = (path: string): StreamFile => ({ path, change: 'deleted', additions: 0, deletions: 3, binary: false })
+  const mod = (path: string): StreamFile => ({ path, change: 'modified', additions: 1, deletions: 1, binary: false })
+
+  it('in a big commit, a run of folded deletes in one folder is one row until opened', () => {
+    const files = [...Array.from({ length: 31 }, (_, i) => del(`assets/icon-${i}.svg`)), mod('a.ts'), mod('b.ts'), mod('c.ts'), mod('d.ts')]
+    const b = block(files)
+    const s = buildStream([b], ROOM, new Map())
+    const groups = s.rows.filter((r) => r.kind === 'file' && r.group)
+    expect(groups).toHaveLength(1)
+    expect(groups[0]).toMatchObject({ file: 0, group: { to: 30, dir: 'assets/', count: 31, lines: 93 } })
+    // Every grouped file lands on the group row (a jump to one of them shows the group).
+    expect(s.fileStart.get(fileKey(b, files[10]!))).toBe(s.rows.indexOf(groups[0]!))
+    // Opened, the files are listed one by one, each still folded.
+    const key = (groups[0] as { group: { key: string } }).group.key
+    const opened = buildStream([b], ROOM, new Map([[key, { open: true }]]))
+    expect(opened.rows.filter((r) => r.kind === 'file' && r.collapsed === 'deleted, 3 lines')).toHaveLength(31)
+  })
+
+  it('leaves small commits, short runs and other folders alone', () => {
+    const small = block([del('x/a'), del('x/b'), del('x/c'), mod('m.ts')])
+    expect(buildStream([small], ROOM, new Map()).rows.some((r) => r.kind === 'file' && r.group)).toBe(false)
+    const mixed = Array.from({ length: 40 }, (_, i) => (i % 2 ? del(`d${i}/f`) : mod(`m${i}.ts`)))
+    expect(buildStream([block(mixed)], ROOM, new Map()).rows.some((r) => r.kind === 'file' && r.group)).toBe(false)
+  })
+})

@@ -1,4 +1,4 @@
-import { chooseLayout, collapseReason, displayColumns, fileShape, type DiffTarget, type FileDiff, type ReaderLayout, type ReaderRoom, type StreamFile, type StreamTarget } from '@gitgoose/shared'
+import { FOLDER_TABLE_FROM, chooseLayout, collapseReason, displayColumns, fileShape, type DiffTarget, type FileDiff, type ReaderLayout, type ReaderRoom, type StreamFile, type StreamTarget } from '@gitgoose/shared'
 import { splitRows } from './diffLayout'
 
 /**
@@ -37,7 +37,7 @@ export type StreamRow =
   | { kind: 'block-loading'; block: number }
   | { kind: 'block-empty'; block: number }
   /** A file's header. `collapsed`: the file starts folded, and why; the header says so and offers Show (one row, not two). */
-  | { kind: 'file'; block: number; file: number; collapsed?: string }
+  | { kind: 'file'; block: number; file: number; collapsed?: string; group?: FileGroup }
   /** A file whose diff has not arrived: room for its lines until it does. */
   | { kind: 'pending'; block: number; file: number; lines: number }
   | { kind: 'note'; block: number; file: number; text: string }
@@ -95,6 +95,19 @@ export interface FileState {
   /** Opened or collapsed by the user: overrides the default (collapseReason). */
   open?: boolean
 }
+
+/**
+ * A run of folded, deleted files in one folder of a big commit, drawn as one row ("assets/icons/ ·
+ * 412 files deleted"): a commit that removes a directory is otherwise a wall of identical rows.
+ * The row stands for files `file` to `to`; Show (state `key` open) lists them one by one.
+ */
+export interface FileGroup { to: number; dir: string; count: number; lines: number; key: string }
+/** Files in a block before runs of deleted files group (the folder table's threshold). */
+export const GROUP_FROM = FOLDER_TABLE_FROM
+/** The shortest run worth a group row. */
+export const GROUP_MIN = 3
+const dirOf = (path: string) => path.slice(0, path.lastIndexOf('/') + 1)
+const isFoldedDelete = (f: StreamFile, state: FileState | undefined) => f.change === 'deleted' && state?.open !== true
 
 /** A file's identity within the stream, stable across reloads. */
 export const fileKey = (block: StreamBlock, f: StreamFile) => `${block.key}\u0000${f.path}`
@@ -165,8 +178,27 @@ export function buildStream(blocks: StreamBlock[], room: StreamRoom, states: Rea
       return
     }
     const workingCopy = b.target.kind === 'unstaged' || b.target.kind === 'staged'
-    b.files.forEach((f, fi) => {
+    const files = b.files
+    files.forEach((f, fi) => {
       const key = fileKey(b, f)
+      if (fileStart.has(key)) return // inside a group row already pushed
+      // A run of folded deletes in one folder, in a big commit: one row for the lot, until opened.
+      if (files.length > GROUP_FROM && isFoldedDelete(f, states.get(key))) {
+        const dir = dirOf(f.path)
+        let to = fi
+        while (to + 1 < files.length && dirOf(files[to + 1]!.path) === dir && isFoldedDelete(files[to + 1]!, states.get(fileKey(b, files[to + 1]!)))) to++
+        // By folder, not by position: once opened, the folder's later files must not regroup.
+        const gkey = `${b.key}\u0000group\u0000${dir}`
+        if (to - fi + 1 >= GROUP_MIN && states.get(gkey)?.open !== true) {
+          let lines = 0
+          for (let k = fi; k <= to; k++) {
+            fileStart.set(fileKey(b, files[k]!), rows.length)
+            lines += files[k]!.deletions
+          }
+          rows.push({ kind: 'file', block: bi, file: fi, collapsed: 'deleted', group: { to, dir, count: to - fi + 1, lines, key: gkey } })
+          return
+        }
+      }
       fileStart.set(key, rows.length)
       const state = states.get(key)
       const reason = collapseReason(f)
