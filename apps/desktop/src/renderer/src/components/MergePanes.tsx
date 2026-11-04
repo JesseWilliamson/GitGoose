@@ -152,6 +152,11 @@ const theme = EditorView.theme({
   // A stripe down the left edge says whose lines these are; the tint says how far along they are.
   '.cm-m-conflict': { backgroundColor: 'var(--gs-del-bg)', boxShadow: 'inset 3px 0 0 var(--gs-del)' },
   '.cm-m-resolved': { backgroundColor: 'var(--gs-add-bg)', boxShadow: 'inset 3px 0 0 var(--gs-add)' },
+  // In the side panes a conflict is that side's version, tinted in its own colour (as yours and
+  // theirs are everywhere): a whole file in red, when both sides added it, reads as an error and
+  // is hard to read. The red stripe still says "undecided".
+  '.cm-m-side-ours.cm-m-conflict': { backgroundColor: 'color-mix(in srgb, var(--gs-ours) 12%, transparent)', boxShadow: 'inset 3px 0 0 var(--gs-del)' },
+  '.cm-m-side-theirs.cm-m-conflict': { backgroundColor: 'color-mix(in srgb, var(--gs-theirs) 12%, transparent)', boxShadow: 'inset 3px 0 0 var(--gs-del)' },
   '.cm-m-pending': { backgroundColor: 'color-mix(in srgb, var(--gs-accent) 16%, transparent)' },
   '.cm-m-applied': { backgroundColor: 'color-mix(in srgb, var(--gs-accent) 7%, transparent)' },
   '.cm-m-side-ours.cm-m-pending': { backgroundColor: 'color-mix(in srgb, var(--gs-ours) 20%, transparent)', boxShadow: 'inset 3px 0 0 var(--gs-ours)' },
@@ -168,7 +173,7 @@ const theme = EditorView.theme({
   // The card in an empty, undecided conflict (lib/mergeState.ts ConflictCard).
   '.cm-m-card': {
     display: 'flex', alignItems: 'center', gap: '6px', margin: '4px 8px', padding: '6px 10px', borderRadius: '6px',
-    background: 'var(--gs-del-bg)', boxShadow: 'inset 3px 0 0 var(--gs-del)', fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--gs-fg)',
+    background: 'var(--gs-raised)', boxShadow: 'inset 3px 0 0 var(--gs-del), 0 0 0 1px var(--gs-line)', fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--gs-fg)',
   },
   '.cm-m-card-btn': {
     height: '22px', padding: '0 8px', borderRadius: '4px', border: '1px solid var(--gs-line)', background: 'var(--gs-raised)',

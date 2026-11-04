@@ -138,7 +138,9 @@ function LeftColumn({ view, faces, face, onFace, children }: {
     )
   }
   return (
-    <div className="flex w-80 shrink-0 flex-col border-r border-border bg-card" data-testid="left-column" data-face={face}>
+    // 320 px (ADR-012), and 368 from 1280 px, where the reader still has over 1,000 px: the narrow
+    // graph's subjects need the room more than the reader does.
+    <div className="flex w-80 shrink-0 flex-col border-r border-border bg-card xl:w-[23rem]" data-testid="left-column" data-face={face}>
       <div className="flex h-strip shrink-0 items-stretch border-b border-border">
         {faces.map((f) => (
           <button key={f.id} onClick={() => onFace(f.id)} data-testid={`face-${f.id}`} aria-pressed={f.id === face}
