@@ -431,15 +431,19 @@ export function GraphMenu({ repoId }: { repoId: string }) {
         <CM.Item reason={whyNotCompareWithHead(snap, hash)} onSelect={() => compare(repoId, hash, snap.head.hash!, shortHash(hash), headName)}>With {headName}</CM.Item>
       </CM.Sub>
       <CM.Separator />
-      <CM.Item reason={whyNotMoveUp(view, hash)} onSelect={() => { const at = view.editable.indexOf(hash); void moveCommits(repoId, [hash], view.editable[at - 1]!, 'above') }}>Move commit up</CM.Item>
-      <CM.Item reason={whyNotMoveDown(view, hash)} onSelect={() => { const at = view.editable.indexOf(hash); void moveCommits(repoId, [hash], view.editable[at + 1]!, 'below') }}>Move commit down</CM.Item>
-      <CM.Item reason={editWhy} onSelect={() => void reword(repoId, hash)}>Reword…</CM.Item>
-      <CM.Sub label="Squash and fixup" reason={editWhy}>
-        <CM.Item reason={whyNotSquash(view, hash)} onSelect={() => void squashCommit(repoId, hash, 'squash')}>Squash into the commit below</CM.Item>
-        <CM.Item reason={whyNotSquash(view, hash)} onSelect={() => void squashCommit(repoId, hash, 'fixup')}>Fixup into the commit below (drop this message)</CM.Item>
-        <CM.Item reason={whyNotFixupStaged(view, hash)} onSelect={() => void fixupInto(repoId, hash)}>Fixup staged changes into this commit</CM.Item>
+      {/* Rewriting history is one decision ("I want to change this commit"), so it is one entry;
+          what cannot be done here is still in it, greyed with the reason, one level down. */}
+      <CM.Sub label="Edit history">
+        <CM.Item reason={whyNotMoveUp(view, hash)} onSelect={() => { const at = view.editable.indexOf(hash); void moveCommits(repoId, [hash], view.editable[at - 1]!, 'above') }}>Move commit up</CM.Item>
+        <CM.Item reason={whyNotMoveDown(view, hash)} onSelect={() => { const at = view.editable.indexOf(hash); void moveCommits(repoId, [hash], view.editable[at + 1]!, 'below') }}>Move commit down</CM.Item>
+        <CM.Item reason={editWhy} onSelect={() => void reword(repoId, hash)}>Reword…</CM.Item>
+        <CM.Separator />
+        <CM.Item reason={editWhy ?? whyNotSquash(view, hash)} onSelect={() => void squashCommit(repoId, hash, 'squash')}>Squash into the commit below</CM.Item>
+        <CM.Item reason={editWhy ?? whyNotSquash(view, hash)} onSelect={() => void squashCommit(repoId, hash, 'fixup')}>Fixup into the commit below (drop this message)</CM.Item>
+        <CM.Item reason={editWhy ?? whyNotFixupStaged(view, hash)} onSelect={() => void fixupInto(repoId, hash)}>Fixup staged changes into this commit</CM.Item>
+        <CM.Separator />
+        <CM.Item danger reason={editWhy} onSelect={() => void dropCommits(repoId, [hash])}>Drop commit</CM.Item>
       </CM.Sub>
-      <CM.Item danger reason={editWhy} onSelect={() => void dropCommits(repoId, [hash])}>Drop commit</CM.Item>
       <CM.Sub label={snap.bisect ? 'Bisect' : 'Bisect: find the commit that broke something'}>
         <CM.Item onSelect={() => void bisectMark(repoId, hash, 'bad')}>{snap.bisect ? 'Mark bad (has the bug)' : 'Start: this commit is bad (has the bug)'}</CM.Item>
         <CM.Item onSelect={() => void bisectMark(repoId, hash, 'good')}>{snap.bisect ? 'Mark good (no bug)' : 'Start: this commit is good (no bug)'}</CM.Item>
@@ -451,12 +455,19 @@ export function GraphMenu({ repoId }: { repoId: string }) {
         <CM.Item onSelect={() => void reset(repoId, hash, 'hard')}>Hard: discard changes</CM.Item>
       </CM.Sub>
       <CM.Separator />
-      {/* The AI's own group, after git's: what the commit is, not what to do to it. (A label
-          would be clearer, but the fullest menu has to fit a 640 px window: menus.spec.) */}
-      <CM.Item reason={firstReason(aiWhy, whyNotRecompose(view, [hash], parentsOf))} onSelect={() => composeAction(repoId, recomposeAction([hash]))}>Split with AI…</CM.Item>
-      <CM.Item reason={aiWhy} onSelect={() => composeAction(repoId, reviewAction({ kind: 'commits', hashes: [hash] }))}>Review this commit with AI…</CM.Item>
-      <CM.Item reason={aiWhy} onSelect={() => composeAction(repoId, walkthroughAction({ kind: 'commits', hashes: [hash] }))}>Walk me through this commit…</CM.Item>
-      <CM.Item reason={aiWhy} onSelect={() => composeAction(repoId, explainAction(hash))}>Explain this commit…</CM.Item>
+      {/* The AI's own group, after git's: what the commit is, not what to do to it. With AI off
+          it is one item that opens Settings, not five greyed rows (the menu also has to fit a
+          640 px window: menus.spec). */}
+      {aiWhy ? (
+        <CM.Item onSelect={() => useStore.setState({ page: 'settings' })}>Set up AI to explain, review or split commits…</CM.Item>
+      ) : (
+        <>
+          <CM.Item reason={whyNotRecompose(view, [hash], parentsOf)} onSelect={() => composeAction(repoId, recomposeAction([hash]))}>Split with AI…</CM.Item>
+          <CM.Item onSelect={() => composeAction(repoId, reviewAction({ kind: 'commits', hashes: [hash] }))}>Review this commit with AI…</CM.Item>
+          <CM.Item onSelect={() => composeAction(repoId, walkthroughAction({ kind: 'commits', hashes: [hash] }))}>Walk me through this commit…</CM.Item>
+          <CM.Item onSelect={() => composeAction(repoId, explainAction(hash))}>Explain this commit…</CM.Item>
+        </>
+      )}
       <CM.Item onSelect={() => composeAction(repoId, impactAction({ kind: 'commits', hashes: [hash] }))}>What could this commit affect?…</CM.Item>
       <CM.Separator />
       <CM.Sub label="Copy and save">

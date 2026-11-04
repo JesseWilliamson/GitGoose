@@ -1,6 +1,6 @@
 import { invertedEffects } from '@codemirror/commands'
 import { Annotation, EditorState, RangeSetBuilder, StateEffect, StateField, type Extension, type TransactionSpec } from '@codemirror/state'
-import { Decoration, EditorView } from '@codemirror/view'
+import { Decoration, EditorView, WidgetType } from '@codemirror/view'
 import { blockText, type Merge3, type MergeBlock, type Range } from '@gitgoose/shared'
 
 /**
@@ -160,7 +160,54 @@ export function mergeField(m: Merge3, init: MergeState) {
     return b.finish()
   })
 
-  return { field, extension: [field, markEdits, undoable, tint] as Extension }
+  // An undecided conflict with nothing in the result yet (both sides added the file, say) is a
+  // gap: without this it reads as an empty editor with a red line, i.e. as broken. The card
+  // puts the decision where the gap is, with the same actions as the arrows in the panes above.
+  const cards = EditorView.decorations.compute([field], (state) => {
+    const { ranges, blocks } = state.field(field)
+    const b = new RangeSetBuilder<Decoration>()
+    ranges.forEach((r, i) => {
+      const blk = m.blocks[i]!
+      if (blk.kind !== 'conflict' || r.from !== r.to || isResolved(blk, blocks[i]!)) return
+      b.add(r.from, r.from, Decoration.widget({ widget: new ConflictCard(i, m, field), block: true, side: -1 }))
+    })
+    return b.finish()
+  })
+
+  return { field, extension: [field, markEdits, undoable, tint, cards] as Extension }
+}
+
+/** The card in the result where an undecided, empty conflict is (see `cards` above). */
+class ConflictCard extends WidgetType {
+  constructor(readonly block: number, readonly m: Merge3, readonly field: StateField<MergeState>) { super() }
+  override eq(o: ConflictCard): boolean { return o.block === this.block && o.m === this.m }
+  toDOM(view: EditorView): HTMLElement {
+    const el = document.createElement('div')
+    el.className = 'cm-m-card'
+    el.dataset.testid = 'conflict-card'
+    const text = document.createElement('span')
+    text.textContent = 'Conflict: both sides changed this. Keep'
+    el.append(text)
+    const take = (sides: Side[]) => () => {
+      for (const side of sides) view.dispatch(applySide(view.state, this.field, this.m, this.block, side))
+      view.focus()
+    }
+    for (const [label, sides, id] of [['Yours', ['ours'], 'ours'], ['Theirs', ['theirs'], 'theirs'], ['Both', ['ours', 'theirs'], 'both']] as const) {
+      const btn = document.createElement('button')
+      btn.textContent = label
+      btn.dataset.testid = `conflict-card-${id}`
+      btn.className = `cm-m-card-btn cm-m-card-${id}`
+      btn.onmousedown = (e) => e.preventDefault()
+      btn.onclick = take([...sides])
+      el.append(btn)
+    }
+    const or = document.createElement('span')
+    or.textContent = 'or type the result here'
+    or.className = 'cm-m-card-or'
+    el.append(or)
+    return el
+  }
+  override ignoreEvent(): boolean { return true }
 }
 
 /** Line decorations for [from, to); an empty range draws a thin line where the block would be. */

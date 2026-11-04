@@ -164,13 +164,20 @@ const theme = EditorView.theme({
   '.cm-m-from-hand': { backgroundColor: 'var(--gs-add-bg)', boxShadow: 'inset 3px 0 0 var(--gs-add)' },
   '.cm-m-ignored': { backgroundColor: 'transparent', opacity: '0.5', boxShadow: 'none' },
   '.cm-m-empty': { backgroundColor: 'transparent', boxShadow: 'inset 0 2px 0 var(--gs-m-edge, var(--gs-accent))' },
-  '.cm-m-empty.cm-m-conflict': { '--gs-m-edge': 'var(--gs-del)', position: 'relative' },
-  // An undecided conflict with nothing in the result yet is only an edge: say what goes there,
-  // at the right, clear of any code on the line.
-  '.cm-m-empty.cm-m-conflict::after': {
-    content: '"Conflict: take Yours, Theirs or both from above, or type here"', position: 'absolute', right: '12px', top: '2px',
-    fontFamily: 'var(--font-sans)', fontSize: '11px', color: 'var(--gs-del)', pointerEvents: 'none',
+  '.cm-m-empty.cm-m-conflict': { '--gs-m-edge': 'var(--gs-del)' },
+  // The card in an empty, undecided conflict (lib/mergeState.ts ConflictCard).
+  '.cm-m-card': {
+    display: 'flex', alignItems: 'center', gap: '6px', margin: '4px 8px', padding: '6px 10px', borderRadius: '6px',
+    background: 'var(--gs-del-bg)', boxShadow: 'inset 3px 0 0 var(--gs-del)', fontFamily: 'var(--font-sans)', fontSize: '12px', color: 'var(--gs-fg)',
   },
+  '.cm-m-card-btn': {
+    height: '22px', padding: '0 8px', borderRadius: '4px', border: '1px solid var(--gs-line)', background: 'var(--gs-raised)',
+    color: 'var(--gs-fg)', fontWeight: '500', cursor: 'pointer',
+  },
+  '.cm-m-card-btn:hover': { background: 'var(--gs-hover)' },
+  '.cm-m-card-ours': { boxShadow: 'inset 0 -2px 0 var(--gs-ours)' },
+  '.cm-m-card-theirs': { boxShadow: 'inset 0 -2px 0 var(--gs-theirs)' },
+  '.cm-m-card-or': { color: 'var(--gs-muted)', marginLeft: '4px' },
   '.cm-m-empty.cm-m-resolved': { '--gs-m-edge': 'var(--gs-add)' },
   '.cm-m-empty-end': { boxShadow: 'inset 0 -2px 0 var(--gs-m-edge, var(--gs-accent))' },
   '.cm-m-actions': { display: 'inline-flex', width: '44px', justifyContent: 'center', gap: '3px' },

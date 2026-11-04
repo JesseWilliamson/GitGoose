@@ -7,7 +7,7 @@
  *
  *   Type      text-2xs 11   captions, badges, hints, counts
  *             text-xs  12   secondary text, labels, tabs, tooltips
- *             text-sm  13   the body size: rows, buttons, inputs, menu items
+ *             text-sm  14   the body size: rows, buttons, inputs, menu items
  *             text-base 15  titles (a view's heading, a dialog's title, a Markdown h1)
  *             Weights: normal, medium (tabs, labels), semibold (titles). Nothing else.
  *   Space     a 4 px grid: Tailwind's 1 is 4 px, so p-1 p-2 p-3 p-4 p-6 p-8 are 4 8 12 16 24 32.
@@ -27,7 +27,7 @@
   --text-2xs: 11px;
   --text-2xs--line-height: normal;
   --text-xs: 12px;
-  --text-sm: 13px;
+  --text-sm: 14px;
   --text-sm--line-height: normal;
   --text-base: 15px;
   --text-base--line-height: 1.4;
@@ -154,15 +154,17 @@
   --gs-select: rgba(76, 141, 255, 0.22);
   --gs-ours: #4c8dff;
   --gs-theirs: #e0a03a;
-  /* Graph lane colours, one per column (cycled): the rainbow from aqua, left to right, as in GitKraken. */
+  /* Graph lane colours, one per column (cycled). The GitKraken rainbow, reordered so that
+     neighbouring lanes are far apart in hue (aqua, orange, violet, green, magenta, yellow, blue,
+     red): in rainbow order, lanes 3 to 5 (magenta, red, orange) blurred into one another. */
   --lane-0: #1ab3d6;
-  --lane-1: #2f7cf6;
+  --lane-1: #f07c2a;
   --lane-2: #9b4dea;
-  --lane-3: #d23fc2;
-  --lane-4: #e5484d;
-  --lane-5: #f07c2a;
-  --lane-6: #e6c13e;
-  --lane-7: #3fbf6a;
+  --lane-3: #3fbf6a;
+  --lane-4: #d23fc2;
+  --lane-5: #e6c13e;
+  --lane-6: #2f7cf6;
+  --lane-7: #e5484d;
   /* Blame heatmap: the newest change in a file is hot, the oldest has cooled to the page. */
   --heat-new: #ff7a3d;
   --heat-old: #3a4a66;
@@ -189,13 +191,13 @@
   --gs-ours: #2f6fe4;
   --gs-theirs: #b86e00;
   --lane-0: #0b8fb0;
-  --lane-1: #1f62d6;
+  --lane-1: #d2601a;
   --lane-2: #7a2ccb;
-  --lane-3: #b0229f;
-  --lane-4: #cf2d3a;
-  --lane-5: #d2601a;
-  --lane-6: #a88400;
-  --lane-7: #1f8f47;
+  --lane-3: #1f8f47;
+  --lane-4: #b0229f;
+  --lane-5: #a88400;
+  --lane-6: #1f62d6;
+  --lane-7: #cf2d3a;
   --heat-new: #f0622a;
   --heat-old: #b9c4d6;
   color-scheme: light;
@@ -212,7 +214,7 @@ body {
   background: var(--gs-bg);
   color: var(--gs-fg);
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: 14px;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
   user-select: none;

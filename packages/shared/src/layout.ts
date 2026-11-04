@@ -37,7 +37,7 @@ export interface SlotState {
 export type PaneLayout = Record<Slot, SlotState>
 
 /** `right` holds Details with the file's diff under it (ADR-011), so it is the wide one. */
-export const DEFAULT_SIZES: Record<Slot, number> = { left: 248, right: 480, farRight: 320, bottom: 260 }
+export const DEFAULT_SIZES: Record<Slot, number> = { left: 224, right: 480, farRight: 320, bottom: 260 }
 /** The slot a hidden pane comes back to. */
 export const DEFAULT_SLOT: Record<PaneId, Slot> = { branches: 'left', details: 'right', ai: 'farRight' }
 

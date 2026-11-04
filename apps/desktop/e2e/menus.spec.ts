@@ -1,6 +1,6 @@
 import { initRepo, tempDir } from '@gitgoose/fixtures'
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { expectTooltip, launch } from './app'
+import { expectTooltip, launch, openSubmenu } from './app'
 
 /**
  * An item that cannot run is greyed, not missing, and says why. shadcn items are
@@ -34,6 +34,7 @@ test('a merge commit cannot be recomposed or split, and the menu says why', asyn
   const split = page.getByRole('menuitem', { name: 'Split with AI…' })
   await expectDisabledWith(page, split, 'Recompose cannot include a merge commit')
   // The edit items are there too, greyed: a merge is not something the app can replay.
+  await openSubmenu(page, 'Edit history', 'Reword…')
   await expect(page.getByRole('menuitem', { name: 'Reword…' })).toHaveAttribute('aria-disabled', 'true')
   await app.close()
 })
@@ -47,6 +48,7 @@ test('a commit below a merge says it must be newer than the last merge; one abov
   await page.keyboard.press('Escape')
   await row(page, 'after merge').getByText('after merge', { exact: true }).click({ button: 'right' })
   await expect(page.getByRole('menuitem', { name: 'Split with AI…' })).not.toHaveAttribute('aria-disabled', 'true')
+  await openSubmenu(page, 'Edit history', 'Reword…')
   await expect(page.getByRole('menuitem', { name: 'Reword…' })).not.toHaveAttribute('aria-disabled', 'true')
   await app.close()
 })
@@ -60,12 +62,13 @@ test('the HEAD commit cannot be checked out detached or cherry-picked', async ()
   await app.close()
 })
 
-test('with AI off the AI items are there, greyed, and point to Settings', async () => {
+test('with AI off the AI items are one item that opens Settings', async () => {
   const { r } = mergedRepo()
   const { app, page } = await launch(r.dir)
   await row(page, 'after merge').getByText('after merge', { exact: true }).click({ button: 'right' })
-  await expectDisabledWith(page, page.getByRole('menuitem', { name: 'Review this commit with AI…' }), 'Turn on AI features in Settings → AI')
-  await expect(page.getByRole('menuitem', { name: 'Split with AI…' })).toHaveAttribute('aria-description', 'Turn on AI features in Settings → AI')
+  await expect(page.getByRole('menuitem', { name: 'Review this commit with AI…' })).toHaveCount(0)
+  await page.getByRole('menuitem', { name: 'Set up AI to explain, review or split commits…' }).click()
+  await expect(page.getByTestId('settings-page')).toBeVisible()
   await app.close()
 })
 
@@ -90,6 +93,7 @@ test('Recompose works on the root commit, but drop and move cannot (greyed)', as
   await page.evaluate(() => window.gitgoose.setSettings({ aiProvider: 'agent', aiAgent: 'custom', aiAgentCommand: 'true' } as never))
   await page.locator(`[data-testid="commit-row"][data-hash="${root}"]`).getByText('root', { exact: true }).click({ button: 'right' })
   await expect(page.getByRole('menuitem', { name: 'Split with AI…' })).not.toHaveAttribute('aria-disabled', 'true')
+  await openSubmenu(page, 'Edit history', 'Drop commit')
   await expect(page.getByRole('menuitem', { name: 'Drop commit' })).toHaveAttribute('aria-disabled', 'true')
   await app.close()
 })

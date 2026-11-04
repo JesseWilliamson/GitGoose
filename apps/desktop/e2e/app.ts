@@ -41,6 +41,22 @@ export async function pickFromSubmenu(page: Page, submenu: string | RegExp, name
   await item.press('Enter')
 }
 
+/** Open a submenu with the keyboard and wait for `item` in it (see pickFromSubmenu for why the keyboard). */
+export async function openSubmenu(page: Page, submenu: string | RegExp, item: string | RegExp): Promise<void> {
+  const target = page.getByRole('menuitem', { name: item })
+  for (let attempt = 0; ; attempt++) {
+    const trigger = page.getByRole('menuitem', { name: submenu })
+    if (attempt) await trigger.hover()
+    await trigger.press('ArrowRight')
+    try {
+      await expect(target).toBeVisible({ timeout: 1500 })
+      return
+    } catch (e) {
+      if (attempt === 3) throw e
+    }
+  }
+}
+
 /**
  * Open the popover of an AI area's target button ("Claude · default"), which holds the two model
  * selects (`model-picker-who`, `model-picker-model`) and the Prompt button; a no-op if it is open.

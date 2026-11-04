@@ -1,6 +1,6 @@
 import { initRepo } from '@gitgoose/fixtures'
 import { expect, test, type Page } from '@playwright/test'
-import { dragTo, launch, pickFromSubmenu } from './app'
+import { dragTo, launch, pickFromSubmenu, openSubmenu } from './app'
 
 /** root - A - B - C - D (main), each commit adding its own file. */
 function setup() {
@@ -16,7 +16,7 @@ test('drop a commit from the menu, then undo it', async () => {
   const { r, B, D } = setup()
   const { app, page } = await launch(r.dir)
   await row(page, B).click({ button: 'right' })
-  await page.getByRole('menuitem', { name: 'Drop commit' }).click()
+  await pickFromSubmenu(page, 'Edit history', 'Drop commit')
   await expect.poll(() => subjects(r)).toEqual(['D', 'C', 'A', 'root'])
   await page.getByTestId('toolbar').getByRole('button', { name: 'Undo' }).click()
   await expect.poll(() => r.head()).toBe(D)
@@ -27,14 +27,15 @@ test('move a commit up and down from the menu; the root commit is offered greyed
   const { r, B } = setup()
   const { app, page } = await launch(r.dir)
   await row(page, B).click({ button: 'right' })
-  await page.getByRole('menuitem', { name: 'Move commit up' }).click()
+  await pickFromSubmenu(page, 'Edit history', 'Move commit up')
   await expect.poll(() => subjects(r)).toEqual(['D', 'B', 'C', 'A', 'root'])
   const movedB = r.git('rev-parse', 'HEAD~1').trim()
   await row(page, movedB).click({ button: 'right' })
-  await page.getByRole('menuitem', { name: 'Move commit down' }).click()
+  await pickFromSubmenu(page, 'Edit history', 'Move commit down')
   await expect.poll(() => subjects(r)).toEqual(['D', 'C', 'B', 'A', 'root'])
   const root = r.git('rev-list', '--max-parents=0', 'HEAD').trim()
   await row(page, root).click({ button: 'right' })
+  await openSubmenu(page, 'Edit history', 'Drop commit')
   await expect(page.getByRole('menuitem', { name: 'Drop commit' })).toHaveAttribute('aria-disabled', 'true')
   await page.keyboard.press('Escape')
   await app.close()
@@ -78,7 +79,7 @@ test('reword a commit; squash it into the one below; undo and redo', async () =>
   const { r, B } = setup()
   const { app, page } = await launch(r.dir)
   await row(page, B).click({ button: 'right' })
-  await page.getByRole('menuitem', { name: 'Reword…' }).click()
+  await pickFromSubmenu(page, 'Edit history', 'Reword…')
   await expect(page.getByTestId('dialog-text')).toHaveValue('B')
   await page.getByTestId('dialog-text').fill('B, better\n\nWith a reason.')
   await page.keyboard.press('ControlOrMeta+Enter')
@@ -86,7 +87,7 @@ test('reword a commit; squash it into the one below; undo and redo', async () =>
 
   const c = r.git('rev-parse', 'HEAD~1').trim()
   await row(page, c).click({ button: 'right' })
-  await pickFromSubmenu(page, 'Squash and fixup', 'Squash into the commit below')
+  await pickFromSubmenu(page, 'Edit history', 'Squash into the commit below')
   await expect.poll(() => subjects(r)).toEqual(['D', 'B, better', 'A', 'root'])
   const squashed = r.head()
 
@@ -123,7 +124,7 @@ test('drag a commit onto another to squash it in; fixup staged changes into an o
   r.git('add', 'A.txt')
   const a = r.git('rev-parse', 'HEAD~2').trim()
   await row(page, a).click({ button: 'right' })
-  await pickFromSubmenu(page, 'Squash and fixup', 'Fixup staged changes into this commit')
+  await pickFromSubmenu(page, 'Edit history', 'Fixup staged changes into this commit')
   // Mid-rebase the branch is shorter than three commits, so HEAD~2 may not exist yet.
   await expect.poll(() => r.gitOrNull('show', 'HEAD~2:A.txt')).toBe('A fixed\n')
   expect(subjects(r)).toEqual(['C', 'B', 'A', 'root'])

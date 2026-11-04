@@ -49,7 +49,9 @@ export function DetailPanel({ view }: { view: RepoView }) {
   const file = shownFile(view, view.selected.kind === 'wip' ? null : settled)
   return (
     <aside className="flex h-full min-h-0 w-full flex-col bg-card" data-testid="detail-panel">
-      <div className={clsx('flex min-h-0 flex-col overflow-y-auto', file ? 'max-h-1/2 shrink-0' : 'flex-1')} data-testid="details-top">
+      {/* With a file open the diff is what is being read: the commit and its file list take at most
+          38% of the height (a long list scrolls inside it), the diff the rest. */}
+      <div className={clsx('flex min-h-0 flex-col overflow-y-auto', file ? 'max-h-[38%] shrink-0' : 'flex-1')} data-testid="details-top">
         <FirstFile.Provider value={setFirst}>
           {view.selected.kind === 'wip' ? <WipPanel view={view} />
             : view.selected.kind === 'commits' ? <MultiPanel view={view} hashes={view.selected.hashes} />
