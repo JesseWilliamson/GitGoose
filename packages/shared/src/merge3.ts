@@ -185,7 +185,41 @@ export function merge3(baseText: string, oursText: string, theirsText: string): 
   if (pos < base.length) {
     blocks.push({ kind: 'same', base: { start: pos, end: base.length }, ours: { start: pos + dOurs, end: base.length + dOurs }, theirs: { start: pos + dTheirs, end: base.length + dTheirs } })
   }
-  return { base, ours, theirs, blocks }
+  return { base, ours, theirs, blocks: refineInsertions(blocks, ours, theirs) }
+}
+
+/**
+ * A conflict with no base lines (both sides added the file, or inserted at the same place) is
+ * split where the two sides agree, as git's zealous merge does: the lines both added are taken
+ * (both-same), only what differs is a conflict. Otherwise a file added on both branches is one
+ * conflict from top to bottom, with nothing in the result until a whole side is chosen. A conflict
+ * over base lines is left whole: which base lines go with which piece would be a guess.
+ */
+function refineInsertions(blocks: MergeBlock[], ours: string[], theirs: string[]): MergeBlock[] {
+  const out: MergeBlock[] = []
+  for (const b of blocks) {
+    if (b.kind !== 'conflict' || b.base.end > b.base.start) {
+      out.push(b)
+      continue
+    }
+    const o = ours.slice(b.ours.start, b.ours.end)
+    const t = theirs.slice(b.theirs.start, b.theirs.end)
+    const hunks = diffLines(o, t)
+    const at = b.base.start
+    const piece = (kind: BlockKind, oFrom: number, oTo: number, tFrom: number, tTo: number): MergeBlock => ({
+      kind, base: { start: at, end: at }, ours: { start: b.ours.start + oFrom, end: b.ours.start + oTo }, theirs: { start: b.theirs.start + tFrom, end: b.theirs.start + tTo },
+    })
+    let oi = 0
+    let ti = 0
+    for (const h of hunks) {
+      if (h.aStart > oi) out.push(piece('both-same', oi, h.aStart, ti, h.bStart))
+      out.push(piece('conflict', h.aStart, h.aEnd, h.bStart, h.bEnd))
+      oi = h.aEnd
+      ti = h.bEnd
+    }
+    if (o.length > oi) out.push(piece('both-same', oi, o.length, ti, t.length))
+  }
+  return out
 }
 
 export type BlockChoice = 'ours' | 'theirs' | 'both' | 'base'

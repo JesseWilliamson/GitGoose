@@ -139,3 +139,19 @@ describe('merge3', () => {
   })
 
 })
+
+describe('a file added on both sides', () => {
+  it('is split where the sides agree: shared lines taken, only the differences conflict', () => {
+    const ours = 'export function retry() {\n  let delay = 100\n  try {\n    run()\n  }\n}\n'
+    const theirs = 'export function retry() {\n  let delay = 500\n  try {\n    run()\n  }\n}\n'
+    const m = merge3('', ours, theirs)
+    expect(m.blocks.map((b) => b.kind)).toEqual(['both-same', 'conflict', 'both-same'])
+    expect(conflictCount(m)).toBe(1)
+    // The result already holds everything both sides wrote; the one conflict keeps its (empty) base.
+    expect(mergedText(m)).toBe('export function retry() {\n  try {\n    run()\n  }\n}\n')
+    expect(mergedText(m, [undefined, 'theirs'])).toBe(theirs)
+  })
+  it('stays one conflict when the sides share nothing', () => {
+    expect(merge3('', 'a\n', 'b\n').blocks.map((b) => b.kind)).toEqual(['conflict'])
+  })
+})
