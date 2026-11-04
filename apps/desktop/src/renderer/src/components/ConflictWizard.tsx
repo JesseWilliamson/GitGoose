@@ -177,10 +177,10 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
           </Button>
         )}
         <Button size="sm" variant="ghost" title="Open in your editor (Settings → Integrations)" aria-label="Open in your editor" onClick={() => void openInEditor(`${view.snapshot.path}/${file.path}`)}>
-          <ExternalLink size={13} />
+          <ExternalLink size={13} /> Editor
         </Button>
         <Button size="sm" variant="ghost" title="Resolve in your external merge tool (Settings → Diff)" aria-label="Open in the merge tool" onClick={() => void openMergeTool(view.id, file.path)} data-testid="open-merge-tool">
-          <Wrench size={13} />
+          <Wrench size={13} /> Merge tool
         </Button>
         {canThree && (
           <div className="flex overflow-hidden rounded-md border border-border" role="group" aria-label="Conflict view">

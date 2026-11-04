@@ -565,7 +565,8 @@ function FileHeader({ view, block, file, index, layout, state, viewed, onViewed,
             // "Viewed" links down a commit of folded files is noise.
             className={clsx('flex items-center gap-1 rounded px-1.5 py-0.5 text-2xs', viewed ? 'text-add' : 'text-hint hover:bg-accent',
               collapsed && !viewed && 'invisible group-hover:visible focus-visible:visible')}>
-            {viewed ? <Check size={12} /> : <Eye size={12} />} Viewed
+            {/* The action until it is done, then the state: an unpressed "Viewed" read as a claim. */}
+            {viewed ? <><Check size={12} /> Viewed</> : <><Eye size={12} /> Mark viewed</>}
           </button>
         )}
       </span>

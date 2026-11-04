@@ -88,7 +88,8 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 
 /**
  * A date in at most six characters, for the narrow graph's date column: "now", "5 m", "2 h",
- * "3 d" within a week, then "18 Sep", then "Sep 24" past this year. Month names are fixed
+ * "3 d" within a week, then "18 Sep", then "Sep ’24" past this year (the apostrophe: "Sep 24"
+ * read as the 24th, next to full dates elsewhere). Month names are fixed
  * three-letter ones: a locale's "Sept" does not fit the column.
  */
 export function shortDate(unixSeconds: number, now = Date.now() / 1000): string {
@@ -99,7 +100,7 @@ export function shortDate(unixSeconds: number, now = Date.now() / 1000): string 
   if (s < 7 * 86400) return `${Math.floor(s / 86400)} d`
   const d = new Date(unixSeconds * 1000)
   const year = new Date(now * 1000).getFullYear()
-  return d.getFullYear() === year ? `${d.getDate()} ${MONTHS[d.getMonth()]}` : `${MONTHS[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`
+  return d.getFullYear() === year ? `${d.getDate()} ${MONTHS[d.getMonth()]}` : `${MONTHS[d.getMonth()]} \u2019${String(d.getFullYear()).slice(2)}`
 }
 
 /**

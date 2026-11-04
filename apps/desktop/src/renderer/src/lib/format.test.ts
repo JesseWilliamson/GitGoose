@@ -39,6 +39,6 @@ describe('shortDate', () => {
     expect(shortDate(now - 2 * 3600, now)).toBe('2 h')
     expect(shortDate(now - 3 * 86400, now)).toBe('3 d')
     expect(shortDate(Date.UTC(2026, 8, 18, 12) / 1000, now)).toBe('18 Sep')
-    expect(shortDate(Date.UTC(2024, 8, 18, 12) / 1000, now)).toBe('Sep 24')
+    expect(shortDate(Date.UTC(2024, 8, 18, 12) / 1000, now)).toBe('Sep \u201924')
   })
 })

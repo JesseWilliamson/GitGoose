@@ -375,11 +375,11 @@ export default function MergePanes({ base, ours, theirs, labels, onSave }: Merge
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col" data-testid="merge-panes">
       <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-2 border-b border-border bg-card px-3 py-1 text-xs">
-        <label className="flex items-center gap-1.5 text-muted-foreground">
-          Start from
+        <label className="flex items-center gap-1.5 text-muted-foreground" title="What the result holds before you decide anything">
+          Result starts with
           <OptionSelect value={start} onChange={(v) => changeStart(v as StartFrom)} data-testid="merge-start" aria-label="Start from" className="px-1.5 text-xs data-[size=default]:h-6"
             options={[
-              { value: 'non-conflicting', label: 'Non-conflicting changes applied' },
+              { value: 'non-conflicting', label: 'Every change that does not conflict' },
               { value: 'base', label: 'The common ancestor' },
               { value: 'markers', label: "Git's merge (with markers)" },
             ]} />
