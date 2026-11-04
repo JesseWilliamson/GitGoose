@@ -523,7 +523,7 @@ function FileHeader({ view, block, file, index, layout, state, viewed, onViewed,
   const forced = state?.forced
   const t = targetOf(block.target, file)
   return (
-    <div className={clsx('flex h-8 items-center gap-2 border-y border-border bg-panel px-3 font-sans text-sm', sticky && 'border-t-0')} data-testid={sticky ? 'stream-sticky-file' : 'stream-file'} data-path={file.path}>
+    <div className={clsx('group flex h-8 items-center gap-2 border-y border-border bg-panel px-3 font-sans text-sm', sticky && 'border-t-0')} data-testid={sticky ? 'stream-sticky-file' : 'stream-file'} data-path={file.path}>
       {/* As wide as "2476/2476" needs (tabular digits, so ch is exact): a fixed 2 rem ran into the status letter. */}
       <span className="shrink-0 text-2xs text-hint tabular-nums" style={{ minWidth: `${String(total).length * 2 + 1}ch` }}>{index + 1}/{total}</span>
       <span className={clsx('w-3 shrink-0 text-center font-mono text-2xs font-bold', b.cls)}>{file.untracked ? 'U' : b.letter}</span>
@@ -561,7 +561,10 @@ function FileHeader({ view, block, file, index, layout, state, viewed, onViewed,
             the mark (the V key still works). */}
         {block.target.kind !== 'unstaged' && block.target.kind !== 'staged' && (
           <button onClick={() => onViewed(!viewed)} data-testid="viewed-toggle" aria-pressed={viewed} title="Mark viewed (V)"
-            className={clsx('flex items-center gap-1 rounded px-1.5 py-0.5 text-2xs', viewed ? 'text-add' : 'text-hint hover:bg-accent')}>
+            // On a folded file it waits for the pointer (unless set): a column of identical
+            // "Viewed" links down a commit of folded files is noise.
+            className={clsx('flex items-center gap-1 rounded px-1.5 py-0.5 text-2xs', viewed ? 'text-add' : 'text-hint hover:bg-accent',
+              collapsed && !viewed && 'invisible group-hover:visible focus-visible:visible')}>
             {viewed ? <Check size={12} /> : <Eye size={12} />} Viewed
           </button>
         )}
