@@ -1,4 +1,5 @@
 import type { ChangeInsights } from '@gitgoose/shared'
+import { Users } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import { useSetting, type RepoView } from '../lib/store'
@@ -24,10 +25,15 @@ export function ChangeHints({ view }: { view: RepoView }) {
   }, [view.id, key, on])
   if (!on || !ins || !ins.owners.length) return null
   const owners = ins.owners.slice(0, 3)
+  // A side note, not a step: one quiet line above the commit fields, with what it means in the
+  // tooltip (it competed with the Summary field as a tinted box).
+  const all = ins.owners.map((o) => `${o.name} (${o.lines})`).join(', ')
   return (
-    <div className="space-y-1 border-t border-border bg-primary/5 px-3 py-2 text-xs text-muted-foreground" data-testid="change-hints">
+    <div className="flex items-center gap-1.5 border-t border-border px-3 py-1.5 text-2xs text-hint" data-testid="change-hints"
+      title={`Who last wrote the lines you are changing (git blame): worth a word with them.\n${all}`}>
+      <Users size={12} className="shrink-0" />
       {owners.length > 0 && (
-        <div data-testid="owners">
+        <div className="min-w-0 truncate" data-testid="owners">
           Changing lines by {owners.map((o) => `${o.name} (${o.lines})`).join(', ')}{ins.owners.length > 3 ? ` and ${ins.owners.length - 3} more` : ''}.
         </div>
       )}

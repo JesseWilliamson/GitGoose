@@ -151,7 +151,7 @@
   --gs-del: #ff7b7b;
   --gs-del-bg: rgba(248, 81, 73, 0.15);
   --gs-warn: #e5b04a;
-  --gs-select: rgba(76, 141, 255, 0.22);
+  --gs-select: rgba(76, 141, 255, 0.3);
   --gs-ours: #4c8dff;
   --gs-theirs: #e0a03a;
   /* Graph lane colours, one per column (cycled). The GitKraken rainbow, reordered so that
@@ -187,7 +187,7 @@
   --gs-del: #cf222e;
   --gs-del-bg: rgba(248, 81, 73, 0.1);
   --gs-warn: #9a6700;
-  --gs-select: rgba(47, 111, 228, 0.14);
+  --gs-select: rgba(47, 111, 228, 0.18);
   --gs-ours: #2f6fe4;
   --gs-theirs: #b86e00;
   --lane-0: #0b8fb0;

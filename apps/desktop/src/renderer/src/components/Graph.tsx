@@ -549,7 +549,7 @@ const CommitRow = memo(function CommitRow(props: {
           starts after the lanes, so the lines on the left stay clean, and stops 2 px short of the
           row's top and bottom, so consecutive selected rows stay distinct. */}
       <div
-        className={clsx('pointer-events-none absolute right-1 rounded-sm', props.selected ? 'bg-select' : 'group-hover:bg-accent')}
+        className={clsx('pointer-events-none absolute right-1 rounded-sm', props.selected ? 'bg-select shadow-[inset_2px_0_0_var(--gs-accent)]' : 'group-hover:bg-accent')}
         style={{ left: cellW - 2, top: 2, bottom: 2 }}
         data-testid="row-tint"
       />

@@ -67,5 +67,8 @@ describe('collapseReason', () => {
     expect(collapseReason(f('b.ts', 0, 0, { change: 'renamed', oldPath: 'a.ts' }))).toBe('renamed from a.ts, unchanged')
     expect(collapseReason(f('big.ts', 2000, 966))).toBe('2,966 lines')
     expect(collapseReason(f('src/app.ts', 40, 2))).toBeNull()
+    // A deleted file starts collapsed, saying how much went.
+    expect(collapseReason(f('old.ts', 0, 31, { change: 'deleted' }))).toBe('deleted, 31 lines')
+    expect(collapseReason(f('one.txt', 0, 1, { change: 'deleted' }))).toBe('deleted, 1 line')
   })
 })

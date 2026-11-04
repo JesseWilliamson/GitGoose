@@ -535,7 +535,8 @@ function CommitBox({ view, stagedCount }: { view: RepoView; stagedCount: number 
         </div>
         {/* Disabled, the button says what it waits for (GitKraken's "Stage changes to commit") in a
             neutral style: a pale primary button reads as broken, not as "not yet". */}
-        <Button variant={canCommit || view.busy === 'Commit' ? 'primary' : 'default'} className="shrink-0" disabled={!canCommit} onClick={() => void commit()} data-testid="commit-button"
+        <Button variant={canCommit || view.busy === 'Commit' ? 'primary' : 'default'}
+          className={clsx('shrink-0', waitingFor && 'border-primary/50 bg-primary/10 text-primary disabled:opacity-100')} disabled={!canCommit} onClick={() => void commit()} data-testid="commit-button"
           title={waitingFor ?? `Commit (${modName()}+Enter)`}>
           {view.busy === 'Commit' ? <Spinner /> : <Check size={14} />}
           {waitingFor && !view.busy ? waitingFor

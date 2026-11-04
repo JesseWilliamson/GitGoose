@@ -324,6 +324,8 @@ export default function MergePanes({ base, ours, theirs, labels, onSave }: Merge
   const conflicts = status ? m.blocks.map((b, i) => (b.kind === 'conflict' && !isResolved(b, status.state.blocks[i]!) ? i : -1)).filter((i) => i >= 0) : []
   const pendingChanges = status ? m.blocks.filter((b, i) => b.kind !== 'conflict' && b.kind !== 'same' && (['ours', 'theirs'] as const).some((s) => status.state.blocks[i]![s] === 'pending')).length : 0
   const totalConflicts = m.blocks.filter((b) => b.kind === 'conflict').length
+  /** Some undecided conflict is a card in the result (empty there): the card is the guidance. */
+  const anyCard = !!status && conflicts.some((i) => { const r = status.state.ranges[i]; return !!r && r.from === r.to })
   /** One side's changes (conflicts included) that are neither taken nor left out yet. */
   const pendingOf = (side: Side) => {
     if (!status) return 0
@@ -415,7 +417,7 @@ export default function MergePanes({ base, ours, theirs, labels, onSave }: Merge
             <span className="flex items-center gap-1 text-muted-foreground"><i className="size-2 rounded-sm bg-add" /> by hand</span>
           </div>
           {/* An empty result reads as broken unless it says what fills it. */}
-          {conflicts.length > 0 && (
+          {conflicts.length > 0 && !anyCard && (
             <div className="flex shrink-0 items-center gap-1.5 border-b border-border bg-primary/10 px-3 py-1.5 text-xs text-foreground" data-testid="merge-next-step">
               <span className="font-medium">Next:</span>
               <span className="text-muted-foreground">

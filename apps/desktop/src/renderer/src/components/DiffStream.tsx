@@ -557,10 +557,14 @@ function FileHeader({ view, block, file, index, layout, state, viewed, onViewed,
         {t.kind !== 'untracked' && (state?.open !== false) && (
           <button className="rounded p-1 text-hint hover:bg-accent" title="Collapse" onClick={() => onState({ open: false })}><ChevronRight size={12} className="rotate-90" /></button>
         )}
-        <button onClick={() => onViewed(!viewed)} data-testid="viewed-toggle" aria-pressed={viewed} title="Mark viewed (V)"
-          className={clsx('flex items-center gap-1 rounded px-1.5 py-0.5 text-2xs', viewed ? 'text-add' : 'text-hint hover:bg-accent')}>
-          {viewed ? <Check size={12} /> : <Eye size={12} />} Viewed
-        </button>
+        {/* Viewed is for reading someone's history, not your own working copy: there, staging is
+            the mark (the V key still works). */}
+        {block.target.kind !== 'unstaged' && block.target.kind !== 'staged' && (
+          <button onClick={() => onViewed(!viewed)} data-testid="viewed-toggle" aria-pressed={viewed} title="Mark viewed (V)"
+            className={clsx('flex items-center gap-1 rounded px-1.5 py-0.5 text-2xs', viewed ? 'text-add' : 'text-hint hover:bg-accent')}>
+            {viewed ? <Check size={12} /> : <Eye size={12} />} Viewed
+          </button>
+        )}
       </span>
     </div>
   )

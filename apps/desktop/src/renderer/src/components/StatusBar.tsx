@@ -22,7 +22,7 @@ export function StatusBar({ view }: { view: RepoView }) {
       )}
       <span className="flex-1" />
       <AiJobsChip />
-      <span data-testid="commit-count">{log.commits.length.toLocaleString()}{log.done ? '' : '+'} {log.commits.length === 1 && log.done ? 'commit' : 'commits'}</span>
+      <span data-testid="commit-count" title={log.done ? undefined : 'The history loads as you scroll: these are the commits read so far'}>{log.commits.length.toLocaleString()}{log.done ? '' : '+'} {log.commits.length === 1 && log.done ? 'commit' : 'commits'}</span>
       {/* Cut from the left: what tells two repositories apart is the end of the path (the folder),
           not "/home/me/work/". direction: rtl makes the overflow clip at the start, and the inner
           bdi keeps the path itself reading left to right (without it the rtl block would move the
