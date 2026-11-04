@@ -568,7 +568,7 @@ const CommitRow = memo(function CommitRow(props: {
           <span data-testid="row-avatar" className="flex shrink-0"><AvatarStack people={people} size={AVATAR} max={2} /></span>
           <span className="hidden min-w-0 truncate @[600px]:inline" data-testid="row-author">{authors}</span>
         </span>
-        <span style={{ width: look.dateW }} className="hidden shrink-0 truncate text-right text-xs text-hint tabular-nums @[360px]:inline" data-testid="row-date">
+        <span style={{ width: look.dateW }} className="hidden shrink-0 truncate text-right text-xs text-hint tabular-nums @[420px]:inline" data-testid="row-date">
           {formatDate(commit.authorDate, look.dateFormat)}
         </span>
       </div>

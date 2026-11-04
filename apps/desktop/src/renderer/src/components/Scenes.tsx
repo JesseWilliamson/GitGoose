@@ -165,7 +165,9 @@ function FilesNow({ view, handle, current }: { view: RepoView; handle: React.Ref
   if (!block?.length) return null
   const viewedCount = block.filter((f) => view.viewed.has(viewedKey(f))).length
   return (
-    <div className="flex max-h-[45%] min-h-0 shrink-0 flex-col border-t border-border" data-testid="files-now">
+    // A third of the column at most: the graph above is what the column is for, and the reader
+    // lists the files as well (this list is for jumping).
+    <div className="flex max-h-[34%] min-h-0 shrink-0 flex-col border-t border-border" data-testid="files-now">
       <div className="flex h-7 shrink-0 items-center justify-between px-3 text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
         <span>Files {block.length}</span><span className="font-normal normal-case">{viewedCount} of {block.length} viewed</span>
       </div>

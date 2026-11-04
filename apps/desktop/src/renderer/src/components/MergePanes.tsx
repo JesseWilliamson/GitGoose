@@ -210,7 +210,8 @@ export default function MergePanes({ base, ours, theirs, labels, onSave }: Merge
   const merge = useMemo(() => ({ current: null as MergeField | null }), [])
   const [start, setStart] = useState<StartFrom>('non-conflicting')
   /** Share of the height the two sides get; the result takes the rest. */
-  const [split, setSplit] = useState(0.45)
+  // The two sides get most of the height: they are what is being read; the result fills as you decide.
+  const [split, setSplit] = useState(0.6)
   const box = useRef<HTMLDivElement>(null)
   const [status, setStatus] = useState<{ state: MergeState; markers: number } | null>(null)
   const dirty = useRef(false)
