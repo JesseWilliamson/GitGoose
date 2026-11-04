@@ -32,6 +32,7 @@ test('open a diff in the external diff tool; resolve a conflict in the merge too
   await expect(page.getByTestId('conflicts')).toHaveCount(0)
   await page.getByTestId('scene-tab-resolve').click()
   await expect(page.getByTestId('conflicts')).toBeVisible()
+  await page.getByTestId('resolve-elsewhere').click()
   await page.getByTestId('open-merge-tool').click()
   await expect.poll(() => r.git('status', '--porcelain').trim()).toBe('M  f.txt')
   await expect(page.getByTestId('continue-op')).toBeEnabled()

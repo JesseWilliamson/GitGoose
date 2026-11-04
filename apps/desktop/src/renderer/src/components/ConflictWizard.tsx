@@ -1,6 +1,7 @@
 import { countConflicts, parseConflicts, resolveBlocks, type ConflictBlock, type ConflictChoice, type ConflictFile, type ConflictVersions } from '@gitgoose/shared'
 import clsx from 'clsx'
-import { ArrowLeft, CheckCircle2, CircleAlert, ExternalLink, GitMerge, Sparkles, Wrench } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, ChevronDown, CircleAlert, ExternalLink, GitMerge, Sparkles } from 'lucide-react'
+import { DropdownMenu } from 'radix-ui'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { openInEditor, openMergeTool, run } from '../lib/actions'
 import { areaTarget, cancelAi, conflictJobKey, resolveWithAgent } from '../lib/ai'
@@ -8,7 +9,7 @@ import { useRunningJob } from '../lib/aiJobs'
 import { api } from '../lib/api'
 import { opName, sentence, splitPath } from '../lib/format'
 import { reportError, updateRepo, useSetting, useStore, type RepoView } from '../lib/store'
-import { Button, SectionHeader, Spinner } from './ui'
+import { Button, DM, SectionHeader, Spinner } from './ui'
 import { AiTargetButton } from './AiTargetButton'
 
 const ResultEditor = lazy(() => import('./ResultEditor'))
@@ -176,12 +177,16 @@ function ConflictFileView({ view, file }: { view: RepoView; file: ConflictFile }
             {asking ? <><Spinner /> Stop</> : <><Sparkles size={12} /> Ask AI</>}
           </Button>
         )}
-        <Button size="sm" variant="ghost" title="Open in your editor (Settings → Integrations)" aria-label="Open in your editor" onClick={() => void openInEditor(`${view.snapshot.path}/${file.path}`)}>
-          <ExternalLink size={13} /> Editor
-        </Button>
-        <Button size="sm" variant="ghost" title="Resolve in your external merge tool (Settings → Diff)" aria-label="Open in the merge tool" onClick={() => void openMergeTool(view.id, file.path)} data-testid="open-merge-tool">
-          <Wrench size={13} /> Merge tool
-        </Button>
+        {/* The ways out of the app (your editor, your merge tool) are used now and then: one menu. */}
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <Button size="sm" variant="ghost" title="Resolve this file in another program" data-testid="resolve-elsewhere"><ExternalLink size={13} /> Open in <ChevronDown size={12} /></Button>
+          </DropdownMenu.Trigger>
+          <DM.Content>
+            <DM.Item onSelect={() => void openInEditor(`${view.snapshot.path}/${file.path}`)} title="Settings → Integrations">Your editor</DM.Item>
+            <DM.Item onSelect={() => void openMergeTool(view.id, file.path)} title="Settings → Diff" testId="open-merge-tool">Your merge tool</DM.Item>
+          </DM.Content>
+        </DropdownMenu.Root>
         {canThree && (
           <div className="flex overflow-hidden rounded-md border border-border" role="group" aria-label="Conflict view">
             {(['three-pane', 'blocks'] as const).map((v) => (

@@ -62,13 +62,13 @@ test('the HEAD commit cannot be checked out detached or cherry-picked', async ()
   await app.close()
 })
 
-test('with AI off the AI items are one item that opens Settings', async () => {
+test('with AI off the commit menu has no AI items', async () => {
   const { r } = mergedRepo()
   const { app, page } = await launch(r.dir)
   await row(page, 'after merge').getByText('after merge', { exact: true }).click({ button: 'right' })
-  await expect(page.getByRole('menuitem', { name: 'Review this commit with AI…' })).toHaveCount(0)
-  await page.getByRole('menuitem', { name: 'Set up AI to explain, review or split commits…' }).click()
-  await expect(page.getByTestId('settings-page')).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: 'Create branch here…' })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: /with AI/ })).toHaveCount(0)
+  await expect(page.getByRole('menuitem', { name: /Set up AI/ })).toHaveCount(0)
   await app.close()
 })
 

@@ -458,9 +458,8 @@ export function GraphMenu({ repoId }: { repoId: string }) {
       {/* The AI's own group, after git's: what the commit is, not what to do to it. With AI off
           it is one item that opens Settings, not five greyed rows (the menu also has to fit a
           640 px window: menus.spec). */}
-      {aiWhy ? (
-        <CM.Item onSelect={() => useStore.setState({ page: 'settings' })}>Set up AI to explain, review or split commits…</CM.Item>
-      ) : (
+      {/* With AI off there is nothing here: the toolbar's AI button is where it is found. */}
+      {aiWhy ? null : (
         <>
           <CM.Item reason={whyNotRecompose(view, [hash], parentsOf)} onSelect={() => composeAction(repoId, recomposeAction([hash]))}>Split with AI…</CM.Item>
           <CM.Item onSelect={() => composeAction(repoId, reviewAction({ kind: 'commits', hashes: [hash] }))}>Review this commit with AI…</CM.Item>
