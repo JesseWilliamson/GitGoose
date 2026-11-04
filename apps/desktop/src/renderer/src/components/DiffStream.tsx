@@ -406,16 +406,8 @@ export const DiffStream = forwardRef<StreamHandle, Props>(function DiffStream(pr
     if (r.kind === 'file') {
       return (
         <div style={style} className="pt-1">
-          <FileHeader view={view} block={b} file={f} index={r.file} layout={stream.layouts.get(key)} state={states.get(key)}
-            viewed={viewed.has(viewedKey(f))} onViewed={(v) => props.onViewed(viewedKey(f), v)} onState={(s) => setState(key, s)} />
-        </div>
-      )
-    }
-    if (r.kind === 'collapsed') {
-      return (
-        <div style={style} className="flex items-center gap-2 px-4 font-sans text-xs text-hint" data-testid="stream-collapsed">
-          <span>Collapsed: {r.reason}</span>
-          <button className="rounded px-1.5 font-medium text-primary hover:bg-accent" onClick={() => setState(key, { open: true })}>Show</button>
+          <FileHeader view={view} block={b} file={f} index={r.file} layout={r.collapsed ? undefined : stream.layouts.get(key)} state={states.get(key)}
+            viewed={viewed.has(viewedKey(f))} onViewed={(v) => props.onViewed(viewedKey(f), v)} onState={(s) => setState(key, s)} collapsed={r.collapsed} />
         </div>
       )
     }
@@ -518,10 +510,12 @@ const LAYOUT_NAMES: Record<ReaderLayout, string> = { unified: 'Inline', split: '
 const NEXT_LAYOUT: Record<string, ReaderLayout | undefined> = { auto: 'unified', unified: 'split', split: 'flow', flow: undefined }
 
 /** A file's header: what it is, how it is laid out (the chip cycles Auto → Unified → Split → Flow), viewed. */
-function FileHeader({ view, block, file, index, layout, state, viewed, onViewed, onState, sticky }: {
+function FileHeader({ view, block, file, index, layout, state, viewed, onViewed, onState, sticky, collapsed }: {
   view: RepoView; block: StreamBlock; file: StreamFile; index: number
   layout?: { layout: ReaderLayout; reason: string }; state?: FileState
   viewed: boolean; onViewed: (v: boolean) => void; onState: (s: FileState) => void; sticky?: boolean
+  /** The file is folded, and why ("deleted, 31 lines"): said here, with Show, instead of a row of its own. */
+  collapsed?: string
 }) {
   const b = BADGE[file.untracked ? 'added' : file.change] ?? BADGE.modified!
   const { dir, name } = splitPath(file.path)
@@ -554,7 +548,12 @@ function FileHeader({ view, block, file, index, layout, state, viewed, onViewed,
         {block.target.kind === 'staged' && (
           <Button size="sm" data-testid="unstage-file" onClick={() => void run(view.id, 'Unstage', () => api.unstagePaths(view.id, [file.path]), { quiet: true })}>Unstage file</Button>
         )}
-        {t.kind !== 'untracked' && (state?.open !== false) && (
+        {collapsed ? (
+          <button className="flex items-center gap-1 rounded px-1.5 py-0.5 text-2xs text-hint hover:bg-accent hover:text-foreground" data-testid="stream-collapsed"
+            title="Show this file's diff" onClick={() => onState({ open: true })}>
+            {collapsed} · <span className="font-medium text-primary">Show</span><ChevronRight size={12} />
+          </button>
+        ) : t.kind !== 'untracked' && (
           <button className="rounded p-1 text-hint hover:bg-accent" title="Collapse" onClick={() => onState({ open: false })}><ChevronRight size={12} className="rotate-90" /></button>
         )}
         {/* Viewed is for reading someone's history, not your own working copy: there, staging is

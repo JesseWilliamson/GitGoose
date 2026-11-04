@@ -48,8 +48,10 @@ describe('buildStream', () => {
     const later: StreamFile = { path: 'later.ts', change: 'modified', additions: 10, deletions: 2, binary: false }
     const b = block([lock, later])
     const s = buildStream([b], ROOM, new Map())
-    expect(kinds(s.rows)).toEqual(['block', 'file', 'collapsed', 'file', 'pending'])
-    expect(s.rows[4]).toMatchObject({ lines: 15 })
+    // A collapsed file is its header alone, saying why.
+    expect(kinds(s.rows)).toEqual(['block', 'file', 'file', 'pending'])
+    expect(s.rows[1]).toMatchObject({ collapsed: 'generated' })
+    expect(s.rows[3]).toMatchObject({ lines: 15 })
     const opened = buildStream([b], ROOM, new Map([[fileKey(b, lock), { open: true }]]))
     expect(kinds(opened.rows).slice(0, 4)).toEqual(['block', 'file', 'flow', 'file'])
   })

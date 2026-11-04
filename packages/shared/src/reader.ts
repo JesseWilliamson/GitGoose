@@ -123,6 +123,7 @@ export function collapseReason(file: { path: string; change: string; additions: 
   if (file.change === 'renamed' && file.additions === 0 && file.deletions === 0) return `renamed from ${file.oldPath ?? '?'}, unchanged`
   // A deleted file is rarely read line by line (the point is that it is gone), and a whole file
   // in red, in two columns when it is short, reads like a side-by-side diff. One click shows it.
+  if (file.change === 'deleted' && file.binary) return 'deleted binary file'
   if (file.change === 'deleted') return `deleted, ${file.deletions.toLocaleString('en-US')} ${file.deletions === 1 ? 'line' : 'lines'}`
   const n = file.additions + file.deletions
   if (n > COLLAPSE_LINES) return `${n.toLocaleString('en-US')} lines`

@@ -36,8 +36,8 @@ export type StreamRow =
   /** A block whose file list has not arrived: one row that loads it when it comes into view. */
   | { kind: 'block-loading'; block: number }
   | { kind: 'block-empty'; block: number }
-  | { kind: 'file'; block: number; file: number }
-  | { kind: 'collapsed'; block: number; file: number; reason: string }
+  /** A file's header. `collapsed`: the file starts folded, and why; the header says so and offers Show (one row, not two). */
+  | { kind: 'file'; block: number; file: number; collapsed?: string }
   /** A file whose diff has not arrived: room for its lines until it does. */
   | { kind: 'pending'; block: number; file: number; lines: number }
   | { kind: 'note'; block: number; file: number; text: string }
@@ -49,7 +49,7 @@ export type StreamRow =
   | { kind: 'end' }
 
 /** Pixel sizes of the row kinds that are not code lines. */
-export const SIZES = { block: 56, blockLoading: 40, file: 36, collapsed: 32, note: 32, end: 72 }
+export const SIZES = { block: 56, blockLoading: 40, file: 36, note: 32, end: 72 }
 
 /**
  * The reader's size in px and its code font, from which each file's room in cells is worked out
@@ -168,13 +168,13 @@ export function buildStream(blocks: StreamBlock[], room: StreamRoom, states: Rea
     b.files.forEach((f, fi) => {
       const key = fileKey(b, f)
       fileStart.set(key, rows.length)
-      rows.push({ kind: 'file', block: bi, file: fi })
       const state = states.get(key)
       const reason = collapseReason(f)
       if (state?.open === false || (reason && state?.open !== true)) {
-        rows.push({ kind: 'collapsed', block: bi, file: fi, reason: reason ?? 'collapsed' })
+        rows.push({ kind: 'file', block: bi, file: fi, collapsed: reason ?? 'collapsed' })
         return
       }
+      rows.push({ kind: 'file', block: bi, file: fi })
       if (f.binary) {
         rows.push({ kind: 'note', block: bi, file: fi, text: 'Binary file' })
         return
@@ -225,7 +225,6 @@ export function rowHeight(r: StreamRow, lineH: number, hunkH: number): number {
     case 'block': return SIZES.block
     case 'block-loading': case 'block-empty': return SIZES.blockLoading
     case 'file': return SIZES.file
-    case 'collapsed': return SIZES.collapsed
     case 'note': return SIZES.note
     case 'pending': return r.lines * lineH
     case 'hunk': return hunkH
