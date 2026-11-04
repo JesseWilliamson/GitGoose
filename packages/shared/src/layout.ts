@@ -42,13 +42,14 @@ export const DEFAULT_SIZES: Record<Slot, number> = { left: 224, right: 480, farR
 export const DEFAULT_SLOT: Record<PaneId, Slot> = { branches: 'left', details: 'right', ai: 'farRight' }
 
 /**
- * The reading pane (ADR-011): branches, the graph, the commit (details over its diff), the AI. Four
- * columns, so nothing you use together is a tab behind something else.
+ * The reading pane (ADR-011): branches, the graph, the commit (details over its diff). The AI is
+ * hidden until asked for (the toolbar's AI button, Mod+J), and then takes the far right column:
+ * an empty AI column is a quarter of the window the graph needs for its messages.
  */
 export const DEFAULT_LAYOUT: PaneLayout = {
   left: { panes: ['branches'], active: 'branches', size: DEFAULT_SIZES.left, collapsed: false },
   right: { panes: ['details'], active: 'details', size: DEFAULT_SIZES.right, collapsed: false },
-  farRight: { panes: ['ai'], active: 'ai', size: DEFAULT_SIZES.farRight, collapsed: false },
+  farRight: { panes: [], active: null, size: DEFAULT_SIZES.farRight, collapsed: false },
   bottom: { panes: [], active: null, size: DEFAULT_SIZES.bottom, collapsed: false },
 }
 

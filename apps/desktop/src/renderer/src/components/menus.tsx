@@ -440,11 +440,6 @@ export function GraphMenu({ repoId }: { repoId: string }) {
         <CM.Item reason={whyNotFixupStaged(view, hash)} onSelect={() => void fixupInto(repoId, hash)}>Fixup staged changes into this commit</CM.Item>
       </CM.Sub>
       <CM.Item danger reason={editWhy} onSelect={() => void dropCommits(repoId, [hash])}>Drop commit</CM.Item>
-      <CM.Item reason={firstReason(aiWhy, whyNotRecompose(view, [hash], parentsOf))} onSelect={() => composeAction(repoId, recomposeAction([hash]))}>Split with AI…</CM.Item>
-      <CM.Item reason={aiWhy} onSelect={() => composeAction(repoId, reviewAction({ kind: 'commits', hashes: [hash] }))}>Review this commit with AI…</CM.Item>
-      <CM.Item reason={aiWhy} onSelect={() => composeAction(repoId, walkthroughAction({ kind: 'commits', hashes: [hash] }))}>Walk me through this commit…</CM.Item>
-      <CM.Item reason={aiWhy} onSelect={() => composeAction(repoId, explainAction(hash))}>Explain this commit…</CM.Item>
-      <CM.Item onSelect={() => composeAction(repoId, impactAction({ kind: 'commits', hashes: [hash] }))}>What could this commit affect?…</CM.Item>
       <CM.Sub label={snap.bisect ? 'Bisect' : 'Bisect: find the commit that broke something'}>
         <CM.Item onSelect={() => void bisectMark(repoId, hash, 'bad')}>{snap.bisect ? 'Mark bad (has the bug)' : 'Start: this commit is bad (has the bug)'}</CM.Item>
         <CM.Item onSelect={() => void bisectMark(repoId, hash, 'good')}>{snap.bisect ? 'Mark good (no bug)' : 'Start: this commit is good (no bug)'}</CM.Item>
@@ -455,6 +450,14 @@ export function GraphMenu({ repoId }: { repoId: string }) {
         <CM.Item onSelect={() => void reset(repoId, hash, 'mixed')}>Mixed: keep changes unstaged</CM.Item>
         <CM.Item onSelect={() => void reset(repoId, hash, 'hard')}>Hard: discard changes</CM.Item>
       </CM.Sub>
+      <CM.Separator />
+      {/* The AI's own group, after git's: what the commit is, not what to do to it. (A label
+          would be clearer, but the fullest menu has to fit a 640 px window: menus.spec.) */}
+      <CM.Item reason={firstReason(aiWhy, whyNotRecompose(view, [hash], parentsOf))} onSelect={() => composeAction(repoId, recomposeAction([hash]))}>Split with AI…</CM.Item>
+      <CM.Item reason={aiWhy} onSelect={() => composeAction(repoId, reviewAction({ kind: 'commits', hashes: [hash] }))}>Review this commit with AI…</CM.Item>
+      <CM.Item reason={aiWhy} onSelect={() => composeAction(repoId, walkthroughAction({ kind: 'commits', hashes: [hash] }))}>Walk me through this commit…</CM.Item>
+      <CM.Item reason={aiWhy} onSelect={() => composeAction(repoId, explainAction(hash))}>Explain this commit…</CM.Item>
+      <CM.Item onSelect={() => composeAction(repoId, impactAction({ kind: 'commits', hashes: [hash] }))}>What could this commit affect?…</CM.Item>
       <CM.Separator />
       <CM.Sub label="Copy and save">
         <CM.Item onSelect={() => void copyCommits(repoId, [hash], 'patch')}>Copy as patch</CM.Item>

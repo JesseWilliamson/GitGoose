@@ -2,7 +2,7 @@ import type { GraphFilter, Ref } from '@gitgoose/shared'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import clsx from 'clsx'
 import {
-  Archive, Boxes, ChevronDown, ChevronRight, Cloud, Eye, EyeOff, Focus, Folder, FolderTree, GitBranch, GitPullRequest, HardDrive, History,
+  Archive, Boxes, Check, ChevronDown, ChevronRight, Cloud, Eye, EyeOff, Focus, Folder, FolderTree, GitBranch, GitPullRequest, HardDrive, History,
   Laptop, ListTree, Pin, Plus, RefreshCw, Settings2, Tag,
 } from 'lucide-react'
 import { ContextMenu, DropdownMenu } from 'radix-ui'
@@ -530,10 +530,14 @@ function RefRow({ row, style, cursor, look, onClick, onDoubleClick }: {
   if ((r.ahead ?? 0) > 0) badges.push(<span key="ahead" className="text-2xs text-add tabular-nums" title={`${r.ahead} to push. ${tracking}`}>↑{r.ahead}</span>)
   if ((r.behind ?? 0) > 0) badges.push(<span key="behind" className="text-2xs text-warn tabular-nums" title={`${r.behind} to pull. ${tracking}`}>↓{r.behind}</span>)
   if (r.upstreamGone) badges.push(<Badge key="gone" title="Upstream deleted on the remote">gone</Badge>)
-  if (r.kind === 'local' && !head) {
-    if (look.merged.has(r.shortName)) badges.push(<Badge key="merged" title={`Already in ${look.headBranch ?? 'HEAD'}: safe to delete`}>merged</Badge>)
-    if (look.stale && isStale(r)) badges.push(<Badge key="stale" title="No commits for 90 days">stale</Badge>)
-  }
+  // Merged and stale are states most branches of an old repository share, so they are drawn
+  // quietly: merged as a small check, stale by dimming the name. A pill on every row is noise
+  // that hides the rows that need attention. The words stay for screen readers and the tooltip.
+  const quiet = r.kind === 'local' && !head
+  const merged = quiet && look.merged.has(r.shortName)
+  const stale = quiet && look.stale && isStale(r)
+  if (merged) badges.push(<span key="merged" className="flex shrink-0 text-hint" title={`Merged: already in ${look.headBranch ?? 'HEAD'}, safe to delete`}><Check size={12} /><span className="sr-only">merged</span></span>)
+  if (stale) badges.push(<span key="stale" className="sr-only">stale</span>)
   if (r.kind === 'local' && look.elsewhere.has(r.shortName)) badges.push(<Badge key="wt" title={`Checked out in ${look.elsewhere.get(r.shortName)}`}>worktree</Badge>)
   if (pr) badges.push(<Badge key="pr" title={`Pull request #${pr.number}: ${pr.title}`}>#{pr.number}</Badge>)
   if (r.kind === 'tag' && look.onRemote && !look.onRemote.names.has(r.shortName)) badges.push(<Badge key="local" title={`Not on ${look.onRemote.remote}`}>local only</Badge>)
@@ -551,11 +555,11 @@ function RefRow({ row, style, cursor, look, onClick, onDoubleClick }: {
       data-ref={r.name}
       data-section={sectionName(row.section)}
       data-upstream={r.upstream ?? ''}
-      title={`${r.name}${tracking ? `\n${tracking}` : ''}\n${r.kind === 'tag' ? 'Click to show it in the graph' : 'Click to show its history, double-click to check out'}`}
+      title={`${r.name}${stale ? ' (stale: no commits for 90 days)' : ''}${tracking ? `\n${tracking}` : ''}\n${r.kind === 'tag' ? 'Click to show it in the graph' : 'Click to show its history, double-click to check out'}`}
       className={clsx('group flex cursor-default items-center gap-1.5 pr-3 text-sm', cursor ? 'bg-select' : 'hover:bg-accent', head && 'font-semibold')}
     >
       {head && <span className="-ml-4 w-3 text-2xs text-primary">✓</span>}
-      <span className={clsx('min-w-[4.5rem] flex-1 truncate', out && 'text-hint line-through decoration-muted-foreground/50')} data-testid="ref-label">{row.label}</span>
+      <span className={clsx('min-w-[4.5rem] flex-1 truncate', (stale || merged) && 'text-muted-foreground', out && 'text-hint line-through decoration-muted-foreground/50')} data-testid="ref-label">{row.label}</span>
       {/* The right column, the same one every row ends in: badges give way before the branch
           name does (they wrap onto a second line that is cut off, so a badge that does not fit
           disappears whole instead of showing as "sta"). On hover the eye takes their place. */}

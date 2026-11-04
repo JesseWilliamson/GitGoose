@@ -1,8 +1,9 @@
 import clsx from 'clsx'
-import { Archive, ArrowDown, ArrowUp, ChevronDown, ChevronRight, GitBranch, RefreshCw, Redo2, Search, Settings, Undo2 } from 'lucide-react'
+import { Archive, ArrowDown, ArrowUp, ChevronDown, ChevronRight, GitBranch, RefreshCw, Redo2, Search, Settings, Sparkles, Undo2 } from 'lucide-react'
 import { DropdownMenu } from 'radix-ui'
 import { fetchAll, newBranch, pull, push, redo, stash, undo } from '../lib/actions'
 import { runCommand, useSetting, useStore, type RepoView } from '../lib/store'
+import { isPaneVisible } from '@gitgoose/shared'
 import { hasConflicts, readSelection, SCENE_TITLES, SCENES, setScene } from '../lib/scenes'
 import { modName, shortcutOf } from '../lib/keys'
 import { Input } from '@/components/ui/input'
@@ -29,7 +30,7 @@ export function Toolbar({ view }: { view: RepoView }) {
         <Divider />
         <DropdownMenu.Root>
           <div className="no-drag flex items-stretch">
-            <ToolbarButton icon={<ArrowDown size={16} />} label="Pull" title={`Pull (${pullMode === 'ff-only' ? 'fast-forward only' : pullMode})`} onClick={() => void pull(id)} disabled={!!view.busy}
+            <ToolbarButton icon={<ArrowDown size={16} />} label="Pull" showLabel title={`Pull (${pullMode === 'ff-only' ? 'fast-forward only' : pullMode})`} onClick={() => void pull(id)} disabled={!!view.busy}
               count={head?.behind} />
             <DropdownMenu.Trigger className="-ml-1 h-row-lg rounded-md px-0.5 text-hint hover:bg-accent hover:text-foreground" aria-label="Pull options"><ChevronDown size={12} /></DropdownMenu.Trigger>
           </div>
@@ -42,7 +43,7 @@ export function Toolbar({ view }: { view: RepoView }) {
         </DropdownMenu.Root>
         <DropdownMenu.Root>
           <div className="no-drag flex items-stretch">
-            <ToolbarButton icon={<ArrowUp size={16} />} label="Push" onClick={() => push(id)} disabled={!!view.busy || !snap.head.branch}
+            <ToolbarButton icon={<ArrowUp size={16} />} label="Push" showLabel onClick={() => push(id)} disabled={!!view.busy || !snap.head.branch}
               count={head?.ahead} />
             <DropdownMenu.Trigger className="-ml-1 h-row-lg rounded-md px-0.5 text-hint hover:bg-accent hover:text-foreground" aria-label="Push options"><ChevronDown size={12} /></DropdownMenu.Trigger>
           </div>
@@ -51,10 +52,10 @@ export function Toolbar({ view }: { view: RepoView }) {
             <DM.Item reason={whyNotForcePush(head)} onSelect={() => push(id, true)}>Force push (with lease)…</DM.Item>
           </DM.Content>
         </DropdownMenu.Root>
-        <ToolbarButton icon={<RefreshCw size={16} className={clsx(view.busy === 'Fetch' && 'animate-spin')} />} label="Fetch" title="Fetch all remotes" onClick={() => void fetchAll(id)} disabled={!!view.busy} />
+        <ToolbarButton icon={<RefreshCw size={16} className={clsx(view.busy === 'Fetch' && 'animate-spin')} />} label="Fetch" showLabel title="Fetch all remotes" onClick={() => void fetchAll(id)} disabled={!!view.busy} />
         <Divider />
-        <ToolbarButton icon={<GitBranch size={16} />} label="Branch" title="New branch…" onClick={() => newBranch(id)} disabled={!snap.head.hash} />
-        <ToolbarButton icon={<Archive size={16} />} label="Stash" title="Stash changes" onClick={() => stash(id)} disabled={!!view.busy} />
+        <ToolbarButton icon={<GitBranch size={16} />} label="Branch" showLabel title="New branch…" onClick={() => newBranch(id)} disabled={!snap.head.hash} />
+        <ToolbarButton icon={<Archive size={16} />} label="Stash" showLabel title="Stash changes" onClick={() => stash(id)} disabled={!!view.busy} />
       </div>
 
       <SceneTabs view={view} />
@@ -79,6 +80,7 @@ export function Toolbar({ view }: { view: RepoView }) {
         )}
         <UndoChip view={view} />
         <Divider />
+        <AiToggle view={view} />
         <ToolbarButton icon={<Settings size={16} />} label="Settings" onClick={() => useStore.setState({ page: 'settings' })} />
       </div>
     </div>
@@ -131,6 +133,20 @@ function SceneTabs({ view }: { view: RepoView }) {
         )
       })}
     </div>
+  )
+}
+
+/**
+ * The AI, shown or put away. It starts put away (the graph gets its width), so this button is
+ * how a new user finds it: pressed while the AI is on screen (Browse's AI column, or the left
+ * column's AI face in the reading scenes).
+ */
+function AiToggle({ view }: { view: RepoView }) {
+  const layout = useSetting('layout')
+  const on = view.scene === 'browse' ? isPaneVisible(layout, 'ai') : view.read.face === 'ai'
+  return (
+    <ToolbarButton icon={<Sparkles size={16} />} label="AI" showLabel pressed={on} title={`Ask AI about this repository (${shortcutOf('ai-chat')})`}
+      onClick={() => runCommand('toggle-ai-pane')} />
   )
 }
 

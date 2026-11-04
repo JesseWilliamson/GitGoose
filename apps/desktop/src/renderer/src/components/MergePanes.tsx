@@ -2,7 +2,7 @@ import { EditorState, RangeSet, RangeSetBuilder, StateEffect, StateField } from 
 import { Decoration, EditorView, GutterMarker, gutter, lineNumbers, type DecorationSet } from '@codemirror/view'
 import { countConflicts, merge3, type Merge3, type Range } from '@gitgoose/shared'
 import clsx from 'clsx'
-import { ChevronDown, ChevronUp } from 'lucide-react'
+import { ArrowDown, ChevronDown, ChevronUp, X } from 'lucide-react'
 import { basicSetup } from 'codemirror'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -396,6 +396,16 @@ export default function MergePanes({ base, ours, theirs, labels, onSave }: Merge
             <span className="flex items-center gap-1 text-muted-foreground"><i className="size-2 rounded-sm bg-theirs" /> theirs</span>
             <span className="flex items-center gap-1 text-muted-foreground"><i className="size-2 rounded-sm bg-add" /> by hand</span>
           </div>
+          {/* An empty result reads as broken unless it says what fills it. */}
+          {conflicts.length > 0 && (
+            <div className="flex shrink-0 items-center gap-1.5 border-b border-border bg-primary/10 px-3 py-1.5 text-xs text-foreground" data-testid="merge-next-step">
+              <span className="font-medium">Next:</span>
+              <span className="text-muted-foreground">
+                for each conflict, press <ArrowDown size={12} className="inline align-[-2px]" /> on Yours or Theirs to take that side
+                (both, to keep both), <X size={12} className="inline align-[-2px]" /> to leave it out, or type the result here.
+              </span>
+            </div>
+          )}
           <div ref={hosts.result} className="min-h-0 flex-1 overflow-hidden" data-testid="merge-result" />
         </div>
       </div>

@@ -5,16 +5,19 @@ import {
 } from './layout'
 
 const L = DEFAULT_LAYOUT
+/** The default with the AI asked for: what most rules about the far right column act on. */
+const AI = showPane(DEFAULT_LAYOUT, 'ai')
 
 describe('pane layout', () => {
-  it('starts as the reading pane: branches, then details, then the AI pane, each in its own column', () => {
+  it('starts as the reading pane: branches, then details, each in its own column; the AI hidden until asked for', () => {
     expect(L.left.panes).toEqual(['branches'])
     expect(L.right).toMatchObject({ panes: ['details'], active: 'details' })
-    expect(L.farRight).toMatchObject({ panes: ['ai'], active: 'ai' })
+    expect(L.farRight).toMatchObject({ panes: [], active: null })
     expect(L.bottom).toMatchObject({ panes: [], active: null })
-    expect(PANES.map((p) => slotOf(L, p))).toEqual(['left', 'right', 'farRight'])
-    // Nothing used together is a tab behind something else.
-    expect(PANES.every((p) => isPaneVisible(L, p))).toBe(true)
+    expect(PANES.map((p) => slotOf(L, p))).toEqual(['left', 'right', null])
+    // Asked for, the AI takes its own column: nothing used together is a tab behind something else.
+    expect(PANES.map((p) => slotOf(AI, p))).toEqual(['left', 'right', 'farRight'])
+    expect(PANES.every((p) => isPaneVisible(AI, p))).toBe(true)
   })
 
   it('changes size and collapsed state of one slot only', () => {
@@ -93,7 +96,7 @@ describe('pane layout', () => {
   })
 
   it('wideGraph collapses every side column and keeps their panes', () => {
-    const l = wideGraph(L)
+    const l = wideGraph(AI)
     expect([l.left.collapsed, l.right.collapsed, l.farRight.collapsed, l.bottom.collapsed]).toEqual([true, true, true, false])
     expect(l.right.panes).toEqual(['details'])
     expect(l.farRight.panes).toEqual(['ai'])
@@ -102,34 +105,34 @@ describe('pane layout', () => {
 
 describe('folding the far right column in a narrow window', () => {
   it('folds it, and unfolds only what the window folded', () => {
-    const folded = fold(L)
+    const folded = fold(AI)
     expect(folded.farRight).toMatchObject({ collapsed: true, folded: true })
     expect(isPaneVisible(folded, 'ai')).toBe(false)
-    expect(unfold(folded)).toEqual(L)
+    expect(unfold(folded)).toEqual(AI)
     // Collapsed by the user: the window leaves it alone both ways.
-    const mine = setCollapsed(L, 'farRight', true)
+    const mine = setCollapsed(AI, 'farRight', true)
     expect(fold(mine)).toBe(mine)
     expect(unfold(mine)).toBe(mine)
     // Nothing to fold in an empty column, and nothing to unfold that was never folded.
-    const empty = hidePane(L, 'ai')
+    const empty = hidePane(AI, 'ai')
     expect(fold(empty)).toBe(empty)
-    expect(unfold(L)).toBe(L)
+    expect(unfold(AI)).toBe(AI)
   })
 
   it('forgets the fold once the user acts on the column', () => {
     // Showing the AI (Mod+Shift+A) opens it for good, until the window next becomes narrow.
-    expect(showPane(fold(L), 'ai').farRight).toEqual(L.farRight)
+    expect(showPane(fold(AI), 'ai').farRight).toEqual(AI.farRight)
     // Dragging it open is the user's too.
-    expect(setCollapsed(fold(L), 'farRight', false).farRight).toEqual(L.farRight)
+    expect(setCollapsed(fold(AI), 'farRight', false).farRight).toEqual(AI.farRight)
     // The panel reporting the fold back (collapsed, as it already is) is not.
-    const folded = fold(L)
+    const folded = fold(AI)
     expect(setCollapsed(folded, 'farRight', true)).toBe(folded)
   })
 
   it('survives a restart, so a window opened wide again unfolds', () => {
-    const stored = JSON.parse(JSON.stringify(fold(L)))
+    const stored = JSON.parse(JSON.stringify(fold(AI)))
     expect(normalizeLayout(stored).farRight.folded).toBe(true)
-    expect(unfold(normalizeLayout(stored))).toEqual(L)
+    expect(unfold(normalizeLayout(stored))).toEqual(AI)
     // A fold mark on an open column means nothing and is dropped.
     expect(normalizeLayout({ ...stored, farRight: { ...stored.farRight, collapsed: false } }).farRight.folded).toBeUndefined()
   })

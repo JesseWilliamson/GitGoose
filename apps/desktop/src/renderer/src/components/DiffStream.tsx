@@ -511,6 +511,8 @@ const BADGE: Record<string, { letter: string; cls: string }> = {
   added: { letter: 'A', cls: 'text-add' }, modified: { letter: 'M', cls: 'text-warn' }, deleted: { letter: 'D', cls: 'text-destructive' },
   renamed: { letter: 'R', cls: 'text-primary' }, copied: { letter: 'C', cls: 'text-primary' }, typechange: { letter: 'T', cls: 'text-warn' }, unmerged: { letter: '!', cls: 'text-destructive' },
 }
+/** What each layout is called on screen. */
+const LAYOUT_NAMES: Record<ReaderLayout, string> = { unified: 'Inline', split: 'Side by side', flow: 'Two columns' }
 const NEXT_LAYOUT: Record<string, ReaderLayout | undefined> = { auto: 'unified', unified: 'split', split: 'flow', flow: undefined }
 
 /** A file's header: what it is, how it is laid out (the chip cycles Auto → Unified → Split → Flow), viewed. */
@@ -534,9 +536,10 @@ function FileHeader({ view, block, file, index, layout, state, viewed, onViewed,
       <span className="shrink-0 font-mono text-2xs"><span className="text-add">+{file.additions}</span> <span className="text-destructive">−{file.deletions}</span></span>
       {layout && layout.reason && (
         <button className="shrink-0 rounded px-1.5 text-2xs text-muted-foreground hover:bg-accent" data-testid="layout-chip" data-layout={layout.layout}
-          title="How this file is laid out, and why. Click to choose another."
+          title={`${LAYOUT_NAMES[layout.layout]}${forced ? ' (chosen by you)' : `, chosen because ${layout.reason}`}. Click for another layout.`}
           onClick={() => onState({ forced: NEXT_LAYOUT[forced ?? 'auto'] })}>
-          <span className="font-semibold capitalize text-foreground">{layout.layout}</span>{forced ? ' · chosen' : ` · ${layout.reason}`}
+          {/* The layout in words; the reason ("longest 64 ≤ 68") is the tooltip's, not the header's. */}
+          {LAYOUT_NAMES[layout.layout]}{forced && ' · chosen'}
         </button>
       )}
       <span className="ml-auto flex shrink-0 items-center gap-1">

@@ -52,25 +52,34 @@ test('dragging a divider resizes a side panel, and the size survives a restart',
   await second.app.close()
 })
 
-test('the default arrangement is the reading pane: branches, graph, details, AI, each in its own column', async () => {
+test('the default arrangement: branches, graph, details; the AI column starts put away and the toolbar brings it', async () => {
   const r = makeFixture('linear')
   const { app, page } = await launch(r.dir)
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1440, 900))
   await expect(page.getByTestId('slot-left')).toContainText('Branches')
   await expect(page.getByTestId('slot-right').locator('[data-pane]:visible')).toHaveAttribute('data-pane', 'details')
-  await expect(page.getByTestId('slot-farRight').locator('[data-pane]:visible')).toHaveAttribute('data-pane', 'ai')
-  // Nothing used together is a tab behind something else.
-  await expect(page.getByTestId('slot-right').getByTestId('pane-tab-ai')).toHaveCount(0)
-  await expect(page.getByTestId('ai-chat-panel')).toBeVisible()
+  // The AI is hidden, so the far right column is not drawn: the graph gets the width until it is asked for.
+  await expect(page.getByTestId('slot-farRight')).toHaveCount(0)
+  await expect(page.getByTestId('ai-chat-panel')).toHaveCount(0)
   await expect(page.getByTestId('slot-bottom')).toHaveCount(0)
   await expect(page.getByTestId('pane-drop-left')).toHaveCount(0)
-  // Left to right, with the graph wide enough for its messages.
+  // Left to right, with the graph wide enough for whole messages.
   const x = async (id: string) => (await page.getByTestId(id).boundingBox())!.x
   const graph = (await page.getByTestId('graph-scroll').boundingBox())!
   expect(await x('slot-left')).toBeLessThan(graph.x)
   expect(await x('slot-right')).toBeGreaterThan(graph.x)
+  expect(graph.width).toBeGreaterThanOrEqual(600)
+  // The toolbar's AI button opens the column (pressed while it is open) and closes it again.
+  const ai = page.getByTestId('toolbar').getByRole('button', { name: 'AI', exact: true })
+  await expect(ai).toHaveAttribute('aria-pressed', 'false')
+  await ai.click()
+  await expect(page.getByTestId('slot-farRight').getByTestId('ai-chat-panel')).toBeVisible()
+  await expect(ai).toHaveAttribute('aria-pressed', 'true')
   expect(await x('slot-farRight')).toBeGreaterThan(await x('slot-right'))
-  expect(graph.width).toBeGreaterThanOrEqual(380)
+  // Nothing used together is a tab behind something else.
+  await expect(page.getByTestId('slot-right').getByTestId('pane-tab-ai')).toHaveCount(0)
+  await ai.click()
+  await expect(page.getByTestId('ai-chat-panel')).toHaveCount(0)
   await app.close()
 })
 
@@ -79,6 +88,11 @@ test('a narrow window folds the AI column away and a wide one brings it back; Mo
   const { app, page } = await launch(r.dir) // 1024 px wide: four columns do not fit
   const size = (w: number) => app.evaluate(({ BrowserWindow }, w) => BrowserWindow.getAllWindows()[0]!.setContentSize(w, 640), w)
   await expect(page.getByTestId('commit-row').first()).toBeVisible()
+  // Opened wide (it starts put away), then the window narrows: it folds.
+  await size(1500)
+  await page.getByTestId('toolbar').getByRole('button', { name: 'AI', exact: true }).click()
+  await expect.poll(() => width(page, 'slot-farRight')).toBeGreaterThan(250)
+  await size(1024)
   await expect.poll(() => width(page, 'slot-farRight')).toBeLessThan(2)
   // Details keeps its width instead of being squeezed to its minimum.
   expect(await width(page, 'slot-right')).toBeGreaterThan(400)
@@ -127,13 +141,16 @@ test('panes stay in their columns: no tab menu, no dragging; View → Show AI hi
   const r = makeFixture('linear')
   const { app, page } = await launch(r.dir)
   await wide(app)
-  await expect(page.getByTestId('slot-farRight').getByTestId('ai-chat-panel')).toBeVisible()
-  await expect(page.getByTestId('pane-menu-ai')).toHaveCount(0)
-  await expect(page.getByTestId('pane-tab-ai')).not.toHaveAttribute('draggable', 'true')
-  expect(await viewItem(app, 'Show AI')).toEqual({ checked: true })
+  await expect(page.getByTestId('ai-chat-panel')).toHaveCount(0)
+  expect(await viewItem(app, 'Show AI')).toEqual({ checked: false })
   const click = () => app.evaluate(({ Menu }) => {
     Menu.getApplicationMenu()!.items.find((i) => i.label === 'View')!.submenu!.items.find((i) => i.label === 'Show AI')!.click()
   })
+  await click()
+  await expect(page.getByTestId('slot-farRight').getByTestId('ai-chat-panel')).toBeVisible()
+  await expect(page.getByTestId('pane-menu-ai')).toHaveCount(0)
+  await expect(page.getByTestId('pane-tab-ai')).not.toHaveAttribute('draggable', 'true')
+  await expect.poll(() => viewItem(app, 'Show AI')).toEqual({ checked: true })
   await click()
   await expect(page.getByTestId('ai-chat-panel')).toHaveCount(0)
   await expect.poll(() => viewItem(app, 'Show AI')).toEqual({ checked: false })
@@ -148,7 +165,7 @@ test('Mod+J: in Browse it shows and hides the AI column; in Read it turns the le
   const { app, page } = await launch(r.dir)
   await wide(app)
   await page.getByTestId('commit-row').first().click()
-  // Shown already: the first press puts the cursor in it, the second (from inside it) hides it.
+  // Put away at first: the first press shows it with the cursor in it, the second (from inside it) hides it.
   await page.keyboard.press('ControlOrMeta+j')
   await expect(page.getByTestId('thread-input')).toBeFocused()
   await page.keyboard.press('ControlOrMeta+j')
@@ -171,7 +188,7 @@ test('Mod+Shift+A shows the AI pane and focuses it, then hides it from its own c
   const { app, page } = await launch(r.dir)
   await expect(page.getByTestId('commit-row').first()).toBeVisible()
   await page.getByTestId('commit-row').first().click()
-  await expect(page.getByTestId('thread-input')).not.toBeFocused()
+  await expect(page.getByTestId('ai-chat-panel')).toHaveCount(0)
   await page.keyboard.press('ControlOrMeta+Shift+A')
   await expect(page.getByTestId('slot-farRight').getByTestId('ai-chat-panel')).toBeVisible()
   await expect(page.getByTestId('thread-input')).toBeFocused()
@@ -182,8 +199,9 @@ test('Mod+Shift+A shows the AI pane and focuses it, then hides it from its own c
   await page.keyboard.press('ControlOrMeta+p')
   await page.getByTestId('palette-input').fill('Reset layout')
   await page.keyboard.press('Enter')
-  await expect(page.getByTestId('slot-farRight').getByTestId('pane-tab-ai')).toBeVisible()
+  // The default: Details on the right, the AI hidden until asked for.
   await expect(page.getByTestId('slot-right').locator('[data-pane]:visible')).toHaveAttribute('data-pane', 'details')
+  await expect(page.getByTestId('slot-farRight')).toHaveCount(0)
   await app.close()
 })
 
@@ -207,7 +225,7 @@ test('the keyboard shows and hides panes; hide side panels and reset from the pa
   await page.getByTestId('palette-input').fill('Hide side panels')
   await page.keyboard.press('Enter')
   await expect.poll(() => width(page, 'slot-right')).toBeLessThan(2)
-  await expect.poll(() => width(page, 'slot-farRight')).toBeLessThan(2)
+  await expect(page.getByTestId('ai-chat-panel')).toHaveCount(0)
   await page.keyboard.press('ControlOrMeta+p')
   await page.getByTestId('palette-input').fill('Reset layout')
   await page.keyboard.press('Enter')

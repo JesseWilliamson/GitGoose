@@ -75,8 +75,12 @@ export function WithTooltip({ text, children, side, delay }: { text?: string; ch
  * accessible name and (unless a richer title is given) its tooltip, so screen readers and tests
  * still see "Push", not an arrow.
  */
-export function ToolbarButton({ icon, label, onClick, disabled, title, count, children, className }: {
+export function ToolbarButton({ icon, label, onClick, disabled, title, count, children, className, showLabel, pressed }: {
   icon: ReactNode; label: string; onClick?: () => void; disabled?: boolean; title?: string
+  /** Print the label beside the icon where the window has room (1280 px and up); the icon alone below. */
+  showLabel?: boolean
+  /** A toggle: on (aria-pressed, drawn pressed). */
+  pressed?: boolean
   /** A number shown beside the icon when it is more than zero. */
   count?: number
   /** Text after the icon (and the count). */
@@ -88,9 +92,12 @@ export function ToolbarButton({ icon, label, onClick, disabled, title, count, ch
         onClick={onClick}
         disabled={disabled}
         aria-label={label}
-        className={cn('no-drag flex h-row-lg min-w-row-lg shrink-0 items-center justify-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-40', className)}
+        aria-pressed={pressed}
+        className={cn('no-drag flex h-row-lg min-w-row-lg shrink-0 items-center justify-center gap-1.5 rounded-md px-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-40',
+          showLabel && 'xl:px-2', pressed && 'bg-accent text-foreground', className)}
       >
         {icon}
+        {showLabel && <span className="hidden font-medium xl:inline">{label}</span>}
         {!!count && count > 0 && <span className="font-medium text-primary tabular-nums" data-testid="toolbar-count">{count}</span>}
         {children}
       </button>

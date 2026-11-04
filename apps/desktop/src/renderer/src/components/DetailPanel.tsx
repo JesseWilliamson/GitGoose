@@ -43,7 +43,10 @@ const isMac = window.gitgoose?.platform === 'darwin'
 export function DetailPanel({ view }: { view: RepoView }) {
   const [first, setFirst] = useState<DiffTarget | null>(null)
   const settled = useSettled(first, FIRST_FILE_MS)
-  const file = shownFile(view, settled)
+  // A commit shows its first file at once: reading it is why you selected it. The working copy
+  // does not: its lists and the commit box need the height, and reading every change is the
+  // Changes scene's job (ADR-012). A file clicked in its lists still opens below.
+  const file = shownFile(view, view.selected.kind === 'wip' ? null : settled)
   return (
     <aside className="flex h-full min-h-0 w-full flex-col bg-card" data-testid="detail-panel">
       <div className={clsx('flex min-h-0 flex-col overflow-y-auto', file ? 'max-h-1/2 shrink-0' : 'flex-1')} data-testid="details-top">

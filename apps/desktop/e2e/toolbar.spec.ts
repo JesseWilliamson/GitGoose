@@ -9,10 +9,14 @@ test('the toolbar is one slim row and the Undo chip names the last operation', a
   const box = (await toolbar.boundingBox())!
   expect(box.height).toBeLessThanOrEqual(40)
 
-  // Transport buttons are icons: found by their accessible name, with no visible label text.
+  // Transport buttons are found by their accessible name. In a 1024 px window they are icons
+  // alone; from 1280 px they print their label beside the icon.
   const push = toolbar.getByRole('button', { name: 'Push' }).first()
-  await expect(push).toHaveText('')
   await expect(push).toHaveAttribute('aria-label', 'Push')
+  await expect(push.getByText('Push', { exact: true })).toBeHidden()
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1440, 900))
+  await expect(push.getByText('Push', { exact: true })).toBeVisible()
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1024, 640))
 
   // Nothing done yet: the chip reads "Undo" alone, disabled.
   const undo = toolbar.getByRole('button', { name: 'Undo' })

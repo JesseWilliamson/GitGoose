@@ -224,7 +224,7 @@ export function ReadScene({ view }: { view: RepoView }) {
   return (
     <div className="flex min-h-0 flex-1" data-testid="scene-read">
       <LeftColumn view={view} face={face} onFace={(f) => setFace(view.id, f as Face)}
-        faces={[{ id: 'around', label: 'Around', icon: <ListTree size={13} /> }, { id: 'ai', label: 'AI', icon: <Bot size={13} /> }]}>
+        faces={[{ id: 'around', label: 'History', icon: <ListTree size={13} /> }, { id: 'ai', label: 'AI', icon: <Bot size={13} /> }]}>
         {face === 'ai' ? <AiChatPanel view={view} /> : (
           <>
             {label && <div className="shrink-0 border-b border-border bg-primary/10 px-3 py-1.5 text-xs" data-testid="review-range">{label}</div>}
