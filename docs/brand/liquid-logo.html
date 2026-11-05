@@ -1,0 +1,431 @@
+<title>GitGoose Liquid Mark</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: one stage, the mark centred on it, a quiet control strip underneath. Dark-first. */
+  :root {
+    --stage: #0d0f12;
+    --ink: #e7e9ec;
+    --muted: #8a919b;
+    --line: #262a31;
+    --chip: #171a1f;
+    --focus: #1ab3d6;            /* lane-0 from the app theme */
+    --checker-a: #1a1d22;
+    --checker-b: #121418;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --stage: #eef0f2; --ink: #16181c; --muted: #5d636c; --line: #d3d7dc; --chip: #ffffff;
+      --focus: #0b8fb0; --checker-a: #ffffff; --checker-b: #e3e6ea; color-scheme: light;
+    }
+  }
+  :root[data-theme="light"] {
+    --stage: #eef0f2; --ink: #16181c; --muted: #5d636c; --line: #d3d7dc; --chip: #ffffff;
+    --focus: #0b8fb0; --checker-a: #ffffff; --checker-b: #e3e6ea; color-scheme: light;
+  }
+
+  html, body { height: 100%; }
+  body {
+    background: var(--stage);
+    color: var(--ink);
+    font-family: var(--mono);
+    display: grid;
+    place-items: center;
+    padding-block: 24px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    box-sizing: border-box;
+  }
+  /* The chosen backdrop sets the whole palette, so the controls always match what the mark sits on. */
+  body[data-bg="ink"] {
+    --stage: #0d0f12; --ink: #e7e9ec; --muted: #8a919b; --line: #262a31; --chip: #171a1f; --focus: #1ab3d6; color-scheme: dark;
+  }
+  body[data-bg="paper"] {
+    --stage: #f4f5f7; --ink: #16181c; --muted: #5d636c; --line: #d3d7dc; --chip: #ffffff; --focus: #0b8fb0; color-scheme: light;
+  }
+  body[data-bg="checker"] {
+    background-color: var(--checker-a);
+    background-image:
+      linear-gradient(45deg, var(--checker-b) 25%, transparent 25%, transparent 75%, var(--checker-b) 75%),
+      linear-gradient(45deg, var(--checker-b) 25%, transparent 25%, transparent 75%, var(--checker-b) 75%);
+    background-size: 24px 24px;
+    background-position: 0 0, 12px 12px;
+  }
+
+  main { display: flex; flex-direction: column; align-items: center; gap: 20px; width: 100%; }
+  canvas {
+    width: min(78vmin, 560px);
+    max-width: 100%;
+    aspect-ratio: 1;
+    display: block;
+    cursor: grab;
+    touch-action: none;
+  }
+  .controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; font-size: 12px; }
+  .group { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--chip); }
+  button {
+    font: inherit; color: var(--muted); background: transparent; border: 0; border-radius: 6px;
+    padding: 6px 10px; cursor: pointer; letter-spacing: 0.02em;
+  }
+  button[aria-pressed="true"] { color: var(--ink); background: var(--line); }
+  button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+  .hint { font-size: 11px; color: var(--muted); letter-spacing: 0.04em; margin: 0; }
+  .fallback { color: var(--muted); max-width: 40ch; text-align: center; }
+</style>
+
+<main>
+  <canvas id="mark" aria-label="GitGoose logo: three liquid-chrome commits, two parents merging into one"></canvas>
+  <div class="controls">
+    <div class="group" role="group" aria-label="Background">
+      <button id="bg-ink" data-bg="ink" aria-pressed="true">Ink</button>
+      <button id="bg-paper" data-bg="paper" aria-pressed="false">Paper</button>
+      <button id="bg-checker" data-bg="checker" aria-pressed="false">Transparent</button>
+    </div>
+    <div class="group" role="group" aria-label="Motion">
+      <button id="motion" aria-pressed="true">Flowing</button>
+    </div>
+  </div>
+  <p class="hint">Drag to tilt</p>
+</main>
+
+<script>
+/*
+ * How this works
+ * ---------------
+ * There is no mesh. The fragment shader ray-marches a signed distance field (SDF):
+ * for every pixel it asks "how far is the nearest surface?" and steps that far until it hits.
+ *
+ * The liquid look comes from one function, smin (a smooth minimum). min(a, b) of two
+ * distances gives a hard union; smin blends them over a radius k, so where a thin line
+ * meets a fat node the surface swells into a neck, like two drops of mercury touching.
+ *
+ * The chrome look comes from reflection only: no diffuse colour at all. Each hit reflects the
+ * view ray and looks it up in a procedural "photo studio" (softboxes, a horizon line, two
+ * coloured rim lights taken from the app's lane palette). A second, cheaper march finds where the
+ * reflected ray hits the mark itself, so the nodes mirror each other.
+ *
+ * Geometry is commit-graph shaped: A (top) and C (branch) are parents of B, a merge commit.
+ * Droplets bud off each parent, run down the edge and get swallowed by B.
+ * The JavaScript below computes all positions per frame; the shader only draws.
+ */
+const vert = `
+attribute vec2 aPos;
+void main() { gl_Position = vec4(aPos, 0.0, 1.0); }`;
+
+const frag = `
+precision highp float;
+uniform vec2  uRes;
+uniform float uTime;
+uniform vec2  uTilt;      // yaw, pitch
+uniform vec4  uA, uB, uC; // node centre xyz, radius w
+uniform vec3  uCurve[13]; // C -> B quadratic bezier, sampled
+uniform vec4  uD1, uD2;   // droplets
+uniform float uLineR;
+uniform float uK;         // smin blend radius
+uniform int   uSS;        // supersampling per axis
+
+float smin(float a, float b, float k) {
+  float h = max(k - abs(a - b), 0.0) / k;
+  return min(a, b) - h * h * k * 0.25;
+}
+
+float sdCapsule(vec3 p, vec3 a, vec3 b, float r) {
+  vec3 pa = p - a, ba = b - a;
+  float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+  return length(pa - ba * h) - r;
+}
+
+mat3 rotY(float a) { float c = cos(a), s = sin(a); return mat3(c, 0., -s, 0., 1., 0., s, 0., c); }
+mat3 rotX(float a) { float c = cos(a), s = sin(a); return mat3(1., 0., 0., 0., c, s, 0., -s, c); }
+
+float map(vec3 p) {
+  // edges: a straight line A-B and a curve C-B built from short capsules
+  float d = sdCapsule(p, uA.xyz, uB.xyz, uLineR);
+  for (int i = 0; i < 12; i++) d = min(d, sdCapsule(p, uCurve[i], uCurve[i + 1], uLineR));
+
+  // nodes melt into the edges
+  d = smin(d, length(p - uA.xyz) - uA.w, uK);
+  d = smin(d, length(p - uC.xyz) - uC.w, uK);
+  d = smin(d, length(p - uB.xyz) - uB.w, uK);
+
+  // droplets travelling along the edges
+  d = smin(d, length(p - uD1.xyz) - uD1.w, uK * 0.9);
+  d = smin(d, length(p - uD2.xyz) - uD2.w, uK * 0.9);
+
+  // a faint surface tremor so the highlights never sit perfectly still
+  d += 0.004 * sin(9.0 * p.x + uTime * 1.7) * sin(8.0 * p.y - uTime * 1.3) * sin(7.0 * p.z + uTime);
+  return d;
+}
+
+vec3 calcNormal(vec3 p) {
+  const vec2 e = vec2(1.0, -1.0) * 0.0008;
+  return normalize(e.xyy * map(p + e.xyy) + e.yyx * map(p + e.yyx) +
+                   e.yxy * map(p + e.yxy) + e.xxx * map(p + e.xxx));
+}
+
+// Studio environment: this IS the material. Chrome is just a picture of its surroundings.
+vec3 env(vec3 d) {
+  d = rotY(uTime * 0.12) * d;
+  float y = d.y;
+  vec3 c = mix(vec3(0.03, 0.035, 0.045), vec3(0.26, 0.28, 0.32), smoothstep(-0.35, 0.75, y));
+  c += vec3(0.45, 0.47, 0.5) * exp(-pow((y - 0.02) * 10.0, 2.0));          // horizon line
+  if (y > 0.0) {                                                           // overhead softbox
+    vec2 q = d.xz / y;
+    float box = smoothstep(0.75, 0.6, abs(q.x)) * smoothstep(0.45, 0.32, abs(q.y - 0.15));
+    c += vec3(3.2) * box;
+  }
+  float strip = smoothstep(0.08, 0.02, abs(d.x + 0.82)) * smoothstep(0.7, 0.1, abs(y - 0.1)); // vertical strip
+  c += vec3(2.2, 2.25, 2.3) * strip * step(0.0, d.z);
+  c += vec3(0.10, 0.70, 0.84) * 1.6 * pow(max(dot(d, normalize(vec3(-0.9, -0.25, -0.4))), 0.0), 6.0); // lane-0 cyan
+  c += vec3(0.94, 0.49, 0.16) * 1.8 * pow(max(dot(d, normalize(vec3(0.95, 0.15, -0.3))), 0.0), 8.0);  // lane-5 amber
+  c += vec3(1.0, 0.97, 0.92) * 9.0 * pow(max(dot(d, normalize(vec3(-0.55, 0.65, 0.55))), 0.0), 220.0); // key glint
+  return c;
+}
+
+vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+
+// returns distance along ray, or -1 on miss
+float march(vec3 ro, vec3 rd, float tMax, const int steps) {
+  float t = 0.0;
+  for (int i = 0; i < 120; i++) {
+    if (i >= steps) break;
+    float h = map(ro + rd * t);
+    if (h < 0.0005 * (1.0 + t)) return t;
+    t += h * 0.9;
+    if (t > tMax) break;
+  }
+  return -1.0;
+}
+
+// cheap bounding sphere test so empty pixels cost almost nothing
+vec2 sphereHit(vec3 ro, vec3 rd, float r) {
+  float b = dot(ro, rd), c = dot(ro, ro) - r * r, h = b * b - c;
+  if (h < 0.0) return vec2(-1.0);
+  h = sqrt(h);
+  return vec2(-b - h, -b + h);
+}
+
+vec4 render(vec2 uv) {
+  mat3 cam = rotY(uTilt.x) * rotX(uTilt.y);
+  vec3 ro = cam * vec3(0.0, 0.0, 6.0);
+  vec3 rd = cam * normalize(vec3(uv, -5.0));   // long lens: almost orthographic, logo-like
+
+  vec2 bs = sphereHit(ro, rd, 1.45);
+  if (bs.y < 0.0) return vec4(0.0);
+  float t0 = max(bs.x, 0.0);
+  float t = march(ro + rd * t0, rd, bs.y - t0, 110);
+  if (t < 0.0) return vec4(0.0);
+
+  vec3 p = ro + rd * (t0 + t);
+  vec3 n = calcNormal(p);
+  vec3 r = reflect(rd, n);
+
+  // one bounce: does the reflected ray hit the mark itself?
+  vec3 refl;
+  float t2 = march(p + n * 0.004, r, 3.0, 48);
+  if (t2 > 0.0) {
+    vec3 p2 = p + n * 0.004 + r * t2;
+    vec3 n2 = calcNormal(p2);
+    refl = env(reflect(r, n2)) * 0.62;          // inter-reflections lose energy
+  } else {
+    refl = env(r);
+  }
+
+  // Schlick fresnel with a silvery, slightly cool base: mercury rather than gold
+  float ndv = clamp(dot(n, -rd), 0.0, 1.0);
+  vec3 F0 = vec3(0.80, 0.82, 0.86);
+  vec3 F = F0 + (1.0 - F0) * pow(1.0 - ndv, 5.0);
+
+  // ambient occlusion in the creases where liquid necks form
+  float ao = 0.0, w = 1.0;
+  for (int i = 1; i <= 4; i++) {
+    float h = 0.03 * float(i);
+    ao += w * (h - map(p + n * h));
+    w *= 0.6;
+  }
+  ao = clamp(1.0 - 3.5 * ao, 0.0, 1.0);
+
+  vec3 col = refl * F * mix(0.35, 1.0, ao);
+  col = aces(col * 1.1);
+  col = pow(col, vec3(1.0 / 2.2));
+  return vec4(col, 1.0);
+}
+
+void main() {
+  vec4 acc = vec4(0.0);
+  float scale = 1.0 / min(uRes.x, uRes.y);
+  for (int j = 0; j < 3; j++) {
+    for (int i = 0; i < 3; i++) {
+      if (i >= uSS || j >= uSS) continue;
+      vec2 o = (vec2(float(i), float(j)) + 0.5) / float(uSS) - 0.5;
+      vec2 uv = (2.0 * (gl_FragCoord.xy + o) - uRes) * scale * 1.18;
+      acc += render(uv);
+    }
+  }
+  acc /= float(uSS * uSS);
+  gl_FragColor = vec4(acc.rgb * acc.a, acc.a);   // premultiplied alpha: the canvas is transparent
+}`;
+
+const canvas = document.getElementById("mark");
+const gl = canvas.getContext("webgl", { premultipliedAlpha: true, alpha: true, antialias: false, preserveDrawingBuffer: true });
+
+function fail(msg) {
+  const p = document.createElement("p");
+  p.className = "fallback";
+  p.textContent = msg;
+  canvas.replaceWith(p);
+}
+
+function compile(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+
+if (!gl) {
+  fail("This browser has WebGL turned off, so the logo cannot render here.");
+} else {
+  const prog = gl.createProgram();
+  gl.attachShader(prog, compile(gl.VERTEX_SHADER, vert));
+  gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, frag));
+  gl.linkProgram(prog);
+  gl.useProgram(prog);
+
+  // one triangle that covers the whole viewport
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  const aPos = gl.getAttribLocation(prog, "aPos");
+  gl.enableVertexAttribArray(aPos);
+  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+  const U = {};
+  for (const n of ["uRes", "uTime", "uTilt", "uA", "uB", "uC", "uCurve", "uD1", "uD2", "uLineR", "uK", "uSS"])
+    U[n] = gl.getUniformLocation(prog, n);
+
+  // ---- geometry (all in logo space, roughly -1..1) -------------------------------------------
+  const A = [-0.46, 0.72, 0], B = [-0.46, -0.70, 0], C = [0.46, 0.30, 0];
+  const CTRL = [0.46, -0.62, 0];     // pulls the branch curve down before it swings into B
+  const NODE_R = 0.235, DROP_R = 0.105;
+
+  const lerp = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+  const bez = (a, c, b, t) => lerp(lerp(a, c, t), lerp(c, b, t), t);
+  const ease = (x) => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; // drips hang, then run
+  const smooth = (e0, e1, x) => { const t = Math.min(Math.max((x - e0) / (e1 - e0), 0), 1); return t * t * (3 - 2 * t); };
+
+  const SEG = 12;
+  const curve = new Float32Array((SEG + 1) * 3);
+  for (let i = 0; i <= SEG; i++) curve.set(bez(C, CTRL, B, i / SEG), i * 3);
+
+  // A droplet: born inside its parent node, grows as it leaves, runs down, is absorbed by B.
+  function droplet(phase, pathAt) {
+    const s = ease(phase);
+    const pos = pathAt(s);
+    const r = DROP_R * smooth(0.0, 0.18, s) * (1 - 0.35 * smooth(0.85, 1.0, s));
+    return { pos, r, arrive: Math.exp(-Math.pow((phase - 0.97) / 0.05, 2)) };
+  }
+
+  // ---- interaction --------------------------------------------------------------------------
+  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let flowing = !reduceMotion;
+  let tilt = [0, 0], tiltTarget = [0, 0], dragging = null;
+  const STILL_T = 2.35; // a frame where both droplets are mid-flight: a good still logo
+
+  canvas.addEventListener("pointerdown", (e) => { dragging = [e.clientX, e.clientY, ...tiltTarget]; canvas.setPointerCapture(e.pointerId); canvas.style.cursor = "grabbing"; });
+  canvas.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    const k = 2.2 / canvas.clientWidth;
+    tiltTarget = [
+      Math.max(-0.9, Math.min(0.9, dragging[2] - (e.clientX - dragging[0]) * k)),
+      Math.max(-0.7, Math.min(0.7, dragging[3] - (e.clientY - dragging[1]) * k)),
+    ];
+  });
+  const release = () => { dragging = null; canvas.style.cursor = "grab"; };
+  canvas.addEventListener("pointerup", release);
+  canvas.addEventListener("pointercancel", release);
+  canvas.addEventListener("dblclick", () => { tiltTarget = [0, 0]; });
+
+  for (const b of document.querySelectorAll("[data-bg]")) {
+    b.addEventListener("click", () => {
+      document.body.dataset.bg = b.dataset.bg;
+      for (const o of document.querySelectorAll("[data-bg]")) o.setAttribute("aria-pressed", String(o === b));
+    });
+  }
+  // start on the backdrop that matches the viewer's theme
+  const themeAttr = document.documentElement.dataset.theme;
+  const startBg = themeAttr ? (themeAttr === "light" ? "paper" : "ink") : (matchMedia("(prefers-color-scheme: light)").matches ? "paper" : "ink");
+  document.body.dataset.bg = startBg;
+  for (const o of document.querySelectorAll("[data-bg]")) o.setAttribute("aria-pressed", String(o.dataset.bg === startBg));
+
+  const motionBtn = document.getElementById("motion");
+  const syncMotion = () => { motionBtn.setAttribute("aria-pressed", String(flowing)); motionBtn.textContent = flowing ? "Flowing" : "Still"; };
+  motionBtn.addEventListener("click", () => { flowing = !flowing; syncMotion(); });
+  syncMotion();
+
+  // ---- frame loop ---------------------------------------------------------------------------
+  let clock = STILL_T, last = performance.now();
+  function resize() {
+    const dpr = Math.min(Math.max(window.devicePixelRatio || 1, 1.5), 2);
+    const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr);
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  }
+
+  function frame(now) {
+    const dt = Math.min((now - last) / 1000, 0.05);
+    last = now;
+    if (flowing) clock += dt;
+
+    // spring the tilt towards the target, and let it drift back to centre when idle
+    if (!dragging) tiltTarget = tiltTarget.map((v) => v * Math.pow(0.15, dt));
+    tilt = tilt.map((v, i) => v + (tiltTarget[i] - v) * (1 - Math.pow(0.002, dt)));
+
+    resize();
+    gl.viewport(0, 0, canvas.width, canvas.height);
+
+    const t = clock;
+    const period = 4.2;
+    const d1 = droplet(((t / period) % 1 + 1) % 1, (s) => lerp(A, B, s));
+    const d2 = droplet(((t / period + 0.5) % 1 + 1) % 1, (s) => bez(C, CTRL, B, s));
+
+    const breathe = (o) => NODE_R * (1 + 0.025 * Math.sin(t * 1.6 + o));
+    const gulp = 0.06 * (d1.arrive + d2.arrive); // B swells for a moment when it swallows a drop
+    const wob = (o) => [0.012 * Math.sin(t * 1.1 + o), 0.012 * Math.cos(t * 0.9 + o), 0.02 * Math.sin(t * 0.7 + o)];
+    const add = (p, q) => p.map((v, i) => v + q[i]);
+
+    gl.uniform2f(U.uRes, canvas.width, canvas.height);
+    gl.uniform1f(U.uTime, t);
+    gl.uniform2f(U.uTilt, tilt[0] - 0.12, tilt[1] + 0.08);   // a slight 3/4 view reads more solid than flat-on
+    gl.uniform4f(U.uA, ...add(A, wob(0)), breathe(0));
+    gl.uniform4f(U.uC, ...add(C, wob(2)), breathe(2));
+    gl.uniform4f(U.uB, ...add(B, wob(4)), breathe(4) * (1 + gulp));
+    gl.uniform3fv(U.uCurve, curve);
+    gl.uniform4f(U.uD1, ...d1.pos, d1.r);
+    gl.uniform4f(U.uD2, ...d2.pos, d2.r);
+    gl.uniform1f(U.uLineR, 0.062);
+    gl.uniform1f(U.uK, 0.24);
+    gl.uniform1i(U.uSS, flowing ? 1 : 3);    // when still, spend the GPU on a clean 3x3 supersampled frame
+
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    if (flowing || dragging || Math.abs(tilt[0] - tiltTarget[0]) + Math.abs(tilt[1] - tiltTarget[1]) > 1e-4) {
+      requestAnimationFrame(frame);
+    } else {
+      idle = true;
+    }
+  }
+  let idle = false;
+  const wake = () => { if (idle) { idle = false; last = performance.now(); requestAnimationFrame(frame); } };
+  canvas.addEventListener("pointerdown", wake);
+  motionBtn.addEventListener("click", wake);
+  window.addEventListener("resize", wake);
+
+  // tooling hook: ?t=2.35&ss=3 renders one exact frame (used to export PNGs)
+  const q = new URLSearchParams(location.search);
+  if (q.has("t")) { clock = parseFloat(q.get("t")); flowing = false; syncMotion(); }
+
+  requestAnimationFrame(frame);
+}
+</script>
