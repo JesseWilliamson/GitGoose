@@ -1,9 +1,10 @@
 <title>GitGoose Liquid Mark</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Unbounded:wght@900&family=Climate+Crisis&family=Syne:wght@800&family=Tektur:wght@900&family=Zen+Dots&family=Audiowide&family=Orbitron:wght@900&family=Bungee&family=Rubik+Mono+One&family=Michroma&family=Bruno+Ace+SC&family=Bagel+Fat+One&display=swap">
 <style>
-  /* Layout: one stage, the mark centred on it, a quiet control strip underneath. Dark-first. */
+  /* Layout: a stage that holds the render, an instrument panel of sliders beside it (below on phones). Dark-first. */
   :root {
     --stage: #0d0f12;
     --ink: #e7e9ec;
@@ -27,24 +28,24 @@
     --focus: #0b8fb0; --checker-a: #ffffff; --checker-b: #e3e6ea; color-scheme: light;
   }
 
-  html, body { height: 100%; }
+  html, body { min-height: 100%; }
   body {
     background: var(--stage);
     color: var(--ink);
     font-family: var(--mono);
-    display: grid;
-    place-items: center;
-    padding-block: 24px;
+    padding-block: 20px;
     padding-left: max(16px, env(safe-area-inset-left, 0px));
     padding-right: max(16px, env(safe-area-inset-right, 0px));
     box-sizing: border-box;
   }
   /* The chosen backdrop sets the whole palette, so the controls always match what the mark sits on. */
   body[data-bg="ink"] {
-    --stage: #0d0f12; --ink: #e7e9ec; --muted: #8a919b; --line: #262a31; --chip: #171a1f; --focus: #1ab3d6; color-scheme: dark;
+    --stage: #0d0f12; --ink: #e7e9ec; --muted: #8a919b; --line: #262a31; --chip: #171a1f; --focus: #1ab3d6;
+    --checker-a: #1a1d22; --checker-b: #121418; color-scheme: dark;
   }
   body[data-bg="paper"] {
-    --stage: #f4f5f7; --ink: #16181c; --muted: #5d636c; --line: #d3d7dc; --chip: #ffffff; --focus: #0b8fb0; color-scheme: light;
+    --stage: #f4f5f7; --ink: #16181c; --muted: #5d636c; --line: #d3d7dc; --chip: #ffffff; --focus: #0b8fb0;
+    --checker-a: #ffffff; --checker-b: #e3e6ea; color-scheme: light;
   }
   body[data-bg="checker"] {
     background-color: var(--checker-a);
@@ -55,41 +56,137 @@
     background-position: 0 0, 12px 12px;
   }
 
-  main { display: flex; flex-direction: column; align-items: center; gap: 20px; width: 100%; }
-  canvas {
-    width: min(78vmin, 560px);
-    max-width: 100%;
-    aspect-ratio: 1;
-    display: block;
-    cursor: grab;
-    touch-action: none;
+  .studio {
+    display: grid; gap: 20px; align-items: start;
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 1280px; margin: 0 auto;
   }
-  .controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; font-size: 12px; }
-  .group { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--chip); }
+  @media (min-width: 900px) {
+    .studio { grid-template-columns: minmax(0, 1fr) 300px; }
+    .panel { position: sticky; top: 20px; max-height: calc(100vh - 40px); overflow-y: auto; }
+  }
+
+  .stage { display: flex; flex-direction: column; align-items: center; gap: 12px; min-width: 0; padding-top: 4vh; }
+  canvas { display: block; max-width: 100%; touch-action: none; cursor: move; }
+  canvas[data-hover="node"], canvas[data-hover="edge"], canvas[data-hover="text"] { cursor: grab; }
+  canvas[data-drag] { cursor: grabbing; }
+  canvas[data-mode="rotate"], .stage[data-orbit] canvas { cursor: move; }
+  canvas:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; border-radius: 12px; }
+  .stage { touch-action: none; }
+  kbd { font: inherit; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+  .hint { font-size: 11px; color: var(--muted); letter-spacing: 0.03em; margin: 0; text-align: center; text-wrap: balance; }
+  .fallback { color: var(--muted); max-width: 40ch; text-align: center; }
+
+  .panel {
+    display: flex; flex-direction: column; gap: 14px; font-size: 12px;
+    padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--chip);
+    box-sizing: border-box; min-width: 0;
+  }
+  .section { display: flex; flex-direction: column; gap: 8px; }
+  .section + .section { border-top: 1px solid var(--line); padding-top: 14px; }
+  .section h2 {
+    margin: 0; font: 500 10px/1 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted);
+  }
+  .rows { display: grid; grid-template-columns: 8.5ch minmax(0, 1fr) 6ch; align-items: center; gap: 6px 10px; }
+  .rows label { color: var(--muted); white-space: nowrap; }
+  .rows output { text-align: right; font-variant-numeric: tabular-nums; }
+  .wide { grid-column: 2 / 4; }
+  input[type="range"] { width: 100%; min-width: 0; margin: 0; accent-color: var(--focus); }
+  input[type="color"] {
+    width: 100%; height: 22px; padding: 0; border: 1px solid var(--line); border-radius: 4px; background: none; cursor: pointer;
+  }
+  input[type="text"], select {
+    font: inherit; color: var(--ink); background: var(--stage); width: 100%; min-width: 0; box-sizing: border-box;
+    border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px;
+  }
+
+  .buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+  .group { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; }
   button {
     font: inherit; color: var(--muted); background: transparent; border: 0; border-radius: 6px;
-    padding: 6px 10px; cursor: pointer; letter-spacing: 0.02em;
+    padding: 5px 9px; cursor: pointer; letter-spacing: 0.02em;
   }
+  button.solo { border: 1px solid var(--line); }
+  button:hover { color: var(--ink); }
   button[aria-pressed="true"] { color: var(--ink); background: var(--line); }
-  button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-  .hint { font-size: 11px; color: var(--muted); letter-spacing: 0.04em; margin: 0; }
-  .fallback { color: var(--muted); max-width: 40ch; text-align: center; }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+
+  pre {
+    margin: 0; padding: 10px; max-height: 160px; overflow: auto;
+    font: 10.5px/1.5 var(--mono); color: var(--ink); background: var(--stage);
+    border: 1px solid var(--line); border-radius: 6px;
+  }
+  .note { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 </style>
 
-<main>
-  <canvas id="mark" aria-label="GitGoose logo: three liquid-chrome commits, two parents merging into one"></canvas>
-  <div class="controls">
-    <div class="group" role="group" aria-label="Background">
-      <button id="bg-ink" data-bg="ink" aria-pressed="true">Ink</button>
-      <button id="bg-paper" data-bg="paper" aria-pressed="false">Paper</button>
-      <button id="bg-checker" data-bg="checker" aria-pressed="false">Transparent</button>
+<div class="studio">
+  <section class="stage">
+    <canvas id="mark" tabindex="0" aria-label="Logo: a liquid-chrome graph of three nodes of different sizes joined by straight edges, with a chrome wordmark"></canvas>
+    <p class="hint">Drag a node to move it · drag a line to bend it · <kbd>Shift</kbd>/right-drag anywhere to rotate · scroll to spin · arrow keys rotate too</p>
+  </section>
+
+  <aside class="panel" aria-label="Controls">
+    <div class="section">
+      <h2>View</h2>
+      <div class="rows" id="rows-view"></div>
+      <div class="buttons">
+        <div class="group" role="group" aria-label="Background">
+          <button id="bg-ink" data-bg="ink">Ink</button>
+          <button id="bg-paper" data-bg="paper">Paper</button>
+          <button id="bg-checker" data-bg="checker">Transparent</button>
+        </div>
+        <button class="solo" id="reset-view">Reset view</button>
+      </div>
+      <div class="buttons">
+        <div class="group" role="group" aria-label="Dragging the shape">
+          <button id="mode-edit" data-mode="edit">Drag edits</button>
+          <button id="mode-rotate" data-mode="rotate">Drag rotates</button>
+        </div>
+      </div>
     </div>
-    <div class="group" role="group" aria-label="Motion">
-      <button id="motion" aria-pressed="true">Flowing</button>
+
+    <div class="section">
+      <h2>Graph</h2>
+      <div class="rows" id="rows-shape"></div>
+      <div class="buttons">
+        <div class="group" role="group" aria-label="Edges">
+          <button data-edge="AB">A–B</button>
+          <button data-edge="CB">C–B</button>
+          <button data-edge="AC">A–C</button>
+        </div>
+      </div>
     </div>
-  </div>
-  <p class="hint">Drag to tilt</p>
-</main>
+
+    <div class="section">
+      <h2>Wordmark</h2>
+      <div class="rows" id="rows-text">
+        <label for="text">Text</label><input class="wide" id="text" type="text" maxlength="40" spellcheck="false">
+        <label for="font">Font</label><select class="wide" id="font"></select>
+      </div>
+      <div class="buttons">
+        <button class="solo" id="font-file-btn">Use a font file…</button>
+        <input id="font-file" type="file" accept=".ttf,.otf,.woff,.woff2" hidden>
+      </div>
+      <p class="note" id="font-note">Shared Canons isn't on Google Fonts. Download it from fontspace and load the file here; it stays in your browser.</p>
+    </div>
+
+    <div class="section">
+      <h2>Reflections</h2>
+      <div class="rows" id="rows-look"></div>
+    </div>
+
+    <div class="section">
+      <h2>Settings</h2>
+      <div class="buttons">
+        <button class="solo" id="copy">Copy settings</button>
+        <button class="solo" id="reset-layout">Reset shape</button>
+        <button class="solo" id="reset-all">Reset all</button>
+      </div>
+      <pre id="settings" aria-label="Current settings"></pre>
+      <p class="note">Paste copied settings over <code>DEFAULTS</code> in this file to make them the starting point.</p>
+    </div>
+  </aside>
+</div>
 
 <script>
 /*
@@ -103,14 +200,221 @@
  * meets a fat node the surface swells into a neck, like two drops of mercury touching.
  *
  * The chrome look comes from reflection only: no diffuse colour at all. Each hit reflects the
- * view ray and looks it up in a procedural "photo studio" (softboxes, a horizon line, two
- * coloured rim lights taken from the app's lane palette). A second, cheaper march finds where the
- * reflected ray hits the mark itself, so the nodes mirror each other.
+ * view ray and looks it up in a procedural "photo studio" (sky, softbox, strip light, horizon,
+ * two coloured rims, a key glint). Every one of those is a slider in the Reflections panel.
  *
- * Geometry is commit-graph shaped: A (top) and C (branch) are parents of B, a merge commit.
- * Droplets bud off each parent, run down the edge and get swallowed by B.
- * The JavaScript below computes all positions per frame; the shader only draws.
+ * The wordmark is chrome too. The text is drawn with the browser's 2D canvas in the chosen font,
+ * turned into a 2D distance field (Felzenszwalb's exact distance transform, below), uploaded as a
+ * texture, and the shader extrudes it into a rounded slab. Any font the browser can draw works.
+ *
+ * The JavaScript owns the layout AND the camera matrix. Because the same matrix drives the shader
+ * and the mouse picking, a click becomes a ray, the ray meets the plane everything lives on
+ * (z = 0), and that point moves a node, an edge's bend or the text. Nothing animates: a frame is
+ * drawn only when something changes.
  */
+
+// ---- settings ---------------------------------------------------------------------------------
+// "Copy settings" produces this shape; paste it here to make it the default.
+const DEFAULTS = {
+  // A property graph in the spirit of Neo4j's mark: one hub, two satellites of different sizes,
+  // straight edges. B is the hub.
+  A: [0.60, 0.74],
+  B: [-0.42, -0.02],
+  C: [0.74, -0.62],
+  size: { A: 0.17, B: 0.30, C: 0.21 },
+  edges: { AB: true, CB: true, AC: true },
+  bendAB: [0, 0],                    // control-point offset from the edge's midpoint; [0, 0] is straight
+  bendCB: [0, 0],
+  bendAC: [0, 0],
+  line: 0.045,
+  melt: 0.13,
+  view: { spin: 0, turn: -7, tilt: 5 },
+  text: { value: "LearnBetter", font: "Unbounded", pos: [1.25, -0.02], size: 0.5, tracking: 0, depth: 0.07, puff: 0.06 },
+  look: {
+    tint: "#ccd1db", sky: 1, softbox: 3.2, strip: 2.2, horizon: 0.45,
+    rim1: "#1ab3d6", rim1Power: 1.6, rim2: "#f07c2a", rim2Power: 1.8,
+    glint: 9, glintSize: 220, envTurn: 0, bounce: 0.62,
+  },
+};
+
+// Cyberpunk-leaning display faces on Google Fonts, closest to Shared Canons first.
+const FONTS = [
+  { family: "Unbounded", weight: 900 },
+  { family: "Climate Crisis", weight: 400 },
+  { family: "Rubik Mono One", weight: 400 },
+  { family: "Syne", weight: 800 },
+  { family: "Bagel Fat One", weight: 400 },
+  { family: "Tektur", weight: 900 },
+  { family: "Zen Dots", weight: 400 },
+  { family: "Audiowide", weight: 400 },
+  { family: "Orbitron", weight: 900 },
+  { family: "Bungee", weight: 400 },
+  { family: "Michroma", weight: 400 },
+  { family: "Bruno Ace SC", weight: 400 },
+];
+
+// Sliders are data: each row names a path into the settings object.
+const SLIDERS = {
+  shape: [
+    { path: "size.A", label: "Node A", min: 0.08, max: 0.5, step: 0.005 },
+    { path: "size.B", label: "Node B", min: 0.08, max: 0.5, step: 0.005 },
+    { path: "size.C", label: "Node C", min: 0.08, max: 0.5, step: 0.005 },
+    { path: "line", label: "Edges", min: 0.02, max: 0.14, step: 0.002 },
+    { path: "melt", label: "Melt", min: 0.01, max: 0.5, step: 0.005 },
+  ],
+  view: [
+    { path: "view.spin", label: "Spin", min: -180, max: 180, step: 1, unit: "°" },
+    { path: "view.turn", label: "Turn", min: -180, max: 180, step: 1, unit: "°" },
+    { path: "view.tilt", label: "Tilt", min: -180, max: 180, step: 1, unit: "°" },
+  ],
+  text: [
+    { path: "text.size", label: "Size", min: 0.15, max: 1.2, step: 0.01 },
+    { path: "text.tracking", label: "Tracking", min: -0.1, max: 0.4, step: 0.005, rebuild: true },
+    { path: "text.depth", label: "Depth", min: 0.01, max: 0.2, step: 0.005 },
+    { path: "text.puff", label: "Puff", min: 0, max: 0.2, step: 0.005 },
+  ],
+  look: [
+    { path: "look.tint", label: "Metal", color: true },
+    { path: "look.envTurn", label: "Rotate", min: -180, max: 180, step: 1, unit: "°" },
+    { path: "look.sky", label: "Sky", min: 0, max: 3, step: 0.01 },
+    { path: "look.softbox", label: "Softbox", min: 0, max: 8, step: 0.05 },
+    { path: "look.strip", label: "Strip", min: 0, max: 6, step: 0.05 },
+    { path: "look.horizon", label: "Horizon", min: 0, max: 2, step: 0.01 },
+    { path: "look.rim1", label: "Rim 1", color: true },
+    { path: "look.rim1Power", label: "Rim 1 ×", min: 0, max: 5, step: 0.05 },
+    { path: "look.rim2", label: "Rim 2", color: true },
+    { path: "look.rim2Power", label: "Rim 2 ×", min: 0, max: 5, step: 0.05 },
+    { path: "look.glint", label: "Glint", min: 0, max: 30, step: 0.1 },
+    { path: "look.glintSize", label: "Glint tight", min: 10, max: 600, step: 1 },
+    { path: "look.bounce", label: "Self-refl.", min: 0, max: 1, step: 0.01 },
+  ],
+};
+
+const LIMIT = 3.0, SEG = 12;
+const STORE_KEY = "gitgoose-liquid-mark-v3";
+
+const clone = (o) => JSON.parse(JSON.stringify(o));
+const isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
+const merge = (base, over) => {
+  if (!isObj(over)) return base;
+  for (const k of Object.keys(base)) {
+    if (!(k in over)) continue;
+    base[k] = isObj(base[k]) ? merge(base[k], over[k]) : over[k];
+  }
+  return base;
+};
+let S = clone(DEFAULTS);
+try { S = merge(clone(DEFAULTS), JSON.parse(localStorage.getItem(STORE_KEY) || "null")); } catch {}
+if (!FONTS.some((f) => f.family === S.text.font)) S.text.font = DEFAULTS.text.font; // uploaded fonts don't survive reloads
+const save = () => { try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch {} };
+const getPath = (path) => path.split(".").reduce((o, k) => o[k], S);
+const setPath = (path, v) => { const ks = path.split("."); ks.slice(0, -1).reduce((o, k) => o[k], S)[ks.at(-1)] = v; };
+
+// ---- small vector / matrix helpers (row-major 3x3) --------------------------------------------
+const add = (a, b) => a.map((v, i) => v + b[i]);
+const sub = (a, b) => a.map((v, i) => v - b[i]);
+const mul = (a, k) => a.map((v) => v * k);
+const mid = (a, b) => mul(add(a, b), 0.5);
+const len = (a) => Math.hypot(...a);
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const round = (v) => Math.round(v * 1000) / 1000;
+const wrap = (a) => ((((a + 180) % 360) + 360) % 360) - 180;
+const bez = (a, c, b, t) => add(add(mul(a, (1 - t) * (1 - t)), mul(c, 2 * t * (1 - t))), mul(b, t * t));
+const deg = (d) => (d * Math.PI) / 180;
+const hexRGB = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
+
+const matMul = (m, n) => m.map((row) => [0, 1, 2].map((j) => row[0] * n[0][j] + row[1] * n[1][j] + row[2] * n[2][j]));
+const matVec = (m, v) => m.map((row) => row[0] * v[0] + row[1] * v[1] + row[2] * v[2]);
+const matTVec = (m, v) => [0, 1, 2].map((j) => m[0][j] * v[0] + m[1][j] * v[1] + m[2][j] * v[2]); // transpose = inverse
+const rotX = (a) => { const c = Math.cos(a), s = Math.sin(a); return [[1, 0, 0], [0, c, -s], [0, s, c]]; };
+const rotY = (a) => { const c = Math.cos(a), s = Math.sin(a); return [[c, 0, s], [0, 1, 0], [-s, 0, c]]; };
+const rotZ = (a) => { const c = Math.cos(a), s = Math.sin(a); return [[c, -s, 0], [s, c, 0], [0, 0, 1]]; };
+
+// Spin turns the logo in its own plane; Turn and Tilt then orbit around the screen's vertical and
+// horizontal axes. Order matters: putting the spin first (innermost on the object side) means a
+// sideways drag always turns the logo sideways on screen, however far it has been spun.
+// The matrix maps camera space into the logo's own space, so the logo's spin appears as rotZ(-spin).
+const camera = () => matMul(matMul(rotZ(deg(-S.view.spin)), rotY(deg(S.view.turn))), rotX(deg(-S.view.tilt)));
+
+// Edge control point = chord midpoint + stored offset, so moving a node carries its bend along.
+const edgeAB = () => [S.A, add(mid(S.A, S.B), S.bendAB), S.B];
+const edgeCB = () => [S.C, add(mid(S.C, S.B), S.bendCB), S.B];
+const edgeAC = () => [S.A, add(mid(S.A, S.C), S.bendAC), S.C];
+const EDGES = [["AB", "bendAB", edgeAB], ["CB", "bendCB", edgeCB], ["AC", "bendAC", edgeAC]];
+const liveEdges = () => EDGES.filter(([k]) => S.edges[k]);
+
+// ---- text -> distance field -------------------------------------------------------------------
+// Felzenszwalb & Huttenlocher: exact squared Euclidean distance in O(n), one row/column at a time.
+const INF = 1e20;
+function dt1(f, n, d, v, z) {
+  let k = 0; v[0] = 0; z[0] = -INF; z[1] = INF;
+  for (let q = 1; q < n; q++) {
+    let s = (f[q] + q * q - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]);
+    while (s <= z[k]) { k--; s = (f[q] + q * q - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]); }
+    k++; v[k] = q; z[k] = s; z[k + 1] = INF;
+  }
+  k = 0;
+  for (let q = 0; q < n; q++) { while (z[k + 1] < q) k++; d[q] = (q - v[k]) * (q - v[k]) + f[v[k]]; }
+}
+function edt(grid, w, h) {
+  const n = Math.max(w, h), f = new Float64Array(n), d = new Float64Array(n), v = new Int32Array(n), z = new Float64Array(n + 1);
+  for (let x = 0; x < w; x++) {
+    for (let y = 0; y < h; y++) f[y] = grid[y * w + x];
+    dt1(f, h, d, v, z);
+    for (let y = 0; y < h; y++) grid[y * w + x] = d[y];
+  }
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) f[x] = grid[y * w + x];
+    dt1(f, w, d, v, z);
+    for (let x = 0; x < w; x++) grid[y * w + x] = d[x];
+  }
+}
+
+const SPREAD = 20;            // pixels of distance stored either side of the outline
+let customFont = null;        // { family, weight } from a font file
+const fontOf = (family) => FONTS.find((f) => f.family === family) || (customFont && customFont.family === family ? customFont : FONTS[0]);
+
+// Returns { bytes, w, h, fontPx } or null for empty text.
+function rasterizeText() {
+  const value = S.text.value.trim();
+  if (!value) return null;
+  const { family, weight } = fontOf(S.text.font);
+  const c = document.createElement("canvas"), ctx = c.getContext("2d");
+  let fontPx = 160;
+  const setFont = () => { ctx.font = `${weight} ${fontPx}px "${family}"`; ctx.letterSpacing = `${S.text.tracking * fontPx}px`; };
+  setFont();
+  let m = ctx.measureText(value);
+  const inkW = m.actualBoundingBoxLeft + m.actualBoundingBoxRight;
+  if (inkW + 2 * SPREAD > 4000) { fontPx = Math.floor(fontPx * (4000 - 2 * SPREAD) / inkW); setFont(); m = ctx.measureText(value); }
+  const pad = SPREAD + 4;
+  const asc = Math.max(m.actualBoundingBoxAscent, m.fontBoundingBoxAscent * 0.8);
+  const desc = Math.max(m.actualBoundingBoxDescent, 0);
+  const w = Math.ceil(m.actualBoundingBoxLeft + m.actualBoundingBoxRight) + 2 * pad;
+  const h = Math.ceil(asc + desc) + 2 * pad;
+  c.width = w; c.height = h;
+  setFont();
+  ctx.fillStyle = "#fff";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillText(value, pad + m.actualBoundingBoxLeft, pad + asc);
+
+  const alpha = ctx.getImageData(0, 0, w, h).data;
+  const outside = new Float64Array(w * h), inside = new Float64Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    const ink = alpha[i * 4 + 3] > 127;
+    outside[i] = ink ? 0 : INF;   // distance to the nearest ink pixel
+    inside[i] = ink ? INF : 0;    // distance to the nearest empty pixel
+  }
+  edt(outside, w, h);
+  edt(inside, w, h);
+  const bytes = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    const sd = outside[i] > 0 ? Math.sqrt(outside[i]) - 0.5 : -(Math.sqrt(inside[i]) - 0.5);
+    bytes[i] = clamp(Math.round(128 + (sd / SPREAD) * 127), 0, 255);
+  }
+  return { bytes, w, h, fontPx };
+}
+
+// ---- shaders ----------------------------------------------------------------------------------
 const vert = `
 attribute vec2 aPos;
 void main() { gl_Position = vec4(aPos, 0.0, 1.0); }`;
@@ -118,14 +422,27 @@ void main() { gl_Position = vec4(aPos, 0.0, 1.0); }`;
 const frag = `
 precision highp float;
 uniform vec2  uRes;
-uniform float uTime;
-uniform vec2  uTilt;      // yaw, pitch
-uniform vec4  uA, uB, uC; // node centre xyz, radius w
-uniform vec3  uCurve[13]; // C -> B quadratic bezier, sampled
-uniform vec4  uD1, uD2;   // droplets
+uniform mat3  uCam;       // camera orientation, built in JS (also used there for picking)
+uniform vec3  uTarget;    // the point the camera orbits
+uniform vec4  uBound;     // bounding sphere: centre, radius
+uniform float uScale;     // half the visible height, in screen-plane units
+uniform vec3  uA, uB, uC; // node centres
+uniform vec3  uNodeR;     // radii of A, B, C
+uniform vec3  uE0[13];    // edge A -> B, quadratic bezier sampled into 12 segments
+uniform vec3  uE1[13];    // edge C -> B
+uniform vec3  uE2[13];    // edge A -> C
+uniform vec3  uEdgeOn;    // 1.0 where that edge exists
 uniform float uLineR;
 uniform float uK;         // smin blend radius
 uniform int   uSS;        // supersampling per axis
+
+uniform sampler2D uTex;   // text distance field
+uniform int   uHasText;
+uniform vec2  uTCenter, uTSize;
+uniform float uTSpread, uTDepth, uTPuff, uTLip;
+
+uniform vec3  uTint, uRim1, uRim2;
+uniform float uSky, uSoft, uStrip, uHorizon, uGlint, uGlintSize, uEnvTurn, uBounce;
 
 float smin(float a, float b, float k) {
   float h = max(k - abs(a - b), 0.0) / k;
@@ -138,25 +455,37 @@ float sdCapsule(vec3 p, vec3 a, vec3 b, float r) {
   return length(pa - ba * h) - r;
 }
 
-mat3 rotY(float a) { float c = cos(a), s = sin(a); return mat3(c, 0., -s, 0., 1., 0., s, 0., c); }
-mat3 rotX(float a) { float c = cos(a), s = sin(a); return mat3(1., 0., 0., 0., c, s, 0., -s, c); }
+// 2D distance from the texture, then "inflated" into a pillow: thickness grows with distance
+// from the outline, so the letter faces curve and catch highlights like the nodes do.
+float sdText(vec3 p) {
+  vec2 q = p.xy - uTCenter;
+  vec2 b = abs(q) - uTSize * 0.5;
+  float out2 = length(max(b, 0.0));
+  float d2;
+  if (out2 > 0.0) {
+    d2 = out2 + uTSpread;          // outside the texture: a safe lower bound
+  } else {
+    vec2 uv = vec2(q.x / uTSize.x + 0.5, 0.5 - q.y / uTSize.y);
+    d2 = (texture2D(uTex, uv).r * 255.0 - 128.0) / 127.0 * uTSpread;
+  }
+  float x = clamp(-d2 / max(uTPuff, 1e-4), 0.0, 1.0);
+  float h = uTPuff > 0.0 ? uTDepth * (0.25 + 0.75 * x * (2.0 - x)) : uTDepth;
+  // the slope of h makes this distance overestimate; uTLip scales it back so the march can't overshoot
+  return max(d2, abs(p.z) - h) * uTLip;
+}
 
 float map(vec3 p) {
-  // edges: a straight line A-B and a curve C-B built from short capsules
-  float d = sdCapsule(p, uA.xyz, uB.xyz, uLineR);
-  for (int i = 0; i < 12; i++) d = min(d, sdCapsule(p, uCurve[i], uCurve[i + 1], uLineR));
-
+  float d = 1e9;
+  for (int i = 0; i < 12; i++) {
+    if (uEdgeOn.x > 0.5) d = min(d, sdCapsule(p, uE0[i], uE0[i + 1], uLineR));
+    if (uEdgeOn.y > 0.5) d = min(d, sdCapsule(p, uE1[i], uE1[i + 1], uLineR));
+    if (uEdgeOn.z > 0.5) d = min(d, sdCapsule(p, uE2[i], uE2[i + 1], uLineR));
+  }
   // nodes melt into the edges
-  d = smin(d, length(p - uA.xyz) - uA.w, uK);
-  d = smin(d, length(p - uC.xyz) - uC.w, uK);
-  d = smin(d, length(p - uB.xyz) - uB.w, uK);
-
-  // droplets travelling along the edges
-  d = smin(d, length(p - uD1.xyz) - uD1.w, uK * 0.9);
-  d = smin(d, length(p - uD2.xyz) - uD2.w, uK * 0.9);
-
-  // a faint surface tremor so the highlights never sit perfectly still
-  d += 0.004 * sin(9.0 * p.x + uTime * 1.7) * sin(8.0 * p.y - uTime * 1.3) * sin(7.0 * p.z + uTime);
+  d = smin(d, length(p - uA) - uNodeR.x, uK);
+  d = smin(d, length(p - uB) - uNodeR.y, uK);
+  d = smin(d, length(p - uC) - uNodeR.z, uK);
+  if (uHasText == 1) d = min(d, sdText(p));
   return d;
 }
 
@@ -166,22 +495,24 @@ vec3 calcNormal(vec3 p) {
                    e.yxy * map(p + e.yxy) + e.xxx * map(p + e.xxx));
 }
 
+mat3 rotY(float a) { float c = cos(a), s = sin(a); return mat3(c, 0., -s, 0., 1., 0., s, 0., c); }
+
 // Studio environment: this IS the material. Chrome is just a picture of its surroundings.
 vec3 env(vec3 d) {
-  d = rotY(uTime * 0.12) * d;
+  d = rotY(uEnvTurn) * d;
   float y = d.y;
-  vec3 c = mix(vec3(0.03, 0.035, 0.045), vec3(0.26, 0.28, 0.32), smoothstep(-0.35, 0.75, y));
-  c += vec3(0.45, 0.47, 0.5) * exp(-pow((y - 0.02) * 10.0, 2.0));          // horizon line
-  if (y > 0.0) {                                                           // overhead softbox
+  vec3 c = uSky * mix(vec3(0.03, 0.035, 0.045), vec3(0.26, 0.28, 0.32), smoothstep(-0.35, 0.75, y));
+  c += uHorizon * vec3(1.0, 1.04, 1.1) * exp(-pow((y - 0.02) * 10.0, 2.0));    // horizon line
+  if (y > 0.0) {                                                               // overhead softbox
     vec2 q = d.xz / y;
     float box = smoothstep(0.75, 0.6, abs(q.x)) * smoothstep(0.45, 0.32, abs(q.y - 0.15));
-    c += vec3(3.2) * box;
+    c += vec3(uSoft) * box;
   }
   float strip = smoothstep(0.08, 0.02, abs(d.x + 0.82)) * smoothstep(0.7, 0.1, abs(y - 0.1)); // vertical strip
-  c += vec3(2.2, 2.25, 2.3) * strip * step(0.0, d.z);
-  c += vec3(0.10, 0.70, 0.84) * 1.6 * pow(max(dot(d, normalize(vec3(-0.9, -0.25, -0.4))), 0.0), 6.0); // lane-0 cyan
-  c += vec3(0.94, 0.49, 0.16) * 1.8 * pow(max(dot(d, normalize(vec3(0.95, 0.15, -0.3))), 0.0), 8.0);  // lane-5 amber
-  c += vec3(1.0, 0.97, 0.92) * 9.0 * pow(max(dot(d, normalize(vec3(-0.55, 0.65, 0.55))), 0.0), 220.0); // key glint
+  c += uStrip * vec3(1.0, 1.02, 1.05) * strip * step(0.0, d.z);
+  c += uRim1 * pow(max(dot(d, normalize(vec3(-0.9, -0.25, -0.4))), 0.0), 6.0);
+  c += uRim2 * pow(max(dot(d, normalize(vec3(0.95, 0.15, -0.3))), 0.0), 8.0);
+  c += uGlint * vec3(1.0, 0.97, 0.92) * pow(max(dot(d, normalize(vec3(-0.55, 0.65, 0.55))), 0.0), uGlintSize);
   return c;
 }
 
@@ -190,7 +521,7 @@ vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59
 // returns distance along ray, or -1 on miss
 float march(vec3 ro, vec3 rd, float tMax, const int steps) {
   float t = 0.0;
-  for (int i = 0; i < 120; i++) {
+  for (int i = 0; i < 160; i++) {
     if (i >= steps) break;
     float h = map(ro + rd * t);
     if (h < 0.0005 * (1.0 + t)) return t;
@@ -201,22 +532,22 @@ float march(vec3 ro, vec3 rd, float tMax, const int steps) {
 }
 
 // cheap bounding sphere test so empty pixels cost almost nothing
-vec2 sphereHit(vec3 ro, vec3 rd, float r) {
-  float b = dot(ro, rd), c = dot(ro, ro) - r * r, h = b * b - c;
+vec2 sphereHit(vec3 ro, vec3 rd, vec4 s) {
+  vec3 o = ro - s.xyz;
+  float b = dot(o, rd), c = dot(o, o) - s.w * s.w, h = b * b - c;
   if (h < 0.0) return vec2(-1.0);
   h = sqrt(h);
   return vec2(-b - h, -b + h);
 }
 
 vec4 render(vec2 uv) {
-  mat3 cam = rotY(uTilt.x) * rotX(uTilt.y);
-  vec3 ro = cam * vec3(0.0, 0.0, 6.0);
-  vec3 rd = cam * normalize(vec3(uv, -5.0));   // long lens: almost orthographic, logo-like
+  vec3 ro = uTarget + uCam * vec3(0.0, 0.0, 6.0);
+  vec3 rd = uCam * normalize(vec3(uv, -5.0));   // long lens: almost orthographic, logo-like
 
-  vec2 bs = sphereHit(ro, rd, 1.45);
+  vec2 bs = sphereHit(ro, rd, uBound);
   if (bs.y < 0.0) return vec4(0.0);
   float t0 = max(bs.x, 0.0);
-  float t = march(ro + rd * t0, rd, bs.y - t0, 110);
+  float t = march(ro + rd * t0, rd, bs.y - t0, 150);
   if (t < 0.0) return vec4(0.0);
 
   vec3 p = ro + rd * (t0 + t);
@@ -225,19 +556,17 @@ vec4 render(vec2 uv) {
 
   // one bounce: does the reflected ray hit the mark itself?
   vec3 refl;
-  float t2 = march(p + n * 0.004, r, 3.0, 48);
+  float t2 = uBounce > 0.0 ? march(p + n * 0.004, r, 3.0, 48) : -1.0;
   if (t2 > 0.0) {
     vec3 p2 = p + n * 0.004 + r * t2;
-    vec3 n2 = calcNormal(p2);
-    refl = env(reflect(r, n2)) * 0.62;          // inter-reflections lose energy
+    refl = env(reflect(r, calcNormal(p2))) * uBounce;   // inter-reflections lose energy
   } else {
     refl = env(r);
   }
 
-  // Schlick fresnel with a silvery, slightly cool base: mercury rather than gold
+  // Schlick fresnel: the tint is the metal's colour when seen head-on
   float ndv = clamp(dot(n, -rd), 0.0, 1.0);
-  vec3 F0 = vec3(0.80, 0.82, 0.86);
-  vec3 F = F0 + (1.0 - F0) * pow(1.0 - ndv, 5.0);
+  vec3 F = uTint + (1.0 - uTint) * pow(1.0 - ndv, 5.0);
 
   // ambient occlusion in the creases where liquid necks form
   float ao = 0.0, w = 1.0;
@@ -256,28 +585,21 @@ vec4 render(vec2 uv) {
 
 void main() {
   vec4 acc = vec4(0.0);
-  float scale = 1.0 / min(uRes.x, uRes.y);
+  float scale = uScale / uRes.y;
   for (int j = 0; j < 3; j++) {
     for (int i = 0; i < 3; i++) {
       if (i >= uSS || j >= uSS) continue;
       vec2 o = (vec2(float(i), float(j)) + 0.5) / float(uSS) - 0.5;
-      vec2 uv = (2.0 * (gl_FragCoord.xy + o) - uRes) * scale * 1.18;
-      acc += render(uv);
+      acc += render((2.0 * (gl_FragCoord.xy + o) - uRes) * scale);
     }
   }
   acc /= float(uSS * uSS);
   gl_FragColor = vec4(acc.rgb * acc.a, acc.a);   // premultiplied alpha: the canvas is transparent
 }`;
 
+// ---- WebGL setup ------------------------------------------------------------------------------
 const canvas = document.getElementById("mark");
 const gl = canvas.getContext("webgl", { premultipliedAlpha: true, alpha: true, antialias: false, preserveDrawingBuffer: true });
-
-function fail(msg) {
-  const p = document.createElement("p");
-  p.className = "fallback";
-  p.textContent = msg;
-  canvas.replaceWith(p);
-}
 
 function compile(type, src) {
   const s = gl.createShader(type);
@@ -288,7 +610,10 @@ function compile(type, src) {
 }
 
 if (!gl) {
-  fail("This browser has WebGL turned off, so the logo cannot render here.");
+  const p = document.createElement("p");
+  p.className = "fallback";
+  p.textContent = "This browser has WebGL turned off, so the logo cannot render here.";
+  canvas.replaceWith(p);
 } else {
   const prog = gl.createProgram();
   gl.attachShader(prog, compile(gl.VERTEX_SHADER, vert));
@@ -304,50 +629,375 @@ if (!gl) {
   gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
 
   const U = {};
-  for (const n of ["uRes", "uTime", "uTilt", "uA", "uB", "uC", "uCurve", "uD1", "uD2", "uLineR", "uK", "uSS"])
-    U[n] = gl.getUniformLocation(prog, n);
-
-  // ---- geometry (all in logo space, roughly -1..1) -------------------------------------------
-  const A = [-0.46, 0.72, 0], B = [-0.46, -0.70, 0], C = [0.46, 0.30, 0];
-  const CTRL = [0.46, -0.62, 0];     // pulls the branch curve down before it swings into B
-  const NODE_R = 0.235, DROP_R = 0.105;
-
-  const lerp = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
-  const bez = (a, c, b, t) => lerp(lerp(a, c, t), lerp(c, b, t), t);
-  const ease = (x) => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; // drips hang, then run
-  const smooth = (e0, e1, x) => { const t = Math.min(Math.max((x - e0) / (e1 - e0), 0), 1); return t * t * (3 - 2 * t); };
-
-  const SEG = 12;
-  const curve = new Float32Array((SEG + 1) * 3);
-  for (let i = 0; i <= SEG; i++) curve.set(bez(C, CTRL, B, i / SEG), i * 3);
-
-  // A droplet: born inside its parent node, grows as it leaves, runs down, is absorbed by B.
-  function droplet(phase, pathAt) {
-    const s = ease(phase);
-    const pos = pathAt(s);
-    const r = DROP_R * smooth(0.0, 0.18, s) * (1 - 0.35 * smooth(0.85, 1.0, s));
-    return { pos, r, arrive: Math.exp(-Math.pow((phase - 0.97) / 0.05, 2)) };
+  const n = gl.getProgramParameter(prog, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) {
+    const name = gl.getActiveUniform(prog, i).name.replace(/\[0\]$/, "");
+    U[name] = gl.getUniformLocation(prog, name);
   }
 
-  // ---- interaction --------------------------------------------------------------------------
-  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  let flowing = !reduceMotion;
-  let tilt = [0, 0], tiltTarget = [0, 0], dragging = null;
-  const STILL_T = 2.35; // a frame where both droplets are mid-flight: a good still logo
+  // text texture
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.uniform1i(U.uTex, 0);
+  let textField = null;   // { w, h, fontPx }
 
-  canvas.addEventListener("pointerdown", (e) => { dragging = [e.clientX, e.clientY, ...tiltTarget]; canvas.setPointerCapture(e.pointerId); canvas.style.cursor = "grabbing"; });
-  canvas.addEventListener("pointermove", (e) => {
-    if (!dragging) return;
-    const k = 2.2 / canvas.clientWidth;
-    tiltTarget = [
-      Math.max(-0.9, Math.min(0.9, dragging[2] - (e.clientX - dragging[0]) * k)),
-      Math.max(-0.7, Math.min(0.7, dragging[3] - (e.clientY - dragging[1]) * k)),
-    ];
+  let textToken = 0;
+  async function rebuildText() {
+    const token = ++textToken;
+    const { family, weight } = fontOf(S.text.font);
+    try { await document.fonts.load(`${weight} 160px "${family}"`, S.text.value || "A"); } catch {}
+    if (token !== textToken) return;          // a newer request superseded this one
+    const r = rasterizeText();
+    textField = r && { w: r.w, h: r.h, fontPx: r.fontPx };
+    if (r) gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, r.w, r.h, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, r.bytes);
+    reframe();
+    invalidate(false);
+  }
+
+  // world-space box of the text: pos is its left-middle point; size is the font size in world units
+  function textBox() {
+    if (!textField) return null;
+    const k = S.text.size / textField.fontPx;      // world units per texture pixel
+    const size = [textField.w * k, textField.h * k];
+    return { center: [S.text.pos[0] + size[0] / 2, S.text.pos[1]], size, spread: SPREAD * k };
+  }
+
+  const sample = ([a, c, b]) => {
+    const out = new Float32Array((SEG + 1) * 3);
+    for (let i = 0; i <= SEG; i++) out.set([...bez(a, c, b, i / SEG), 0], i * 3);
+    return out;
+  };
+
+  // ---- framing ------------------------------------------------------------------------------
+  // Project the scene's bounding points through the current camera and size the canvas to fit.
+  // Done only when an edit ends, so the frame never shifts under the cursor mid-drag.
+  let frame = { target: [0, 0, 0], scale: 1.3, aspect: 1, bound: [0, 0, 0, 2] };
+  function scenePoints() {
+    const pts = [];
+    for (const k of ["A", "B", "C"]) {
+      const r = S.size[k] + 0.03;
+      for (const [dx, dy] of [[-r, -r], [r, -r], [-r, r], [r, r]]) for (const z of [-r, r]) pts.push([S[k][0] + dx, S[k][1] + dy, z]);
+    }
+    for (const [, , edge] of liveEdges()) for (let i = 0; i <= 8; i++) { const p = bez(...edge(), i / 8); pts.push([p[0], p[1], S.line], [p[0], p[1], -S.line]); }
+    const tb = textBox();
+    if (tb) {
+      const ink = [tb.size[0] / 2 - tb.spread, tb.size[1] / 2 - tb.spread];
+      for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const z of [-S.text.depth, S.text.depth])
+        pts.push([tb.center[0] + sx * ink[0], tb.center[1] + sy * ink[1], z]);
+    }
+    return pts;
+  }
+  function reframe() {
+    const pts = scenePoints();
+    const lo = [Infinity, Infinity], hi = [-Infinity, -Infinity];
+    for (const p of pts) for (let i = 0; i < 2; i++) { lo[i] = Math.min(lo[i], p[i]); hi[i] = Math.max(hi[i], p[i]); }
+    const target = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, 0];
+    const cam = camera();
+    let hx = 0, hy = 0, rad = 0;
+    for (const p of pts) {
+      const rel = sub(p, target);
+      rad = Math.max(rad, len(rel));
+      const q = matTVec(cam, rel);                 // into camera space
+      const k = 5 / (6 - q[2]);
+      hx = Math.max(hx, Math.abs(q[0] * k));
+      hy = Math.max(hy, Math.abs(q[1] * k));
+    }
+    const aspect = clamp(hx / Math.max(hy, 1e-3), 0.5, 3.6);
+    const scale = Math.max(hy, hx / aspect) * 1.1 + 0.03;
+    frame = { target, scale, aspect, bound: [...target, rad + 0.05] };
+    canvas.style.aspectRatio = String(aspect);
+    canvas.style.width = `min(100%, ${Math.round(66 * aspect)}vh, ${Math.round(560 * Math.max(aspect, 1))}px)`;
+  }
+
+  // ---- drawing on demand --------------------------------------------------------------------
+  // While you drag, frames render at 1 sample per pixel; 150 ms after you stop, one clean
+  // 3x3-supersampled frame replaces it. Nothing runs while nothing changes.
+  let pending = false, hq = true, hqTimer = 0;
+  function invalidate(interactive) {
+    hq = !interactive;
+    clearTimeout(hqTimer);
+    if (interactive) hqTimer = setTimeout(() => invalidate(false), 150);
+    if (!pending) { pending = true; requestAnimationFrame(draw); }
+  }
+
+  function draw() {
+    pending = false;
+    const dpr = Math.min(Math.max(window.devicePixelRatio || 1, 1.5), 2);
+    const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr);
+    if (!w || !h) return;
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+    gl.viewport(0, 0, w, h);
+
+    const cam = camera();
+    gl.uniform2f(U.uRes, w, h);
+    gl.uniformMatrix3fv(U.uCam, false, [0, 1, 2].flatMap((c) => [0, 1, 2].map((r) => cam[r][c]))); // GLSL wants columns
+    gl.uniform3f(U.uTarget, ...frame.target);
+    gl.uniform4f(U.uBound, ...frame.bound);
+    gl.uniform1f(U.uScale, frame.scale);
+    gl.uniform3f(U.uA, ...S.A, 0);
+    gl.uniform3f(U.uB, ...S.B, 0);
+    gl.uniform3f(U.uC, ...S.C, 0);
+    gl.uniform3f(U.uNodeR, S.size.A, S.size.B, S.size.C);
+    gl.uniform3fv(U.uE0, sample(edgeAB()));
+    gl.uniform3fv(U.uE1, sample(edgeCB()));
+    gl.uniform3fv(U.uE2, sample(edgeAC()));
+    gl.uniform3f(U.uEdgeOn, +S.edges.AB, +S.edges.CB, +S.edges.AC);
+    gl.uniform1f(U.uLineR, S.line);
+    gl.uniform1f(U.uK, S.melt);
+    gl.uniform1i(U.uSS, hq ? 3 : 1);
+
+    const tb = textBox();
+    gl.uniform1i(U.uHasText, tb ? 1 : 0);
+    if (tb) {
+      gl.uniform2f(U.uTCenter, ...tb.center);
+      gl.uniform2f(U.uTSize, ...tb.size);
+      gl.uniform1f(U.uTSpread, tb.spread);
+      gl.uniform1f(U.uTDepth, S.text.depth);
+      gl.uniform1f(U.uTPuff, S.text.puff);
+      const slope = S.text.puff > 0 ? (1.5 * S.text.depth) / S.text.puff : 0;
+      gl.uniform1f(U.uTLip, 1 / Math.sqrt(1 + slope * slope));
+    }
+
+    const L = S.look;
+    gl.uniform3f(U.uTint, ...hexRGB(L.tint));
+    gl.uniform3f(U.uRim1, ...mul(hexRGB(L.rim1), L.rim1Power));
+    gl.uniform3f(U.uRim2, ...mul(hexRGB(L.rim2), L.rim2Power));
+    gl.uniform1f(U.uSky, L.sky);
+    gl.uniform1f(U.uSoft, L.softbox);
+    gl.uniform1f(U.uStrip, L.strip);
+    gl.uniform1f(U.uHorizon, L.horizon);
+    gl.uniform1f(U.uGlint, L.glint);
+    gl.uniform1f(U.uGlintSize, L.glintSize);
+    gl.uniform1f(U.uEnvTurn, deg(L.envTurn));
+    gl.uniform1f(U.uBounce, L.bounce);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  // ---- picking: screen point -> ray -> the z = 0 plane ----------------------------------------
+  // This mirrors render() in the shader exactly; if the two disagree, drags drift off the cursor.
+  function toPlane(e) {
+    const r = canvas.getBoundingClientRect();
+    const s = frame.scale / r.height;
+    const uv = [(2 * (e.clientX - r.left) - r.width) * s, (r.height - 2 * (e.clientY - r.top)) * s];
+    const cam = camera();
+    const ro = add(frame.target, matVec(cam, [0, 0, 6]));
+    const d = [uv[0], uv[1], -5], dl = len(d);
+    const rd = matVec(cam, d.map((v) => v / dl));
+    if (Math.abs(rd[2]) < 0.08) return null;           // plane seen edge-on: no reliable point
+    const t = -ro[2] / rd[2];
+    if (t < 0) return null;
+    return [ro[0] + rd[0] * t, ro[1] + rd[1] * t];
+  }
+
+  function pick(p) {
+    if (!p) return null;
+    for (const k of ["A", "B", "C"]) if (len(sub(p, S[k])) < S.size[k] * 1.15) return { kind: "node", key: k };
+    let best = null;
+    for (const [, key, edgeOf] of liveEdges()) {
+      const edge = edgeOf();
+      for (let i = 1; i < 40; i++) {
+        const t = i / 40, d = len(sub(p, bez(...edge, t)));
+        if (d < S.line + 0.06 && (!best || d < best.d)) best = { kind: "edge", key, t, d };
+      }
+    }
+    if (best) return best;
+    const tb = textBox();
+    if (tb) {
+      const q = sub(p, tb.center);
+      if (Math.abs(q[0]) < tb.size[0] / 2 - tb.spread * 0.5 && Math.abs(q[1]) < tb.size[1] / 2 - tb.spread * 0.5)
+        return { kind: "text", key: "text.pos" };
+    }
+    return null;
+  }
+
+  // ---- pointer ------------------------------------------------------------------------------
+  // Rotating used to need a click on empty canvas, and the canvas is cropped tight around the
+  // shape. Now it works from anywhere: empty canvas, the stage around it, right-drag, Shift-drag,
+  // or "Drag rotates" mode (the easy one on a touch screen).
+  let drag = null, mode = "edit";
+  const stage = canvas.closest(".stage");
+  const wantsOrbit = (e) => mode === "rotate" || e.shiftKey || e.altKey || e.button === 2 || e.target !== canvas;
+  stage.addEventListener("contextmenu", (e) => e.preventDefault());
+  stage.addEventListener("pointerdown", (e) => {
+    if (e.target.closest("button, input, select")) return;
+    const p = e.target === canvas ? toPlane(e) : null;
+    const hit = wantsOrbit(e) ? null : pick(p);
+    drag = hit
+      ? { ...hit, start: p, orig: clone(getPath(hit.key)) }
+      : { kind: "orbit", x: e.clientX, y: e.clientY, view: { ...S.view } };
+    canvas.dataset.drag = drag.kind;
+    stage.setPointerCapture(e.pointerId);
+    if (e.target === canvas) canvas.focus({ preventScroll: true });
   });
-  const release = () => { dragging = null; canvas.style.cursor = "grab"; };
-  canvas.addEventListener("pointerup", release);
-  canvas.addEventListener("pointercancel", release);
-  canvas.addEventListener("dblclick", () => { tiltTarget = [0, 0]; });
+
+  stage.addEventListener("pointermove", (e) => {
+    if (!drag) {
+      const hit = e.target === canvas && !wantsOrbit(e) ? pick(toPlane(e)) : null;
+      canvas.dataset.hover = hit ? hit.kind : "";
+      return;
+    }
+    if (drag.kind === "orbit") {
+      const k = 270 / Math.max(canvas.clientWidth, 320);   // about 270 degrees per canvas width
+      S.view.turn = Math.round(wrap(drag.view.turn - (e.clientX - drag.x) * k));   // camera moves the opposite way
+      S.view.tilt = Math.round(wrap(drag.view.tilt + (e.clientY - drag.y) * k));
+      syncInputs();
+    } else {
+      const p = toPlane(e);
+      if (!p) return;
+      const delta = sub(p, drag.start);
+      if (drag.kind === "edge") {
+        // a bezier point at t moves 2t(1-t) as far as its control point, so divide that out
+        const t = clamp(drag.t, 0.2, 0.8);
+        setPath(drag.key, add(drag.orig, mul(delta, 1 / (2 * t * (1 - t)))).map((v) => clamp(round(v), -LIMIT, LIMIT)));
+      } else {
+        setPath(drag.key, add(drag.orig, delta).map((v) => clamp(round(v), -LIMIT, LIMIT)));
+      }
+    }
+    changed(true);
+  });
+
+  const release = () => { if (!drag) return; drag = null; delete canvas.dataset.drag; changed(false); };
+  stage.addEventListener("pointerup", release);
+  stage.addEventListener("pointercancel", release);
+
+  // keyboard: arrows turn and tilt, [ and ] spin, Shift for 15-degree steps, 0 resets the view
+  canvas.addEventListener("keydown", (e) => {
+    const step = e.shiftKey ? 15 : 3;
+    const v = S.view;
+    const keys = {
+      ArrowLeft: () => (v.turn = wrap(v.turn + step)), ArrowRight: () => (v.turn = wrap(v.turn - step)),
+      ArrowUp: () => (v.tilt = wrap(v.tilt - step)), ArrowDown: () => (v.tilt = wrap(v.tilt + step)),
+      "[": () => (v.spin = wrap(v.spin - step)), "]": () => (v.spin = wrap(v.spin + step)),
+      "0": () => (S.view = clone(DEFAULTS.view)),
+    };
+    if (!keys[e.key]) return;
+    e.preventDefault();
+    keys[e.key]();
+    syncInputs();
+    changed(true);
+    clearTimeout(wheelTimer);
+    wheelTimer = setTimeout(() => changed(false), 250);
+  });
+
+  let wheelTimer = 0;
+  canvas.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    S.view.spin = Math.round(wrap(S.view.spin + e.deltaY * 0.15));
+    syncInputs();
+    changed(true);
+    clearTimeout(wheelTimer);
+    wheelTimer = setTimeout(() => changed(false), 200);
+  }, { passive: false });
+
+  // ---- panel --------------------------------------------------------------------------------
+  const inputs = [];
+  for (const [group, specs] of Object.entries(SLIDERS)) {
+    const rows = document.getElementById("rows-" + group);
+    for (const spec of specs) {
+      const id = spec.path.replace(".", "-");
+      const label = Object.assign(document.createElement("label"), { htmlFor: id, textContent: spec.label });
+      const input = Object.assign(document.createElement("input"), { id, type: spec.color ? "color" : "range" });
+      if (!spec.color) Object.assign(input, { min: spec.min, max: spec.max, step: spec.step });
+      const out = document.createElement("output");
+      out.htmlFor = id;
+      rows.append(label, input, out);
+      if (spec.color) { input.classList.add("wide"); out.remove(); }
+      input.addEventListener("input", () => {
+        setPath(spec.path, spec.color ? input.value : Number(input.value));
+        syncInputs();
+        if (spec.rebuild) rebuildText();
+        changed(true);
+      });
+      input.addEventListener("change", () => changed(false));
+      inputs.push({ spec, input, out });
+    }
+  }
+
+  const textInput = document.getElementById("text");
+  const fontSelect = document.getElementById("font");
+  function fillFonts() {
+    fontSelect.replaceChildren(...[...FONTS, ...(customFont ? [customFont] : [])].map((f) => {
+      const o = new Option(f === customFont ? `${f.family} (your file)` : f.family, f.family);
+      o.style.fontFamily = `"${f.family}"`;
+      return o;
+    }));
+  }
+
+  function syncInputs() {
+    for (const { spec, input, out } of inputs) {
+      const v = getPath(spec.path);
+      input.value = v;
+      if (!spec.color) out.textContent = (spec.step >= 1 ? v : Number(v).toFixed(spec.step < 0.01 ? 3 : 2)) + (spec.unit || "");
+    }
+    for (const b of document.querySelectorAll("[data-edge]")) b.setAttribute("aria-pressed", String(!!S.edges[b.dataset.edge]));
+    textInput.value = S.text.value;
+    fontSelect.value = S.text.font;
+  }
+
+  textInput.addEventListener("input", () => { S.text.value = textInput.value; rebuildText(); changed(true); });
+  textInput.addEventListener("change", () => changed(false));
+  fontSelect.addEventListener("change", () => { S.text.font = fontSelect.value; rebuildText(); changed(false); });
+
+  // A local font file becomes a FontFace in this page only. Nothing is uploaded anywhere.
+  const fileInput = document.getElementById("font-file");
+  document.getElementById("font-file-btn").addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", async () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+    const note = document.getElementById("font-note");
+    try {
+      const family = file.name.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ");
+      const face = new FontFace(family, await file.arrayBuffer());
+      await face.load();
+      document.fonts.add(face);
+      customFont = { family, weight: 400 };
+      fillFonts();
+      S.text.font = family;
+      syncInputs();
+      note.textContent = `Using ${family} from your file. It isn't saved, so load it again after a reload.`;
+      rebuildText();
+      changed(false);
+    } catch {
+      note.textContent = "That file didn't load as a font. Try the .ttf or .otf from the download.";
+    }
+    fileInput.value = "";
+  });
+
+  const pre = document.getElementById("settings");
+  const settingsText = () => JSON.stringify(S, (k, v) => (typeof v === "number" ? round(v) : v), 2);
+
+  function changed(interactive) {
+    pre.textContent = settingsText();
+    if (!interactive) { save(); reframe(); }
+    invalidate(interactive);
+  }
+
+  document.getElementById("reset-view").addEventListener("click", () => {
+    S.view = clone(DEFAULTS.view); syncInputs(); changed(false);
+  });
+  document.getElementById("reset-layout").addEventListener("click", () => {
+    for (const k of ["A", "B", "C", "size", "edges", "bendAB", "bendCB", "bendAC", "line", "melt"]) S[k] = clone(DEFAULTS[k]);
+    syncInputs();
+    S.text.pos = clone(DEFAULTS.text.pos);
+    changed(false);
+  });
+  document.getElementById("reset-all").addEventListener("click", () => {
+    S = clone(DEFAULTS); syncInputs(); rebuildText(); changed(false);
+  });
+
+  const copyBtn = document.getElementById("copy");
+  copyBtn.addEventListener("click", () => {
+    const done = (msg) => { copyBtn.textContent = msg; setTimeout(() => (copyBtn.textContent = "Copy settings"), 1400); };
+    const selectIt = () => { const r = document.createRange(); r.selectNodeContents(pre); getSelection().removeAllRanges(); getSelection().addRange(r); done("Selected, press copy"); };
+    if (navigator.clipboard) navigator.clipboard.writeText(settingsText()).then(() => done("Copied"), selectIt);
+    else selectIt();
+  });
 
   for (const b of document.querySelectorAll("[data-bg]")) {
     b.addEventListener("click", () => {
@@ -361,71 +1011,23 @@ if (!gl) {
   document.body.dataset.bg = startBg;
   for (const o of document.querySelectorAll("[data-bg]")) o.setAttribute("aria-pressed", String(o.dataset.bg === startBg));
 
-  const motionBtn = document.getElementById("motion");
-  const syncMotion = () => { motionBtn.setAttribute("aria-pressed", String(flowing)); motionBtn.textContent = flowing ? "Flowing" : "Still"; };
-  motionBtn.addEventListener("click", () => { flowing = !flowing; syncMotion(); });
-  syncMotion();
-
-  // ---- frame loop ---------------------------------------------------------------------------
-  let clock = STILL_T, last = performance.now();
-  function resize() {
-    const dpr = Math.min(Math.max(window.devicePixelRatio || 1, 1.5), 2);
-    const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr);
-    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  for (const b of document.querySelectorAll("[data-edge]")) {
+    b.addEventListener("click", () => { S.edges[b.dataset.edge] = !S.edges[b.dataset.edge]; syncInputs(); changed(false); });
   }
-
-  function frame(now) {
-    const dt = Math.min((now - last) / 1000, 0.05);
-    last = now;
-    if (flowing) clock += dt;
-
-    // spring the tilt towards the target, and let it drift back to centre when idle
-    if (!dragging) tiltTarget = tiltTarget.map((v) => v * Math.pow(0.15, dt));
-    tilt = tilt.map((v, i) => v + (tiltTarget[i] - v) * (1 - Math.pow(0.002, dt)));
-
-    resize();
-    gl.viewport(0, 0, canvas.width, canvas.height);
-
-    const t = clock;
-    const period = 4.2;
-    const d1 = droplet(((t / period) % 1 + 1) % 1, (s) => lerp(A, B, s));
-    const d2 = droplet(((t / period + 0.5) % 1 + 1) % 1, (s) => bez(C, CTRL, B, s));
-
-    const breathe = (o) => NODE_R * (1 + 0.025 * Math.sin(t * 1.6 + o));
-    const gulp = 0.06 * (d1.arrive + d2.arrive); // B swells for a moment when it swallows a drop
-    const wob = (o) => [0.012 * Math.sin(t * 1.1 + o), 0.012 * Math.cos(t * 0.9 + o), 0.02 * Math.sin(t * 0.7 + o)];
-    const add = (p, q) => p.map((v, i) => v + q[i]);
-
-    gl.uniform2f(U.uRes, canvas.width, canvas.height);
-    gl.uniform1f(U.uTime, t);
-    gl.uniform2f(U.uTilt, tilt[0] - 0.12, tilt[1] + 0.08);   // a slight 3/4 view reads more solid than flat-on
-    gl.uniform4f(U.uA, ...add(A, wob(0)), breathe(0));
-    gl.uniform4f(U.uC, ...add(C, wob(2)), breathe(2));
-    gl.uniform4f(U.uB, ...add(B, wob(4)), breathe(4) * (1 + gulp));
-    gl.uniform3fv(U.uCurve, curve);
-    gl.uniform4f(U.uD1, ...d1.pos, d1.r);
-    gl.uniform4f(U.uD2, ...d2.pos, d2.r);
-    gl.uniform1f(U.uLineR, 0.062);
-    gl.uniform1f(U.uK, 0.24);
-    gl.uniform1i(U.uSS, flowing ? 1 : 3);    // when still, spend the GPU on a clean 3x3 supersampled frame
-
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-    if (flowing || dragging || Math.abs(tilt[0] - tiltTarget[0]) + Math.abs(tilt[1] - tiltTarget[1]) > 1e-4) {
-      requestAnimationFrame(frame);
-    } else {
-      idle = true;
-    }
+  for (const b of document.querySelectorAll("[data-mode]")) {
+    b.addEventListener("click", () => {
+      mode = b.dataset.mode;
+      canvas.dataset.mode = mode;
+      for (const o of document.querySelectorAll("[data-mode]")) o.setAttribute("aria-pressed", String(o === b));
+    });
   }
-  let idle = false;
-  const wake = () => { if (idle) { idle = false; last = performance.now(); requestAnimationFrame(frame); } };
-  canvas.addEventListener("pointerdown", wake);
-  motionBtn.addEventListener("click", wake);
-  window.addEventListener("resize", wake);
+  document.getElementById("mode-edit").setAttribute("aria-pressed", "true");
+  document.getElementById("mode-rotate").setAttribute("aria-pressed", "false");
 
-  // tooling hook: ?t=2.35&ss=3 renders one exact frame (used to export PNGs)
-  const q = new URLSearchParams(location.search);
-  if (q.has("t")) { clock = parseFloat(q.get("t")); flowing = false; syncMotion(); }
-
-  requestAnimationFrame(frame);
+  window.addEventListener("resize", () => invalidate(false));
+  fillFonts();
+  syncInputs();
+  changed(false);
+  rebuildText();
 }
 </script>
